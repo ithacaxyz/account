@@ -2,7 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {Receiver} from "solady/accounts/Receiver.sol";
-import {MinimalBatchExecutor} from "solady/accounts/MinimalBatchExecutor.sol";
+import {ERC7821} from "solady/accounts/ERC7821.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
@@ -13,7 +13,7 @@ import {P256} from "solady/utils/P256.sol";
 import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 
-contract ExperimentalDelegation is Receiver, EIP712, MinimalBatchExecutor {
+contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
     using LibBytes for LibBytes.BytesStorage;
@@ -350,7 +350,7 @@ contract ExperimentalDelegation is Receiver, EIP712, MinimalBatchExecutor {
     // Overrides
     ////////////////////////////////////////////////////////////////////////
 
-    /// @notice For MinimalBatchExecutor.
+    /// @notice For ERC7821.
     function _authorizeExecute(Call[] calldata calls, bytes calldata opData)
         internal
         view
