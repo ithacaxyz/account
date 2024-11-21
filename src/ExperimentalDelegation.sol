@@ -39,21 +39,6 @@ contract ExperimentalDelegation is Receiver, EIP712, MinimalBatchExecutor {
         bytes publicKey;
     }
 
-    // The `opData` in `execute` will be constructed with the following:
-    // ```
-    // abi.encodePacked(
-    //     uint256(nonce),
-    //     uint128(maxPriorityFee),
-    //     uint128(maxFeePerGas),
-    //     uint64(verificationGas),
-    //     uint64(callGas),
-    //     uint64(preVerificationGas),
-    //     uint32(paymasterAndData.length),
-    //     bytes(paymasterAndData),
-    //     bytes(signature)
-    // )
-    // ```
-
     ////////////////////////////////////////////////////////////////////////
     // Storage
     ////////////////////////////////////////////////////////////////////////
@@ -123,14 +108,31 @@ contract ExperimentalDelegation is Receiver, EIP712, MinimalBatchExecutor {
     ////////////////////////////////////////////////////////////////////////
 
     /// @notice For EIP-712 signature digest calculation for the `execute` function.
-    /// `keccak256("Call(address target,uint256 value,bytes data)")`.
-    bytes32 public constant CALL_TYPEHASH =
-        0x84fa2cf05cd88e992eae77e851af68a4ee278dcff6ef504e487a55b3baadfbe5;
-
-    /// @notice For EIP-712 signature digest calculation for the `execute` function.
-    /// `keccak256("Execute(Call[] calls,uint256 nonce,uint256 nonceSalt)Call(address target,uint256 value,bytes data)")`.
+    /// "Execute(Call[] calls,uint256 nonce,uint256 nonceSalt)
+    /// Call(address target,uint256 value,bytes data)"
+    ///
+    /// The `opData` in `execute` will be constructed with the following:
+    /// ```
+    /// abi.encodePacked(
+    ///     uint256(nonce),
+    ///     uint128(maxPriorityFee),
+    ///     uint128(maxFeePerGas),
+    ///     uint64(verificationGas),
+    ///     uint64(callGas),
+    ///     uint64(preVerificationGas),
+    ///     address(paymaster),
+    ///     address(paymasterToken),
+    ///     uint256(paymasterTokenAmount),
+    ///     bytes(signature)
+    /// )
+    /// ```
     bytes32 public constant EXECUTE_TYPEHASH =
         0xe530e62dece51c9bec26701907051ddc8420a62f028096eeb58263193e84e049;
+
+    /// @notice For EIP-712 signature digest calculation for the `execute` function.
+    /// "Call(address target,uint256 value,bytes data)")`
+    bytes32 public constant CALL_TYPEHASH =
+        0x84fa2cf05cd88e992eae77e851af68a4ee278dcff6ef504e487a55b3baadfbe5;
 
     /// @notice For EIP-712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
@@ -200,12 +202,12 @@ contract ExperimentalDelegation is Receiver, EIP712, MinimalBatchExecutor {
     // Public View Functions
     ////////////////////////////////////////////////////////////////////////
 
-    function nonceIsInvalidated(uint256 nonce) public view virtual returns (bool) {
-        return _getExperimentalDelegationStorage().invalidatedNonces.get(nonce);
-    }
-
     function label() public view virtual returns (string memory) {
         return string(_getExperimentalDelegationStorage().label.get());
+    }
+
+    function nonceIsInvalidated(uint256 nonce) public view virtual returns (bool) {
+        return _getExperimentalDelegationStorage().invalidatedNonces.get(nonce);
     }
 
     function nonceSalt() public view virtual returns (uint256) {
@@ -218,12 +220,6 @@ contract ExperimentalDelegation is Receiver, EIP712, MinimalBatchExecutor {
 
     function keyAt(uint256 i) public view virtual returns (Key memory) {
         return getKey(_getExperimentalDelegationStorage().keyHashes.at(i));
-    }
-
-    /// @notice Returns the hash of the key, which does not includes the expiry.
-    function hash(Key memory key) public pure virtual returns (bytes32) {
-        // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
-        return EfficientHashLib.hash(uint8(key.keyType), uint256(keccak256(key.publicKey)));
     }
 
     /// @notice Returns the key corresponding to the `keyHash`. Reverts if the key does not exist.
@@ -239,7 +235,14 @@ contract ExperimentalDelegation is Receiver, EIP712, MinimalBatchExecutor {
         }
     }
 
-    function computeDigest(Call[] calldata calls, uint256 nonce)
+    /// @notice Returns the hash of the key, which does not includes the expiry.
+    function hash(Key memory key) public pure virtual returns (bytes32) {
+        // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
+        return EfficientHashLib.hash(uint8(key.keyType), uint256(keccak256(key.publicKey)));
+    }
+
+    /// @dev Computes the EIP-712 digest for `calls`, `opData`, with `nonceSalt` from storage.
+    function computeDigest(Call[] calldata calls, bytes calldata opData)
         public
         view
         virtual
@@ -262,7 +265,7 @@ contract ExperimentalDelegation is Receiver, EIP712, MinimalBatchExecutor {
             EfficientHashLib.hash(
                 EXECUTE_TYPEHASH,
                 a.hash(),
-                bytes32(nonce),
+                bytes32(opData[:32]),
                 bytes32(_getExperimentalDelegationStorage().nonceSalt)
             )
         );
@@ -356,11 +359,7 @@ contract ExperimentalDelegation is Receiver, EIP712, MinimalBatchExecutor {
         if (opData.length == uint256(0)) {
             _checkThis();
         } else {
-            // For now, `opData` is `abi.encodePacked(bytes(signature), uint256(nonce))`.
-            uint256 n = opData.length - 32;
-            bytes calldata signature = LibBytes.truncatedCalldata(opData, n);
-            uint256 nonce = uint256(LibBytes.loadCalldata(opData, n));
-            if (!_isValidSignature(computeDigest(calls, nonce), signature)) revert Unauthorized();
+            if (!_isValidSignature(computeDigest(calls, opData), opData[32:])) revert Unauthorized();
         }
     }
 
