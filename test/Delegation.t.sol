@@ -2,18 +2,18 @@
 pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
-import {ExperimentalDelegation} from "../src/ExperimentalDelegation.sol";
+import {Delegation} from "../src/Delegation.sol";
 
-contract ExperimentalDelegationTest is SoladyTest {
-    ExperimentalDelegation public ed;
+contract DelegationTest is SoladyTest {
+    Delegation public delegation;
 
     function setUp() public {
-        ed = new ExperimentalDelegation();
+        delegation = new Delegation();
     }
 
     struct _TestTemps {
-        ExperimentalDelegation.Key key;
-        ExperimentalDelegation.Key retrievedKey;
+        Delegation.Key key;
+        Delegation.Key retrievedKey;
         bytes32 keyHash;
     }
 
@@ -21,50 +21,50 @@ contract ExperimentalDelegationTest is SoladyTest {
         _TestTemps memory t;
         t.key;
 
-        t.key.keyType = ExperimentalDelegation.KeyType(_randomUniform() & 1);
+        t.key.keyType = Delegation.KeyType(_randomUniform() & 1);
         t.key.expiry = uint40(_bound(_random(), 0, 2 ** 40 - 1));
         t.key.publicKey = _truncateBytes(_randomBytes(), 0x1ff);
 
-        assertEq(ed.keyCount(), 0);
+        assertEq(delegation.keyCount(), 0);
 
-        vm.prank(address(ed));
-        ed.authorize(t.key);
+        vm.prank(address(delegation));
+        delegation.authorize(t.key);
 
-        assertEq(ed.keyCount(), 1);
+        assertEq(delegation.keyCount(), 1);
 
-        t.retrievedKey = ed.keyAt(0);
+        t.retrievedKey = delegation.keyAt(0);
         assertEq(uint8(t.retrievedKey.keyType), uint8(t.key.keyType));
         assertEq(t.retrievedKey.expiry, t.key.expiry);
         assertEq(t.retrievedKey.publicKey, t.key.publicKey);
 
         t.key.expiry = uint40(_bound(_random(), 0, 2 ** 40 - 1));
 
-        vm.prank(address(ed));
-        ed.authorize(t.key);
+        vm.prank(address(delegation));
+        delegation.authorize(t.key);
 
-        assertEq(ed.keyCount(), 1);
+        assertEq(delegation.keyCount(), 1);
 
-        t.retrievedKey = ed.keyAt(0);
+        t.retrievedKey = delegation.keyAt(0);
         assertEq(uint8(t.retrievedKey.keyType), uint8(t.key.keyType));
         assertEq(t.retrievedKey.expiry, t.key.expiry);
         assertEq(t.retrievedKey.publicKey, t.key.publicKey);
 
-        t.keyHash = ed.hash(t.key);
-        t.retrievedKey = ed.getKey(t.keyHash);
+        t.keyHash = delegation.hash(t.key);
+        t.retrievedKey = delegation.getKey(t.keyHash);
         assertEq(uint8(t.retrievedKey.keyType), uint8(t.key.keyType));
         assertEq(t.retrievedKey.expiry, t.key.expiry);
         assertEq(t.retrievedKey.publicKey, t.key.publicKey);
 
-        vm.prank(address(ed));
-        ed.revoke(t.keyHash);
+        vm.prank(address(delegation));
+        delegation.revoke(t.keyHash);
 
-        assertEq(ed.keyCount(), 0);
+        assertEq(delegation.keyCount(), 0);
 
         vm.expectRevert(bytes4(keccak256("IndexOutOfBounds()")));
-        ed.keyAt(0);
+        delegation.keyAt(0);
 
-        t.keyHash = ed.hash(t.key);
+        t.keyHash = delegation.hash(t.key);
         vm.expectRevert(bytes4(keccak256("KeyDoesNotExist()")));
-        t.retrievedKey = ed.getKey(t.keyHash);
+        t.retrievedKey = delegation.getKey(t.keyHash);
     }
 }

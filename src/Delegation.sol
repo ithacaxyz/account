@@ -14,7 +14,7 @@ import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 
-contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
+contract Delegation is Receiver, EIP712, ERC7821 {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
     using LibBytes for LibBytes.BytesStorage;
@@ -45,7 +45,7 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @notice Holds the storage.
-    struct ExperimentalDelegationStorage {
+    struct DelegationStorage {
         address entryPoint;
         LibBytes.BytesStorage label;
         LibBitmap.Bitmap invalidatedNonces;
@@ -55,14 +55,14 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
     }
 
     /// @notice Returns the storage pointer.
-    function _getExperimentalDelegationStorage()
+    function _getDelegationStorage()
         internal
         pure
-        returns (ExperimentalDelegationStorage storage $)
+        returns (DelegationStorage storage $)
     {
         assembly ("memory-safe") {
-            // `uint72(bytes9(keccak256("PORTO_EXPERIMENTAL_DELEGATION_STORAGE")))`.
-            $.slot := 0x712df45a4d8ada253b // Truncate to 9 bytes to reduce bytecode size.
+            // `uint72(bytes9(keccak256("PORTO_DELEGATION_STORAGE")))`.
+            $.slot := 0x6d3d4e7fb92a523813 // Truncate to 9 bytes to reduce bytecode size.
         }
     }
 
@@ -152,13 +152,13 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
 
     /// @notice Sets the entry point.
     function setEntryPoint(address newEntryPoint) public virtual onlyThis {
-        _getExperimentalDelegationStorage().entryPoint = newEntryPoint;
+        _getDelegationStorage().entryPoint = newEntryPoint;
         emit EntryPointSet(newEntryPoint);
     }
 
     /// @notice Sets the label.
     function setLabel(string calldata newLabel) public virtual onlyThis {
-        _getExperimentalDelegationStorage().label.set(bytes(newLabel));
+        _getDelegationStorage().label.set(bytes(newLabel));
         emit LabelSet(newLabel);
     }
 
@@ -176,13 +176,13 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
 
     /// @notice Invalidates the nonce.
     function invalidateNonce(uint256 nonce) public virtual onlyThis {
-        _getExperimentalDelegationStorage().invalidatedNonces.set(nonce);
+        _getDelegationStorage().invalidatedNonces.set(nonce);
         emit NonceInvalidated(nonce);
     }
 
     /// @notice Increments the nonce salt by a pseudorandom uint32 value.
     function incrementNonceSalt() public virtual onlyThis returns (uint256 newNonceSalt) {
-        ExperimentalDelegationStorage storage $ = _getExperimentalDelegationStorage();
+        DelegationStorage storage $ = _getDelegationStorage();
         newNonceSalt = $.nonceSalt;
         unchecked {
             newNonceSalt += uint32(uint256(EfficientHashLib.hash(newNonceSalt, block.timestamp)));
@@ -196,32 +196,32 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     function entryPoint() public view virtual returns (address) {
-        return _getExperimentalDelegationStorage().entryPoint;
+        return _getDelegationStorage().entryPoint;
     }
 
     function label() public view virtual returns (string memory) {
-        return string(_getExperimentalDelegationStorage().label.get());
+        return string(_getDelegationStorage().label.get());
     }
 
     function nonceIsInvalidated(uint256 nonce) public view virtual returns (bool) {
-        return _getExperimentalDelegationStorage().invalidatedNonces.get(nonce);
+        return _getDelegationStorage().invalidatedNonces.get(nonce);
     }
 
     function nonceSalt() public view virtual returns (uint256) {
-        return _getExperimentalDelegationStorage().nonceSalt;
+        return _getDelegationStorage().nonceSalt;
     }
 
     function keyCount() public view virtual returns (uint256) {
-        return _getExperimentalDelegationStorage().keyHashes.length();
+        return _getDelegationStorage().keyHashes.length();
     }
 
     function keyAt(uint256 i) public view virtual returns (Key memory) {
-        return getKey(_getExperimentalDelegationStorage().keyHashes.at(i));
+        return getKey(_getDelegationStorage().keyHashes.at(i));
     }
 
     /// @notice Returns the key corresponding to the `keyHash`. Reverts if the key does not exist.
     function getKey(bytes32 keyHash) public view virtual returns (Key memory key) {
-        bytes memory data = _getExperimentalDelegationStorage().keyStorage[keyHash].get();
+        bytes memory data = _getDelegationStorage().keyStorage[keyHash].get();
         if (data.length == 0) revert KeyDoesNotExist();
         unchecked {
             uint256 n = data.length - 6;
@@ -263,7 +263,7 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
                 EXECUTE_TYPEHASH,
                 a.hash(),
                 bytes32(opData[:32]),
-                bytes32(_getExperimentalDelegationStorage().nonceSalt)
+                bytes32(_getDelegationStorage().nonceSalt)
             )
         );
     }
@@ -320,14 +320,14 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
     function _addKey(Key memory key) internal virtual returns (bytes32 keyHash) {
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         keyHash = hash(key);
-        ExperimentalDelegationStorage storage $ = _getExperimentalDelegationStorage();
+        DelegationStorage storage $ = _getDelegationStorage();
         $.keyStorage[keyHash].set(abi.encodePacked(key.publicKey, key.expiry, key.keyType));
         $.keyHashes.add(keyHash);
     }
 
     /// @notice Removes the key corresponding to the `keyHash`. Reverts if the key does not exist.
     function _removeKey(bytes32 keyHash) internal virtual {
-        ExperimentalDelegationStorage storage $ = _getExperimentalDelegationStorage();
+        DelegationStorage storage $ = _getDelegationStorage();
         $.keyStorage[keyHash].clear();
         if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
     }
@@ -391,7 +391,7 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
         override
         returns (string memory name, string memory version)
     {
-        name = "ExperimentalDelegation";
+        name = "Delegation";
         version = "0.0.1";
     }
 }
