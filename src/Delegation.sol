@@ -2,7 +2,6 @@
 pragma solidity ^0.8.23;
 
 import {Receiver} from "solady/accounts/Receiver.sol";
-import {ERC7821} from "solady/accounts/ERC7821.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
@@ -13,8 +12,12 @@ import {P256} from "solady/utils/P256.sol";
 import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
+import {GuardedExecutor} from "./GuardedExecutor.sol";
+import {LibOp} from "./LibOp.sol";
 
-contract Delegation is Receiver, EIP712, ERC7821 {
+/// @title Delegation
+/// @notice A delegation contract for EOAs with EIP7702.
+contract Delegation is Receiver, EIP712, GuardedExecutor {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
     using LibBytes for LibBytes.BytesStorage;
@@ -61,14 +64,11 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     }
 
     /// @dev Returns the storage pointer.
-    function _getDelegationStorage()
-        internal
-        pure
-        returns (DelegationStorage storage $)
-    {
+    function _getDelegationStorage() internal pure returns (DelegationStorage storage $) {
+        // Truncate to 9 bytes to reduce bytecode size.
+        uint256 s = uint72(bytes9(keccak256("PORTO_DELEGATION_STORAGE")));
         assembly ("memory-safe") {
-            // `uint72(bytes9(keccak256("PORTO_DELEGATION_STORAGE")))`.
-            $.slot := 0x6d3d4e7fb92a523813 // Truncate to 9 bytes to reduce bytecode size.
+            $.slot := s
         }
     }
 
@@ -82,14 +82,14 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     /// @dev The key is expired or unauthorized.
     error KeyExpiredOrUnauthorized();
 
-    /// @dev The sender is not the EOA.
-    error Unauthorized();
-
     /// @dev The signature is invalid.
     error InvalidSignature();
 
     /// @dev The key does not exist.
     error KeyDoesNotExist();
+
+    /// @dev The nonce is invalid.
+    error InvalidNonce();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -118,14 +118,13 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev For EIP-712 signature digest calculation for the `execute` function.
-    /// "Execute(Call[] calls,uint256 nonce,uint256 nonceSalt)Call(address target,uint256 value,bytes data)"
-    bytes32 public constant EXECUTE_TYPEHASH =
-        0xe530e62dece51c9bec26701907051ddc8420a62f028096eeb58263193e84e049;
+    bytes32 public constant EXECUTE_TYPEHASH = keccak256(
+        "Execute(Call[] calls,uint256 nonce,uint256 nonceSalt)Call(address target,uint256 value,bytes data)"
+    );
 
     /// @dev For EIP-712 signature digest calculation for the `execute` function.
-    /// "Call(address target,uint256 value,bytes data)")`
     bytes32 public constant CALL_TYPEHASH =
-        0x84fa2cf05cd88e992eae77e851af68a4ee278dcff6ef504e487a55b3baadfbe5;
+        keccak256("Call(address target,uint256 value,bytes data)");
 
     /// @dev For EIP-712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
@@ -180,8 +179,7 @@ contract Delegation is Receiver, EIP712, ERC7821 {
 
     /// @dev Invalidates the nonce.
     function invalidateNonce(uint256 nonce) public virtual onlyThis {
-        _getDelegationStorage().invalidatedNonces.set(nonce);
-        emit NonceInvalidated(nonce);
+        _invalidateNonce(nonce);
     }
 
     /// @dev Increments the nonce salt by a pseudorandom uint32 value.
@@ -199,26 +197,32 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     // Public View Functions
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev Returns the entry point.
     function entryPoint() public view virtual returns (address) {
         return _getDelegationStorage().entryPoint;
     }
 
+    /// @dev Returns the label.
     function label() public view virtual returns (string memory) {
         return string(_getDelegationStorage().label.get());
     }
 
+    /// @dev Returns true if the nonce is invalidated.
     function nonceIsInvalidated(uint256 nonce) public view virtual returns (bool) {
         return _getDelegationStorage().invalidatedNonces.get(nonce);
     }
 
+    /// @dev Returns the nonce salt.
     function nonceSalt() public view virtual returns (uint256) {
         return _getDelegationStorage().nonceSalt;
     }
 
+    /// @dev Returns the number of authorized keys.
     function keyCount() public view virtual returns (uint256) {
         return _getDelegationStorage().keyHashes.length();
     }
 
+    /// @dev Returns the authorized key at index `i`.
     function keyAt(uint256 i) public view virtual returns (Key memory) {
         return getKey(_getDelegationStorage().keyHashes.at(i));
     }
@@ -243,7 +247,7 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     }
 
     /// @dev Computes the EIP-712 digest for `calls`, `opData`, with `nonceSalt` from storage.
-    function computeDigest(Call[] calldata calls, bytes calldata opData)
+    function computeDigest(Call[] calldata calls, uint256 nonce)
         public
         view
         virtual
@@ -266,7 +270,7 @@ contract Delegation is Receiver, EIP712, ERC7821 {
             EfficientHashLib.hash(
                 EXECUTE_TYPEHASH,
                 a.hash(),
-                bytes32(opData[:32]),
+                bytes32(nonce),
                 bytes32(_getDelegationStorage().nonceSalt)
             )
         );
@@ -276,39 +280,55 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev Invalidates the nonce.
+    function _invalidateNonce(uint256 nonce) internal virtual {
+        _getDelegationStorage().invalidatedNonces.set(nonce);
+        emit NonceInvalidated(nonce);
+    }
+
+    /// @dev Invalidates the nonce. Reverts if the nonce is already invalidated.
+    function _useNonce(uint256 nonce) internal virtual {
+        if (nonceIsInvalidated(nonce)) revert InvalidNonce();
+        _invalidateNonce(nonce);
+    }
+
     /// @dev Checks if a signature is valid. The `signature` is a wrapped signature.
     function _isValidSignature(bytes32 digest, bytes calldata signature)
         internal
         view
         virtual
-        returns (bool)
+        returns (bool isValid)
+    {
+        (isValid,) = _unwrapAndValidateSignature(digest, signature);
+    }
+
+    /// @dev Returns if the signature is valid, along with its `keyHash`.
+    /// The `signature` is a wrapped signature.
+    function _unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
+        internal
+        view
+        virtual
+        returns (bool isValid, bytes32 keyHash)
     {
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
-            return ECDSA.recoverCalldata(digest, signature) == address(this);
+            return (ECDSA.recoverCalldata(digest, signature) == address(this), bytes32(0));
         }
 
-        uint256 n = signature.length - 33;
-        // `signature` is `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
-        unchecked {
-            if (uint256(LibBytes.loadCalldata(signature, n + 1)) & 0xff != 0) {
-                digest = sha256(abi.encode(digest)); // Do the prehash if last byte is non-zero.
-            }
-        }
-        Key memory key = getKey(LibBytes.loadCalldata(signature, n));
-        signature = LibBytes.truncatedCalldata(signature, n);
-        
-        uint256 expiry = key.expiry;
-        if (LibBit.and(expiry != 0, expiry < block.timestamp)) return false;    
+        bool prehash;
+        (signature, keyHash, prehash) = LibOp.unwrapSignature(signature);
+        if (prehash) digest = sha256(abi.encode(digest)); // Do the prehash if last byte is non-zero.
+
+        Key memory key = getKey(keyHash);
+
+        if (LibBit.and(key.expiry != 0, key.expiry < block.timestamp)) return (false, keyHash);
 
         if (key.keyType == KeyType.P256) {
-            (bytes32 r, bytes32 s) = P256.decodePointCalldata(signature);
-            (bytes32 x, bytes32 y) = P256.decodePoint(key.publicKey);
-            return P256.verifySignature(digest, r, s, x, y);
-        }
-
-        if (key.keyType == KeyType.WebAuthnP256) {
-            (bytes32 x, bytes32 y) = P256.decodePoint(key.publicKey);
-            return WebAuthn.verify(
+            (bytes32 r, bytes32 s) = P256.tryDecodePointCalldata(signature);
+            (bytes32 x, bytes32 y) = P256.tryDecodePoint(key.publicKey);
+            isValid = P256.verifySignature(digest, r, s, x, y);
+        } else if (key.keyType == KeyType.WebAuthnP256) {
+            (bytes32 x, bytes32 y) = P256.tryDecodePoint(key.publicKey);
+            isValid = WebAuthn.verify(
                 abi.encode(digest), // Challenge.
                 false, // Require user verification optional.
                 WebAuthn.tryDecodeAuth(signature), // Auth.
@@ -316,7 +336,6 @@ contract Delegation is Receiver, EIP712, ERC7821 {
                 y
             );
         }
-        return false;
     }
 
     /// @dev Adds the key. If the key already exist, its expiry will be updated.
@@ -335,12 +354,6 @@ contract Delegation is Receiver, EIP712, ERC7821 {
         if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
     }
 
-    /// @dev Guards a function such that it can only be called by `address(this)`.
-    modifier onlyThis() virtual {
-        if (msg.sender != address(this)) revert Unauthorized();
-        _;
-    }
-
     ////////////////////////////////////////////////////////////////////////
     // ERC7821
     ////////////////////////////////////////////////////////////////////////
@@ -354,20 +367,22 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     {
         // Entry point workflow.
         if (msg.sender == entryPoint()) {
+            _useNonce(LibOp.opDataNonce(opData));
             // If the sender is the trusted entry point, we assume that `calls` have
             // been authorized via signature that has been checked on the entry point.
             // In this case, `opData` will be used to pass paymaster information instead.
-            address paymentERC20 = address(bytes20(LibBytes.loadCalldata(opData, 0x00)));
-            uint256 requiredBalanceAfter = uint256(LibBytes.loadCalldata(opData, 0x14))
-                + SafeTransferLib.balanceOf(paymentERC20, msg.sender);
+            address paymentERC20 = LibOp.opDataPaymentERC20(opData);
+            uint256 requiredBalanceAfter = SafeTransferLib.balanceOf(paymentERC20, msg.sender) // `balanceBefore`.
+                + LibOp.opDataPaymentAmount(opData);
 
-            bytes[] memory results = _execute(calls);
+            bytes[] memory results = _execute(calls, LibOp.opDataKeyHash(opData));
 
             uint256 balanceAfter = SafeTransferLib.balanceOf(paymentERC20, msg.sender);
             if (requiredBalanceAfter > balanceAfter) {
                 unchecked {
-                    uint256 delta = requiredBalanceAfter - balanceAfter;
-                    SafeTransferLib.safeTransfer(paymentERC20, msg.sender, delta);
+                    SafeTransferLib.safeTransfer(
+                        paymentERC20, msg.sender, requiredBalanceAfter - balanceAfter
+                    );
                 }
             }
             return results;
@@ -376,10 +391,15 @@ contract Delegation is Receiver, EIP712, ERC7821 {
         // Simple workflow.
         if (opData.length == uint256(0)) {
             if (msg.sender != address(this)) revert Unauthorized();
-            return _execute(calls);
+            return _execute(calls, bytes32(0));
         }
-        if (!_isValidSignature(computeDigest(calls, opData), opData[32:])) revert Unauthorized();
-        return _execute(calls);
+        uint256 nonce = LibOp.opDataNonce(opData);
+        _useNonce(nonce);
+        (bool isValid, bytes32 keyHash) = _unwrapAndValidateSignature(
+            computeDigest(calls, nonce), LibOp.opDataWrappedSignature(opData)
+        );
+        if (!isValid) revert Unauthorized();
+        return _execute(calls, keyHash);
     }
 
     ////////////////////////////////////////////////////////////////////////
