@@ -24,19 +24,19 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     // Data Structures
     ////////////////////////////////////////////////////////////////////////
 
-    /// @notice The type of key.
+    /// @dev The type of key.
     enum KeyType {
         P256,
         WebAuthnP256
     }
 
-    /// @notice A key that can be used to authorize call.
-    /// @custom:property expiry - Unix timestamp at which the key expires (0 = never).
-    /// @custom:property keyType - Type of key. See the {KeyType} enum.
-    /// @custom:property publicKey - Public key in encoded form.
+    /// @dev A key that can be used to authorize call.
     struct Key {
+        /// @dev Unix timestamp at which the key expires (0 = never).
         uint40 expiry;
+        /// @dev Type of key. See the {KeyType} enum.
         KeyType keyType;
+        /// @dev Public key in encoded form.
         bytes publicKey;
     }
 
@@ -44,17 +44,23 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     // Storage
     ////////////////////////////////////////////////////////////////////////
 
-    /// @notice Holds the storage.
+    /// @dev Holds the storage.
     struct DelegationStorage {
+        /// @dev The entry point.
         address entryPoint;
+        /// @dev The label.
         LibBytes.BytesStorage label;
+        /// @dev Bitmap of invalidated nonces. Set bit means invalidated.
         LibBitmap.Bitmap invalidatedNonces;
+        /// @dev The current nonce salt.
         uint256 nonceSalt;
+        /// @dev Set of key hashes for onchain enumeration of authorized keys.
         EnumerableSetLib.Bytes32Set keyHashes;
+        /// @dev Mapping of key hash to the key in encoded form.
         mapping(bytes32 => LibBytes.BytesStorage) keyStorage;
     }
 
-    /// @notice Returns the storage pointer.
+    /// @dev Returns the storage pointer.
     function _getDelegationStorage()
         internal
         pure
@@ -70,67 +76,65 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     // Errors
     ////////////////////////////////////////////////////////////////////////
 
-    /// @notice This feature has not been implemented yet.
+    /// @dev This feature has not been implemented yet.
     error Unimplemented();
 
-    /// @notice The key is expired or unauthorized.
+    /// @dev The key is expired or unauthorized.
     error KeyExpiredOrUnauthorized();
 
-    /// @notice The sender is not the EOA.
+    /// @dev The sender is not the EOA.
     error Unauthorized();
 
-    /// @notice The signature is invalid.
+    /// @dev The signature is invalid.
     error InvalidSignature();
 
-    /// @notice The key does not exist.
+    /// @dev The key does not exist.
     error KeyDoesNotExist();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
 
-    /// @notice The entry point has been updated to `newEntryPoint`.
+    /// @dev The entry point has been updated to `newEntryPoint`.
     event EntryPointSet(address newEntryPoint);
 
-    /// @notice The label has been updated to `newLabel`.
+    /// @dev The label has been updated to `newLabel`.
     event LabelSet(string newLabel);
 
-    /// @notice The key with a corresponding `keyHash` has been authorized.
+    /// @dev The key with a corresponding `keyHash` has been authorized.
     event Authorized(bytes32 indexed keyHash, Key key);
 
-    /// @notice The key with a corresponding `keyHash` has been revoked.
+    /// @dev The key with a corresponding `keyHash` has been revoked.
     event Revoked(bytes32 indexed keyHash);
 
-    /// @notice The `nonce` have been invalidated.
+    /// @dev The `nonce` have been invalidated.
     event NonceInvalidated(uint256 nonce);
 
-    /// @notice The nonce salt has been incremented to `newNonceSalt`.
+    /// @dev The nonce salt has been incremented to `newNonceSalt`.
     event NonceSaltIncremented(uint256 newNonceSalt);
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
 
-    /// @notice For EIP-712 signature digest calculation for the `execute` function.
+    /// @dev For EIP-712 signature digest calculation for the `execute` function.
     /// "Execute(Call[] calls,uint256 nonce,uint256 nonceSalt)Call(address target,uint256 value,bytes data)"
     bytes32 public constant EXECUTE_TYPEHASH =
         0xe530e62dece51c9bec26701907051ddc8420a62f028096eeb58263193e84e049;
 
-    /// @notice For EIP-712 signature digest calculation for the `execute` function.
+    /// @dev For EIP-712 signature digest calculation for the `execute` function.
     /// "Call(address target,uint256 value,bytes data)")`
     bytes32 public constant CALL_TYPEHASH =
         0x84fa2cf05cd88e992eae77e851af68a4ee278dcff6ef504e487a55b3baadfbe5;
 
-    /// @notice For EIP-712 signature digest calculation.
+    /// @dev For EIP-712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
 
     ////////////////////////////////////////////////////////////////////////
     // ERC1271
     ////////////////////////////////////////////////////////////////////////
 
-    /// @notice Checks if a signature is valid.
-    /// @param digest - The digest to verify.
-    /// @param signature - The wrapped signature to verify.
+    /// @dev Checks if a signature is valid. The `signature` is a wrapped signature.
     function isValidSignature(bytes32 digest, bytes calldata signature)
         public
         view
@@ -150,37 +154,37 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     // If a signature is required to call these functions, please use the `execute`
     // function with `auth` set to `abi.encode(nonce, signature)`.
 
-    /// @notice Sets the entry point.
+    /// @dev Sets the entry point.
     function setEntryPoint(address newEntryPoint) public virtual onlyThis {
         _getDelegationStorage().entryPoint = newEntryPoint;
         emit EntryPointSet(newEntryPoint);
     }
 
-    /// @notice Sets the label.
+    /// @dev Sets the label.
     function setLabel(string calldata newLabel) public virtual onlyThis {
         _getDelegationStorage().label.set(bytes(newLabel));
         emit LabelSet(newLabel);
     }
 
-    /// @notice Revokes the key corresponding to `keyHash`.
+    /// @dev Revokes the key corresponding to `keyHash`.
     function revoke(bytes32 keyHash) public virtual onlyThis {
         _removeKey(keyHash);
         emit Revoked(keyHash);
     }
 
-    /// @notice Authorizes the key.
+    /// @dev Authorizes the key.
     function authorize(Key memory key) public virtual onlyThis returns (bytes32 keyHash) {
         keyHash = _addKey(key);
         emit Authorized(keyHash, key);
     }
 
-    /// @notice Invalidates the nonce.
+    /// @dev Invalidates the nonce.
     function invalidateNonce(uint256 nonce) public virtual onlyThis {
         _getDelegationStorage().invalidatedNonces.set(nonce);
         emit NonceInvalidated(nonce);
     }
 
-    /// @notice Increments the nonce salt by a pseudorandom uint32 value.
+    /// @dev Increments the nonce salt by a pseudorandom uint32 value.
     function incrementNonceSalt() public virtual onlyThis returns (uint256 newNonceSalt) {
         DelegationStorage storage $ = _getDelegationStorage();
         newNonceSalt = $.nonceSalt;
@@ -219,7 +223,7 @@ contract Delegation is Receiver, EIP712, ERC7821 {
         return getKey(_getDelegationStorage().keyHashes.at(i));
     }
 
-    /// @notice Returns the key corresponding to the `keyHash`. Reverts if the key does not exist.
+    /// @dev Returns the key corresponding to the `keyHash`. Reverts if the key does not exist.
     function getKey(bytes32 keyHash) public view virtual returns (Key memory key) {
         bytes memory data = _getDelegationStorage().keyStorage[keyHash].get();
         if (data.length == 0) revert KeyDoesNotExist();
@@ -232,7 +236,7 @@ contract Delegation is Receiver, EIP712, ERC7821 {
         }
     }
 
-    /// @notice Returns the hash of the key, which does not includes the expiry.
+    /// @dev Returns the hash of the key, which does not includes the expiry.
     function hash(Key memory key) public pure virtual returns (bytes32) {
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         return EfficientHashLib.hash(uint8(key.keyType), uint256(keccak256(key.publicKey)));
@@ -272,9 +276,7 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
 
-    /// @notice Checks if a signature is valid.
-    /// @param digest - The digest to verify.
-    /// @param signature - The wrapped signature to verify.
+    /// @dev Checks if a signature is valid. The `signature` is a wrapped signature.
     function _isValidSignature(bytes32 digest, bytes calldata signature)
         internal
         view
@@ -294,8 +296,9 @@ contract Delegation is Receiver, EIP712, ERC7821 {
         }
         Key memory key = getKey(LibBytes.loadCalldata(signature, n));
         signature = LibBytes.truncatedCalldata(signature, n);
-
-        if (LibBit.and(key.expiry != 0, key.expiry < block.timestamp)) return false;
+        
+        uint256 expiry = key.expiry;
+        if (LibBit.and(expiry != 0, expiry < block.timestamp)) return false;    
 
         if (key.keyType == KeyType.P256) {
             (bytes32 r, bytes32 s) = P256.decodePointCalldata(signature);
@@ -308,7 +311,7 @@ contract Delegation is Receiver, EIP712, ERC7821 {
             return WebAuthn.verify(
                 abi.encode(digest), // Challenge.
                 false, // Require user verification optional.
-                abi.decode(signature, (WebAuthn.WebAuthnAuth)), // Auth.
+                WebAuthn.tryDecodeAuth(signature), // Auth.
                 x,
                 y
             );
@@ -316,7 +319,7 @@ contract Delegation is Receiver, EIP712, ERC7821 {
         return false;
     }
 
-    /// @notice Adds the key. If the key already exist, its expiry will be updated.
+    /// @dev Adds the key. If the key already exist, its expiry will be updated.
     function _addKey(Key memory key) internal virtual returns (bytes32 keyHash) {
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         keyHash = hash(key);
@@ -325,14 +328,14 @@ contract Delegation is Receiver, EIP712, ERC7821 {
         $.keyHashes.add(keyHash);
     }
 
-    /// @notice Removes the key corresponding to the `keyHash`. Reverts if the key does not exist.
+    /// @dev Removes the key corresponding to the `keyHash`. Reverts if the key does not exist.
     function _removeKey(bytes32 keyHash) internal virtual {
         DelegationStorage storage $ = _getDelegationStorage();
         $.keyStorage[keyHash].clear();
         if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
     }
 
-    /// @notice Guards a function such that it can only be called by `address(this)`.
+    /// @dev Guards a function such that it can only be called by `address(this)`.
     modifier onlyThis() virtual {
         if (msg.sender != address(this)) revert Unauthorized();
         _;
@@ -342,7 +345,7 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     // ERC7821
     ////////////////////////////////////////////////////////////////////////
 
-    /// @notice For ERC7821.
+    /// @dev For ERC7821.
     function _execute(Call[] calldata calls, bytes calldata opData)
         internal
         virtual
@@ -383,7 +386,7 @@ contract Delegation is Receiver, EIP712, ERC7821 {
     // EIP712
     ////////////////////////////////////////////////////////////////////////
 
-    /// @notice For EIP712.
+    /// @dev For EIP712.
     function _domainNameAndVersion()
         internal
         view
