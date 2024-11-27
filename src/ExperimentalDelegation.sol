@@ -11,6 +11,7 @@ import {EIP712} from "solady/utils/EIP712.sol";
 import {ECDSA} from "solady/utils/ECDSA.sol";
 import {P256} from "solady/utils/P256.sol";
 import {WebAuthn} from "solady/utils/WebAuthn.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 
 contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
@@ -45,7 +46,7 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
 
     /// @notice Holds the storage.
     struct ExperimentalDelegationStorage {
-        bool initialized;
+        address entryPoint;
         LibBytes.BytesStorage label;
         LibBitmap.Bitmap invalidatedNonces;
         uint256 nonceSalt;
@@ -69,8 +70,8 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
     // Errors
     ////////////////////////////////////////////////////////////////////////
 
-    /// @notice The EOA has already been initialized.
-    error AlreadyInitialized();
+    /// @notice This feature has not been implemented yet.
+    error Unimplemented();
 
     /// @notice The key is expired or unauthorized.
     error KeyExpiredOrUnauthorized();
@@ -88,8 +89,11 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
     // Events
     ////////////////////////////////////////////////////////////////////////
 
-    /// @notice The label has been updated to `label`.
-    event LabelSet(string label);
+    /// @notice The entry point has been updated to `newEntryPoint`.
+    event EntryPointSet(address newEntryPoint);
+
+    /// @notice The label has been updated to `newLabel`.
+    event LabelSet(string newLabel);
 
     /// @notice The key with a corresponding `keyHash` has been authorized.
     event Authorized(bytes32 indexed keyHash, Key key);
@@ -108,24 +112,7 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @notice For EIP-712 signature digest calculation for the `execute` function.
-    /// "Execute(Call[] calls,uint256 nonce,uint256 nonceSalt)
-    /// Call(address target,uint256 value,bytes data)"
-    ///
-    /// The `opData` in `execute` will be constructed with the following:
-    /// ```
-    /// abi.encodePacked(
-    ///     uint256(nonce),
-    ///     uint128(maxPriorityFee),
-    ///     uint128(maxFeePerGas),
-    ///     uint64(verificationGas),
-    ///     uint64(callGas),
-    ///     uint64(preVerificationGas),
-    ///     address(paymaster),
-    ///     address(paymasterToken),
-    ///     uint256(paymasterTokenAmount),
-    ///     bytes(signature)
-    /// )
-    /// ```
+    /// "Execute(Call[] calls,uint256 nonce,uint256 nonceSalt)Call(address target,uint256 value,bytes data)"
     bytes32 public constant EXECUTE_TYPEHASH =
         0xe530e62dece51c9bec26701907051ddc8420a62f028096eeb58263193e84e049;
 
@@ -163,10 +150,16 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
     // If a signature is required to call these functions, please use the `execute`
     // function with `auth` set to `abi.encode(nonce, signature)`.
 
+    /// @notice Sets the entry point.
+    function setEntryPoint(address newEntryPoint) public virtual onlyThis {
+        _getExperimentalDelegationStorage().entryPoint = newEntryPoint;
+        emit EntryPointSet(newEntryPoint);
+    }
+
     /// @notice Sets the label.
-    function setLabel(string calldata label_) public virtual onlyThis {
-        _getExperimentalDelegationStorage().label.set(bytes(label_));
-        emit LabelSet(label_);
+    function setLabel(string calldata newLabel) public virtual onlyThis {
+        _getExperimentalDelegationStorage().label.set(bytes(newLabel));
+        emit LabelSet(newLabel);
     }
 
     /// @notice Revokes the key corresponding to `keyHash`.
@@ -201,6 +194,10 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
     ////////////////////////////////////////////////////////////////////////
     // Public View Functions
     ////////////////////////////////////////////////////////////////////////
+
+    function entryPoint() public view virtual returns (address) {
+        return _getExperimentalDelegationStorage().entryPoint;
+    }
 
     function label() public view virtual returns (string memory) {
         return string(_getExperimentalDelegationStorage().label.get());
@@ -335,33 +332,56 @@ contract ExperimentalDelegation is Receiver, EIP712, ERC7821 {
         if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
     }
 
-    /// @notice Requires that the caller is `address(this)`.
-    function _checkThis() internal view virtual {
-        if (msg.sender != address(this)) revert Unauthorized();
-    }
-
     /// @notice Guards a function such that it can only be called by `address(this)`.
     modifier onlyThis() virtual {
-        _checkThis();
+        if (msg.sender != address(this)) revert Unauthorized();
         _;
     }
 
     ////////////////////////////////////////////////////////////////////////
-    // Overrides
+    // ERC7821
     ////////////////////////////////////////////////////////////////////////
 
     /// @notice For ERC7821.
-    function _authorizeExecute(Call[] calldata calls, bytes calldata opData)
+    function _execute(Call[] calldata calls, bytes calldata opData)
         internal
-        view
+        virtual
         override
+        returns (bytes[] memory)
     {
-        if (opData.length == uint256(0)) {
-            _checkThis();
-        } else {
-            if (!_isValidSignature(computeDigest(calls, opData), opData[32:])) revert Unauthorized();
+        // Entry point workflow.
+        if (msg.sender == entryPoint()) {
+            // If the sender is the trusted entry point, we assume that `calls` have
+            // been authorized via signature that has been checked on the entry point.
+            // In this case, `opData` will be used to pass paymaster information instead.
+            address paymentERC20 = address(bytes20(LibBytes.loadCalldata(opData, 0x00)));
+            uint256 requiredBalanceAfter = uint256(LibBytes.loadCalldata(opData, 0x14))
+                + SafeTransferLib.balanceOf(paymentERC20, msg.sender);
+
+            bytes[] memory results = _execute(calls);
+
+            uint256 balanceAfter = SafeTransferLib.balanceOf(paymentERC20, msg.sender);
+            if (requiredBalanceAfter > balanceAfter) {
+                unchecked {
+                    uint256 delta = requiredBalanceAfter - balanceAfter;
+                    SafeTransferLib.safeTransfer(paymentERC20, msg.sender, delta);
+                }
+            }
+            return results;
         }
+
+        // Simple workflow.
+        if (opData.length == uint256(0)) {
+            if (msg.sender != address(this)) revert Unauthorized();
+            return _execute(calls);
+        }
+        if (!_isValidSignature(computeDigest(calls, opData), opData[32:])) revert Unauthorized();
+        return _execute(calls);
     }
+
+    ////////////////////////////////////////////////////////////////////////
+    // EIP712
+    ////////////////////////////////////////////////////////////////////////
 
     /// @notice For EIP712.
     function _domainNameAndVersion()
