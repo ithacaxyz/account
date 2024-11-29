@@ -11,7 +11,7 @@ import {P256} from "solady/utils/P256.sol";
 import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {Delegation} from "./Delegation.sol";
-import {LibOp} from "./LibOp.sol";
+import {LibOps} from "./LibOps.sol";
 
 // NOTE: Try to keep this contract as stateless as possible.
 contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
@@ -77,7 +77,12 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     /// @dev Executes the array of encoded user operations.
     /// Each element in `encodedUserOps` is given by `abi.encode(userOp)`,
     /// where `userOp` is a struct of type `UserOp`.
-    function executeUserOps(bytes[] calldata encodedUserOps) public payable virtual returns (bytes[] memory encodedCallResults) {
+    function executeUserOps(bytes[] calldata encodedUserOps)
+        public
+        payable
+        virtual
+        returns (bytes[] memory encodedCallResults)
+    {
         for (uint256 i; i < encodedUserOps.length; ++i) {
             bytes calldata encodedUserOp = _get(encodedUserOps, i);
             UserOp calldata userOp = _decodeUserOp(encodedUserOp);
@@ -90,30 +95,32 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
 
-    function _computeDigest() internal view virtual {
-        // UserOp calldata userOp = _calldataUserOp();
-    }
-
-    function _execute() internal view virtual {
-        // UserOp calldata userOp = _calldataUserOp();
-    }
-
-    function _selfCall(uint256 gasLimit, uint32 internalSelector, bytes calldata encodedUserOp) internal virtual returns (bool success, bytes memory result) {
+    function _selfCall(uint256 gasLimit, uint32 internalSelector, bytes calldata encodedUserOp)
+        internal
+        virtual
+        returns (bool success, bytes memory result)
+    {
         assembly ("memory-safe") {
-            let m := mload(0x40)
+            let m := mload(0x40) // Grab the free memory pointer.
             mstore(m, internalSelector)
             calldatacopy(add(m, 0x20), encodedUserOp.offset, encodedUserOp.length)
-            success := call(gasLimit, address(), 0, add(m, 0x1c), add(0x04, encodedUserOp.length), 0x00, 0x00)
+            success :=
+                call(gasLimit, address(), 0, add(m, 0x1c), add(0x04, encodedUserOp.length), 0x00, 0x00)
             if returndatasize() {
                 result := mload(0x40)
-                mstore(result, returndatasize())
-                returndatacopy(add(result, 0x20), 0x00, returndatasize())
-                mstore(0x40, add(add(result, 0x20), returndatasize()))
+                mstore(result, returndatasize()) // Store the length.
+                returndatacopy(add(result, 0x20), 0x00, returndatasize()) // Copy the returndata.
+                mstore(0x40, add(add(result, 0x20), returndatasize())) // Allocate memory.
             }
         }
     }
 
-    function _userOpExecutionData(UserOp calldata userOp) internal pure virtual returns (bytes calldata result) {
+    function _userOpExecutionData(UserOp calldata userOp)
+        internal
+        pure
+        virtual
+        returns (bytes calldata result)
+    {
         assembly ("memory-safe") {
             let o := add(userOp, calldataload(add(userOp, 0x20)))
             result.offset := add(o, 0x20)
@@ -121,7 +128,12 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
         }
     }
 
-    function _userOpSignature(UserOp calldata userOp) internal pure virtual returns (bytes calldata result) {
+    function _userOpSignature(UserOp calldata userOp)
+        internal
+        pure
+        virtual
+        returns (bytes calldata result)
+    {
         assembly ("memory-safe") {
             let o := add(userOp, calldataload(add(userOp, 0x100)))
             result.offset := add(o, 0x20)
@@ -139,9 +151,9 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
             let end := sub(add(encodedUserOp.offset, encodedUserOp.length), 0x20)
             let o := calldataload(encodedUserOp.offset)
             userOp := add(encodedUserOp.offset, o)
-            let p := calldataload(add(userOp, 0x20))
+            let p := calldataload(add(userOp, 0x20)) // Position of `executionData`.
             let i := add(userOp, p)
-            let q := calldataload(add(userOp, 0x100))
+            let q := calldataload(add(userOp, 0x100)) // Position of `signature`.
             let j := add(userOp, q)
             if or(
                 shr(64, or(or(o, or(p, q)), or(calldataload(i), calldataload(j)))),
@@ -153,12 +165,6 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
                 mstore(0x00, 0x2b64b01d) // `UserOpDecodeError()`.
                 revert(0x1c, 0x04)
             }
-        }
-    }
-
-    function _calldataUserOp() internal pure virtual returns (UserOp calldata userOp) {
-        assembly ("memory-safe") {
-            userOp := add(0x04, calldataload(0x04))
         }
     }
 
@@ -175,25 +181,42 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
         }
     }
 
-    // function _execute(UserOp calldata userOp) internal virtual returns (bool success) {
-    //     // TODO: Implement checks for the ERC20 payment.
+    function _calldataUserOp() internal pure virtual returns (UserOp calldata userOp) {
+        assembly ("memory-safe") {
+            userOp := add(0x04, calldataload(0x04))
+        }
+    }
 
-    //     require(msg.sender == address(this));
-    //     bytes32 keyHash = LibOp.wrappedSignatureKeyHash(userOp.signature);
+    function _computeDigest() internal view virtual {
+        // UserOp calldata userOp = _calldataUserOp();
+    }
 
-    //     // All these encoding feel expensive. Optimize later if possible.
-    //     bytes memory opData = LibOp.encodeOpDataFromEntryPoint(
-    //         userOp.nonce, keyHash, userOp.paymentERC20, userOp.paymentAmount
-    //     );
-    //     bytes memory executionData = abi.encode(userOp.calls, opData);
+    function _execute() internal virtual {
+        require(msg.sender == address(this));
+        UserOp calldata userOp = _calldataUserOp();
 
-    //     // TODO: limit the gas to `callGas` here.
-    //     try Delegation(payable(userOp.eoa)).execute(bytes1(0x01), executionData) {
-    //         success = true;
-    //     } catch {
-    //         success = false;
-    //     }
-    // }
+        // address paymentERC20 = userOp;
+        // uint256 balanceBefore = SafeTransferLib.balanceOf()
+
+        // bytes32 keyHash = LibOps.wrappedSignatureKeyHash(userOp.signature);
+
+        // // All these encoding feel expensive. Optimize later if possible.
+        // bytes memory opData = LibOps.encodeOpDataFromEntryPoint(
+        //     userOp.nonce, keyHash, userOp.paymentERC20, userOp.paymentAmount
+        // );
+        // bytes memory executionData = abi.encode(userOp.calls, opData);
+
+        // // TODO: limit the gas to `callGas` here.
+        // try Delegation(payable(userOp.eoa)).execute(bytes1(0x01), executionData) {
+        //     success = true;
+        // } catch {
+        //     success = false;
+        // }
+    }
+
+    function _execute(UserOp calldata userOp) internal virtual returns (bool success) {
+        // TODO: Implement checks for the ERC20 payment.
+    }
 
     ////////////////////////////////////////////////////////////////////////
     // Fallback
@@ -206,7 +229,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     fallback() external payable virtual {
         uint256 s = uint32(bytes4(msg.sig));
         if (s == uint32(bytes4(keccak256("_computeDigest()")))) {}
-        if (s == uint32(bytes4(keccak256("_execute()")))) {}
+        if (s == uint32(bytes4(keccak256("_execute()")))) _execute();
     }
 
     ////////////////////////////////////////////////////////////////////////

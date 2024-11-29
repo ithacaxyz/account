@@ -13,7 +13,7 @@ import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
-import {LibOp} from "./LibOp.sol";
+import {LibOps} from "./LibOps.sol";
 
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
@@ -315,7 +315,7 @@ contract Delegation is Receiver, EIP712, GuardedExecutor {
         }
 
         bool prehash;
-        (signature, keyHash, prehash) = LibOp.unwrapSignature(signature);
+        (signature, keyHash, prehash) = LibOps.unwrapSignature(signature);
         if (prehash) digest = sha256(abi.encode(digest)); // Do the prehash if last byte is non-zero.
 
         Key memory key = getKey(keyHash);
@@ -367,23 +367,23 @@ contract Delegation is Receiver, EIP712, GuardedExecutor {
     {
         // Entry point workflow.
         if (msg.sender == entryPoint()) {
-            _useNonce(LibOp.opDataNonce(opData));
+            _useNonce(LibOps.opDataNonce(opData));
             // If the sender is the trusted entry point, we assume that `calls` have
             // been authorized via signature that has been checked on the entry point.
             // In this case, `opData` will be used to pass paymaster information instead.
-            address paymentERC20 = LibOp.opDataPaymentERC20(opData);
-            uint256 requiredBalanceAfter = SafeTransferLib.balanceOf(paymentERC20, msg.sender) // `balanceBefore`.
-                + LibOp.opDataPaymentAmount(opData);
+            address paymentERC20 = LibOps.opDataPaymentERC20(opData);
+            uint256 requiredBalanceAfter = 
+                LibOps.balanceOf(paymentERC20, msg.sender) // `balanceBefore`.
+                + LibOps.opDataPaymentAmount(opData);
 
-            bytes[] memory results = _execute(calls, LibOp.opDataKeyHash(opData));
+            bytes[] memory results = _execute(calls, LibOps.opDataKeyHash(opData));
 
-            uint256 balanceAfter = SafeTransferLib.balanceOf(paymentERC20, msg.sender);
+            uint256 balanceAfter = LibOps.balanceOf(paymentERC20, msg.sender);
             if (requiredBalanceAfter > balanceAfter) {
                 unchecked {
-                    SafeTransferLib.safeTransfer(
-                        paymentERC20, msg.sender, requiredBalanceAfter - balanceAfter
-                    );
+                    LibOps.safeTransfer(paymentERC20, msg.sender, requiredBalanceAfter - balanceAfter);
                 }
+
             }
             return results;
         }
@@ -393,10 +393,10 @@ contract Delegation is Receiver, EIP712, GuardedExecutor {
             if (msg.sender != address(this)) revert Unauthorized();
             return _execute(calls, bytes32(0));
         }
-        uint256 nonce = LibOp.opDataNonce(opData);
+        uint256 nonce = LibOps.opDataNonce(opData);
         _useNonce(nonce);
         (bool isValid, bytes32 keyHash) = _unwrapAndValidateSignature(
-            computeDigest(calls, nonce), LibOp.opDataWrappedSignature(opData)
+            computeDigest(calls, nonce), LibOps.opDataWrappedSignature(opData)
         );
         if (!isValid) revert Unauthorized();
         return _execute(calls, keyHash);

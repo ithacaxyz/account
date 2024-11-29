@@ -24,9 +24,13 @@ contract EntryPointTest is SoladyTest {
         ep.executeUserOps(_encodeUserOps(t.userOps));
     }
 
-    function _encodeUserOps(EntryPoint.UserOp[] memory userOps) internal pure returns (bytes[] memory results) {
+    function _encodeUserOps(EntryPoint.UserOp[] memory userOps)
+        internal
+        pure
+        returns (bytes[] memory results)
+    {
         results = new bytes[](userOps.length);
-        for (uint i; i < userOps.length; ++i) {
+        for (uint256 i; i < userOps.length; ++i) {
             results[i] = abi.encode(userOps[i]);
         }
     }

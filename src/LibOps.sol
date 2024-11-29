@@ -2,10 +2,11 @@
 pragma solidity ^0.8.23;
 
 import {LibBytes} from "solady/utils/LibBytes.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
-/// @title LibOp
+/// @title LibOps
 /// @notice A library to handle encoding and decoding of op data.
-library LibOp {
+library LibOps {
     /// @dev Returns a wrapped signature containing `innerSignature`, `keyHash`, and `prehash`.
     function wrapSignature(bytes memory innerSignature, bytes32 keyHash, bool prehash)
         internal
@@ -23,9 +24,7 @@ library LibOp {
         pure
         returns (bytes calldata innerSignature, bytes32 keyHash, bool prehash)
     {
-        assembly {
-            innerSignature.offset := 0
-        }
+        innerSignature = LibBytes.emptyCalldata();
         unchecked {
             if (wrappedSignature.length >= 33) {
                 uint256 n = wrappedSignature.length - 33;
@@ -65,7 +64,7 @@ library LibOp {
         pure
         returns (bytes calldata wrappedSignature)
     {
-        return opData[32:];
+        return LibBytes.sliceCalldata(opData, 32);
     }
 
     /// @dev Returns the op data containing the fields passed from the entry point.
@@ -96,5 +95,18 @@ library LibOp {
     /// @dev Returns the `paymentAmount` in the `opData`.
     function opDataPaymentAmount(bytes calldata opData) internal pure returns (uint256) {
         return uint256(LibBytes.loadCalldata(opData, 0x54));
+    }
+
+    function balanceOf(address token, address owner) internal view returns (uint256) {
+        if (token == address(0)) return owner.balance;
+        return SafeTransferLib.balanceOf(token, owner);
+    }
+
+    function safeTransfer(address token, address to, uint256 amount) internal {
+        if (token == address(0)) {
+            SafeTransferLib.safeTransferETH(msg.sender, amount);
+        } else {
+            SafeTransferLib.safeTransfer(token, msg.sender, amount);
+        }
     }
 }
