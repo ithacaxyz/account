@@ -24,16 +24,15 @@ library LibOp {
         returns (bytes calldata innerSignature, bytes32 keyHash, bool prehash)
     {
         assembly {
-                innerSignature.offset := 0
-            }
+            innerSignature.offset := 0
+        }
         unchecked {
             if (wrappedSignature.length >= 33) {
                 uint256 n = wrappedSignature.length - 33;
                 keyHash = LibBytes.loadCalldata(wrappedSignature, n);
                 prehash = uint256(LibBytes.loadCalldata(wrappedSignature, n + 1)) & 0xff != 0;
                 innerSignature = LibBytes.truncatedCalldata(wrappedSignature, n);
-            } 
-            
+            }
         }
     }
 
