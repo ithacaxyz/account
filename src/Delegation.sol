@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {Receiver} from "solady/accounts/Receiver.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
@@ -10,14 +9,13 @@ import {EIP712} from "solady/utils/EIP712.sol";
 import {ECDSA} from "solady/utils/ECDSA.sol";
 import {P256} from "solady/utils/P256.sol";
 import {WebAuthn} from "solady/utils/WebAuthn.sol";
-import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {LibOps} from "./LibOps.sol";
 
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
-contract Delegation is Receiver, EIP712, GuardedExecutor {
+contract Delegation is EIP712, GuardedExecutor {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
     using LibBytes for LibBytes.BytesStorage;
@@ -355,11 +353,25 @@ contract Delegation is Receiver, EIP712, GuardedExecutor {
     }
 
     ////////////////////////////////////////////////////////////////////////
+    // Entry Point Functions
+    ////////////////////////////////////////////////////////////////////////
+
+    function payEntryPoint(address paymentToken, uint256 paymentAmount)
+        public
+        virtual
+        returns (bool)
+    {
+        if (msg.sender != entryPoint()) revert Unauthorized();
+        LibOps.safeTransfer(paymentToken, msg.sender, paymentAmount);
+        return true;
+    }
+
+    ////////////////////////////////////////////////////////////////////////
     // ERC7821
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev For ERC7821.
-    function _execute(Call[] calldata calls, bytes calldata opData)
+    function _execute(bytes32, bytes calldata, Call[] calldata calls, bytes calldata opData)
         internal
         virtual
         override
@@ -368,24 +380,7 @@ contract Delegation is Receiver, EIP712, GuardedExecutor {
         // Entry point workflow.
         if (msg.sender == entryPoint()) {
             _useNonce(LibOps.opDataNonce(opData));
-            // If the sender is the trusted entry point, we assume that `calls` have
-            // been authorized via signature that has been checked on the entry point.
-            // In this case, `opData` will be used to pass paymaster information instead.
-            address paymentERC20 = LibOps.opDataPaymentERC20(opData);
-            uint256 requiredBalanceAfter = 
-                LibOps.balanceOf(paymentERC20, msg.sender) // `balanceBefore`.
-                + LibOps.opDataPaymentAmount(opData);
-
-            bytes[] memory results = _execute(calls, LibOps.opDataKeyHash(opData));
-
-            uint256 balanceAfter = LibOps.balanceOf(paymentERC20, msg.sender);
-            if (requiredBalanceAfter > balanceAfter) {
-                unchecked {
-                    LibOps.safeTransfer(paymentERC20, msg.sender, requiredBalanceAfter - balanceAfter);
-                }
-
-            }
-            return results;
+            return _execute(calls, LibOps.opDataKeyHash(opData));
         }
 
         // Simple workflow.

@@ -11,27 +11,36 @@ contract EntryPointTest is SoladyTest {
         ep = new EntryPoint();
     }
 
-    struct _TestTemps {
-        EntryPoint.UserOp[] userOps;
+    function testDirectExecuteSuccess() public {
+        EntryPoint.UserOp memory userOp;
+        userOp.signature = "hello";
+        bytes memory encoded = abi.encode(userOp);
+        (bool success, ) = address(ep).call(abi.encodePacked(uint32(0x01010101), uint256(123), encoded));
+        assertTrue(success);
+        // EntryPoint.Call[] memory calls = new EntryPoint.Call[](2);
     }
 
-    function testEntryPointDecode() public {
-        _TestTemps memory t;
-        t.userOps = new EntryPoint.UserOp[](2);
-        t.userOps[0].callGas = 123;
-        t.userOps[1].callGas = 456;
-        t.userOps[0].signature = "hehe";
-        ep.executeUserOps(_encodeUserOps(t.userOps));
-    }
+    // struct _TestTemps {
+    //     EntryPoint.UserOp[] userOps;
+    // }
 
-    function _encodeUserOps(EntryPoint.UserOp[] memory userOps)
-        internal
-        pure
-        returns (bytes[] memory results)
-    {
-        results = new bytes[](userOps.length);
-        for (uint256 i; i < userOps.length; ++i) {
-            results[i] = abi.encode(userOps[i]);
-        }
-    }
+    // function testEntryPointDecode() public {
+    //     _TestTemps memory t;
+    //     t.userOps = new EntryPoint.UserOp[](2);
+    //     t.userOps[0].callGas = 123;
+    //     t.userOps[1].callGas = 456;
+    //     t.userOps[0].signature = "hehe";
+    //     ep.executeUserOps(_encodeUserOps(t.userOps));
+    // }
+
+    // function _encodeUserOps(EntryPoint.UserOp[] memory userOps)
+    //     internal
+    //     pure
+    //     returns (bytes[] memory results)
+    // {
+    //     results = new bytes[](userOps.length);
+    //     for (uint256 i; i < userOps.length; ++i) {
+    //         results[i] = abi.encode(userOps[i]);
+    //     }
+    // }
 }

@@ -35,20 +35,6 @@ library LibOps {
         }
     }
 
-    /// @dev Returns the `keyHash` in the `wrappedSignature`.
-    /// If the signature is too short, it will simply return `bytes32(0)`.
-    function wrappedSignatureKeyHash(bytes calldata wrappedSignature)
-        internal
-        pure
-        returns (bytes32 keyHash)
-    {
-        unchecked {
-            if (wrappedSignature.length >= 33) {
-                return LibBytes.loadCalldata(wrappedSignature, wrappedSignature.length - 33);
-            }
-        }
-    }
-
     /// @dev Returns the op data containing `nonce` and `wrappedSignature`.
     function encodeOpDataSimple(uint256 nonce, bytes memory wrappedSignature)
         internal
@@ -68,13 +54,12 @@ library LibOps {
     }
 
     /// @dev Returns the op data containing the fields passed from the entry point.
-    function encodeOpDataFromEntryPoint(
-        uint256 nonce,
-        bytes32 keyHash,
-        address paymentERC20,
-        uint256 paymentAmount
-    ) internal pure returns (bytes memory) {
-        return abi.encodePacked(nonce, keyHash, paymentERC20, paymentAmount);
+    function encodeOpDataFromEntryPoint(uint256 nonce, bytes32 keyHash)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(nonce, keyHash);
     }
 
     /// @dev Returns the `nonce` in the `opData`.
@@ -87,26 +72,20 @@ library LibOps {
         return LibBytes.loadCalldata(opData, 0x20);
     }
 
-    /// @dev Returns the `paymentERC20` in the `opData`.
-    function opDataPaymentERC20(bytes calldata opData) internal pure returns (address) {
-        return address(bytes20(LibBytes.loadCalldata(opData, 0x40)));
-    }
-
-    /// @dev Returns the `paymentAmount` in the `opData`.
-    function opDataPaymentAmount(bytes calldata opData) internal pure returns (uint256) {
-        return uint256(LibBytes.loadCalldata(opData, 0x54));
-    }
-
+    /// @dev ERC20 or native token balance query.
+    /// If `token` is `address(0)`, it is treated as a native token balance query.
     function balanceOf(address token, address owner) internal view returns (uint256) {
         if (token == address(0)) return owner.balance;
         return SafeTransferLib.balanceOf(token, owner);
     }
 
+    /// @dev ERC20 or native token transfer function.
+    /// If `token` is `address(0)`, it is treated as a native token transfer.
     function safeTransfer(address token, address to, uint256 amount) internal {
         if (token == address(0)) {
-            SafeTransferLib.safeTransferETH(msg.sender, amount);
+            SafeTransferLib.safeTransferETH(to, amount);
         } else {
-            SafeTransferLib.safeTransfer(token, msg.sender, amount);
+            SafeTransferLib.safeTransfer(token, to, amount);
         }
     }
 }
