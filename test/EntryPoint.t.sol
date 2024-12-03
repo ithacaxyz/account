@@ -2,13 +2,13 @@
 pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
-import {EntryPoint} from "../src/EntryPoint.sol";
+import {EntryPoint, MockEntryPoint} from "./utils/mocks/MockEntryPoint.sol";
 
 contract EntryPointTest is SoladyTest {
     EntryPoint public ep;
 
     function setUp() public {
-        ep = new EntryPoint();
+        ep = new MockEntryPoint();
     }
 
     function testDirectExecuteSuccess() public {

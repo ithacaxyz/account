@@ -266,6 +266,15 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
         }
     }
 
+    // Self call functions
+    // -------------------
+    // For these self call functions, we shall use the `fallback`.
+    // This is so that they can be hidden from the public api, 
+    // and for facilitating unit testing via a mock.
+    //
+    // All write self call functions must be guarded with a 
+    // `require(msg.sender == address(this))` in the fallback.
+
     /// @dev Makes the `eoa` perform a payment to the `entryPoint`.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
     function _payEntryPoint(UserOp calldata userOp) internal virtual {
