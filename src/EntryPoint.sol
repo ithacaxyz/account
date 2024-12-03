@@ -46,28 +46,28 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     /// we don't need to be too concerned about calldata overhead.
     struct UserOp {
         /// @dev The user's address.
-        address eoa; // 0x00.
+        address eoa;
         /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
         /// `abi.encode(calls)`, where `calls` is an array of type `Call[]`.
         /// This allows for more efficient safe forwarding to the EOA.
-        bytes executionData; // 0x20.
+        bytes executionData;
         /// @dev Per delegated EOA.
-        uint256 nonce; // 0x40.
+        uint256 nonce;
         /// @dev The ERC20 or native token used to pay for gas.
-        address paymentToken; // 0x60.
+        address paymentToken;
         /// @dev The amount of the token to pay.
-        uint256 paymentAmount; // 0x80.
+        uint256 paymentAmount;
         /// @dev The maximum amount of the token to pay.
-        uint256 paymentMaxAmount; // 0xa0.
+        uint256 paymentMaxAmount;
         /// @dev The gas limit for the payment.
-        uint256 paymentGas; // 0xc0.
+        uint256 paymentGas;
         /// @dev The gas limit for the verification.
-        uint256 verificationGas; // 0xe0.
+        uint256 verificationGas;
         /// @dev The gas limit for calling the EOA.
-        uint256 callGas; // 0x100.
+        uint256 callGas;
         /// @dev The wrapped signature.
         /// `abi.encodePacked(innerSignature, keyHash, prehash)`.
-        bytes signature; // 0x120.
+        bytes signature;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -88,7 +88,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
 
     /// @dev Position of the signature bytes in the `userOp` struct.
     uint256 internal constant _USER_OP_SIGNATURE_POS = 0x120;
-    
+
     ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
@@ -111,7 +111,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
 
     /// @dev For debugging.
     event LogUserOp(UserOp userOp);
-    
+
     /// @dev For debugging.
     event LogBytes(bytes value);
 
