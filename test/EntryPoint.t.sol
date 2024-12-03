@@ -15,7 +15,8 @@ contract EntryPointTest is SoladyTest {
         EntryPoint.UserOp memory userOp;
         userOp.signature = "hello";
         bytes memory encoded = abi.encode(userOp);
-        (bool success, ) = address(ep).call(abi.encodePacked(uint32(0x01010101), uint256(123), encoded));
+        (bool success,) =
+            address(ep).call(abi.encodePacked(uint32(0x01010101), uint256(123), encoded));
         assertTrue(success);
         // EntryPoint.Call[] memory calls = new EntryPoint.Call[](2);
     }

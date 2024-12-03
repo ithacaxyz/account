@@ -6,10 +6,7 @@ import {Ownable} from "solady/auth/Ownable.sol";
 import {UUPSUpgradeable} from "solady/utils/UUPSUpgradeable.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
-import {ECDSA} from "solady/utils/ECDSA.sol";
-import {P256} from "solady/utils/P256.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
-import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {Delegation} from "./Delegation.sol";
 import {LibOps} from "./LibOps.sol";
 
@@ -74,34 +71,64 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     }
 
     ////////////////////////////////////////////////////////////////////////
+    // Constants
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Position of payment gas in the `userOp` struct.
+    uint256 internal constant _USER_OP_PAYMENT_GAS_POS = 0xc0;
+
+    /// @dev Position of verification gas in the `userOp` struct.
+    uint256 internal constant _USER_OP_VERIFICATION_GAS_POS = 0xe0;
+
+    /// @dev Position of call gas in the `userOp` struct.
+    uint256 internal constant _USER_OP_CALL_GAS_POS = 0x100;
+
+    /// @dev Position of the execution data bytes in the `userOp` struct.
+    uint256 internal constant _USER_OP_EXECUTION_DATA_POS = 0x20;
+
+    /// @dev Position of the signature bytes in the `userOp` struct.
+    uint256 internal constant _USER_OP_SIGNATURE_POS = 0x120;
+    
+    ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev The encoded user op is improperly encoded.
     error UserOpDecodeError();
 
+    /// @dev Insufficient payment or failed to pay the entry point.
     error EntryPointPaymentFailed();
+
+    /// @dev The function selector is not recognized.
+    error FnSelectorNotRecognized();
+
+    /// @dev Only the entry point itself can make a self-call.
+    error SelfCallUnauthorized();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev For debugging.
     event LogUserOp(UserOp userOp);
+    
+    /// @dev For debugging.
     event LogBytes(bytes value);
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev For EIP-712 signature digest calculation for the `execute` function.
+    /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant USER_OP_TYPEHASH = keccak256(
         "UserOp(address eoa,Call[] calls,uint256 nonce,uint256 nonceSalt,address paymentToken,uint256 paymentMaxAmount,uint256 paymentGas,uint256 verificationGas,uint256 callGas)Call(address target,uint256 value,bytes data)"
     );
 
-    /// @dev For EIP-712 signature digest calculation for the `execute` function.
+    /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant CALL_TYPEHASH =
         keccak256("Call(address target,uint256 value,bytes data)");
 
-    /// @dev For EIP-712 signature digest calculation.
+    /// @dev For EIP712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
 
     ////////////////////////////////////////////////////////////////////////
@@ -119,77 +146,72 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     {
         assembly ("memory-safe") {
             statuses := mload(0x40)
-            mstore(statuses, encodedUserOps.length)
-            mstore(0x40, add(add(0x20, statuses), shl(5, encodedUserOps.length)))
+            mstore(statuses, encodedUserOps.length) // Store length of `statuses`.
+            mstore(0x40, add(add(0x20, statuses), shl(5, encodedUserOps.length))) // Allocate memory.
 
-            for { let i := 0 } lt(i, encodedUserOps.length) { i := add(i, 1) } {
-                let userOp := 0
-                let u :=
-                    add(encodedUserOps.offset, calldataload(add(encodedUserOps.offset, shl(5, i))))
-                let eOffset := add(u, 0x20)
-                let eLength := calldataload(u)
-                calldatacopy(add(mload(0x40), 0x40), eOffset, eLength)
-                // This chunk of code carefully verifies that `encodedUserOps`
-                // has been properly encoded.
+            for { let i := 0 } iszero(eq(i, encodedUserOps.length)) { i := add(i, 1) } {
+                let m := mload(0x40) // The free memory pointer.
+                let u // Pointer to the `userOp` in calldata.
+                let s := add(m, 0x1c) // Start of the calldata in memory to pass to the self call.
+                let n // Length of the calldata in memory to pass to the self call.
+
+                // This chunk of code prepares the variables and also
+                // carefully verifies that `encodedUserOps` has been properly encoded,
+                // such that no nested dynamic types (i.e. UserOp, bytes) are out of bounds.
                 {
-                    let end := sub(add(eOffset, eLength), 0x20)
-                    let o := calldataload(eOffset)
-                    userOp := add(eOffset, o)
-                    let p := calldataload(add(userOp, 0x20)) // Position of `executionData`.
-                    let y := add(userOp, p)
-                    let q := calldataload(add(userOp, 0x100)) // Position of `signature`.
-                    let z := add(userOp, q)
+                    let t :=
+                        add(encodedUserOps.offset, calldataload(add(encodedUserOps.offset, shl(5, i))))
+                    let o := add(t, 0x20) // Offset of `encodedUserOps[i]`.
+                    let l := calldataload(t) // Length of `encodedUserOps[i]`.
+                    n := add(0x44, l)
+                    // Copy the encoded user op to the memory to be ready to pass to the self call.
+                    calldatacopy(add(m, 0x40), o, l)
+                    let w := sub(add(o, l), 0x20) // Last word offset of the `encodedUserOps[i]`.
+                    let a := calldataload(o)
+                    u := add(o, a)
+                    let b := calldataload(add(u, _USER_OP_EXECUTION_DATA_POS)) // Offset of `executionData`.
+                    let y := add(u, b)
+                    let c := calldataload(add(u, _USER_OP_SIGNATURE_POS)) // Offset of `signature`.
+                    let z := add(u, c)
                     if or(
-                        shr(64, or(or(o, or(p, q)), or(calldataload(y), calldataload(z)))),
+                        shr(64, or(or(a, or(b, c)), or(calldataload(y), calldataload(z)))),
                         or(
-                            or(gt(add(y, calldataload(y)), end), gt(add(z, calldataload(z)), end)),
-                            or(gt(add(userOp, 0x100), end), lt(eLength, 0x20))
+                            or(gt(add(y, calldataload(y)), w), gt(add(z, calldataload(z)), w)),
+                            or(gt(add(u, 0x100), w), lt(l, 0x20))
                         )
                     ) {
                         mstore(0x00, 0x2b64b01d) // `UserOpDecodeError()`.
                         revert(0x1c, 0x04)
                     }
                 }
-                let m := mload(0x40) // Grab the free memory pointer.
 
-                for { let n := add(0x44, eLength) } 1 {} {
-                    let s := add(m, 0x1c)
-                    let o := add(add(0x20, statuses), shl(5, i))
+                for {} 1 {} {
                     mstore(m, 0xcc1d5274) // `_payEntryPoint()`.
-                    mstore(0x00, 0)
-                    if iszero(
-                        and(
-                            eq(1, mload(0x00)),
-                            call(add(userOp, 0xc0), address(), 0, s, n, 0x00, 0x20) // `paymentGas`.
-                        )
-                    ) {
-                        mstore(o, 3) // `PaymentFailure`.
+                    mstore(0x00, 0) // Zeroize the return slot.
+                    let g := calldataload(add(u, _USER_OP_PAYMENT_GAS_POS)) // `paymentGas`.
+                    // This returns `(bool success)`.
+                    if iszero(and(eq(1, mload(0x00)), call(g, address(), 0, s, n, 0x00, 0x20))) {
+                        mstore(add(add(0x20, statuses), shl(5, i)), 3) // `PaymentFailure`.
                         break
                     }
                     mstore(m, 0xbaf2bed9) // `_verify()`.
-                    mstore(0x00, 0)
-                    if iszero(
-                        and(
-                            eq(1, mload(0x00)),
-                            call(add(userOp, 0xe0), address(), 0, s, n, 0x00, 0x40) // `verificationGas`.
-                        )
-                    ) {
-                        mstore(o, 2) // `VerificationFailure`.
+                    mstore(0x00, 0) // Zeroize the return slot.
+                    g := calldataload(add(u, _USER_OP_VERIFICATION_GAS_POS)) // `verificationGas`.
+                    // This returns `(bool isValid, bytes32 keyHash)`.
+                    if iszero(and(eq(1, mload(0x00)), call(g, address(), 0, s, n, 0x00, 0x40))) {
+                        mstore(add(add(0x20, statuses), shl(5, i)), 2) // `VerificationFailure`.
                         break
                     }
                     mstore(m, 0x420aadb8) // `_execute()`.
-                    mstore(add(m, 0x20), mload(0x20))
-                    mstore(0x00, 0)
-                    if iszero(
-                        and(
-                            eq(1, mload(0x00)),
-                            call(add(userOp, 0x100), address(), 0, s, n, 0x00, 0x20) // `callGas`.
-                        )
-                    ) {
-                        mstore(o, 1) // `CallFailure`.
+                    mstore(add(m, 0x20), mload(0x20)) // Copy the `keyHash` over.
+                    mstore(0x00, 0) // Zeroize the return slot.
+                    g := calldataload(add(u, _USER_OP_CALL_GAS_POS)) // `callGas`.
+                    // This returns `(bool success)`.
+                    if iszero(and(eq(1, mload(0x00)), call(g, address(), 0, s, n, 0x00, 0x20))) {
+                        mstore(add(add(0x20, statuses), shl(5, i)), 1) // `CallFailure`.
                         break
                     }
-                    mstore(o, 0) // `CallSuccess`.
+                    mstore(add(add(0x20, statuses), shl(5, i)), 0) // `CallSuccess`.
                     break
                 }
             }
@@ -200,6 +222,8 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev Returns the `executionData` in `userOp`, without a bounds check.
+    /// We don't need the bounds check as it has already been done in `execute`.
     function _userOpExecutionData(UserOp calldata userOp)
         internal
         pure
@@ -213,6 +237,8 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
         }
     }
 
+    /// @dev Returns the `signature` in `userOp`, without a bounds check.
+    /// We don't need the bounds check as it has already been done in `execute`.
     function _userOpSignature(UserOp calldata userOp)
         internal
         pure
@@ -220,71 +246,60 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
         returns (bytes calldata result)
     {
         assembly ("memory-safe") {
-            let o := add(userOp, calldataload(add(userOp, 0x100)))
+            let o := add(userOp, calldataload(add(userOp, _USER_OP_SIGNATURE_POS)))
             result.offset := add(o, 0x20)
             result.length := calldataload(o)
         }
     }
 
+    /// @dev Returns the `userOp` struct in calldata passed into a self call.
     function _calldataUserOp() internal pure virtual returns (UserOp calldata result) {
         assembly ("memory-safe") {
             result := add(0x24, calldataload(0x24))
         }
     }
 
+    /// @dev Returns the `keyHash` in calldata passed into a self call.
     function _calldataKeyHash() internal pure virtual returns (bytes32 result) {
         assembly ("memory-safe") {
             result := calldataload(0x04)
         }
     }
 
+    /// @dev Makes the `eoa` perform a payment to the `entryPoint`.
+    /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
     function _payEntryPoint(UserOp calldata userOp) internal virtual {
         address paymentToken = userOp.paymentToken;
         uint256 paymentAmount = userOp.paymentAmount;
         uint256 requiredBalanceAfter = LibOps.balanceOf(paymentToken, address(this)) + paymentAmount;
-        address eoa = userOp.eoa;
-        assembly ("memory-safe") {
-            let m := mload(0x40) // Cache the free memory pointer.
-            mstore(0x00, 0x9c42fb59) // `payEntryPoint(address,uint256)`.
-            mstore(0x20, shr(96, shl(96, paymentToken)))
-            mstore(0x40, paymentAmount)
-            if iszero(
-                and(
-                    and(eq(0x20, returndatasize()), eq(1, mload(0x00))),
-                    call(gas(), eoa, 0, 0x1c, 0x44, 0x00, 0x20)
-                )
-            ) {
-                mstore(0x00, 0x2708dbcf) // `EntryPointPaymentFailed()`.
-                revert(0x1c, 0x04)
-            }
-            mstore(0x40, m) // Restore the free memory pointer.
+        Delegation(payable(userOp.eoa)).payEntryPoint(paymentToken, paymentAmount);
+        if (requiredBalanceAfter > LibOps.balanceOf(paymentToken, address(this))) {
+            revert EntryPointPaymentFailed();
         }
-        uint256 balanceAfter = LibOps.balanceOf(paymentToken, address(this));
-        // Of course, we cannot let the transaction pass if
-        if (requiredBalanceAfter > balanceAfter) revert EntryPointPaymentFailed();
     }
 
-    function _verify(UserOp calldata userOp) internal view virtual returns (bool isValid, bytes32 keyHash) {
-        // bytes32 digest = _computeDigest(userOp);
-        // if (LibBit.or(signature.length == 64, signature.length == 65)) {
-        //     return ECDSA.recoverCalldata(digest, signature) == userOp.eoa;
-        // }
-
-        // bytes32 keyHash = LibOps.wrappedSignatureKeyHash(userOpSignature(userOp));
-        // Delegation.Key memory key = Delegation(payable(userOp.eoa)).getKey(keyHash);
-
-
+    /// @dev Calls `unwrapAndValidateSignature` on the `eoa`.
+    function _verify(UserOp calldata userOp)
+        internal
+        view
+        virtual
+        returns (bool isValid, bytes32 keyHash)
+    {
+        return Delegation(payable(userOp.eoa)).unwrapAndValidateSignature(
+            _computeDigest(userOp), _userOpSignature(userOp)
+        );
     }
 
+    /// @dev Sends the `executionData` to the `eoa`.
+    /// This bubbles up the revert if any. Otherwise, returns nothing.
     function _execute(UserOp calldata userOp, bytes32 keyHash) internal virtual {
         bytes memory opData = LibOps.encodeOpDataFromEntryPoint(userOp.nonce, keyHash);
         bytes memory executionData = LibERC7579.reencodeBatch(_userOpExecutionData(userOp), opData);
         address eoa = userOp.eoa;
-        bool success;
-        bytes memory results;
+        // We use assembly to avoid recopying the `executionData`.
         assembly ("memory-safe") {
             let mode := 0x0100000000007821000100000000000000000000000000000000000000000000
-            let n := mload(executionData)
+            let n := mload(executionData) // Length of `executionData`.
             mstore(sub(executionData, 0x60), 0xe9ae5c53) // `execute(bytes32,bytes)`.
             mstore(sub(executionData, 0x40), mode)
             mstore(sub(executionData, 0x20), 0x40)
@@ -295,6 +310,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
         }
     }
 
+    /// @dev Computes the EIP712 digest for `userOp`.
     function _computeDigest(UserOp calldata userOp) internal view virtual returns (bytes32) {
         bytes32[] calldata pointers = LibERC7579.decodeBatchUnchecked(_userOpExecutionData(userOp));
         bytes32[] memory a = EfficientHashLib.malloc(pointers.length);
@@ -313,7 +329,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
         bytes32[] memory buffer = EfficientHashLib.malloc(10);
         buffer.set(0, USER_OP_TYPEHASH);
         buffer.set(1, uint160(userOp.eoa));
-        buffer.set(2, a.hash());
+        buffer.set(2, a.hash()); // `calls`.
         buffer.set(3, userOp.nonce);
         buffer.set(4, Delegation(payable(userOp.eoa)).nonceSalt());
         buffer.set(5, uint160(userOp.paymentToken));
@@ -322,13 +338,6 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
         buffer.set(8, userOp.verificationGas);
         buffer.set(9, userOp.callGas);
         return _hashTypedData(buffer.hash());
-    }
-
-    function _return(uint256 value) internal pure virtual {
-        assembly ("memory-safe") {
-            mstore(0x00, value)
-            return(0x00, 0x20)
-        }
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -355,7 +364,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
             require(msg.sender == address(this));
             (bool isValid, bytes32 keyHash) = _verify(_calldataUserOp());
             assembly ("memory-safe") {
-                mstore(0x00, isValid)
+                mstore(0x00, iszero(iszero(isValid)))
                 mstore(0x20, keyHash)
                 return(0x00, 0x40)
             }
@@ -384,7 +393,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
                 return(0x00, 0x20)
             }
         }
-        revert();
+        revert FnSelectorNotRecognized();
     }
 
     ////////////////////////////////////////////////////////////////////////

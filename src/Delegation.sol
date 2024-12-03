@@ -115,16 +115,16 @@ contract Delegation is EIP712, GuardedExecutor {
     // Constants
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev For EIP-712 signature digest calculation for the `execute` function.
+    /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant EXECUTE_TYPEHASH = keccak256(
         "Execute(Call[] calls,uint256 nonce,uint256 nonceSalt)Call(address target,uint256 value,bytes data)"
     );
 
-    /// @dev For EIP-712 signature digest calculation for the `execute` function.
+    /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant CALL_TYPEHASH =
         keccak256("Call(address target,uint256 value,bytes data)");
 
-    /// @dev For EIP-712 signature digest calculation.
+    /// @dev For EIP712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
 
     ////////////////////////////////////////////////////////////////////////
@@ -244,7 +244,7 @@ contract Delegation is EIP712, GuardedExecutor {
         return EfficientHashLib.hash(uint8(key.keyType), uint256(keccak256(key.publicKey)));
     }
 
-    /// @dev Computes the EIP-712 digest for `calls`, `opData`, with `nonceSalt` from storage.
+    /// @dev Computes the EIP712 digest for `calls`, `opData`, with `nonceSalt` from storage.
     function computeDigest(Call[] calldata calls, uint256 nonce)
         public
         view
@@ -297,43 +297,7 @@ contract Delegation is EIP712, GuardedExecutor {
         virtual
         returns (bool isValid)
     {
-        (isValid,) = _unwrapAndValidateSignature(digest, signature);
-    }
-
-    /// @dev Returns if the signature is valid, along with its `keyHash`.
-    /// The `signature` is a wrapped signature.
-    function _unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
-        internal
-        view
-        virtual
-        returns (bool isValid, bytes32 keyHash)
-    {
-        if (LibBit.or(signature.length == 64, signature.length == 65)) {
-            return (ECDSA.recoverCalldata(digest, signature) == address(this), bytes32(0));
-        }
-
-        bool prehash;
-        (signature, keyHash, prehash) = LibOps.unwrapSignature(signature);
-        if (prehash) digest = sha256(abi.encode(digest)); // Do the prehash if last byte is non-zero.
-
-        Key memory key = getKey(keyHash);
-
-        if (LibBit.and(key.expiry != 0, key.expiry < block.timestamp)) return (false, keyHash);
-
-        if (key.keyType == KeyType.P256) {
-            (bytes32 r, bytes32 s) = P256.tryDecodePointCalldata(signature);
-            (bytes32 x, bytes32 y) = P256.tryDecodePoint(key.publicKey);
-            isValid = P256.verifySignature(digest, r, s, x, y);
-        } else if (key.keyType == KeyType.WebAuthnP256) {
-            (bytes32 x, bytes32 y) = P256.tryDecodePoint(key.publicKey);
-            isValid = WebAuthn.verify(
-                abi.encode(digest), // Challenge.
-                false, // Require user verification optional.
-                WebAuthn.tryDecodeAuth(signature), // Auth.
-                x,
-                y
-            );
-        }
+        (isValid,) = unwrapAndValidateSignature(digest, signature);
     }
 
     /// @dev Adds the key. If the key already exist, its expiry will be updated.
@@ -356,6 +320,7 @@ contract Delegation is EIP712, GuardedExecutor {
     // Entry Point Functions
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev Pays the entry point `paymentAmount` of `paymentToken`.
     function payEntryPoint(address paymentToken, uint256 paymentAmount)
         public
         virtual
@@ -364,6 +329,44 @@ contract Delegation is EIP712, GuardedExecutor {
         if (msg.sender != entryPoint()) revert Unauthorized();
         LibOps.safeTransfer(paymentToken, msg.sender, paymentAmount);
         return true;
+    }
+
+    /// @dev Returns if the signature is valid, along with its `keyHash`.
+    /// The `signature` is a wrapped signature.
+    function unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
+        public
+        view
+        virtual
+        returns (bool isValid, bytes32 keyHash)
+    {
+        if (LibBit.or(signature.length == 64, signature.length == 65)) {
+            return (ECDSA.recoverCalldata(digest, signature) == address(this), bytes32(0));
+        }
+
+        bool prehash;
+        (signature, keyHash, prehash) = LibOps.unwrapSignature(signature);
+        // Do the prehash if last byte is non-zero. This is `sha256(abi.encode(digest))`.
+        if (prehash) digest = EfficientHashLib.sha2(digest);
+
+        Key memory key = getKey(keyHash);
+
+        if (LibBit.and(key.expiry != 0, key.expiry < block.timestamp)) return (false, keyHash);
+
+        if (key.keyType == KeyType.P256) {
+            (bytes32 r, bytes32 s) = P256.tryDecodePointCalldata(signature);
+            (bytes32 x, bytes32 y) = P256.tryDecodePoint(key.publicKey);
+            isValid = P256.verifySignature(digest, r, s, x, y);
+        } else if (key.keyType == KeyType.WebAuthnP256) {
+            (bytes32 x, bytes32 y) = P256.tryDecodePoint(key.publicKey);
+            isValid = WebAuthn.verify(
+                abi.encode(digest), // Challenge.
+                false, // Require user verification optional.
+                // This is simply `abi.decode(signature, (WebAuthn.WebAuthnAuth))`.
+                WebAuthn.tryDecodeAuth(signature), // Auth.
+                x,
+                y
+            );
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -390,7 +393,7 @@ contract Delegation is EIP712, GuardedExecutor {
         }
         uint256 nonce = LibOps.opDataNonce(opData);
         _useNonce(nonce);
-        (bool isValid, bytes32 keyHash) = _unwrapAndValidateSignature(
+        (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
             computeDigest(calls, nonce), LibOps.opDataWrappedSignature(opData)
         );
         if (!isValid) revert Unauthorized();
