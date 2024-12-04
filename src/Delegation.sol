@@ -141,9 +141,10 @@ contract Delegation is EIP712, GuardedExecutor {
         virtual
         returns (bytes4)
     {
+        (bool isValid,) = unwrapAndValidateSignature(digest, signature);
         // `bytes4(keccak256("isValidSignature(bytes32,bytes)")) = 0x1626ba7e`.
         // We use `0xffffffff` for invalid, in convention with the reference implementation.
-        return bytes4(_isValidSignature(digest, signature) ? 0x1626ba7e : 0xffffffff);
+        return bytes4(isValid ? 0x1626ba7e : 0xffffffff);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -293,16 +294,6 @@ contract Delegation is EIP712, GuardedExecutor {
     function _useNonce(uint256 nonce) internal virtual {
         if (nonceIsInvalidated(nonce)) revert InvalidNonce();
         _invalidateNonce(nonce);
-    }
-
-    /// @dev Checks if a signature is valid. The `signature` is a wrapped signature.
-    function _isValidSignature(bytes32 digest, bytes calldata signature)
-        internal
-        view
-        virtual
-        returns (bool isValid)
-    {
-        (isValid,) = unwrapAndValidateSignature(digest, signature);
     }
 
     /// @dev Adds the key. If the key already exist, its expiry will be updated.
