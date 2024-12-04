@@ -6,9 +6,8 @@ import {Ownable} from "solady/auth/Ownable.sol";
 import {UUPSUpgradeable} from "solady/utils/UUPSUpgradeable.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
-import {LibBit} from "solady/utils/LibBit.sol";
 import {Delegation} from "./Delegation.sol";
-import {LibOps} from "./LibOps.sol";
+import {TokenTransferLib} from "./TokenTransferLib.sol";
 
 /// @title EntryPoint
 /// @notice Contract for ERC7702 delegations.
@@ -269,10 +268,10 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     // Self call functions
     // -------------------
     // For these self call functions, we shall use the `fallback`.
-    // This is so that they can be hidden from the public api, 
+    // This is so that they can be hidden from the public api,
     // and for facilitating unit testing via a mock.
     //
-    // All write self call functions must be guarded with a 
+    // All write self call functions must be guarded with a
     // `require(msg.sender == address(this))` in the fallback.
 
     /// @dev Makes the `eoa` perform a payment to the `entryPoint`.
@@ -280,9 +279,10 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     function _payEntryPoint(UserOp calldata userOp) internal virtual {
         address paymentToken = userOp.paymentToken;
         uint256 paymentAmount = userOp.paymentAmount;
-        uint256 requiredBalanceAfter = LibOps.balanceOf(paymentToken, address(this)) + paymentAmount;
+        uint256 requiredBalanceAfter =
+            TokenTransferLib.balanceOf(paymentToken, address(this)) + paymentAmount;
         Delegation(payable(userOp.eoa)).payEntryPoint(paymentToken, paymentAmount);
-        if (requiredBalanceAfter > LibOps.balanceOf(paymentToken, address(this))) {
+        if (requiredBalanceAfter > TokenTransferLib.balanceOf(paymentToken, address(this))) {
             revert EntryPointPaymentFailed();
         }
     }
@@ -302,8 +302,9 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     /// @dev Sends the `executionData` to the `eoa`.
     /// This bubbles up the revert if any. Otherwise, returns nothing.
     function _execute(UserOp calldata userOp, bytes32 keyHash) internal virtual {
-        bytes memory opData = LibOps.encodeOpDataFromEntryPoint(userOp.nonce, keyHash);
-        bytes memory executionData = LibERC7579.reencodeBatch(_userOpExecutionData(userOp), opData);
+        bytes memory executionData = LibERC7579.reencodeBatch(
+            _userOpExecutionData(userOp), abi.encode(userOp.nonce, keyHash)
+        );
         address eoa = userOp.eoa;
         // We use assembly to avoid recopying the `executionData`.
         assembly ("memory-safe") {
@@ -313,15 +314,15 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
             mstore(sub(executionData, 0x40), mode)
             mstore(sub(executionData, 0x20), 0x40)
             if iszero(call(gas(), eoa, 0, sub(executionData, 0x9c), add(n, 0x84), 0x00, 0x00)) {
-                returndatacopy(mload(0x40), 0x00, returndatasize())
-                revert(mload(0x40), returndatasize())
+                returndatacopy(executionData, 0x00, returndatasize())
+                revert(executionData, returndatasize())
             }
         }
     }
 
     /// @dev Computes the EIP712 digest for `userOp`.
     function _computeDigest(UserOp calldata userOp) internal view virtual returns (bytes32) {
-        bytes32[] calldata pointers = LibERC7579.decodeBatchUnchecked(_userOpExecutionData(userOp));
+        bytes32[] calldata pointers = LibERC7579.decodeBatch(_userOpExecutionData(userOp));
         bytes32[] memory a = EfficientHashLib.malloc(pointers.length);
         for (uint256 i; i < pointers.length; ++i) {
             (address target, uint256 value, bytes calldata data) = pointers.getExecution(i);

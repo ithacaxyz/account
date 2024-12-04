@@ -18,7 +18,7 @@ contract GuardedExecutor is ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Emitted when the ability to execute a call with function selector is set.
-    event CanExecuteFunctionSet(bytes32 keyHash, address target, bytes4 functionSelector, bool can);
+    event CanExecuteFunctionSet(bytes32 keyHash, address target, bytes4 fnSel, bool can);
 
     /// @dev Emitted when the ability to execute a call with exact calldata is set.
     event CanExecuteExactCalldataSet(
@@ -37,7 +37,7 @@ contract GuardedExecutor is ERC7821 {
     address public constant ANY_TARGET = 0x3232323232323232323232323232323232323232;
 
     /// @dev Represents any function selector.
-    bytes4 public constant ANY_FUNCTION_SELECTOR = 0x32323232;
+    bytes4 public constant ANY_FN_SEL = 0x32323232;
 
     ////////////////////////////////////////////////////////////////////////
     // Storage
@@ -47,7 +47,7 @@ contract GuardedExecutor is ERC7821 {
     struct GuardedExecutorStorage {
         /// @dev Mapping of a call hash to whether it can be executed.
         /// Call hash is either based on:
-        /// - `(keyHash, target, functionSelector)`.
+        /// - `(keyHash, target, fnSel)`.
         /// - `(keyHash, target, exactCalldata)`.
         mapping(bytes32 => bool) canExecute;
     }
@@ -86,15 +86,14 @@ contract GuardedExecutor is ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Sets the ability of a key hash to execute a call with a function selector.
-    function setCanExecuteFunction(
-        bytes32 keyHash,
-        address target,
-        bytes4 functionSelector,
-        bool can
-    ) public virtual onlyThis {
+    function setCanExecuteFunction(bytes32 keyHash, address target, bytes4 fnSel, bool can)
+        public
+        virtual
+        onlyThis
+    {
         mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
-        c[_hash(keyHash, target, functionSelector)] = can;
-        emit CanExecuteFunctionSet(keyHash, target, functionSelector, can);
+        c[_hash(keyHash, target, fnSel)] = can;
+        emit CanExecuteFunctionSet(keyHash, target, fnSel, can);
     }
 
     /// @dev Sets the ability of a key hash to execute a call with exact calldata.
@@ -121,28 +120,28 @@ contract GuardedExecutor is ERC7821 {
         returns (bool)
     {
         if (data.length >= 4) {
-            bytes4 functionSelector = bytes4(LibBytes.loadCalldata(data, 0x00));
-            if (canExecuteFunction(keyHash, target, functionSelector)) return true;
+            bytes4 fnSel = bytes4(LibBytes.loadCalldata(data, 0x00));
+            if (canExecuteFunction(keyHash, target, fnSel)) return true;
         }
         return canExecuteExactCalldata(keyHash, target, data);
     }
 
     /// @dev Returns whether a key hash can execute a call with a function selector.
-    function canExecuteFunction(bytes32 keyHash, address target, bytes4 functionSelector)
+    function canExecuteFunction(bytes32 keyHash, address target, bytes4 fnSel)
         public
         view
         virtual
         returns (bool)
     {
         mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
-        if (c[_hash(keyHash, target, functionSelector)]) return true;
-        if (c[_hash(keyHash, target, ANY_FUNCTION_SELECTOR)]) return true;
-        if (c[_hash(keyHash, ANY_TARGET, functionSelector)]) return true;
-        if (c[_hash(keyHash, ANY_TARGET, ANY_FUNCTION_SELECTOR)]) return true;
-        if (c[_hash(ANY_KEYHASH, target, functionSelector)]) return true;
-        if (c[_hash(ANY_KEYHASH, target, ANY_FUNCTION_SELECTOR)]) return true;
-        if (c[_hash(ANY_KEYHASH, ANY_TARGET, functionSelector)]) return true;
-        if (c[_hash(ANY_KEYHASH, ANY_TARGET, ANY_FUNCTION_SELECTOR)]) return true;
+        if (c[_hash(keyHash, target, fnSel)]) return true;
+        if (c[_hash(keyHash, target, ANY_FN_SEL)]) return true;
+        if (c[_hash(keyHash, ANY_TARGET, fnSel)]) return true;
+        if (c[_hash(keyHash, ANY_TARGET, ANY_FN_SEL)]) return true;
+        if (c[_hash(ANY_KEYHASH, target, fnSel)]) return true;
+        if (c[_hash(ANY_KEYHASH, target, ANY_FN_SEL)]) return true;
+        if (c[_hash(ANY_KEYHASH, ANY_TARGET, fnSel)]) return true;
+        if (c[_hash(ANY_KEYHASH, ANY_TARGET, ANY_FN_SEL)]) return true;
         return false;
     }
 
@@ -166,13 +165,9 @@ contract GuardedExecutor is ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Returns the hash of a call.
-    function _hash(bytes32 keyHash, address target, bytes4 functionSelector)
-        internal
-        pure
-        returns (bytes32)
-    {
+    function _hash(bytes32 keyHash, address target, bytes4 fnSel) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
-            keyHash, bytes32(uint256(uint160(target)) | uint256(bytes32(functionSelector)))
+            keyHash, bytes32(uint256(uint160(target)) | uint256(bytes32(fnSel)))
         );
     }
 

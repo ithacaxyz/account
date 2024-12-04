@@ -11,7 +11,7 @@ import {P256} from "solady/utils/P256.sol";
 import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
-import {LibOps} from "./LibOps.sol";
+import {TokenTransferLib} from "./TokenTransferLib.sol";
 
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
@@ -88,6 +88,9 @@ contract Delegation is EIP712, GuardedExecutor {
 
     /// @dev The nonce is invalid.
     error InvalidNonce();
+
+    /// @dev The `opData` is too short.
+    error OpDataTooShort();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -185,7 +188,9 @@ contract Delegation is EIP712, GuardedExecutor {
         DelegationStorage storage $ = _getDelegationStorage();
         newNonceSalt = $.nonceSalt;
         unchecked {
-            newNonceSalt += uint32(uint256(EfficientHashLib.hash(newNonceSalt, block.timestamp)));
+            newNonceSalt += uint32(
+                uint256(EfficientHashLib.hash(newNonceSalt, block.timestamp, uint160(msg.sender)))
+            );
         }
         $.nonceSalt = newNonceSalt;
         emit NonceSaltIncremented(newNonceSalt);
@@ -327,32 +332,44 @@ contract Delegation is EIP712, GuardedExecutor {
         returns (bool)
     {
         if (msg.sender != entryPoint()) revert Unauthorized();
-        LibOps.safeTransfer(paymentToken, msg.sender, paymentAmount);
+        TokenTransferLib.safeTransfer(paymentToken, msg.sender, paymentAmount);
         return true;
     }
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.
-    /// The `signature` is a wrapped signature.
+    /// The `signature` is a wrapped signature, given by
+    /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
     function unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
         public
         view
         virtual
         returns (bool isValid, bytes32 keyHash)
     {
+        // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
-            return (ECDSA.recoverCalldata(digest, signature) == address(this), bytes32(0));
+            return (ECDSA.recoverCalldata(digest, signature) == address(this), 0);
         }
 
-        bool prehash;
-        (signature, keyHash, prehash) = LibOps.unwrapSignature(signature);
-        // Do the prehash if last byte is non-zero. This is `sha256(abi.encode(digest))`.
-        if (prehash) digest = EfficientHashLib.sha2(digest);
+        // Early return if unable to unwrap the signature.
+        if (signature.length < 0x21) return (false, 0);
 
+        unchecked {
+            uint256 n = signature.length - 0x21;
+            keyHash = LibBytes.loadCalldata(signature, n);
+            signature = LibBytes.truncatedCalldata(signature, n);
+            // Do the prehash if last byte is non-zero.
+            if (uint256(LibBytes.loadCalldata(signature, n + 1)) & 0xff != 0) {
+                digest = EfficientHashLib.sha2(digest); // `sha256(abi.encode(digest))`.
+            }
+        }
         Key memory key = getKey(keyHash);
 
-        if (LibBit.and(key.expiry != 0, key.expiry < block.timestamp)) return (false, keyHash);
+        // Early return if the key has expired.
+        if (LibBit.and(key.expiry != 0, block.timestamp > key.expiry)) return (false, keyHash);
 
         if (key.keyType == KeyType.P256) {
+            // The try decode functions returns `(0,0)` if the bytes is too short,
+            // which will make the signature check fail.
             (bytes32 r, bytes32 s) = P256.tryDecodePointCalldata(signature);
             (bytes32 x, bytes32 y) = P256.tryDecodePoint(key.publicKey);
             isValid = P256.verifySignature(digest, r, s, x, y);
@@ -382,19 +399,23 @@ contract Delegation is EIP712, GuardedExecutor {
     {
         // Entry point workflow.
         if (msg.sender == entryPoint()) {
-            _useNonce(LibOps.opDataNonce(opData));
-            return _execute(calls, LibOps.opDataKeyHash(opData));
+            if (opData.length < 0x40) revert OpDataTooShort();
+            _useNonce(uint256(LibBytes.loadCalldata(opData, 0x00)));
+            return _execute(calls, LibBytes.loadCalldata(opData, 0x20));
         }
 
-        // Simple workflow.
+        // Simple workflow without `opData`.
         if (opData.length == uint256(0)) {
             if (msg.sender != address(this)) revert Unauthorized();
             return _execute(calls, bytes32(0));
         }
-        uint256 nonce = LibOps.opDataNonce(opData);
+
+        // Simple workflow with `opData`.
+        if (opData.length < 0x20) revert OpDataTooShort();
+        uint256 nonce = uint256(LibBytes.loadCalldata(opData, 0x00));
         _useNonce(nonce);
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
-            computeDigest(calls, nonce), LibOps.opDataWrappedSignature(opData)
+            computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
         if (!isValid) revert Unauthorized();
         return _execute(calls, keyHash);
