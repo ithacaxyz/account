@@ -302,20 +302,16 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     /// @dev Sends the `executionData` to the `eoa`.
     /// This bubbles up the revert if any. Otherwise, returns nothing.
     function _execute(UserOp calldata userOp, bytes32 keyHash) internal virtual {
-        bytes memory executionData = LibERC7579.reencodeBatch(
-            _userOpExecutionData(userOp), abi.encode(userOp.nonce, keyHash)
+        bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
+            0x0100000000007821000100000000000000000000000000000000000000000000,
+            _userOpExecutionData(userOp),
+            abi.encode(userOp.nonce, keyHash)
         );
         address eoa = userOp.eoa;
-        // We use assembly to avoid recopying the `executionData`.
         assembly ("memory-safe") {
-            let mode := 0x0100000000007821000100000000000000000000000000000000000000000000
-            let n := mload(executionData) // Length of `executionData`.
-            mstore(sub(executionData, 0x60), 0xe9ae5c53) // `execute(bytes32,bytes)`.
-            mstore(sub(executionData, 0x40), mode)
-            mstore(sub(executionData, 0x20), 0x40)
-            if iszero(call(gas(), eoa, 0, sub(executionData, 0x9c), add(n, 0x84), 0x00, 0x00)) {
-                returndatacopy(executionData, 0x00, returndatasize())
-                revert(executionData, returndatasize())
+            if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x00)) {
+                returndatacopy(data, 0x00, returndatasize())
+                revert(data, returndatasize())
             }
         }
     }
