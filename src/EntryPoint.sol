@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
+import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 import {UUPSUpgradeable} from "solady/utils/UUPSUpgradeable.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
+import {ReentrancyGuard} from "solady/utils/ReentrancyGuard.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
 import {Delegation} from "./Delegation.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 
 /// @title EntryPoint
 /// @notice Contract for ERC7702 delegations.
-contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
+contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
+    using LibBitmap for LibBitmap.Bitmap;
 
     ////////////////////////////////////////////////////////////////////////
     // Enumerations
@@ -107,6 +110,12 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     /// @dev Out of gas to perform the call operation.
     error InsufficientGas();
 
+    /// @dev The order has already been filled.
+    error OrderAlreadyFilled();
+
+    /// @dev The origin data is improperly encoded.
+    error OriginDataDecodeError();
+
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
@@ -127,6 +136,24 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     uint256 internal constant _INNER_GAS_OVERHEAD = 100000;
 
     ////////////////////////////////////////////////////////////////////////
+    // Storage
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Holds the storage.
+    struct EntryPointStorage {
+        LibBitmap.Bitmap filledOrderIds;
+    }
+
+    /// @dev Returns the storage pointer.
+    function _getEntryPointStorage() internal pure returns (EntryPointStorage storage $) {
+        // Truncate to 9 bytes to reduce bytecode size.
+        uint256 s = uint72(bytes9(keccak256("PORTO_ENTRY_POINT_STORAGE")));
+        assembly ("memory-safe") {
+            $.slot := s
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////
     // Main
     ////////////////////////////////////////////////////////////////////////
 
@@ -134,13 +161,13 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     /// Each element in `encodedUserOps` is given by `abi.encode(userOp)`,
     /// where `userOp` is a struct of type `UserOp`.
     function execute(bytes[] calldata encodedUserOps)
-        external
+        public
         payable
         virtual
         returns (UserOpStatus[] memory statuses)
     {
         assembly ("memory-safe") {
-            statuses := add(0x20, mload(0x40))
+            statuses := mload(0x40)
             mstore(statuses, encodedUserOps.length) // Store length of `statuses`.
             mstore(0x40, add(add(0x20, statuses), shl(5, encodedUserOps.length))) // Allocate memory.
             calldatacopy(add(0x20, statuses), calldatasize(), shl(5, encodedUserOps.length)) // Zeroize memory.
@@ -215,10 +242,50 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
                     break
                 }
             }
-            // Directly return `statuses`.
-            mstore(sub(statuses, 0x20), 0x20) // Store the offset of the `statuses`.
-            return(sub(statuses, 0x20), add(0x40, shl(5, encodedUserOps.length)))
         }
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // ERC7683
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev ERC7683 fill.
+    function fill(bytes32 orderId, bytes calldata originData, bytes calldata)
+        public
+        payable
+        virtual
+        nonReentrant
+        returns (UserOpStatus)
+    {
+        if (!_getEntryPointStorage().filledOrderIds.toggle(uint256(orderId))) {
+            revert OrderAlreadyFilled();
+        }
+        // `originData` is encoded as:
+        // `abi.encode(bytes(encodedUserOp), address(fundingToken), uint256(fundingAmount))`.
+        bytes[] calldata encodedUserOps;
+        address fundingToken;
+        uint256 fundingAmount;
+        address eoa;
+        assembly ("memory-safe") {
+            fundingToken := calldataload(add(originData.offset, 0x20))
+            fundingAmount := calldataload(add(originData.offset, 0x40))
+            let s := calldataload(originData.offset) // Parent offset of `encodedUserOp`.
+            let t := add(originData.offset, s) // `encodedUserOp`.
+            let l := calldataload(t) // Length of `encodedUserOp`.
+            let o := add(t, 0x20) // Offset of `encodedUserOp`.
+            if or(
+                or(shr(64, or(s, t)), or(lt(originData.length, 0x60), lt(s, 0x60))),
+                gt(add(l, o), add(originData.offset, originData.length))
+            ) {
+                mstore(0x00, 0x2b3592ae) // `OriginDataDecodeError()`.
+                revert(0x1c, 0x04)
+            }
+            encodedUserOps.length := 1
+            encodedUserOps.offset := originData.offset
+            eoa := calldataload(add(o, calldataload(o)))
+        }
+        TokenTransferLib.safeTransferFrom(fundingToken, msg.sender, eoa, fundingAmount);
+        return execute(encodedUserOps)[0];
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -339,7 +406,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
                         EfficientHashLib.hashCalldata(data)
                     )
                 );
-            }    
+            }
         }
         return _hashTypedData(
             EfficientHashLib.hash(

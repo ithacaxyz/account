@@ -122,7 +122,7 @@ contract GuardedExecutor is ERC7821 {
         bytes4 fnSel = ANY_FN_SEL;
         if (data.length >= 4) fnSel = bytes4(LibBytes.loadCalldata(data, 0x00));
         if (data.length == uint256(0)) fnSel = EMPTY_CALLDATA_FN_SEL;
-            
+
         if (_isSelfExecute(target, fnSel)) return false;
 
         if (c[_hash(keyHash, target, fnSel)]) return true;
@@ -149,7 +149,11 @@ contract GuardedExecutor is ERC7821 {
     }
 
     /// @dev Returns the hash of function.
-    function _hash(bytes32 keyHash, address target, bytes4 fnSel) internal pure returns (bytes32 result) {
+    function _hash(bytes32 keyHash, address target, bytes4 fnSel)
+        internal
+        pure
+        returns (bytes32 result)
+    {
         assembly ("memory-safe") {
             mstore(0x00, fnSel)
             mstore(0x18, target)
