@@ -249,7 +249,10 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     // ERC7683
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev ERC7683 fill.
+    /// @dev ERC7683 fill. 
+    /// If you don't need to ensure that the `orderId` can only be used once,
+    /// pass in `bytes32(0)` for the `orderId`. The `originData` will
+    /// already include the nonce for the delegated `eoa`.
     function fill(bytes32 orderId, bytes calldata originData, bytes calldata)
         public
         payable
@@ -257,9 +260,12 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         nonReentrant
         returns (UserOpStatus)
     {
-        if (!_getEntryPointStorage().filledOrderIds.toggle(uint256(orderId))) {
-            revert OrderAlreadyFilled();
+        if (orderId != bytes32(0)) {
+            if (!_getEntryPointStorage().filledOrderIds.toggle(uint256(orderId))) {
+                revert OrderAlreadyFilled();
+            }    
         }
+        
         // `originData` is encoded as:
         // `abi.encode(bytes(encodedUserOp), address(fundingToken), uint256(fundingAmount))`.
         bytes[] calldata encodedUserOps;
@@ -286,6 +292,12 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         }
         TokenTransferLib.safeTransferFrom(fundingToken, msg.sender, eoa, fundingAmount);
         return execute(encodedUserOps)[0];
+    }
+
+    /// @dev Returns true if the order ID has been filled.
+    function orderIdIsFilled(bytes32 orderId) public view virtual returns (bool) {
+        if (orderId == bytes32(0)) return false;
+        return _getEntryPointStorage().filledOrderIds.get(uint(orderId));
     }
 
     ////////////////////////////////////////////////////////////////////////
