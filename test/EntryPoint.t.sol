@@ -87,11 +87,7 @@ contract EntryPointTest is SoladyTest {
     }
 
     function _getExecutionDataForThisTargetFunction(uint256 value, bytes memory data) internal view returns (bytes memory) {
-        EntryPoint.Call[] memory calls = new EntryPoint.Call[](1);
-        calls[0].target = address(this);
-        calls[0].value = value;
-        calls[0].data = abi.encodeWithSignature("targetFunction(bytes)", data);
-        return abi.encode(calls);
+        return _getExecutionData(address(this), value, abi.encodeWithSignature("targetFunction(bytes)", data));
     }
 
     function _getExecutionData(address target, uint256 value, bytes memory data) internal pure returns (bytes memory) {
