@@ -47,8 +47,6 @@ contract Delegation is EIP712, GuardedExecutor {
 
     /// @dev Holds the storage.
     struct DelegationStorage {
-        /// @dev The entry point.
-        address entryPoint;
         /// @dev The label.
         LibBytes.BytesStorage label;
         /// @dev Bitmap of invalidated nonces. Set bit means invalidated.
@@ -96,9 +94,6 @@ contract Delegation is EIP712, GuardedExecutor {
     // Events
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev The entry point has been updated to `newEntryPoint`.
-    event EntryPointSet(address newEntryPoint);
-
     /// @dev The label has been updated to `newLabel`.
     event LabelSet(string newLabel);
 
@@ -117,6 +112,9 @@ contract Delegation is EIP712, GuardedExecutor {
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
+
+    /// @dev The entry point address.
+    address public constant ENTRY_POINT = 0x1111111111111111111111111111111111111111;
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant EXECUTE_TYPEHASH = keccak256(
@@ -154,12 +152,6 @@ contract Delegation is EIP712, GuardedExecutor {
     // The following functions can only be called by this contract.
     // If a signature is required to call these functions, please use the `execute`
     // function with `auth` set to `abi.encode(nonce, signature)`.
-
-    /// @dev Sets the entry point.
-    function setEntryPoint(address newEntryPoint) public virtual onlyThis {
-        _getDelegationStorage().entryPoint = newEntryPoint;
-        emit EntryPointSet(newEntryPoint);
-    }
 
     /// @dev Sets the label.
     function setLabel(string calldata newLabel) public virtual onlyThis {
@@ -200,11 +192,6 @@ contract Delegation is EIP712, GuardedExecutor {
     ////////////////////////////////////////////////////////////////////////
     // Public View Functions
     ////////////////////////////////////////////////////////////////////////
-
-    /// @dev Returns the entry point.
-    function entryPoint() public view virtual returns (address) {
-        return _getDelegationStorage().entryPoint;
-    }
 
     /// @dev Returns the label.
     function label() public view virtual returns (string memory) {
@@ -322,7 +309,7 @@ contract Delegation is EIP712, GuardedExecutor {
         virtual
         returns (bool)
     {
-        if (msg.sender != entryPoint()) revert Unauthorized();
+        if (msg.sender != ENTRY_POINT) revert Unauthorized();
         TokenTransferLib.safeTransfer(paymentToken, msg.sender, paymentAmount);
         return true;
     }
@@ -389,7 +376,7 @@ contract Delegation is EIP712, GuardedExecutor {
         returns (bytes[] memory)
     {
         // Entry point workflow.
-        if (msg.sender == entryPoint()) {
+        if (msg.sender == ENTRY_POINT) {
             if (opData.length < 0x40) revert OpDataTooShort();
             _useNonce(uint256(LibBytes.loadCalldata(opData, 0x00)));
             return _execute(calls, LibBytes.loadCalldata(opData, 0x20));

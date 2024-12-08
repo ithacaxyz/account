@@ -32,4 +32,8 @@ contract MockEntryPoint is EntryPoint, Brutalizer {
         assert(keccak256(executionData) == keccak256(userOp.executionData));
         assert(keccak256(signature) == keccak256(userOp.signature));
     }
+
+    function computeDigest(UserOp calldata userOp) public view returns (bytes32) {
+        return _computeDigest(userOp);
+    }
 }

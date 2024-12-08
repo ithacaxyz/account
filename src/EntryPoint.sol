@@ -20,7 +20,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     ////////////////////////////////////////////////////////////////////////
 
     enum UserOpStatus {
-        CallSuccess,
+        Success,
         CallFailure,
         VerificationFailure,
         PaymentFailure
@@ -105,16 +105,6 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     error SelfCallUnauthorized();
 
     ////////////////////////////////////////////////////////////////////////
-    // Events
-    ////////////////////////////////////////////////////////////////////////
-
-    /// @dev For debugging.
-    event LogUserOp(UserOp userOp);
-
-    /// @dev For debugging.
-    event LogBytes(bytes value);
-
-    ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
 
@@ -147,6 +137,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
             statuses := mload(0x40)
             mstore(statuses, encodedUserOps.length) // Store length of `statuses`.
             mstore(0x40, add(add(0x20, statuses), shl(5, encodedUserOps.length))) // Allocate memory.
+            calldatacopy(add(0x20, statuses), calldatasize(), shl(5, encodedUserOps.length)) // Zeroize memory.
 
             for { let i := 0 } iszero(eq(i, encodedUserOps.length)) { i := add(i, 1) } {
                 let m := mload(0x40) // The free memory pointer.
@@ -210,7 +201,6 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
                         mstore(add(add(0x20, statuses), shl(5, i)), 1) // `CallFailure`.
                         break
                     }
-                    mstore(add(add(0x20, statuses), shl(5, i)), 0) // `CallSuccess`.
                     break
                 }
             }
@@ -277,8 +267,11 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     /// @dev Makes the `eoa` perform a payment to the `entryPoint`.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
     function _payEntryPoint(UserOp calldata userOp) internal virtual {
-        address paymentToken = userOp.paymentToken;
         uint256 paymentAmount = userOp.paymentAmount;
+        if (paymentAmount > userOp.paymentMaxAmount) {
+            revert EntryPointPaymentFailed();
+        }
+        address paymentToken = userOp.paymentToken;
         uint256 requiredBalanceAfter =
             TokenTransferLib.balanceOf(paymentToken, address(this)) + paymentAmount;
         Delegation(payable(userOp.eoa)).payEntryPoint(paymentToken, paymentAmount);
@@ -320,30 +313,34 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     function _computeDigest(UserOp calldata userOp) internal view virtual returns (bytes32) {
         bytes32[] calldata pointers = LibERC7579.decodeBatch(_userOpExecutionData(userOp));
         bytes32[] memory a = EfficientHashLib.malloc(pointers.length);
-        for (uint256 i; i < pointers.length; ++i) {
-            (address target, uint256 value, bytes calldata data) = pointers.getExecution(i);
-            a.set(
-                i,
-                EfficientHashLib.hash(
-                    CALL_TYPEHASH,
-                    bytes32(uint256(uint160(target))),
-                    bytes32(value),
-                    EfficientHashLib.hashCalldata(data)
-                )
-            );
+        unchecked {
+            for (uint256 i; i != pointers.length; ++i) {
+                (address target, uint256 value, bytes calldata data) = pointers.getExecution(i);
+                a.set(
+                    i,
+                    EfficientHashLib.hash(
+                        CALL_TYPEHASH,
+                        bytes32(uint256(uint160(target))),
+                        bytes32(value),
+                        EfficientHashLib.hashCalldata(data)
+                    )
+                );
+            }    
         }
-        bytes32[] memory buffer = EfficientHashLib.malloc(10);
-        buffer.set(0, USER_OP_TYPEHASH);
-        buffer.set(1, uint160(userOp.eoa));
-        buffer.set(2, a.hash()); // `calls`.
-        buffer.set(3, userOp.nonce);
-        buffer.set(4, Delegation(payable(userOp.eoa)).nonceSalt());
-        buffer.set(5, uint160(userOp.paymentToken));
-        buffer.set(6, userOp.paymentMaxAmount);
-        buffer.set(7, userOp.paymentGas);
-        buffer.set(8, userOp.verificationGas);
-        buffer.set(9, userOp.callGas);
-        return _hashTypedData(buffer.hash());
+        return _hashTypedData(
+            EfficientHashLib.hash(
+                uint256(USER_OP_TYPEHASH),
+                uint160(userOp.eoa),
+                uint256(a.hash()),
+                userOp.nonce,
+                Delegation(payable(userOp.eoa)).nonceSalt(),
+                uint160(userOp.paymentToken),
+                userOp.paymentMaxAmount,
+                userOp.paymentGas,
+                userOp.verificationGas,
+                userOp.callGas
+            )
+        );
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -389,13 +386,6 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
             bytes32 digest = _computeDigest(_calldataUserOp());
             assembly ("memory-safe") {
                 mstore(0x00, digest)
-                return(0x00, 0x20)
-            }
-        }
-        if (s == 0x01010101) {
-            emit LogUserOp(_calldataUserOp());
-            assembly ("memory-safe") {
-                mstore(0x00, 1)
                 return(0x00, 0x20)
             }
         }

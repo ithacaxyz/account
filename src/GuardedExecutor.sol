@@ -3,12 +3,17 @@ pragma solidity ^0.8.23;
 
 import {ERC7821} from "solady/accounts/ERC7821.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
-import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
 
 contract GuardedExecutor is ERC7821 {
     ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Cannot set or get the permissions if the `keyHash` is `bytes32(0)`.
+    error KeyHashIsZero();
+
+    /// @dev If the `target` is `address(this)`, the `fnSel` cannot be `_EXECUTE_FN_SEL`.
+    error OnlyEOACanSelfExecute();
 
     /// @dev Unauthorized to perform the action.
     error Unauthorized();
@@ -18,12 +23,7 @@ contract GuardedExecutor is ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Emitted when the ability to execute a call with function selector is set.
-    event CanExecuteFunctionSet(bytes32 keyHash, address target, bytes4 fnSel, bool can);
-
-    /// @dev Emitted when the ability to execute a call with exact calldata is set.
-    event CanExecuteExactCalldataSet(
-        bytes32 keyHash, address target, bytes exactCalldata, bool can
-    );
+    event CanExecuteSet(bytes32 keyHash, address target, bytes4 fnSel, bool can);
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
@@ -39,6 +39,14 @@ contract GuardedExecutor is ERC7821 {
     /// @dev Represents any function selector.
     bytes4 public constant ANY_FN_SEL = 0x32323232;
 
+    /// @dev Represents empty calldata.
+    /// An empty calldata does not have 4 bytes for a function selector,
+    /// and we will use this special value to denote empty calldata.
+    bytes4 public constant EMPTY_CALLDATA_FN_SEL = 0xe0e0e0e0;
+
+    /// @dev ERC7579's `execute((address,uint256,bytes)[])` function selector.
+    bytes4 internal constant _EXECUTE_FN_SEL = 0x3f707e6b;
+
     ////////////////////////////////////////////////////////////////////////
     // Storage
     ////////////////////////////////////////////////////////////////////////
@@ -46,9 +54,6 @@ contract GuardedExecutor is ERC7821 {
     /// @dev Holds the storage.
     struct GuardedExecutorStorage {
         /// @dev Mapping of a call hash to whether it can be executed.
-        /// Call hash is either based on:
-        /// - `(keyHash, target, fnSel)`.
-        /// - `(keyHash, target, exactCalldata)`.
         mapping(bytes32 => bool) canExecute;
     }
 
@@ -77,7 +82,6 @@ contract GuardedExecutor is ERC7821 {
         returns (bytes memory result)
     {
         if (!canExecute(keyHash, target, data)) revert Unauthorized();
-        if (target == address(this)) if (keyHash != bytes32(0)) revert Unauthorized();
         result = ERC7821._execute(target, value, data, keyHash);
     }
 
@@ -86,26 +90,16 @@ contract GuardedExecutor is ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Sets the ability of a key hash to execute a call with a function selector.
-    function setCanExecuteFunction(bytes32 keyHash, address target, bytes4 fnSel, bool can)
+    function setCanExecute(bytes32 keyHash, address target, bytes4 fnSel, bool can)
         public
         virtual
         onlyThis
     {
+        if (keyHash == bytes32(0)) revert KeyHashIsZero();
+        if (_isSelfExecute(target, fnSel)) revert OnlyEOACanSelfExecute();
         mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
         c[_hash(keyHash, target, fnSel)] = can;
-        emit CanExecuteFunctionSet(keyHash, target, fnSel, can);
-    }
-
-    /// @dev Sets the ability of a key hash to execute a call with exact calldata.
-    function setCanExecuteExactCalldata(
-        bytes32 keyHash,
-        address target,
-        bytes calldata exactCalldata,
-        bool can
-    ) public virtual onlyThis {
-        mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
-        c[_hash(keyHash, target, exactCalldata)] = can;
-        emit CanExecuteExactCalldataSet(keyHash, target, exactCalldata, can);
+        emit CanExecuteSet(keyHash, target, fnSel, can);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -119,44 +113,26 @@ contract GuardedExecutor is ERC7821 {
         virtual
         returns (bool)
     {
-        if (data.length >= 4) {
-            bytes4 fnSel = bytes4(LibBytes.loadCalldata(data, 0x00));
-            if (canExecuteFunction(keyHash, target, fnSel)) return true;
-        }
-        return canExecuteExactCalldata(keyHash, target, data);
-    }
+        // A zero `keyHash` represents that the execution is authorized / performed
+        // by the `eoa`'s secp256k1 key itself.
+        if (keyHash == bytes32(0)) return true;
 
-    /// @dev Returns whether a key hash can execute a call with a function selector.
-    function canExecuteFunction(bytes32 keyHash, address target, bytes4 fnSel)
-        public
-        view
-        virtual
-        returns (bool)
-    {
         mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
+
+        bytes4 fnSel = ANY_FN_SEL;
+        if (data.length >= 4) fnSel = bytes4(LibBytes.loadCalldata(data, 0x00));
+        if (data.length == uint256(0)) fnSel = EMPTY_CALLDATA_FN_SEL;
+            
+        if (_isSelfExecute(target, fnSel)) return false;
+
         if (c[_hash(keyHash, target, fnSel)]) return true;
-        if (c[_hash(keyHash, target, ANY_FN_SEL)]) return true;
         if (c[_hash(keyHash, ANY_TARGET, fnSel)]) return true;
-        if (c[_hash(keyHash, ANY_TARGET, ANY_FN_SEL)]) return true;
         if (c[_hash(ANY_KEYHASH, target, fnSel)]) return true;
-        if (c[_hash(ANY_KEYHASH, target, ANY_FN_SEL)]) return true;
         if (c[_hash(ANY_KEYHASH, ANY_TARGET, fnSel)]) return true;
+        if (c[_hash(keyHash, target, ANY_FN_SEL)]) return true;
+        if (c[_hash(keyHash, ANY_TARGET, ANY_FN_SEL)]) return true;
+        if (c[_hash(ANY_KEYHASH, target, ANY_FN_SEL)]) return true;
         if (c[_hash(ANY_KEYHASH, ANY_TARGET, ANY_FN_SEL)]) return true;
-        return false;
-    }
-
-    /// @dev Returns whether a key hash can execute a call with exact calldata.
-    function canExecuteExactCalldata(bytes32 keyHash, address target, bytes calldata exactCalldata)
-        public
-        view
-        virtual
-        returns (bool)
-    {
-        mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
-        if (c[_hash(keyHash, target, exactCalldata)]) return true;
-        if (c[_hash(keyHash, ANY_TARGET, exactCalldata)]) return true;
-        if (c[_hash(ANY_KEYHASH, target, exactCalldata)]) return true;
-        if (c[_hash(ANY_KEYHASH, ANY_TARGET, exactCalldata)]) return true;
         return false;
     }
 
@@ -164,20 +140,22 @@ contract GuardedExecutor is ERC7821 {
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Returns the hash of a call.
-    function _hash(bytes32 keyHash, address target, bytes4 fnSel) internal pure returns (bytes32) {
-        return EfficientHashLib.hash(
-            keyHash, bytes32(uint256(uint160(target)) | uint256(bytes32(fnSel)))
-        );
+    /// @dev Returns whether the call is a self execute.
+    function _isSelfExecute(address target, bytes4 fnSel) internal view returns (bool result) {
+        assembly ("memory-safe") {
+            // ERC7579's `execute(bytes32,bytes)` function selector is `0xe9ae5c53`.
+            result := lt(shl(96, xor(target, address())), eq(shr(224, fnSel), 0xe9ae5c53))
+        }
     }
 
-    /// @dev Returns the hash of a call.
-    function _hash(bytes32 keyHash, address target, bytes calldata exactCalldata)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return EfficientHashLib.hash(keyHash, bytes20(target), keccak256(exactCalldata));
+    /// @dev Returns the hash of function.
+    function _hash(bytes32 keyHash, address target, bytes4 fnSel) internal pure returns (bytes32 result) {
+        assembly ("memory-safe") {
+            mstore(0x00, fnSel)
+            mstore(0x18, target)
+            mstore(0x04, keyHash)
+            result := keccak256(0x00, 0x38)
+        }
     }
 
     /// @dev Guards a function such that it can only be called by `address(this)`.

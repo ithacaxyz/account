@@ -1,47 +1,104 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
+import {LibClone} from "solady/utils/LibClone.sol";
+import {Delegation} from "../src/Delegation.sol";
 import {EntryPoint, MockEntryPoint} from "./utils/mocks/MockEntryPoint.sol";
+import {ERC20, MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
 
 contract EntryPointTest is SoladyTest {
-    EntryPoint public ep;
+    MockEntryPoint ep;
+    MockPaymentToken paymentToken;
+    address delegation;
+
+    TargetFunctionPayload[] targetFunctionPayloads;
+
+    struct TargetFunctionPayload {
+        address by;
+        uint256 value;
+        bytes data;
+    }
 
     function setUp() public {
-        ep = new MockEntryPoint();
+        Delegation tempDelegation = new Delegation();
+        ep = MockEntryPoint(payable(tempDelegation.ENTRY_POINT()));
+        MockEntryPoint tempMockEntryPoint = new MockEntryPoint();
+        vm.etch(tempDelegation.ENTRY_POINT(), address(tempMockEntryPoint).code);
+        delegation = LibClone.clone(address(new Delegation()));
+        paymentToken = new MockPaymentToken();
     }
 
-    function testDirectExecuteSuccess() public {
-        EntryPoint.UserOp memory userOp;
-        userOp.signature = "hello";
-        bytes memory encoded = abi.encode(userOp);
-        (bool success,) =
-            address(ep).call(abi.encodePacked(uint32(0x01010101), uint256(123), encoded));
-        assertTrue(success);
-        // EntryPoint.Call[] memory calls = new EntryPoint.Call[](2);
+    function targetFunction(bytes memory data) public payable {
+        targetFunctionPayloads.push(TargetFunctionPayload(
+            msg.sender, 
+            msg.value,
+            data
+        ));
     }
 
-    // struct _TestTemps {
-    //     EntryPoint.UserOp[] userOps;
-    // }
+    struct _TestFullFlowTemps {
+        EntryPoint.UserOp[] userOps;
+        TargetFunctionPayload[] targetFunctionPayloads;
+        uint256[] privateKeys;
+        bytes[] encodedUserOps;
+    }
 
-    // function testEntryPointDecode() public {
-    //     _TestTemps memory t;
-    //     t.userOps = new EntryPoint.UserOp[](2);
-    //     t.userOps[0].callGas = 123;
-    //     t.userOps[1].callGas = 456;
-    //     t.userOps[0].signature = "hehe";
-    //     ep.executeUserOps(_encodeUserOps(t.userOps));
-    // }
+    function testFullFlow(bytes32) public {
+        _TestFullFlowTemps memory t;
+        
+        t.userOps = new EntryPoint.UserOp[](_random() & 3);
+        t.targetFunctionPayloads = new TargetFunctionPayload[](t.userOps.length);
+        t.privateKeys = new uint256[](t.userOps.length);
+        t.encodedUserOps = new bytes[](t.userOps.length);
 
-    // function _encodeUserOps(EntryPoint.UserOp[] memory userOps)
-    //     internal
-    //     pure
-    //     returns (bytes[] memory results)
-    // {
-    //     results = new bytes[](userOps.length);
-    //     for (uint256 i; i < userOps.length; ++i) {
-    //         results[i] = abi.encode(userOps[i]);
-    //     }
-    // }
+        for (uint256 i; i != t.userOps.length; ++i) {
+            EntryPoint.UserOp memory u = t.userOps[i];
+            (u.eoa, t.privateKeys[i]) = _randomSigner();
+            vm.etch(u.eoa, delegation.code);
+            vm.deal(u.eoa, 2 ** 128 - 1);
+            u.executionData = _getExecutionDataForThisTargetFunction(
+                t.targetFunctionPayloads[i].value = _bound(_random(), 0, 2 ** 32 - 1), 
+                t.targetFunctionPayloads[i].data = _truncateBytes(_randomBytes(), 0xff)
+            );
+            u.nonce = _random();
+            paymentToken.mint(u.eoa, 2 ** 128 - 1);
+            u.paymentToken = address(paymentToken);
+            u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
+            u.paymentMaxAmount = u.paymentAmount;
+            u.paymentGas = 1000000;
+            u.verificationGas = 2000000;
+            u.callGas = 3000000;
+            _fillSecp256k1Signature(u, t.privateKeys[i]);
+            t.encodedUserOps[i] = abi.encode(u);
+        }
+        EntryPoint.UserOpStatus[] memory statuses;
+        statuses = ep.execute(t.encodedUserOps);
+        for (uint256 i; i != statuses.length; ++i) {
+            assertEq(uint8(statuses[i]), uint8(EntryPoint.UserOpStatus.Success));
+        }
+        assertEq(statuses.length, t.userOps.length);
+    }
+
+    function _fillSecp256k1Signature(EntryPoint.UserOp memory userOp, uint256 privateKey) internal view {
+        bytes32 digest = ep.computeDigest(userOp);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+        userOp.signature = abi.encodePacked(r, s, v);
+    }
+
+    function _getExecutionDataForThisTargetFunction(uint256 value, bytes memory data) internal view returns (bytes memory) {
+        EntryPoint.Call[] memory calls = new EntryPoint.Call[](1);
+        calls[0].target = address(this);
+        calls[0].value = value;
+        calls[0].data = abi.encodeWithSignature("targetFunction(bytes)", data);
+        return abi.encode(calls);
+    }
+
+    function _getExecutionData(address target, uint256 value, bytes memory data) internal pure returns (bytes memory) {
+        EntryPoint.Call[] memory calls = new EntryPoint.Call[](1);
+        calls[0].target = target;
+        calls[0].value = value;
+        calls[0].data = data;
+        return abi.encode(calls);
+    }
 }
