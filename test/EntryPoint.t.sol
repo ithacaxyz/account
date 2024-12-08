@@ -72,12 +72,15 @@ contract EntryPointTest is SoladyTest {
             _fillSecp256k1Signature(u, t.privateKeys[i]);
             t.encodedUserOps[i] = abi.encode(u);
         }
-        EntryPoint.UserOpStatus[] memory statuses;
-        statuses = ep.execute(t.encodedUserOps);
+        
+        EntryPoint.UserOpStatus[] memory statuses = ep.execute(t.encodedUserOps);
+        assertEq(statuses.length, t.userOps.length);
         for (uint256 i; i != statuses.length; ++i) {
             assertEq(uint8(statuses[i]), uint8(EntryPoint.UserOpStatus.Success));
+            assertEq(targetFunctionPayloads[i].by, t.userOps[i].eoa);
+            assertEq(targetFunctionPayloads[i].value, t.targetFunctionPayloads[i].value);
+            assertEq(targetFunctionPayloads[i].data, t.targetFunctionPayloads[i].data);
         }
-        assertEq(statuses.length, t.userOps.length);
     }
 
     function _fillSecp256k1Signature(EntryPoint.UserOp memory userOp, uint256 privateKey) internal view {

@@ -104,6 +104,9 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     /// @dev Only the entry point itself can make a self-call.
     error SelfCallUnauthorized();
 
+    /// @dev Out of gas to perform the call operation.
+    error InsufficientGas();
+
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
@@ -120,6 +123,9 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     /// @dev For EIP712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
 
+    /// @dev For gas estimation.
+    uint256 internal constant _INNER_GAS_OVERHEAD = 100000;
+
     ////////////////////////////////////////////////////////////////////////
     // Main
     ////////////////////////////////////////////////////////////////////////
@@ -128,13 +134,13 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
     /// Each element in `encodedUserOps` is given by `abi.encode(userOp)`,
     /// where `userOp` is a struct of type `UserOp`.
     function execute(bytes[] calldata encodedUserOps)
-        public
+        external
         payable
         virtual
         returns (UserOpStatus[] memory statuses)
     {
         assembly ("memory-safe") {
-            statuses := mload(0x40)
+            statuses := add(0x20, mload(0x40))
             mstore(statuses, encodedUserOps.length) // Store length of `statuses`.
             mstore(0x40, add(add(0x20, statuses), shl(5, encodedUserOps.length))) // Allocate memory.
             calldatacopy(add(0x20, statuses), calldatasize(), shl(5, encodedUserOps.length)) // Zeroize memory.
@@ -196,6 +202,11 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
                     mstore(add(m, 0x20), mload(0x20)) // Copy the `keyHash` over.
                     mstore(0x00, 0) // Zeroize the return slot.
                     g := calldataload(add(u, _USER_OP_CALL_GAS_POS)) // `callGas`.
+                    // Check if there's sufficient gas to be forwarded to the eoa.
+                    if or(lt(shr(6, mul(gas(), 63)), add(g, _INNER_GAS_OVERHEAD)), shr(64, g)) {
+                        mstore(0x00, 0x1c26714c) // `InsufficientGas()`.
+                        revert(0x1c, 0x04)
+                    }
                     // This returns `(bool success)`.
                     if iszero(and(eq(1, mload(0x00)), call(g, address(), 0, s, n, 0x00, 0x20))) {
                         mstore(add(add(0x20, statuses), shl(5, i)), 1) // `CallFailure`.
@@ -204,6 +215,9 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable {
                     break
                 }
             }
+            // Directly return `statuses`.
+            mstore(sub(statuses, 0x20), 0x20) // Store the offset of the `statuses`.
+            return(sub(statuses, 0x20), add(0x40, shl(5, encodedUserOps.length)))
         }
     }
 
