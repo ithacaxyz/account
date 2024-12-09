@@ -8,7 +8,6 @@ import {UUPSUpgradeable} from "solady/utils/UUPSUpgradeable.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
 import {ReentrancyGuard} from "solady/utils/ReentrancyGuard.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
-import {Delegation} from "./Delegation.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 
 /// @title EntryPoint
@@ -75,6 +74,12 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Position of payment amount in the `userOp` struct.
+    uint256 internal constant _USER_OP_PAYMENT_AMOUNT_POS = 0x80;
+
+    /// @dev Position of payment max amount in the `userOp` struct.
+    uint256 internal constant _USER_OP_PAYMENT_MAX_AMOUNT_POS = 0xa0;
 
     /// @dev Position of payment gas in the `userOp` struct.
     uint256 internal constant _USER_OP_PAYMENT_GAS_POS = 0xc0;
@@ -211,6 +216,13 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                 for {} 1 {} {
                     mstore(m, 0xcc1d5274) // `_payEntryPoint()`.
                     mstore(0x00, 0) // Zeroize the return slot.
+                    if gt(
+                        calldataload(add(u, _USER_OP_PAYMENT_AMOUNT_POS)),
+                        calldataload(add(u, _USER_OP_PAYMENT_MAX_AMOUNT_POS))
+                    ) {
+                        mstore(add(add(0x20, statuses), shl(5, i)), 3) // `PaymentFailure`.
+                        break
+                    }
                     let g := calldataload(add(u, _USER_OP_PAYMENT_GAS_POS)) // `paymentGas`.
                     // This returns `(bool success)`.
                     if iszero(and(eq(1, mload(0x00)), call(g, address(), 0, s, n, 0x00, 0x20))) {
@@ -249,7 +261,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     // ERC7683
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev ERC7683 fill. 
+    /// @dev ERC7683 fill.
     /// If you don't need to ensure that the `orderId` can only be used once,
     /// pass in `bytes32(0)` for the `orderId`. The `originData` will
     /// already include the nonce for the delegated `eoa`.
@@ -263,9 +275,9 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         if (orderId != bytes32(0)) {
             if (!_getEntryPointStorage().filledOrderIds.toggle(uint256(orderId))) {
                 revert OrderAlreadyFilled();
-            }    
+            }
         }
-        
+
         // `originData` is encoded as:
         // `abi.encode(bytes(encodedUserOp), address(fundingToken), uint256(fundingAmount))`.
         bytes[] calldata encodedUserOps;
@@ -297,7 +309,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     /// @dev Returns true if the order ID has been filled.
     function orderIdIsFilled(bytes32 orderId) public view virtual returns (bool) {
         if (orderId == bytes32(0)) return false;
-        return _getEntryPointStorage().filledOrderIds.get(uint(orderId));
+        return _getEntryPointStorage().filledOrderIds.get(uint256(orderId));
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -361,13 +373,21 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
     function _payEntryPoint(UserOp calldata userOp) internal virtual {
         uint256 paymentAmount = userOp.paymentAmount;
-        if (paymentAmount > userOp.paymentMaxAmount) {
-            revert EntryPointPaymentFailed();
-        }
         address paymentToken = userOp.paymentToken;
         uint256 requiredBalanceAfter =
             TokenTransferLib.balanceOf(paymentToken, address(this)) + paymentAmount;
-        Delegation(payable(userOp.eoa)).payEntryPoint(paymentToken, paymentAmount);
+        address eoa = userOp.eoa;
+        assembly ("memory-safe") {
+            let m := mload(0x40) // Cache the free memory pointer.
+            mstore(0x00, 0x9c42fb59) // `payEntryPoint(address,uint256)`.
+            mstore(0x20, shr(96, shl(96, paymentToken)))
+            mstore(0x40, paymentAmount)
+            if iszero(and(eq(mload(0x00), 1), call(gas(), eoa, 0, 0x1c, 0x44, 0x00, 0x20))) {
+                mstore(0x00, 0x2708dbcf) // `EntryPointPaymentFailed()`.
+                revert(0x1c, 0x04)
+            }
+            mstore(0x40, m) // Restore the free memory pointer.
+        }
         if (requiredBalanceAfter > TokenTransferLib.balanceOf(paymentToken, address(this))) {
             revert EntryPointPaymentFailed();
         }
@@ -380,9 +400,26 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         virtual
         returns (bool isValid, bytes32 keyHash)
     {
-        return Delegation(payable(userOp.eoa)).unwrapAndValidateSignature(
-            _computeDigest(userOp), _userOpSignature(userOp)
-        );
+        bytes32 digest = _computeDigest(userOp);
+        bytes calldata sig = _userOpSignature(userOp);
+        address eoa = userOp.eoa;
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, 0x0cef73b4) // `unwrapAndValidateSignature(bytes32,bytes)`.
+            mstore(add(m, 0x20), digest)
+            mstore(add(m, 0x40), 0x40)
+            mstore(add(m, 0x60), sig.length)
+            calldatacopy(add(m, 0x80), sig.offset, sig.length)
+            let n := add(sig.length, 0x84)
+            if iszero(
+                and(gt(returndatasize(), 0x3f), staticcall(gas(), eoa, add(m, 0x1c), n, 0x00, 0x40))
+            ) {
+                returndatacopy(m, 0x00, returndatasize())
+                revert(m, returndatasize())
+            }
+            isValid := iszero(iszero(mload(0x00)))
+            keyHash := mload(0x20)
+        }
     }
 
     /// @dev Sends the `executionData` to the `eoa`.
@@ -426,7 +463,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                 uint160(userOp.eoa),
                 uint256(a.hash()),
                 userOp.nonce,
-                Delegation(payable(userOp.eoa)).nonceSalt(),
+                _nonceSalt(userOp.eoa),
                 uint160(userOp.paymentToken),
                 userOp.paymentMaxAmount,
                 userOp.paymentGas,
@@ -434,6 +471,17 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                 userOp.callGas
             )
         );
+    }
+
+    /// @dev Returns the nonce salt on the `eoa`.
+    function _nonceSalt(address eoa) internal view virtual returns (uint256 result) {
+        assembly ("memory-safe") {
+            mstore(0x00, 0x6ae269cc) // `nonceSalt()`.
+            if iszero(
+                and(gt(returndatasize(), 0x1f), staticcall(gas(), eoa, 0x1c, 0x04, 0x00, 0x20))
+            ) { revert(0x00, 0x00) }
+            result := mload(0x00)
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////

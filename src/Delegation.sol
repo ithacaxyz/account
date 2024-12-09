@@ -114,7 +114,7 @@ contract Delegation is EIP712, GuardedExecutor {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev The entry point address.
-    address public constant ENTRY_POINT = 0x1111111111111111111111111111111111111111;
+    address public constant ENTRY_POINT = 0x00000000aC830f1181F6aAb6862E71EDc248941C;
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant EXECUTE_TYPEHASH = keccak256(

@@ -29,6 +29,13 @@ contract EntryPointTest is SoladyTest {
         paymentToken = new MockPaymentToken();
     }
 
+    function testCreate2DeployEntryPoint() public {
+        bytes memory initCode = type(EntryPoint).creationCode;
+        bytes32 salt = 0x0000000000000000000000000000000000000000bfc06f84bf20de038dba3888;
+        vm.etch(address(ep), "");
+        assertEq(address(ep), _nicksCreate2(0, salt, initCode));
+    }
+
     function targetFunction(bytes memory data) public payable {
         targetFunctionPayloads.push(TargetFunctionPayload(msg.sender, msg.value, data));
     }
@@ -86,7 +93,7 @@ contract EntryPointTest is SoladyTest {
         uint256 privateKey;
         address fundingToken;
         uint256 fundingAmount;
-        bytes originData; 
+        bytes originData;
     }
 
     function testFill(bytes32) public {
@@ -112,10 +119,12 @@ contract EntryPointTest is SoladyTest {
             u.paymentGas = 1000000;
             u.verificationGas = 2000000;
             u.callGas = 3000000;
-            _fillSecp256k1Signature(u, t.privateKey);    
+            _fillSecp256k1Signature(u, t.privateKey);
             t.originData = abi.encode(abi.encode(u), t.fundingToken, t.fundingAmount);
         }
-        assertEq(uint8(ep.fill(t.orderId, t.originData, "")), uint8(EntryPoint.UserOpStatus.Success));
+        assertEq(
+            uint8(ep.fill(t.orderId, t.originData, "")), uint8(EntryPoint.UserOpStatus.Success)
+        );
     }
 
     function _fillSecp256k1Signature(EntryPoint.UserOp memory userOp, uint256 privateKey)
