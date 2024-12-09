@@ -237,7 +237,7 @@ contract Delegation is EIP712, GuardedExecutor {
         return EfficientHashLib.hash(uint8(key.keyType), uint256(keccak256(key.publicKey)));
     }
 
-    /// @dev Computes the EIP712 digest for `calls`, `opData`, with `nonceSalt` from storage.
+    /// @dev Computes the EIP712 digest for `calls`, with `nonceSalt` from storage.
     function computeDigest(Call[] calldata calls, uint256 nonce)
         public
         view
@@ -373,7 +373,6 @@ contract Delegation is EIP712, GuardedExecutor {
         internal
         virtual
         override
-        returns (bytes[] memory)
     {
         // Entry point workflow.
         if (msg.sender == ENTRY_POINT) {
@@ -396,7 +395,7 @@ contract Delegation is EIP712, GuardedExecutor {
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
         if (!isValid) revert Unauthorized();
-        return _execute(calls, keyHash);
+        _execute(calls, keyHash);
     }
 
     ////////////////////////////////////////////////////////////////////////

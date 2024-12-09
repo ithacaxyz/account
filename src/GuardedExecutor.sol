@@ -79,10 +79,9 @@ contract GuardedExecutor is ERC7821 {
         internal
         virtual
         override
-        returns (bytes memory result)
     {
         if (!canExecute(keyHash, target, data)) revert Unauthorized();
-        result = ERC7821._execute(target, value, data, keyHash);
+        ERC7821._execute(target, value, data, keyHash);
     }
 
     ////////////////////////////////////////////////////////////////////////
