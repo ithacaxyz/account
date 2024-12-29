@@ -172,7 +172,7 @@ contract GuardedExecutor is ERC7821 {
             mstore(0x00, fnSel)
             mstore(0x18, target)
             mstore(0x04, keyHash)
-            result := keccak256(0x00, 0x38)
+            result := keccak256(0x00, 0x38) // 4 + 20 + 32 = 56 = 0x38.
         }
     }
 
