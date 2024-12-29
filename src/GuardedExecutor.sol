@@ -13,8 +13,8 @@ contract GuardedExecutor is ERC7821 {
     /// @dev Cannot set or get the permissions if the `keyHash` is `bytes32(0)`.
     error KeyHashIsZero();
 
-    /// @dev If the `target` is `address(this)`, the `fnSel` cannot be `_EXECUTE_FN_SEL`.
-    error OnlyEOACanSelfExecute();
+    /// @dev Only the EOA itself and super admin keys can self execute.
+    error CannotSelfExecute();
 
     /// @dev Unauthorized to perform the action.
     error Unauthorized();
@@ -44,9 +44,6 @@ contract GuardedExecutor is ERC7821 {
     /// An empty calldata does not have 4 bytes for a function selector,
     /// and we will use this special value to denote empty calldata.
     bytes4 public constant EMPTY_CALLDATA_FN_SEL = 0xe0e0e0e0;
-
-    /// @dev ERC7579's `execute((address,uint256,bytes)[])` function selector.
-    bytes4 internal constant _EXECUTE_FN_SEL = 0x3f707e6b;
 
     ////////////////////////////////////////////////////////////////////////
     // Storage
@@ -105,7 +102,7 @@ contract GuardedExecutor is ERC7821 {
         // Otherwise any low stakes app key can call super admin functions
         // such as like `authorize`, `revoke`.
         if (_isSelfExecute(target, fnSel)) {
-            if (!_isSuperAdmin(keyHash)) revert OnlyEOACanSelfExecute();
+            if (!_isSuperAdmin(keyHash)) revert CannotSelfExecute();
         }
 
         mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
