@@ -398,7 +398,9 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         }
         address paymentRecipient = userOp.paymentRecipient;
         if (paymentRecipient != address(0)) {
-            TokenTransferLib.safeTransferFrom(paymentToken, address(this), paymentRecipient, paymentAmount);
+            TokenTransferLib.safeTransferFrom(
+                paymentToken, address(this), paymentRecipient, paymentAmount
+            );
             // Double check, in case that ERC20 is some token with baked in fees on transfer.
             if (TokenTransferLib.balanceOf(paymentToken, address(this)) < tokenBalanceBefore) {
                 revert EntryPointPaymentFailed();

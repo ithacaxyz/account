@@ -37,6 +37,9 @@ contract Delegation is EIP712, GuardedExecutor {
         uint40 expiry;
         /// @dev Type of key. See the {KeyType} enum.
         KeyType keyType;
+        /// @dev Whether the key is a super admin key.
+        /// Super admin keys are allowed to
+        bool isSuperAdmin;
         /// @dev Public key in encoded form.
         bytes publicKey;
     }
@@ -133,16 +136,17 @@ contract Delegation is EIP712, GuardedExecutor {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Checks if a signature is valid.
-    /// Note: For security reasons, we can only let this function validate against the original
-    /// EOA secp256k1 key. Otherwise, a session key (i.e. P256 or WebAuthn key) can be used to
-    /// approve infinite allowances via Permit2 by default, which will allow apps infinite power.
+    /// Note: For security reasons, we can only let this function validate against the
+    /// original EOA key and other super admin keys.
+    /// Otherwise, any session key can be used to approve infinite allowances
+    /// via Permit2 by default, which will allow apps infinite power.
     function isValidSignature(bytes32 digest, bytes calldata signature)
         public
         view
         virtual
         returns (bytes4)
     {
-        bool isValid = ECDSA.recoverCalldata(digest, signature) == address(this);
+        (bool isValid,) = _unwrapAndValidateSignature(digest, signature, true);
         // `bytes4(keccak256("isValidSignature(bytes32,bytes)")) = 0x1626ba7e`.
         // We use `0xffffffff` for invalid, in convention with the reference implementation.
         return bytes4(isValid ? 0x1626ba7e : 0xffffffff);
@@ -226,10 +230,11 @@ contract Delegation is EIP712, GuardedExecutor {
         bytes memory data = _getDelegationStorage().keyStorage[keyHash].get();
         if (data.length == 0) revert KeyDoesNotExist();
         unchecked {
-            uint256 n = data.length - 6;
-            uint256 packed = uint48(bytes6(LibBytes.load(data, n)));
-            key.expiry = uint40(packed >> 8);
-            key.keyType = KeyType(uint8(packed));
+            uint256 n = data.length - 7;
+            uint256 packed = uint56(bytes7(LibBytes.load(data, n)));
+            key.expiry = uint40(packed >> 16);
+            key.keyType = KeyType(uint8(packed >> 8));
+            key.isSuperAdmin = uint8(packed) != 0;
             key.publicKey = LibBytes.truncate(data, n);
         }
     }
@@ -291,7 +296,9 @@ contract Delegation is EIP712, GuardedExecutor {
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         keyHash = hash(key);
         DelegationStorage storage $ = _getDelegationStorage();
-        $.keyStorage[keyHash].set(abi.encodePacked(key.publicKey, key.expiry, key.keyType));
+        $.keyStorage[keyHash].set(
+            abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin)
+        );
         $.keyHashes.add(keyHash);
     }
 
@@ -326,6 +333,17 @@ contract Delegation is EIP712, GuardedExecutor {
         virtual
         returns (bool isValid, bytes32 keyHash)
     {
+        return _unwrapAndValidateSignature(digest, signature, false);
+    }
+
+    /// @dev Returns if the signature is valid, along with its `keyHash`.
+    /// The `signature` is a wrapped signature, given by
+    /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
+    function _unwrapAndValidateSignature(
+        bytes32 digest,
+        bytes calldata signature,
+        bool requireSuperAdmin
+    ) internal view virtual returns (bool isValid, bytes32 keyHash) {
         // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
             return (ECDSA.recoverCalldata(digest, signature) == address(this), 0);
@@ -344,6 +362,8 @@ contract Delegation is EIP712, GuardedExecutor {
             }
         }
         Key memory key = getKey(keyHash);
+
+        if (LibBit.and(requireSuperAdmin, !key.isSuperAdmin)) return (false, keyHash);
 
         // Early return if the key has expired.
         if (LibBit.and(key.expiry != 0, block.timestamp > key.expiry)) return (false, keyHash);
@@ -399,6 +419,15 @@ contract Delegation is EIP712, GuardedExecutor {
         );
         if (!isValid) revert Unauthorized();
         _execute(calls, keyHash);
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // GuardedExecutor
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Returns if `keyHash` corresponds to a super admin key.
+    function _isSuperAdmin(bytes32 keyHash) internal view virtual override returns (bool) {
+        return getKey(keyHash).isSuperAdmin;
     }
 
     ////////////////////////////////////////////////////////////////////////
