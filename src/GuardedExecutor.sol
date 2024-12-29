@@ -137,9 +137,8 @@ contract GuardedExecutor is ERC7821 {
         // If the calldata is empty, make sure that the empty calldata has been authorized.
         if (data.length == uint256(0)) fnSel = EMPTY_CALLDATA_FN_SEL;
 
-        // We still need to check here, else authorizing any function selector
-        // or any target will allow for self execution.
-        // The check in `setCanExecute` is just for sanity.
+        // This check is required to ensure that authorizing any function selector
+        // or any target will still NOT allow for self execution.
         if (_isSelfExecute(target, fnSel)) if (!_isSuperAdmin(keyHash)) return false;
 
         if (c[_hash(keyHash, target, fnSel)]) return true;
