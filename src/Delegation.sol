@@ -132,14 +132,17 @@ contract Delegation is EIP712, GuardedExecutor {
     // ERC1271
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Checks if a signature is valid. The `signature` is a wrapped signature.
+    /// @dev Checks if a signature is valid.
+    /// Note: For security reasons, we can only let this function validate against the original
+    /// EOA secp256k1 key. Otherwise, a session key (i.e. P256 or WebAuthn key) can be used to
+    /// approve infinite allowances via Permit2 by default, which will allow apps infinite power.
     function isValidSignature(bytes32 digest, bytes calldata signature)
         public
         view
         virtual
         returns (bytes4)
     {
-        (bool isValid,) = unwrapAndValidateSignature(digest, signature);
+        bool isValid = ECDSA.recoverCalldata(digest, signature) == address(this);
         // `bytes4(keccak256("isValidSignature(bytes32,bytes)")) = 0x1626ba7e`.
         // We use `0xffffffff` for invalid, in convention with the reference implementation.
         return bytes4(isValid ? 0x1626ba7e : 0xffffffff);
