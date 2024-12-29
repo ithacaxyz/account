@@ -38,7 +38,8 @@ contract Delegation is EIP712, GuardedExecutor {
         /// @dev Type of key. See the {KeyType} enum.
         KeyType keyType;
         /// @dev Whether the key is a super admin key.
-        /// Super admin keys are allowed to
+        /// Super admin keys are allowed to call into super admin functions such as 
+        /// `authorize` and `revoke` via `execute`.
         bool isSuperAdmin;
         /// @dev Public key in encoded form.
         bytes publicKey;
