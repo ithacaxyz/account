@@ -56,7 +56,12 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         uint256 nonce;
         /// @dev The ERC20 or native token used to pay for gas.
         address paymentToken;
+        /// @dev The payment recipient for the ERC20 token.
+        /// Excluded from signature. The filler can replace this with their own address.
+        /// If `address(0)`, the payment will be accrued by the entry point.
+        address paymentRecipient;
         /// @dev The amount of the token to pay.
+        /// Excluded from signature. This will be required to be less than `paymentMaxAmount`.
         uint256 paymentAmount;
         /// @dev The maximum amount of the token to pay.
         uint256 paymentMaxAmount;
@@ -76,25 +81,25 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Position of payment amount in the `userOp` struct.
-    uint256 internal constant _USER_OP_PAYMENT_AMOUNT_POS = 0x80;
+    uint256 internal constant _USER_OP_PAYMENT_AMOUNT_POS = 0xa0;
 
     /// @dev Position of payment max amount in the `userOp` struct.
-    uint256 internal constant _USER_OP_PAYMENT_MAX_AMOUNT_POS = 0xa0;
+    uint256 internal constant _USER_OP_PAYMENT_MAX_AMOUNT_POS = 0xc0;
 
     /// @dev Position of payment gas in the `userOp` struct.
-    uint256 internal constant _USER_OP_PAYMENT_GAS_POS = 0xc0;
+    uint256 internal constant _USER_OP_PAYMENT_GAS_POS = 0xe0;
 
     /// @dev Position of verification gas in the `userOp` struct.
-    uint256 internal constant _USER_OP_VERIFICATION_GAS_POS = 0xe0;
+    uint256 internal constant _USER_OP_VERIFICATION_GAS_POS = 0x100;
 
     /// @dev Position of call gas in the `userOp` struct.
-    uint256 internal constant _USER_OP_CALL_GAS_POS = 0x100;
+    uint256 internal constant _USER_OP_CALL_GAS_POS = 0x120;
 
     /// @dev Position of the execution data bytes in the `userOp` struct.
     uint256 internal constant _USER_OP_EXECUTION_DATA_POS = 0x20;
 
     /// @dev Position of the signature bytes in the `userOp` struct.
-    uint256 internal constant _USER_OP_SIGNATURE_POS = 0x120;
+    uint256 internal constant _USER_OP_SIGNATURE_POS = 0x140;
 
     ////////////////////////////////////////////////////////////////////////
     // Errors
@@ -374,8 +379,8 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     function _payEntryPoint(UserOp calldata userOp) internal virtual {
         uint256 paymentAmount = userOp.paymentAmount;
         address paymentToken = userOp.paymentToken;
-        uint256 requiredBalanceAfter =
-            TokenTransferLib.balanceOf(paymentToken, address(this)) + paymentAmount;
+        uint256 tokenBalanceBefore = TokenTransferLib.balanceOf(paymentToken, address(this));
+        uint256 requiredBalanceAfter = tokenBalanceBefore + paymentAmount;
         address eoa = userOp.eoa;
         assembly ("memory-safe") {
             let m := mload(0x40) // Cache the free memory pointer.
@@ -390,6 +395,14 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         }
         if (requiredBalanceAfter > TokenTransferLib.balanceOf(paymentToken, address(this))) {
             revert EntryPointPaymentFailed();
+        }
+        address paymentRecipient = userOp.paymentRecipient;
+        if (paymentRecipient != address(0)) {
+            TokenTransferLib.safeTransferFrom(paymentToken, address(this), paymentRecipient, paymentAmount);
+            // Double check, in case that ERC20 is some token with baked in fees on transfer.
+            if (TokenTransferLib.balanceOf(paymentToken, address(this)) < tokenBalanceBefore) {
+                revert EntryPointPaymentFailed();
+            }
         }
     }
 
