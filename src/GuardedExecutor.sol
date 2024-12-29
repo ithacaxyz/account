@@ -92,15 +92,16 @@ contract GuardedExecutor is ERC7821 {
         virtual
         onlyThis
     {
-        // Just a validation for sanity sake, as a key hash of `bytes32(0)`
-        // represents an execute call by the EOA's key itself. The EOA should be able to call
-        // any function on itself.
+        // Sanity check as a key hash of `bytes32(0)` represents the EOA's key itself.
+        // The EOA is always able to call any function on itself, so there is no point
+        // setting which functions and contracts it can touch via execute.
         if (keyHash == bytes32(0)) revert KeyHashIsZero();
+
         // All calls not from the EOA itself has to go through the single `execute` function.
-        // For security, we cannot let anything but the EOA key and other super admin keys
-        // call into `execute`.
+        // For security, only EOA key and super admin keys can call into `execute`.
         // Otherwise any low stakes app key can call super admin functions
-        // such as like `authorize`, `revoke`.
+        // such as like `authorize` and `revoke`.
+        // This check is for sanity. We will still validate this in `canExecute`.
         if (_isSelfExecute(target, fnSel)) {
             if (!_isSuperAdmin(keyHash)) revert CannotSelfExecute();
         }
@@ -128,9 +129,17 @@ contract GuardedExecutor is ERC7821 {
         mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
 
         bytes4 fnSel = ANY_FN_SEL;
+        
+        // If the calldata has 4 or more bytes, we can assume that the leading 4 bytes
+        // denotes the function selector. 
         if (data.length >= 4) fnSel = bytes4(LibBytes.loadCalldata(data, 0x00));
+        
+        // If the calldata is empty, make sure that the empty calldata has been authorized.
         if (data.length == uint256(0)) fnSel = EMPTY_CALLDATA_FN_SEL;
 
+        // We still need to check here, else authorizing any function selector
+        // or any target will allow for self execution.
+        // The check in `setCanExecute` is just for sanity.
         if (_isSelfExecute(target, fnSel)) if (!_isSuperAdmin(keyHash)) return false;
 
         if (c[_hash(keyHash, target, fnSel)]) return true;
@@ -160,6 +169,7 @@ contract GuardedExecutor is ERC7821 {
         returns (bytes32 result)
     {
         assembly ("memory-safe") {
+            // Use assembly to avoid `abi.encodePacked` overhead.
             mstore(0x00, fnSel)
             mstore(0x18, target)
             mstore(0x04, keyHash)
