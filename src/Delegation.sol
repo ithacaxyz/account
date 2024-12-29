@@ -7,6 +7,7 @@ import {LibBytes} from "solady/utils/LibBytes.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
 import {ECDSA} from "solady/utils/ECDSA.sol";
+import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 import {P256} from "solady/utils/P256.sol";
 import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
@@ -28,7 +29,8 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev The type of key.
     enum KeyType {
         P256,
-        WebAuthnP256
+        WebAuthnP256, 
+        Secp256k1
     }
 
     /// @dev A key that can be used to authorize call.
@@ -384,6 +386,12 @@ contract Delegation is EIP712, GuardedExecutor {
                 WebAuthn.tryDecodeAuth(signature), // Auth.
                 x,
                 y
+            );
+        } else if (key.keyType == KeyType.Secp256k1) {
+            isValid = SignatureCheckerLib.isValidSignatureNowCalldata(
+                abi.decode(key.publicKey, (address)), 
+                digest,
+                signature
             );
         }
     }
