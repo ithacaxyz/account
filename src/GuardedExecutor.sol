@@ -399,6 +399,18 @@ contract GuardedExecutor is ERC7821 {
         }
     }
 
+    /// @dev Rounds the unix timestamp down to the period.
+    function startOfSpendPeriod(uint256 unixTimestamp, SpendPeriod period) public pure returns (uint256) {
+        if (period == SpendPeriod.Minute) return unixTimestamp / 60 * 60;
+        if (period == SpendPeriod.Hour) return unixTimestamp / 3600 * 3600;
+        if (period == SpendPeriod.Day) return unixTimestamp / 86400 * 86400;
+        if (period == SpendPeriod.Week) return DateTimeLib.mondayTimestamp(unixTimestamp);
+        (uint256 year, uint256 month, ) = DateTimeLib.timestampToDate(unixTimestamp);
+        if (period == SpendPeriod.Month) return DateTimeLib.dateToTimestamp(year, month, 1);
+        if (period == SpendPeriod.Year) return DateTimeLib.dateToTimestamp(year, 1, 1);
+        return unixTimestamp;
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
@@ -429,25 +441,13 @@ contract GuardedExecutor is ERC7821 {
         for (uint256 i; i != n; i = FixedPointMathLib.rawAdd(i, 1)) {
             uint8 period = s.periods.at(i);
             TokenPeriodSpendStorage storage ss = s.spends[period];
-            uint256 current = _lastUpdated(SpendPeriod(period));
+            uint256 current = startOfSpendPeriod(block.timestamp, SpendPeriod(period));
             if (ss.lastUpdated < current) {
                 ss.lastUpdated = current;
                 ss.spent = 0;
             }
             if ((ss.spent += amount) > ss.limit) revert ExceededSpendLimit();
         }
-    }
-
-    /// @dev Returns the last updated timestamp.
-    function _lastUpdated(SpendPeriod period) internal view returns (uint256) {
-        if (period == SpendPeriod.Minute) return block.timestamp / 60 * 60;
-        if (period == SpendPeriod.Hour) return block.timestamp / 3600 * 3600;
-        if (period == SpendPeriod.Day) return block.timestamp / 86400 * 86400;
-        if (period == SpendPeriod.Week) return DateTimeLib.mondayTimestamp(block.timestamp);
-        (uint256 year, uint256 month, ) = DateTimeLib.timestampToDate(block.timestamp);
-        if (period == SpendPeriod.Month) return DateTimeLib.dateToTimestamp(year, month, 1);
-        if (period == SpendPeriod.Year) return DateTimeLib.dateToTimestamp(year, 1, 1);
-        return block.timestamp;
     }
 
     /// @dev Guards a function such that it can only be called by `address(this)`.
