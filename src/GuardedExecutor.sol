@@ -9,21 +9,36 @@ import {DynamicArrayLib} from "solady/utils/DynamicArrayLib.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
+import {DateTimeLib} from "solady/utils/DateTimeLib.sol";
 
 contract GuardedExecutor is ERC7821 {
     using DynamicArrayLib for *;
     using EnumerableSetLib for *;
 
     ////////////////////////////////////////////////////////////////////////
+    // Enums
+    ////////////////////////////////////////////////////////////////////////
+
+    enum SpendPeriod {
+        Minute,
+        Hour,
+        Day,
+        Week,
+        Month,
+        Year
+    }
+
+    ////////////////////////////////////////////////////////////////////////
     // Structs
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Information about a daily spend.
-    struct DailySpendInfo {
+    struct SpendInfo {
         address token;
+        SpendPeriod period;
         uint256 limit;
         uint256 spent;
-        uint256 lastUpdatedDay;
+        uint256 lastUpdated;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -40,11 +55,11 @@ contract GuardedExecutor is ERC7821 {
     error Unauthorized();
 
     /// @dev Exceeded the daily spend limit.
-    error ExceededDailySpendLimit();
+    error ExceededSpendLimit();
 
     /// @dev Cannot add a new daily spend, as we have reached the maximum capacity.
     /// This is required to prevent unbounded checking costs during execution.
-    error ExceededDailySpendsCapacity();
+    error ExceededSpendsCapacity();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -54,10 +69,10 @@ contract GuardedExecutor is ERC7821 {
     event CanExecuteSet(bytes32 keyHash, address target, bytes4 fnSel, bool can);
 
     /// @dev Emitted when a daily spend limit is set.
-    event DailySpendLimitSet(bytes32 keyHash, address token, uint256 limit);
+    event SpendLimitSet(bytes32 keyHash, address token, SpendPeriod period, uint256 limit);
 
     /// @dev Emitted when a daily spend limit is removed.
-    event DailySpendLimitRemoved(bytes32 keyHash, address token);
+    event SpendLimitRemoved(bytes32 keyHash, address token, SpendPeriod period);
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
@@ -85,17 +100,23 @@ contract GuardedExecutor is ERC7821 {
     // Storage
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Holds the storage for the daily spend limits.
-    struct DailySpendStorage {
+    /// @dev Holds the storage for the token period spend limits.
+    struct TokenPeriodSpendStorage {
         uint256 limit;
         uint256 spent;
-        uint256 lastUpdatedDay;
+        uint256 lastUpdated;
+    }
+
+    /// @dev Holds the storage for the token spend limits.
+    struct TokenSpendStorage {
+        EnumerableSetLib.Uint8Set periods;
+        mapping(uint256 => TokenPeriodSpendStorage) spends;
     }
 
     /// @dev Holds the storage for spend permissions and the current spend state.
     struct SpendStorage {
         EnumerableSetLib.AddressSet tokens;
-        mapping(address => DailySpendStorage) dailys;
+        mapping(address => TokenSpendStorage) spends;
     }
 
     /// @dev Holds the storage.
@@ -191,7 +212,7 @@ contract GuardedExecutor is ERC7821 {
                 }
             }
         }
-        _incrementSpent(spends.dailys[address(0)], t.totalNativeSpend);
+        _incrementSpent(spends.spends[address(0)], t.totalNativeSpend);
 
         // Sum transfer amounts, grouped by erc20s.
         LibSort.groupSum(t.erc20s.data, t.transferAmounts.data);
@@ -227,7 +248,7 @@ contract GuardedExecutor is ERC7821 {
                     t.balancesBefore.get(i), SafeTransferLib.balanceOf(token, address(this))
                 );
                 delta = FixedPointMathLib.max(delta, t.transferAmounts.get(i));
-                _incrementSpent(spends.dailys[token], delta);
+                _incrementSpent(spends.spends[token], delta);
             }
         }
     }
@@ -271,25 +292,34 @@ contract GuardedExecutor is ERC7821 {
         emit CanExecuteSet(keyHash, target, fnSel, can);
     }
 
-    /// @dev Sets the daily spend limit of `token` for `keyHash`.
-    function setDailySpendLimit(bytes32 keyHash, address token, uint256 limit)
+    /// @dev Sets the daily spend limit of `token` for `keyHash` for `period`.
+    function setSpendLimit(bytes32 keyHash, address token, SpendPeriod period, uint256 limit)
         public
         virtual
         onlyThis
     {
         SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
         spends.tokens.add(token);
-        if (spends.tokens.length() > 255) revert ExceededDailySpendsCapacity();
-        spends.dailys[token].limit = limit;
-        emit DailySpendLimitSet(keyHash, token, limit);
+        if (spends.tokens.length() > 63) revert ExceededSpendsCapacity();
+
+        TokenSpendStorage storage tokenSpends = spends.spends[token];
+        tokenSpends.periods.add(uint8(period));
+        if (tokenSpends.periods.length() > 8) revert ExceededSpendsCapacity();
+
+        tokenSpends.spends[uint8(period)].limit = limit;
+        emit SpendLimitSet(keyHash, token, period, limit);
     }
 
-    /// @dev Removes the daily spend limit of `token` for `keyHash`.
-    function removeDailySpendLimit(bytes32 keyHash, address token) public virtual onlyThis {
+    /// @dev Removes the daily spend limit of `token` for `keyHash` for `period`.
+    function removeSpendLimit(bytes32 keyHash, address token, SpendPeriod period) public virtual onlyThis {
         SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
         spends.tokens.remove(token);
-        delete spends.dailys[token];
-        emit DailySpendLimitRemoved(keyHash, token);
+        
+        TokenSpendStorage storage tokenSpends = spends.spends[token];
+        tokenSpends.periods.remove(uint8(period));
+        
+        delete tokenSpends.spends[uint8(period)];
+        emit SpendLimitRemoved(keyHash, token, period);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -334,22 +364,38 @@ contract GuardedExecutor is ERC7821 {
     }
 
     /// @dev Returns an array containing information on all the daily spends for `keyHash`.
-    function dailySpends(bytes32 keyHash)
+    function spendInfos(bytes32 keyHash)
         public
         view
         virtual
-        returns (DailySpendInfo[] memory results)
+        returns (SpendInfo[] memory results)
     {
-        SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
-        results = new DailySpendInfo[](spends.tokens.length());
-        for (uint256 i; i < results.length; ++i) {
-            DailySpendInfo memory info = results[i];
-            address token = spends.tokens.at(i);
-            info.token = token;
-            DailySpendStorage storage daily = spends.dailys[token];
-            info.limit = daily.limit;
-            info.spent = daily.spent;
-            info.lastUpdatedDay = daily.lastUpdatedDay;
+        SpendStorage storage s = _getGuardedExecutorStorage().spends[keyHash];
+        DynamicArrayLib.DynamicArray memory a;
+        uint256 n = s.tokens.length();
+        unchecked {
+            for (uint256 i; i != n; ++i) {
+                address token = s.tokens.at(i);
+                TokenSpendStorage storage ss = s.spends[token];
+                uint8[] memory periods = ss.periods.values();
+                for (uint256 j; j != periods.length; ++j) {
+                    uint8 period = periods[i];
+                    TokenPeriodSpendStorage storage sss = ss.spends[period];
+                    SpendInfo memory info;
+                    info.period = SpendPeriod(period);
+                    info.token = token;
+                    info.limit = sss.limit;
+                    info.lastUpdated = sss.lastUpdated;
+                    uint256 pointer;
+                    assembly ("memory-safe") {
+                        pointer := info
+                    }
+                    a.p(pointer);
+                }
+            }
+        }
+        assembly ("memory-safe") {
+            results := mload(a)
         }
     }
 
@@ -378,13 +424,30 @@ contract GuardedExecutor is ERC7821 {
     }
 
     /// @dev Increments the amount spent.
-    function _incrementSpent(DailySpendStorage storage daily, uint256 amount) internal virtual {
-        uint256 currentDay = block.timestamp / 86400;
-        if (daily.lastUpdatedDay < currentDay) {
-            daily.lastUpdatedDay = currentDay;
-            daily.spent = 0;
+    function _incrementSpent(TokenSpendStorage storage s, uint256 amount) internal {
+        uint256 n = s.periods.length();
+        for (uint256 i; i != n; i = FixedPointMathLib.rawAdd(i, 1)) {
+            uint8 period = s.periods.at(i);
+            TokenPeriodSpendStorage storage ss = s.spends[period];
+            uint256 current = _lastUpdated(SpendPeriod(period));
+            if (ss.lastUpdated < current) {
+                ss.lastUpdated = current;
+                ss.spent = 0;
+            }
+            if ((ss.spent += amount) > ss.limit) revert ExceededSpendLimit();
         }
-        if ((daily.spent += amount) > daily.limit) revert ExceededDailySpendLimit();
+    }
+
+    /// @dev Returns the last updated timestamp.
+    function _lastUpdated(SpendPeriod period) internal view returns (uint256) {
+        if (period == SpendPeriod.Minute) return block.timestamp / 60 * 60;
+        if (period == SpendPeriod.Hour) return block.timestamp / 3600 * 3600;
+        if (period == SpendPeriod.Day) return block.timestamp / 86400 * 86400;
+        if (period == SpendPeriod.Week) return DateTimeLib.mondayTimestamp(block.timestamp);
+        (uint256 year, uint256 month, ) = DateTimeLib.timestampToDate(block.timestamp);
+        if (period == SpendPeriod.Month) return DateTimeLib.dateToTimestamp(year, month, 1);
+        if (period == SpendPeriod.Year) return DateTimeLib.dateToTimestamp(year, 1, 1);
+        return block.timestamp;
     }
 
     /// @dev Guards a function such that it can only be called by `address(this)`.
