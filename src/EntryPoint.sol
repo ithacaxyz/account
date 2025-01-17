@@ -181,6 +181,10 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         // - Avoid quadratic memory expansion costs.
         //   We don't want userOps at the end to be unfairly subjected to more gas costs.
         // - Avoid unnecessary memory copying.
+        // - I might one day rewrite this in a normie-friendly version for readability,
+        //   but will still recommend using the assembloored version.
+        //   In terms of performance, assembly will likely yield much greater benefits
+        //   aggregated signatures.
         assembly ("memory-safe") {
             statuses := mload(0x40)
             mstore(statuses, encodedUserOps.length) // Store length of `statuses`.
