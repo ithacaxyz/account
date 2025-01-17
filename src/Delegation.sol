@@ -29,7 +29,7 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev The type of key.
     enum KeyType {
         P256,
-        WebAuthnP256, 
+        WebAuthnP256,
         Secp256k1
     }
 
@@ -40,7 +40,7 @@ contract Delegation is EIP712, GuardedExecutor {
         /// @dev Type of key. See the {KeyType} enum.
         KeyType keyType;
         /// @dev Whether the key is a super admin key.
-        /// Super admin keys are allowed to call into super admin functions such as 
+        /// Super admin keys are allowed to call into super admin functions such as
         /// `authorize` and `revoke` via `execute`.
         bool isSuperAdmin;
         /// @dev Public key in encoded form.
@@ -389,9 +389,7 @@ contract Delegation is EIP712, GuardedExecutor {
             );
         } else if (key.keyType == KeyType.Secp256k1) {
             isValid = SignatureCheckerLib.isValidSignatureNowCalldata(
-                abi.decode(key.publicKey, (address)), 
-                digest,
-                signature
+                abi.decode(key.publicKey, (address)), digest, signature
             );
         }
     }
