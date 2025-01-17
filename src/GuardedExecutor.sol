@@ -124,11 +124,14 @@ contract GuardedExecutor is ERC7821 {
     // ERC7821
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev To avoid stack-too-deep.
     struct _ExecuteTemps {
-        DynamicArrayLib.DynamicArray withApprovals;
-        DynamicArrayLib.DynamicArray approvalTos;
+        DynamicArrayLib.DynamicArray approvedERC20s;
+        DynamicArrayLib.DynamicArray approvalSpenders;
         DynamicArrayLib.DynamicArray erc20s;
         DynamicArrayLib.DynamicArray transferAmounts;
+        DynamicArrayLib.DynamicArray permit2ERC20s;
+        DynamicArrayLib.DynamicArray permit2Spenders;
         DynamicArrayLib.DynamicArray guardedERC20s;
         uint256[] balancesBefore;
         uint256 totalNativeSpend;
@@ -175,13 +178,18 @@ contract GuardedExecutor is ERC7821 {
             // `approve(address,uint256)`.
             if (fnSel == 0x095ea7b3 && t.guardedERC20s.contains(target)) {
                 if (LibBytes.loadCalldata(data, 0x24) != 0) {
-                    t.withApprovals.p(target);
-                    t.approvalTos.p(LibBytes.loadCalldata(data, 0x04));
+                    t.approvedERC20s.p(target);
+                    t.approvalSpenders.p(LibBytes.loadCalldata(data, 0x04));
                 }
             }
             // The only Permit2 method that requires `msg.sender` to approve.
             // `approve(address,address,uint160,uint48)`.
-            if (target == _PERMIT2 && fnSel == 0x87517c45) revert Unauthorized();
+            if (target == _PERMIT2 && fnSel == 0x87517c45) {
+                if (LibBytes.loadCalldata(data, 0x44) != 0) {
+                    t.permit2ERC20s.p(LibBytes.loadCalldata(data, 0x04));
+                    t.permit2Spenders.p(LibBytes.loadCalldata(data, 0x24));    
+                }
+            }
         }
         _incrementSpent(spends.dailys[address(0)], t.totalNativeSpend);
 
@@ -201,9 +209,15 @@ contract GuardedExecutor is ERC7821 {
 
         unchecked {
             // Revoke all non-zero approvals that have been made.
-            for (uint256 i; i < t.withApprovals.length(); ++i) {
+            for (uint256 i; i < t.approvedERC20s.length(); ++i) {
                 SafeTransferLib.safeApprove(
-                    t.withApprovals.getAddress(i), t.approvalTos.getAddress(i), 0
+                    t.approvedERC20s.getAddress(i), t.approvalSpenders.getAddress(i), 0
+                );
+            }
+            // Revoke all non-zero Permit2 direct approvals that have been made.
+            for (uint256 i; i < t.permit2ERC20s.length(); ++i) {
+                SafeTransferLib.permit2Lockdown(
+                    t.permit2ERC20s.getAddress(i), t.permit2Spenders.getAddress(i)
                 );
             }
             // Increments the spent amounts.
