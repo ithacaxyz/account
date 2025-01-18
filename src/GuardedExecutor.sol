@@ -165,9 +165,7 @@ contract GuardedExecutor is ERC7821 {
     ///    reset to zero after the calls.
     function _execute(Call[] calldata calls, bytes32 keyHash) internal virtual override {
         // If self-execute, don't care about the spend permissions.
-        if (keyHash == bytes32(0)) {
-            return ERC7821._execute(calls, keyHash);
-        }
+        if (keyHash == bytes32(0)) return ERC7821._execute(calls, keyHash);
 
         SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
         _ExecuteTemps memory t;
@@ -175,9 +173,10 @@ contract GuardedExecutor is ERC7821 {
         uint256 n = spends.tokens.length();
         for (uint256 i; i < n; ++i) {
             address token = spends.tokens.at(i);
-            if (token != address(0)) t.erc20s.p(token);
+            if (token == address(0)) continue;
+            t.erc20s.p(token);
+            t.transferAmounts.p(uint256(0));
         }
-        t.transferAmounts.resize(t.erc20s.length()); // Fill will zeros.
 
         // We will only filter based on functions that are known to use `msg.sender`.
         // For signature-based approvals (e.g. permit), we can't do anything
@@ -188,24 +187,25 @@ contract GuardedExecutor is ERC7821 {
             if (data.length < 4) continue;
             bytes4 fnSel = bytes4(LibBytes.loadCalldata(data, 0x00));
             // `transfer(address,uint256)`.
-            if (fnSel == 0xa9059cbb && spends.tokens.contains(target)) {
+            if (fnSel == 0xa9059cbb) {
+                if (!spends.tokens.contains(target)) continue;
                 t.erc20s.p(target);
                 t.transferAmounts.p(LibBytes.loadCalldata(data, 0x24));
             }
             // `approve(address,uint256)`.
-            if (fnSel == 0x095ea7b3 && spends.tokens.contains(target)) {
-                if (LibBytes.loadCalldata(data, 0x24) != 0) {
-                    t.approvedERC20s.p(target);
-                    t.approvalSpenders.p(LibBytes.loadCalldata(data, 0x04));
-                }
+            if (fnSel == 0x095ea7b3) {
+                if (!spends.tokens.contains(target)) continue;
+                if (LibBytes.loadCalldata(data, 0x24) == 0) continue;
+                t.approvedERC20s.p(target);
+                t.approvalSpenders.p(LibBytes.loadCalldata(data, 0x04));
             }
             // The only Permit2 method that requires `msg.sender` to approve.
             // `approve(address,address,uint160,uint48)`.
-            if (target == _PERMIT2 && fnSel == 0x87517c45) {
-                if (LibBytes.loadCalldata(data, 0x44) != 0) {
-                    t.permit2ERC20s.p(LibBytes.loadCalldata(data, 0x04));
-                    t.permit2Spenders.p(LibBytes.loadCalldata(data, 0x24));
-                }
+            if (fnSel == 0x87517c45) {
+                if (target != _PERMIT2) continue;
+                if (LibBytes.loadCalldata(data, 0x44) == 0) continue;
+                t.permit2ERC20s.p(LibBytes.loadCalldata(data, 0x04));
+                t.permit2Spenders.p(LibBytes.loadCalldata(data, 0x24));
             }
         }
         _incrementSpent(spends.spends[address(0)], t.totalNativeSpend);
