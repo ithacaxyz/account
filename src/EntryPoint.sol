@@ -177,6 +177,14 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         virtual
         returns (UserOpStatus[] memory statuses)
     {
+        // We'll use assembly for the following benefits:
+        // - Avoid quadratic memory expansion costs.
+        //   We don't want userOps at the end to be unfairly subjected to more gas costs.
+        // - Avoid unnecessary memory copying.
+        // - I might one day rewrite this in a normie-friendly version for readability,
+        //   but will still recommend using the assembloored version.
+        //   In terms of performance, assembly will likely yield much greater benefits
+        //   aggregated signatures.
         assembly ("memory-safe") {
             statuses := mload(0x40)
             mstore(statuses, encodedUserOps.length) // Store length of `statuses`.
@@ -192,6 +200,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                 // This chunk of code prepares the variables and also
                 // carefully verifies that `encodedUserOps` has been properly encoded,
                 // such that no nested dynamic types (i.e. UserOp, bytes) are out of bounds.
+                // If you are reading for high-level understanding, ignore this part.
                 {
                     let t :=
                         add(encodedUserOps.offset, calldataload(add(encodedUserOps.offset, shl(5, i))))
@@ -220,8 +229,10 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                 }
 
                 for {} 1 {} {
+                    // 1. Pay.
                     mstore(m, 0xcc1d5274) // `_payEntryPoint()`.
                     mstore(0x00, 0) // Zeroize the return slot.
+                    // Ensure that `userOp.paymentAmount <= userOp.paymentMaxAmount`.
                     if gt(
                         calldataload(add(u, _USER_OP_PAYMENT_AMOUNT_POS)),
                         calldataload(add(u, _USER_OP_PAYMENT_MAX_AMOUNT_POS))
@@ -229,12 +240,15 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                         mstore(add(add(0x20, statuses), shl(5, i)), 3) // `PaymentFailure`.
                         break
                     }
+                    // Perform a gas-limited call and check for success.
                     let g := calldataload(add(u, _USER_OP_PAYMENT_GAS_POS)) // `paymentGas`.
                     // This returns `(bool success)`.
                     if iszero(and(eq(1, mload(0x00)), call(g, address(), 0, s, n, 0x00, 0x20))) {
                         mstore(add(add(0x20, statuses), shl(5, i)), 3) // `PaymentFailure`.
                         break
                     }
+
+                    // 2. Verify.
                     mstore(m, 0xbaf2bed9) // `_verify()`.
                     mstore(0x00, 0) // Zeroize the return slot.
                     g := calldataload(add(u, _USER_OP_VERIFICATION_GAS_POS)) // `verificationGas`.
@@ -243,6 +257,8 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                         mstore(add(add(0x20, statuses), shl(5, i)), 2) // `VerificationFailure`.
                         break
                     }
+
+                    // 3. Execute.
                     mstore(m, 0x420aadb8) // `_execute()`.
                     mstore(add(m, 0x20), mload(0x20)) // Copy the `keyHash` over.
                     mstore(0x00, 0) // Zeroize the return slot.
@@ -399,7 +415,9 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         }
         address paymentRecipient = userOp.paymentRecipient;
         if (paymentRecipient != address(0)) {
-            TokenTransferLib.safeTransferFrom(paymentToken, address(this), paymentRecipient, paymentAmount);
+            TokenTransferLib.safeTransferFrom(
+                paymentToken, address(this), paymentRecipient, paymentAmount
+            );
             // Double check, in case that ERC20 is some token with baked in fees on transfer.
             if (TokenTransferLib.balanceOf(paymentToken, address(this)) < tokenBalanceBefore) {
                 revert EntryPointPaymentFailed();
