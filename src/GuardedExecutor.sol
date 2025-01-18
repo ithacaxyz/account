@@ -173,7 +173,7 @@ contract GuardedExecutor is ERC7821 {
             address token = spends.tokens.at(i);
             if (token != address(0)) {
                 t.erc20s.p(token);
-                t.transferAmounts.p(uint256(0));    
+                t.transferAmounts.p(uint256(0));
             }
         }
 
