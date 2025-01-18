@@ -153,8 +153,6 @@ contract GuardedExecutor is ERC7821 {
         DynamicArrayLib.DynamicArray transferAmounts;
         DynamicArrayLib.DynamicArray permit2ERC20s;
         DynamicArrayLib.DynamicArray permit2Spenders;
-        uint256[] balancesBefore;
-        uint256 totalNativeSpend;
     }
 
     /// @dev The `_execute` function imposes daily spending limits with the following:
@@ -173,50 +171,54 @@ contract GuardedExecutor is ERC7821 {
         uint256 n = spends.tokens.length();
         for (uint256 i; i < n; ++i) {
             address token = spends.tokens.at(i);
-            if (token == address(0)) continue;
-            t.erc20s.p(token);
-            t.transferAmounts.p(uint256(0));
+            if (token != address(0)) {
+                t.erc20s.p(token);
+                t.transferAmounts.p(uint256(0));    
+            }
         }
 
         // We will only filter based on functions that are known to use `msg.sender`.
         // For signature-based approvals (e.g. permit), we can't do anything
         // to guard, as anyone else can directly submit the calldata and the signature.
+        uint256 totalNativeSpend;
         for (uint256 i; i < calls.length; ++i) {
             (address target, uint256 value, bytes calldata data) = _get(calls, i);
-            t.totalNativeSpend += value;
+            if (value != 0) totalNativeSpend += value;
             if (data.length < 4) continue;
-            bytes4 fnSel = bytes4(LibBytes.loadCalldata(data, 0x00));
+            uint32 fnSel = uint32(bytes4(LibBytes.loadCalldata(data, 0x00)));
             // `transfer(address,uint256)`.
             if (fnSel == 0xa9059cbb) {
                 if (!spends.tokens.contains(target)) continue;
                 t.erc20s.p(target);
-                t.transferAmounts.p(LibBytes.loadCalldata(data, 0x24));
+                t.transferAmounts.p(LibBytes.loadCalldata(data, 0x24)); // `amount`.
             }
             // `approve(address,uint256)`.
             if (fnSel == 0x095ea7b3) {
                 if (!spends.tokens.contains(target)) continue;
-                if (LibBytes.loadCalldata(data, 0x24) == 0) continue;
+                if (LibBytes.loadCalldata(data, 0x24) == 0) continue; // `amount == 0`.
                 t.approvedERC20s.p(target);
-                t.approvalSpenders.p(LibBytes.loadCalldata(data, 0x04));
+                t.approvalSpenders.p(LibBytes.loadCalldata(data, 0x04)); // `spender`.
             }
             // The only Permit2 method that requires `msg.sender` to approve.
             // `approve(address,address,uint160,uint48)`.
             if (fnSel == 0x87517c45) {
                 if (target != _PERMIT2) continue;
-                if (LibBytes.loadCalldata(data, 0x44) == 0) continue;
-                t.permit2ERC20s.p(LibBytes.loadCalldata(data, 0x04));
-                t.permit2Spenders.p(LibBytes.loadCalldata(data, 0x24));
+                if (LibBytes.loadCalldata(data, 0x44) == 0) continue; // `amount == 0`.
+                t.permit2ERC20s.p(LibBytes.loadCalldata(data, 0x04)); // `token`.
+                t.permit2Spenders.p(LibBytes.loadCalldata(data, 0x24)); // `spender`.
             }
         }
-        _incrementSpent(spends.spends[address(0)], t.totalNativeSpend);
+        if (totalNativeSpend != 0) {
+            _incrementSpent(spends.spends[address(0)], totalNativeSpend);
+        }
 
-        // Sum transfer amounts, grouped by erc20s.
+        // Sum transfer amounts, grouped by the ERC20s.
         LibSort.groupSum(t.erc20s.data, t.transferAmounts.data);
 
-        t.balancesBefore = DynamicArrayLib.malloc(t.erc20s.length());
+        uint256[] memory balancesBefore = DynamicArrayLib.malloc(t.erc20s.length());
         for (uint256 i; i < t.erc20s.length(); ++i) {
             address token = t.erc20s.getAddress(i);
-            t.balancesBefore.set(i, SafeTransferLib.balanceOf(token, address(this)));
+            balancesBefore.set(i, SafeTransferLib.balanceOf(token, address(this)));
         }
 
         // Perform the batch execution.
@@ -237,11 +239,14 @@ contract GuardedExecutor is ERC7821 {
         // Increments the spent amounts.
         for (uint256 i; i < t.erc20s.length(); ++i) {
             address token = t.erc20s.getAddress(i);
-            uint256 delta = FixedPointMathLib.zeroFloorSub(
-                t.balancesBefore.get(i), SafeTransferLib.balanceOf(token, address(this))
+            uint256 balance = SafeTransferLib.balanceOf(token, address(this));
+            _incrementSpent(
+                spends.spends[token],
+                FixedPointMathLib.max(
+                    t.transferAmounts.get(i),
+                    FixedPointMathLib.zeroFloorSub(balancesBefore.get(i), balance)
+                )
             );
-            delta = FixedPointMathLib.max(delta, t.transferAmounts.get(i));
-            _incrementSpent(spends.spends[token], delta);
         }
     }
 
@@ -289,11 +294,11 @@ contract GuardedExecutor is ERC7821 {
     {
         SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
         spends.tokens.add(token);
-        if (spends.tokens.length() > 63) revert ExceededSpendsCapacity();
+        if (spends.tokens.length() >= 64) revert ExceededSpendsCapacity();
 
         TokenSpendStorage storage tokenSpends = spends.spends[token];
         tokenSpends.periods.add(uint8(period));
-        if (tokenSpends.periods.length() > 8) revert ExceededSpendsCapacity();
+        if (tokenSpends.periods.length() >= 8) revert ExceededSpendsCapacity();
 
         tokenSpends.spends[uint8(period)].limit = limit;
         emit SpendLimitSet(keyHash, token, period, limit);
