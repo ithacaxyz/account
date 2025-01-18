@@ -168,6 +168,8 @@ contract GuardedExecutor is ERC7821 {
         SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
         _ExecuteTemps memory t;
 
+        // Collect all ERC20 tokens that need to be guarded,
+        // and initialize their transfer amounts as zero.
         uint256 n = spends.tokens.length();
         for (uint256 i; i < n; ++i) {
             address token = spends.tokens.at(i);
@@ -212,9 +214,10 @@ contract GuardedExecutor is ERC7821 {
             _incrementSpent(spends.spends[address(0)], totalNativeSpend);
         }
 
-        // Sum transfer amounts, grouped by the ERC20s.
+        // Sum transfer amounts, grouped by the ERC20s. In-place.
         LibSort.groupSum(t.erc20s.data, t.transferAmounts.data);
 
+        // Collect the ERC20 balances before the batch execution.
         uint256[] memory balancesBefore = DynamicArrayLib.malloc(t.erc20s.length());
         for (uint256 i; i < t.erc20s.length(); ++i) {
             address token = t.erc20s.getAddress(i);
@@ -224,18 +227,6 @@ contract GuardedExecutor is ERC7821 {
         // Perform the batch execution.
         ERC7821._execute(calls, keyHash);
 
-        // Revoke all non-zero approvals that have been made.
-        for (uint256 i; i < t.approvedERC20s.length(); ++i) {
-            SafeTransferLib.safeApprove(
-                t.approvedERC20s.getAddress(i), t.approvalSpenders.getAddress(i), 0
-            );
-        }
-        // Revoke all non-zero Permit2 direct approvals that have been made.
-        for (uint256 i; i < t.permit2ERC20s.length(); ++i) {
-            SafeTransferLib.permit2Lockdown(
-                t.permit2ERC20s.getAddress(i), t.permit2Spenders.getAddress(i)
-            );
-        }
         // Increments the spent amounts.
         for (uint256 i; i < t.erc20s.length(); ++i) {
             address token = t.erc20s.getAddress(i);
@@ -246,6 +237,18 @@ contract GuardedExecutor is ERC7821 {
                     t.transferAmounts.get(i),
                     FixedPointMathLib.zeroFloorSub(balancesBefore.get(i), balance)
                 )
+            );
+        }
+        // Revoke all non-zero approvals that have been made.
+        for (uint256 i; i < t.approvedERC20s.length(); ++i) {
+            SafeTransferLib.safeApprove(
+                t.approvedERC20s.getAddress(i), t.approvalSpenders.getAddress(i), 0
+            );
+        }
+        // Revoke all non-zero Permit2 direct approvals that have been made.
+        for (uint256 i; i < t.permit2ERC20s.length(); ++i) {
+            SafeTransferLib.permit2Lockdown(
+                t.permit2ERC20s.getAddress(i), t.permit2Spenders.getAddress(i)
             );
         }
     }
@@ -273,7 +276,7 @@ contract GuardedExecutor is ERC7821 {
     {
         // All calls not from the EOA itself has to go through the single `execute` function.
         // For security, only EOA key and super admin keys can call into `execute`.
-        // Otherwise any low stakes app key can call super admin functions
+        // Otherwise any low-stakes app key can call super admin functions
         // such as like `authorize` and `revoke`.
         // This check is for sanity. We will still validate this in `canExecute`.
         if (_isSelfExecute(target, fnSel)) {
@@ -333,7 +336,7 @@ contract GuardedExecutor is ERC7821 {
         returns (bool)
     {
         // A zero `keyHash` represents that the execution is authorized / performed
-        // by the `eoa`'s secp256k1 key itself.
+        // by the EOA's secp256k1 key itself.
         if (keyHash == bytes32(0)) return true;
 
         mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
