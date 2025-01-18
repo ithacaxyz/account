@@ -210,9 +210,7 @@ contract GuardedExecutor is ERC7821 {
                 t.permit2Spenders.p(LibBytes.loadCalldata(data, 0x24)); // `spender`.
             }
         }
-        if (totalNativeSpend != 0) {
-            _incrementSpent(spends.spends[address(0)], totalNativeSpend);
-        }
+        _incrementSpent(spends.spends[address(0)], totalNativeSpend);
 
         // Sum transfer amounts, grouped by the ERC20s. In-place.
         LibSort.groupSum(t.erc20s.data, t.transferAmounts.data);
@@ -437,6 +435,7 @@ contract GuardedExecutor is ERC7821 {
 
     /// @dev Increments the amount spent.
     function _incrementSpent(TokenSpendStorage storage s, uint256 amount) internal {
+        if (amount == uint256(0)) return; // Early return.
         uint256 n = s.periods.length();
         for (uint256 i; i < n; ++i) {
             uint8 period = s.periods.at(i);
