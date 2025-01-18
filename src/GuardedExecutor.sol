@@ -153,7 +153,6 @@ contract GuardedExecutor is ERC7821 {
         DynamicArrayLib.DynamicArray transferAmounts;
         DynamicArrayLib.DynamicArray permit2ERC20s;
         DynamicArrayLib.DynamicArray permit2Spenders;
-        DynamicArrayLib.DynamicArray guardedERC20s;
         uint256[] balancesBefore;
         uint256 totalNativeSpend;
     }
@@ -165,39 +164,36 @@ contract GuardedExecutor is ERC7821 {
     /// 2. Any token that is granted a non-zero approval will have the approval
     ///    reset to zero after the calls.
     function _execute(Call[] calldata calls, bytes32 keyHash) internal virtual override {
-        if (keyHash == 0) {
+        // If self-execute, don't care about the spend permissions.
+        if (keyHash == bytes32(0)) {
             return ERC7821._execute(calls, keyHash);
         }
 
         SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
         _ExecuteTemps memory t;
 
-        unchecked {
-            uint256 n = spends.tokens.length();
-            for (uint256 i; i != n; ++i) {
-                address token = spends.tokens.at(i);
-                if (token != address(0)) {
-                    t.erc20s.p(token);
-                    t.transferAmounts.p(uint256(0));
-                }
-                t.guardedERC20s = t.erc20s.copy();
-            }
+        uint256 n = spends.tokens.length();
+        for (uint256 i; i < n; ++i) {
+            address token = spends.tokens.at(i);
+            if (token != address(0)) t.erc20s.p(token);
         }
+        t.transferAmounts.resize(t.erc20s.length()); // Fill will zeros.
+
         // We will only filter based on functions that are known to use `msg.sender`.
         // For signature-based approvals (e.g. permit), we can't do anything
         // to guard, as anyone else can directly submit the calldata and the signature.
-        for (uint256 i; i != calls.length; i = FixedPointMathLib.rawAdd(i, 1)) {
+        for (uint256 i; i < calls.length; ++i) {
             (address target, uint256 value, bytes calldata data) = _get(calls, i);
             t.totalNativeSpend += value;
             if (data.length < 4) continue;
             bytes4 fnSel = bytes4(LibBytes.loadCalldata(data, 0x00));
             // `transfer(address,uint256)`.
-            if (fnSel == 0xa9059cbb && t.guardedERC20s.contains(target)) {
+            if (fnSel == 0xa9059cbb && spends.tokens.contains(target)) {
                 t.erc20s.p(target);
                 t.transferAmounts.p(LibBytes.loadCalldata(data, 0x24));
             }
             // `approve(address,uint256)`.
-            if (fnSel == 0x095ea7b3 && t.guardedERC20s.contains(target)) {
+            if (fnSel == 0x095ea7b3 && spends.tokens.contains(target)) {
                 if (LibBytes.loadCalldata(data, 0x24) != 0) {
                     t.approvedERC20s.p(target);
                     t.approvalSpenders.p(LibBytes.loadCalldata(data, 0x04));
@@ -208,7 +204,7 @@ contract GuardedExecutor is ERC7821 {
             if (target == _PERMIT2 && fnSel == 0x87517c45) {
                 if (LibBytes.loadCalldata(data, 0x44) != 0) {
                     t.permit2ERC20s.p(LibBytes.loadCalldata(data, 0x04));
-                    t.permit2Spenders.p(LibBytes.loadCalldata(data, 0x24));    
+                    t.permit2Spenders.p(LibBytes.loadCalldata(data, 0x24));
                 }
             }
         }
@@ -218,38 +214,34 @@ contract GuardedExecutor is ERC7821 {
         LibSort.groupSum(t.erc20s.data, t.transferAmounts.data);
 
         t.balancesBefore = DynamicArrayLib.malloc(t.erc20s.length());
-        unchecked {
-            for (uint256 i; i != t.erc20s.length(); ++i) {
-                address token = t.erc20s.getAddress(i);
-                t.balancesBefore.set(i, SafeTransferLib.balanceOf(token, address(this)));
-            }
+        for (uint256 i; i < t.erc20s.length(); ++i) {
+            address token = t.erc20s.getAddress(i);
+            t.balancesBefore.set(i, SafeTransferLib.balanceOf(token, address(this)));
         }
 
         // Perform the batch execution.
         ERC7821._execute(calls, keyHash);
 
-        unchecked {
-            // Revoke all non-zero approvals that have been made.
-            for (uint256 i; i < t.approvedERC20s.length(); ++i) {
-                SafeTransferLib.safeApprove(
-                    t.approvedERC20s.getAddress(i), t.approvalSpenders.getAddress(i), 0
-                );
-            }
-            // Revoke all non-zero Permit2 direct approvals that have been made.
-            for (uint256 i; i < t.permit2ERC20s.length(); ++i) {
-                SafeTransferLib.permit2Lockdown(
-                    t.permit2ERC20s.getAddress(i), t.permit2Spenders.getAddress(i)
-                );
-            }
-            // Increments the spent amounts.
-            for (uint256 i; i < t.erc20s.length(); ++i) {
-                address token = t.erc20s.getAddress(i);
-                uint256 delta = FixedPointMathLib.zeroFloorSub(
-                    t.balancesBefore.get(i), SafeTransferLib.balanceOf(token, address(this))
-                );
-                delta = FixedPointMathLib.max(delta, t.transferAmounts.get(i));
-                _incrementSpent(spends.spends[token], delta);
-            }
+        // Revoke all non-zero approvals that have been made.
+        for (uint256 i; i < t.approvedERC20s.length(); ++i) {
+            SafeTransferLib.safeApprove(
+                t.approvedERC20s.getAddress(i), t.approvalSpenders.getAddress(i), 0
+            );
+        }
+        // Revoke all non-zero Permit2 direct approvals that have been made.
+        for (uint256 i; i < t.permit2ERC20s.length(); ++i) {
+            SafeTransferLib.permit2Lockdown(
+                t.permit2ERC20s.getAddress(i), t.permit2Spenders.getAddress(i)
+            );
+        }
+        // Increments the spent amounts.
+        for (uint256 i; i < t.erc20s.length(); ++i) {
+            address token = t.erc20s.getAddress(i);
+            uint256 delta = FixedPointMathLib.zeroFloorSub(
+                t.balancesBefore.get(i), SafeTransferLib.balanceOf(token, address(this))
+            );
+            delta = FixedPointMathLib.max(delta, t.transferAmounts.get(i));
+            _incrementSpent(spends.spends[token], delta);
         }
     }
 
@@ -272,12 +264,8 @@ contract GuardedExecutor is ERC7821 {
         public
         virtual
         onlyThis
+        checkKeyHashIsNonZero(keyHash)
     {
-        // Sanity check as a key hash of `bytes32(0)` represents the EOA's key itself.
-        // The EOA is always able to call any function on itself, so there is no point
-        // setting which functions and contracts it can touch via execute.
-        if (keyHash == bytes32(0)) revert KeyHashIsZero();
-
         // All calls not from the EOA itself has to go through the single `execute` function.
         // For security, only EOA key and super admin keys can call into `execute`.
         // Otherwise any low stakes app key can call super admin functions
@@ -297,6 +285,7 @@ contract GuardedExecutor is ERC7821 {
         public
         virtual
         onlyThis
+        checkKeyHashIsNonZero(keyHash)
     {
         SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
         spends.tokens.add(token);
@@ -311,13 +300,18 @@ contract GuardedExecutor is ERC7821 {
     }
 
     /// @dev Removes the daily spend limit of `token` for `keyHash` for `period`.
-    function removeSpendLimit(bytes32 keyHash, address token, SpendPeriod period) public virtual onlyThis {
+    function removeSpendLimit(bytes32 keyHash, address token, SpendPeriod period)
+        public
+        virtual
+        onlyThis
+        checkKeyHashIsNonZero(keyHash)
+    {
         SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
         spends.tokens.remove(token);
-        
+
         TokenSpendStorage storage tokenSpends = spends.spends[token];
         tokenSpends.periods.remove(uint8(period));
-        
+
         delete tokenSpends.spends[uint8(period)];
         emit SpendLimitRemoved(keyHash, token, period);
     }
@@ -364,34 +358,27 @@ contract GuardedExecutor is ERC7821 {
     }
 
     /// @dev Returns an array containing information on all the daily spends for `keyHash`.
-    function spendInfos(bytes32 keyHash)
-        public
-        view
-        virtual
-        returns (SpendInfo[] memory results)
-    {
-        SpendStorage storage s = _getGuardedExecutorStorage().spends[keyHash];
+    function spendInfos(bytes32 keyHash) public view virtual returns (SpendInfo[] memory results) {
+        SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
         DynamicArrayLib.DynamicArray memory a;
-        uint256 n = s.tokens.length();
-        unchecked {
-            for (uint256 i; i != n; ++i) {
-                address token = s.tokens.at(i);
-                TokenSpendStorage storage ss = s.spends[token];
-                uint8[] memory periods = ss.periods.values();
-                for (uint256 j; j != periods.length; ++j) {
-                    uint8 period = periods[i];
-                    TokenPeriodSpendStorage storage sss = ss.spends[period];
-                    SpendInfo memory info;
-                    info.period = SpendPeriod(period);
-                    info.token = token;
-                    info.limit = sss.limit;
-                    info.lastUpdated = sss.lastUpdated;
-                    uint256 pointer;
-                    assembly ("memory-safe") {
-                        pointer := info
-                    }
-                    a.p(pointer);
+        uint256 n = spends.tokens.length();
+        for (uint256 i; i < n; ++i) {
+            address token = spends.tokens.at(i);
+            TokenSpendStorage storage tokenSpends = spends.spends[token];
+            uint8[] memory periods = tokenSpends.periods.values();
+            for (uint256 j; j < periods.length; ++j) {
+                uint8 period = periods[i];
+                TokenPeriodSpendStorage storage tokenPeriodSpend = tokenSpends.spends[period];
+                SpendInfo memory info;
+                info.period = SpendPeriod(period);
+                info.token = token;
+                info.limit = tokenPeriodSpend.limit;
+                info.lastUpdated = tokenPeriodSpend.lastUpdated;
+                uint256 pointer;
+                assembly ("memory-safe") {
+                    pointer := info
                 }
+                a.p(pointer);
             }
         }
         assembly ("memory-safe") {
@@ -400,12 +387,16 @@ contract GuardedExecutor is ERC7821 {
     }
 
     /// @dev Rounds the unix timestamp down to the period.
-    function startOfSpendPeriod(uint256 unixTimestamp, SpendPeriod period) public pure returns (uint256) {
+    function startOfSpendPeriod(uint256 unixTimestamp, SpendPeriod period)
+        public
+        pure
+        returns (uint256)
+    {
         if (period == SpendPeriod.Minute) return unixTimestamp / 60 * 60;
         if (period == SpendPeriod.Hour) return unixTimestamp / 3600 * 3600;
         if (period == SpendPeriod.Day) return unixTimestamp / 86400 * 86400;
         if (period == SpendPeriod.Week) return DateTimeLib.mondayTimestamp(unixTimestamp);
-        (uint256 year, uint256 month, ) = DateTimeLib.timestampToDate(unixTimestamp);
+        (uint256 year, uint256 month,) = DateTimeLib.timestampToDate(unixTimestamp);
         if (period == SpendPeriod.Month) return DateTimeLib.dateToTimestamp(year, month, 1);
         if (period == SpendPeriod.Year) return DateTimeLib.dateToTimestamp(year, 1, 1);
         return unixTimestamp;
@@ -438,21 +429,33 @@ contract GuardedExecutor is ERC7821 {
     /// @dev Increments the amount spent.
     function _incrementSpent(TokenSpendStorage storage s, uint256 amount) internal {
         uint256 n = s.periods.length();
-        for (uint256 i; i != n; i = FixedPointMathLib.rawAdd(i, 1)) {
+        for (uint256 i; i < n; ++i) {
             uint8 period = s.periods.at(i);
-            TokenPeriodSpendStorage storage ss = s.spends[period];
+            TokenPeriodSpendStorage storage tokenPeriodSpend = s.spends[period];
             uint256 current = startOfSpendPeriod(block.timestamp, SpendPeriod(period));
-            if (ss.lastUpdated < current) {
-                ss.lastUpdated = current;
-                ss.spent = 0;
+            if (tokenPeriodSpend.lastUpdated < current) {
+                tokenPeriodSpend.lastUpdated = current;
+                tokenPeriodSpend.spent = 0;
             }
-            if ((ss.spent += amount) > ss.limit) revert ExceededSpendLimit();
+            if ((tokenPeriodSpend.spent += amount) > tokenPeriodSpend.limit) {
+                revert ExceededSpendLimit();
+            }
         }
     }
 
     /// @dev Guards a function such that it can only be called by `address(this)`.
     modifier onlyThis() virtual {
         if (msg.sender != address(this)) revert Unauthorized();
+        _;
+    }
+
+    /// @dev Checks that the keyHash is non-zero.
+    modifier checkKeyHashIsNonZero(bytes32 keyHash) virtual {
+        // Sanity check as a key hash of `bytes32(0)` represents the EOA's key itself.
+        // The EOA is should be able to call any function on itself,
+        // and able to spend as much as it needs. No point restricting, since the EOA
+        // key can always be used to change the delegation anyways.
+        if (keyHash == bytes32(0)) revert KeyHashIsZero();
         _;
     }
 
