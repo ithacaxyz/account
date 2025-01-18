@@ -405,9 +405,10 @@ contract GuardedExecutor is ERC7821 {
         if (period == SpendPeriod.Day) return unixTimestamp / 86400 * 86400;
         if (period == SpendPeriod.Week) return DateTimeLib.mondayTimestamp(unixTimestamp);
         (uint256 year, uint256 month,) = DateTimeLib.timestampToDate(unixTimestamp);
+        // Note: DateTimeLib's months and month-days start from 1.
         if (period == SpendPeriod.Month) return DateTimeLib.dateToTimestamp(year, month, 1);
         if (period == SpendPeriod.Year) return DateTimeLib.dateToTimestamp(year, 1, 1);
-        return unixTimestamp;
+        revert(); // We shouldn't hit here.
     }
 
     ////////////////////////////////////////////////////////////////////////
