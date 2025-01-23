@@ -373,7 +373,7 @@ contract GuardedExecutor is ERC7821 {
             TokenSpendStorage storage tokenSpends = spends.spends[token];
             uint8[] memory periods = tokenSpends.periods.values();
             for (uint256 j; j < periods.length; ++j) {
-                uint8 period = periods[i];
+                uint8 period = periods[j];
                 TokenPeriodSpendStorage storage tokenPeriodSpend = tokenSpends.spends[period];
                 SpendInfo memory info;
                 info.period = SpendPeriod(period);
