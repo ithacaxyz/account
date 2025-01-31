@@ -316,14 +316,14 @@ contract Delegation is EIP712, GuardedExecutor {
     // Entry Point Functions
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Pays the entry point `paymentAmount` of `paymentToken`.
-    function payEntryPoint(address paymentToken, uint256 paymentAmount)
+    /// @dev Pays `paymentAmount` of `paymentToken` to `paymentRecipient`.
+    function compensate(address paymentToken, address paymentRecipient, uint256 paymentAmount)
         public
         virtual
         returns (bool)
     {
         if (msg.sender != ENTRY_POINT) revert Unauthorized();
-        TokenTransferLib.safeTransfer(paymentToken, msg.sender, paymentAmount);
+        TokenTransferLib.safeTransfer(paymentToken, paymentRecipient, paymentAmount);
         return true;
     }
 

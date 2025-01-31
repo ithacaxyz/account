@@ -64,22 +64,20 @@ contract EntryPointTest is SoladyTest {
                 t.targetFunctionPayloads[i].value = _bound(_random(), 0, 2 ** 32 - 1),
                 t.targetFunctionPayloads[i].data = _truncateBytes(_randomBytes(), 0xff)
             );
-            u.nonce = _random();
+            u.nonce = _randomUnique();
             paymentToken.mint(u.eoa, 2 ** 128 - 1);
             u.paymentToken = address(paymentToken);
             u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
             u.paymentMaxAmount = u.paymentAmount;
-            u.paymentGas = 1000000;
-            u.verificationGas = 2000000;
-            u.callGas = 3000000;
+            u.combinedGas = 10000000;
             _fillSecp256k1Signature(u, t.privateKeys[i]);
             t.encodedUserOps[i] = abi.encode(u);
         }
 
-        EntryPoint.UserOpStatus[] memory statuses = ep.execute(t.encodedUserOps);
-        assertEq(statuses.length, t.userOps.length);
-        for (uint256 i; i != statuses.length; ++i) {
-            assertEq(uint8(statuses[i]), uint8(EntryPoint.UserOpStatus.Success));
+        bytes4[] memory errors = ep.execute(t.encodedUserOps);
+        assertEq(errors.length, t.userOps.length);
+        for (uint256 i; i != errors.length; ++i) {
+            assertEq(errors[i], 0);
             assertEq(targetFunctionPayloads[i].by, t.userOps[i].eoa);
             assertEq(targetFunctionPayloads[i].value, t.targetFunctionPayloads[i].value);
             assertEq(targetFunctionPayloads[i].data, t.targetFunctionPayloads[i].data);
@@ -108,7 +106,7 @@ contract EntryPointTest is SoladyTest {
                 t.targetFunctionPayload.value = _bound(_random(), 0, 2 ** 32 - 1),
                 t.targetFunctionPayload.data = _truncateBytes(_randomBytes(), 0xff)
             );
-            u.nonce = _random();
+            u.nonce = _randomUnique();
             paymentToken.mint(address(this), 2 ** 128 - 1);
             paymentToken.approve(address(ep), 2 ** 128 - 1);
             t.fundingToken = address(paymentToken);
@@ -116,15 +114,11 @@ contract EntryPointTest is SoladyTest {
             u.paymentToken = address(paymentToken);
             u.paymentAmount = t.fundingAmount;
             u.paymentMaxAmount = u.paymentAmount;
-            u.paymentGas = 1000000;
-            u.verificationGas = 2000000;
-            u.callGas = 3000000;
+            u.combinedGas = 10000000;
             _fillSecp256k1Signature(u, t.privateKey);
             t.originData = abi.encode(abi.encode(u), t.fundingToken, t.fundingAmount);
         }
-        assertEq(
-            uint8(ep.fill(t.orderId, t.originData, "")), uint8(EntryPoint.UserOpStatus.Success)
-        );
+        assertEq(ep.fill(t.orderId, t.originData, ""), 0);
     }
 
     function _fillSecp256k1Signature(EntryPoint.UserOp memory userOp, uint256 privateKey)
