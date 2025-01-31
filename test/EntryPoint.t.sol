@@ -64,7 +64,7 @@ contract EntryPointTest is SoladyTest {
                 t.targetFunctionPayloads[i].value = _bound(_random(), 0, 2 ** 32 - 1),
                 t.targetFunctionPayloads[i].data = _truncateBytes(_randomBytes(), 0xff)
             );
-            u.nonce = _randomUnique();
+            u.nonce = _randomUnique() << 1;
             paymentToken.mint(u.eoa, 2 ** 128 - 1);
             u.paymentToken = address(paymentToken);
             u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
@@ -106,7 +106,7 @@ contract EntryPointTest is SoladyTest {
                 t.targetFunctionPayload.value = _bound(_random(), 0, 2 ** 32 - 1),
                 t.targetFunctionPayload.data = _truncateBytes(_randomBytes(), 0xff)
             );
-            u.nonce = _randomUnique();
+            u.nonce = _randomUnique() << 1;
             paymentToken.mint(address(this), 2 ** 128 - 1);
             paymentToken.approve(address(ep), 2 ** 128 - 1);
             t.fundingToken = address(paymentToken);
@@ -150,20 +150,5 @@ contract EntryPointTest is SoladyTest {
         calls[0].value = value;
         calls[0].data = data;
         return abi.encode(calls);
-    }
-
-    function testUserOpEncoding() public {
-        EntryPoint.UserOp[] memory userOps = new EntryPoint.UserOp[](3);
-        userOps[0].combinedGas = uint256(0x111111);
-        userOps[1].combinedGas = uint256(0x222222);
-        userOps[2].combinedGas = uint256(0x333333);
-        bytes[] memory encodedUserOps = new bytes[](3);
-        encodedUserOps[0] = abi.encode(userOps[0]);
-        encodedUserOps[1] = abi.encode(userOps[1]);
-        encodedUserOps[2] = abi.encode(userOps[2]);
-
-        emit LogBytes(encodedUserOps[0]);
-        emit LogBytes(encodedUserOps[1]);
-        emit LogBytes(encodedUserOps[2]);
     }
 }

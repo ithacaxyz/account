@@ -79,14 +79,8 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     /// @dev The payment, verification, and call has failed. Unable to determine exact reason.
     error CombinedError();
 
-    /// @dev The encoded user op is improperly encoded.
-    error UserOpDecodeError();
-
     /// @dev The function selector is not recognized.
     error FnSelectorNotRecognized();
-
-    /// @dev Only the entry point itself can make a self-call.
-    error SelfCallUnauthorized();
 
     /// @dev Out of gas to perform the call operation.
     error InsufficientGas();
@@ -94,16 +88,13 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     /// @dev The order has already been filled.
     error OrderAlreadyFilled();
 
-    /// @dev The origin data is improperly encoded.
-    error OriginDataDecodeError();
-
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant USER_OP_TYPEHASH = keccak256(
-        "UserOp(address eoa,Call[] calls,uint256 nonce,uint256 nonceSalt,address paymentToken,uint256 paymentMaxAmount,uint256 combinedGas)Call(address target,uint256 value,bytes data)"
+        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,uint256 nonceSalt,address paymentToken,uint256 paymentMaxAmount,uint256 combinedGas)Call(address target,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
@@ -165,8 +156,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
             // Perform a gas-limited self call and check for success.
             if iszero(call(g, address(), 0, m, encodedUserOp.length, 0x00, 0x20)) {
                 err := mload(0x00)
-                // Set the error selector to `CombinedFailure()` if there's no return data.
-                if iszero(returndatasize()) { err := shl(224, 0xfbc9176e) }
+                if iszero(returndatasize()) { err := shl(224, 0xbff2584f) } // `CombinedError()`.
             }
         }
     }
@@ -186,7 +176,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
             mstore(errs, encodedUserOps.length)
             mstore(0x40, add(add(0x20, errs), shl(5, encodedUserOps.length)))
         }
-        for (uint256 i; i != encodedUserOps.length; ) {
+        for (uint256 i; i != encodedUserOps.length;) {
             bytes4 err = execute(encodedUserOps[i]);
             // Set `errs[i]` without bounds checks.
             assembly ("memory-safe") {
@@ -233,10 +223,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
             if or(
                 or(shr(64, or(s, t)), or(lt(originData.length, 0x60), lt(s, 0x60))),
                 gt(add(encodedUserOp.length, encodedUserOp.offset), e)
-            ) {
-                mstore(0x00, 0x2b3592ae) // `OriginDataDecodeError()`.
-                revert(0x1c, 0x04)
-            }
+            ) { revert(0x00, 0x00) }
             eoa := calldataload(add(encodedUserOp.offset, calldataload(encodedUserOp.offset)))
         }
         TokenTransferLib.safeTransferFrom(fundingToken, msg.sender, eoa, fundingAmount);
@@ -270,8 +257,8 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         address paymentToken = userOp.paymentToken;
         address paymentRecipient = userOp.paymentRecipient;
         if (paymentRecipient == address(0)) paymentRecipient = address(this);
-        uint256 tokenBalanceBefore = TokenTransferLib.balanceOf(paymentToken, paymentRecipient);
-        uint256 requiredBalanceAfter = tokenBalanceBefore + paymentAmount;
+        uint256 requiredBalanceAfter =
+            TokenTransferLib.balanceOf(paymentToken, paymentRecipient) + paymentAmount;
         address eoa = userOp.eoa;
         if (paymentAmount > userOp.paymentMaxAmount) {
             revert PaymentError();
@@ -334,6 +321,8 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     }
 
     /// @dev Computes the EIP712 digest for `userOp`.
+    /// If the nonce is odd, the digest will be computed without the chain ID.
+    /// Otherwise, the digest will be computed with the chain ID.
     function _computeDigest(UserOp calldata userOp) internal view virtual returns (bytes32) {
         bytes32[] calldata pointers = LibERC7579.decodeBatch(userOp.executionData);
         bytes32[] memory a = EfficientHashLib.malloc(pointers.length);
@@ -351,18 +340,20 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                 );
             }
         }
-        return _hashTypedData(
-            EfficientHashLib.hash(
-                uint256(USER_OP_TYPEHASH),
-                uint160(userOp.eoa),
-                uint256(a.hash()),
-                userOp.nonce,
-                _nonceSalt(userOp.eoa),
-                uint160(userOp.paymentToken),
-                userOp.paymentMaxAmount,
-                userOp.combinedGas
-            )
+        bytes32 structHash = EfficientHashLib.hash(
+            uint256(USER_OP_TYPEHASH),
+            userOp.nonce & 1,
+            uint160(userOp.eoa),
+            uint256(a.hash()),
+            userOp.nonce,
+            _nonceSalt(userOp.eoa),
+            uint160(userOp.paymentToken),
+            userOp.paymentMaxAmount,
+            userOp.combinedGas
         );
+        return userOp.nonce & 1 > 0
+            ? _hashTypedDataSansChainId(structHash)
+            : _hashTypedData(structHash);
     }
 
     /// @dev Returns the nonce salt on the `eoa`.
@@ -389,7 +380,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
             UserOp calldata userOp;
             assembly ("memory-safe") {
                 userOp := calldataload(0x00)
-                if iszero(eq(caller(), address())) { invalid() }
+                if iszero(eq(caller(), address())) { revert(0x00, 0x00) }
             }
             _pay(userOp);
             (bool isValid, bytes32 keyHash) = _verify(userOp);
