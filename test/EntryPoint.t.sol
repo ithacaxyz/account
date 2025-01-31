@@ -151,4 +151,19 @@ contract EntryPointTest is SoladyTest {
         calls[0].data = data;
         return abi.encode(calls);
     }
+
+    function testUserOpEncoding() public {
+        EntryPoint.UserOp[] memory userOps = new EntryPoint.UserOp[](3);
+        userOps[0].combinedGas = uint256(0x111111);
+        userOps[1].combinedGas = uint256(0x222222);
+        userOps[2].combinedGas = uint256(0x333333);
+        bytes[] memory encodedUserOps = new bytes[](3);
+        encodedUserOps[0] = abi.encode(userOps[0]);
+        encodedUserOps[1] = abi.encode(userOps[1]);
+        encodedUserOps[2] = abi.encode(userOps[2]);
+
+        emit LogBytes(encodedUserOps[0]);
+        emit LogBytes(encodedUserOps[1]);
+        emit LogBytes(encodedUserOps[2]);
+    }
 }

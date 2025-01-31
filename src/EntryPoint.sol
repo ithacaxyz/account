@@ -64,39 +64,8 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     }
 
     ////////////////////////////////////////////////////////////////////////
-    // Constants
-    ////////////////////////////////////////////////////////////////////////
-
-    /// @dev Position of the execution data bytes in the `userOp` struct.
-    uint256 internal constant _USER_OP_EXECUTION_DATA_POS = 1 * 0x20;
-
-    /// @dev Position of payment amount in the `userOp` struct.
-    uint256 internal constant _USER_OP_PAYMENT_AMOUNT_POS = 5 * 0x20;
-
-    /// @dev Position of payment max amount in the `userOp` struct.
-    uint256 internal constant _USER_OP_PAYMENT_MAX_AMOUNT_POS = 6 * 0x20;
-
-    /// @dev Position of combined gas in the `userOp` struct.
-    uint256 internal constant _USER_OP_COMBINED_GAS_POS = 7 * 0x20;
-
-    /// @dev Position of the signature bytes in the `userOp` struct.
-    uint256 internal constant _USER_OP_SIGNATURE_POS = 8 * 0x20;
-
-    ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
-
-    /// @dev The encoded user op is improperly encoded.
-    error UserOpDecodeError();
-
-    /// @dev The function selector is not recognized.
-    error FnSelectorNotRecognized();
-
-    /// @dev Only the entry point itself can make a self-call.
-    error SelfCallUnauthorized();
-
-    /// @dev Out of gas to perform the call operation.
-    error InsufficientGas();
 
     /// @dev Unable to perform the payment.
     error PaymentError();
@@ -109,6 +78,18 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
 
     /// @dev The payment, verification, and call has failed. Unable to determine exact reason.
     error CombinedError();
+
+    /// @dev The encoded user op is improperly encoded.
+    error UserOpDecodeError();
+
+    /// @dev The function selector is not recognized.
+    error FnSelectorNotRecognized();
+
+    /// @dev Only the entry point itself can make a self-call.
+    error SelfCallUnauthorized();
+
+    /// @dev Out of gas to perform the call operation.
+    error InsufficientGas();
 
     /// @dev The order has already been filled.
     error OrderAlreadyFilled();
@@ -157,6 +138,44 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     // Main
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev Executes a single encoded user operation.
+    /// `encodedUserOp` is given by `abi.encode(userOp)`, where `userOp` is a struct of type `UserOp`.
+    /// If sufficient gas is provided, returns an error selector that is non-zero
+    /// if there is an error during the payment, verification, and call execution.
+    function execute(bytes calldata encodedUserOp) public payable virtual returns (bytes4 err) {
+        UserOp calldata u;
+        assembly ("memory-safe") {
+            let t := calldataload(encodedUserOp.offset)
+            u := add(t, encodedUserOp.offset)
+            if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
+        }
+        uint256 g = u.combinedGas;
+        assembly ("memory-safe") {
+            // Check if there's sufficient gas left for the gas-limited self call
+            // via the 63/64 rule. This is for gas estimation. If the total amount of gas
+            // for the whole transaction is insufficient, revert.
+            if or(lt(shr(6, mul(gas(), 63)), add(g, _INNER_GAS_OVERHEAD)), shr(64, g)) {
+                mstore(0x00, 0x1c26714c) // `InsufficientGas()`.
+                revert(0x1c, 0x04)
+            }
+
+            let m := mload(0x40) // Grab the free memory pointer.
+            mstore(m, 0x220736b8) // `_combined()`.
+            mstore(0x00, 0) // Zeroize the return slot.
+
+            // Copy the encoded user op to the memory to be ready to pass to the self call.
+            calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
+
+            let n := add(0x44, encodedUserOp.length) // Total length of self call data.
+            // Perform a gas-limited self call and check for success.
+            if iszero(call(g, address(), 0, add(m, 0x1c), n, 0x00, 0x20)) {
+                err := mload(0x00)
+                // Set the error selector to `CombinedFailure()` if there's no return data.
+                if iszero(returndatasize()) { err := shl(224, 0xfbc9176e) }
+            }
+        }
+    }
+
     /// @dev Executes the array of encoded user operations.
     /// Each element in `encodedUserOps` is given by `abi.encode(userOp)`,
     /// where `userOp` is a struct of type `UserOp`.
@@ -164,79 +183,19 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         public
         payable
         virtual
-        returns (bytes4[] memory errors)
+        returns (bytes4[] memory errs)
     {
-        // We'll use assembly for the following benefits:
-        // - Avoid quadratic memory expansion costs.
-        //   We don't want userOps at the end to be unfairly subjected to more gas costs.
-        // - Avoid unnecessary memory copying.
-        // - I might one day rewrite this in a normie-friendly version for readability,
-        //   but will still recommend using the assembloored version.
-        //   In terms of performance, assembly will likely yield much greater benefits
-        //   aggregated signatures.
+        // Allocate memory for `errs` without zeroizing it.
         assembly ("memory-safe") {
-            errors := mload(0x40)
-            mstore(errors, encodedUserOps.length) // Store length of `errors`.
-            mstore(0x40, add(add(0x20, errors), shl(5, encodedUserOps.length))) // Allocate memory.
-            calldatacopy(add(0x20, errors), calldatasize(), shl(5, encodedUserOps.length)) // Zeroize memory.
-
-            let m := mload(0x40) // Load the free memory pointer.
-            for { let i := 0 } iszero(eq(i, encodedUserOps.length)) { i := add(i, 1) } {
-                let u // Pointer to the `userOp` in calldata.
-                let n // Length of the calldata in memory to pass to the self call.
-
-                // This chunk of code prepares the variables and also
-                // carefully verifies that `encodedUserOps` has been properly encoded,
-                // such that no nested dynamic types (i.e. UserOp, bytes) are out of bounds.
-                // If you are reading for high-level understanding, ignore this part.
-                {
-                    let t :=
-                        add(encodedUserOps.offset, calldataload(add(encodedUserOps.offset, shl(5, i))))
-                    let o := add(t, 0x20) // Offset of `encodedUserOps[i]`.
-                    let l := calldataload(t) // Length of `encodedUserOps[i]`.
-                    n := add(0x44, l)
-                    // Copy the encoded user op to the memory to be ready to pass to the self call.
-                    calldatacopy(add(m, 0x40), o, l)
-                    let w := sub(add(o, l), 0x20) // Last word offset of the `encodedUserOps[i]`.
-                    let a := calldataload(o)
-                    u := add(o, a)
-                    let b := calldataload(add(u, _USER_OP_EXECUTION_DATA_POS)) // Offset of `executionData`.
-                    let y := add(u, b)
-                    let c := calldataload(add(u, _USER_OP_SIGNATURE_POS)) // Offset of `signature`.
-                    let z := add(u, c)
-                    if or(
-                        shr(64, or(or(a, or(b, c)), or(calldataload(y), calldataload(z)))),
-                        or(
-                            or(gt(add(y, calldataload(y)), w), gt(add(z, calldataload(z)), w)),
-                            or(gt(add(u, _USER_OP_SIGNATURE_POS), w), lt(l, 0x20))
-                        )
-                    ) {
-                        mstore(0x00, 0x2b64b01d) // `UserOpDecodeError()`.
-                        revert(0x1c, 0x04)
-                    }
-                }
-
-                let g := calldataload(add(u, _USER_OP_COMBINED_GAS_POS)) // `combinedGas`.
-
-                // Check if there's sufficient gas left for the gas-limited self call
-                // via the 63/64 rule. This is for gas estimation. If the total amount of gas
-                // for the whole transaction is insufficient, revert.
-                if or(lt(shr(6, mul(gas(), 63)), add(g, _INNER_GAS_OVERHEAD)), shr(64, g)) {
-                    mstore(0x00, 0x1c26714c) // `InsufficientGas()`.
-                    revert(0x1c, 0x04)
-                }
-
-                mstore(m, 0x220736b8) // `_combined()`.
-                mstore(0x00, 0) // Zeroize the return slot.
-
-                // Perform a gas-limited self call and check for success.
-                if iszero(call(g, address(), 0, add(m, 0x1c), n, 0x00, 0x20)) {
-                    let errorSelector := mload(0x00)
-                    // Set the error selector to `CombinedFailure()` if there's no return data.
-                    if iszero(returndatasize()) { errorSelector := shl(224, 0xfbc9176e) }
-                    // Store the revert function selector that has been returned.
-                    mstore(add(add(0x20, errors), shl(5, i)), errorSelector)
-                }
+            errs := mload(0x40)
+            mstore(errs, encodedUserOps.length)
+            mstore(0x40, add(add(0x20, errs), shl(5, encodedUserOps.length)))
+        }
+        for (uint256 i; i < encodedUserOps.length; ++i) {
+            bytes4 err = execute(encodedUserOps[i]);
+            // Set `errs[i]` without bounds checks.
+            assembly ("memory-safe") {
+                mstore(add(add(0x20, errs), shl(5, i)), err)
             }
         }
     }
@@ -264,7 +223,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
 
         // `originData` is encoded as:
         // `abi.encode(bytes(encodedUserOp), address(fundingToken), uint256(fundingAmount))`.
-        bytes[] calldata encodedUserOps;
+        bytes calldata encodedUserOp;
         address fundingToken;
         uint256 fundingAmount;
         address eoa;
@@ -272,22 +231,23 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
             fundingToken := calldataload(add(originData.offset, 0x20))
             fundingAmount := calldataload(add(originData.offset, 0x40))
             let s := calldataload(originData.offset) // Parent offset of `encodedUserOp`.
-            let t := add(originData.offset, s) // `encodedUserOp`.
-            let l := calldataload(t) // Length of `encodedUserOp`.
-            let o := add(t, 0x20) // Offset of `encodedUserOp`.
+            let t := add(originData.offset, s)
+            encodedUserOp.length := calldataload(t)
+            encodedUserOp.offset := add(t, 0x20)
             if or(
                 or(shr(64, or(s, t)), or(lt(originData.length, 0x60), lt(s, 0x60))),
-                gt(add(l, o), add(originData.offset, originData.length))
+                gt(
+                    add(encodedUserOp.length, encodedUserOp.offset),
+                    add(originData.offset, originData.length)
+                )
             ) {
                 mstore(0x00, 0x2b3592ae) // `OriginDataDecodeError()`.
                 revert(0x1c, 0x04)
             }
-            encodedUserOps.length := 1
-            encodedUserOps.offset := originData.offset
-            eoa := calldataload(add(o, calldataload(o)))
+            eoa := calldataload(add(encodedUserOp.offset, calldataload(encodedUserOp.offset)))
         }
         TokenTransferLib.safeTransferFrom(fundingToken, msg.sender, eoa, fundingAmount);
-        return execute(encodedUserOps)[0];
+        return execute(encodedUserOp);
     }
 
     /// @dev Returns true if the order ID has been filled.
@@ -299,36 +259,6 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     ////////////////////////////////////////////////////////////////////////
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
-
-    /// @dev Returns the `executionData` in `userOp`, without a bounds check.
-    /// We don't need the bounds check as it has already been done in `execute`.
-    function _userOpExecutionData(UserOp calldata userOp)
-        internal
-        pure
-        virtual
-        returns (bytes calldata result)
-    {
-        assembly ("memory-safe") {
-            let o := add(userOp, calldataload(add(userOp, _USER_OP_EXECUTION_DATA_POS)))
-            result.offset := add(o, 0x20)
-            result.length := calldataload(o)
-        }
-    }
-
-    /// @dev Returns the `signature` in `userOp`, without a bounds check.
-    /// We don't need the bounds check as it has already been done in `execute`.
-    function _userOpSignature(UserOp calldata userOp)
-        internal
-        pure
-        virtual
-        returns (bytes calldata result)
-    {
-        assembly ("memory-safe") {
-            let o := add(userOp, calldataload(add(userOp, _USER_OP_SIGNATURE_POS)))
-            result.offset := add(o, 0x20)
-            result.length := calldataload(o)
-        }
-    }
 
     // Self call functions
     // -------------------
@@ -378,7 +308,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         returns (bool isValid, bytes32 keyHash)
     {
         bytes32 digest = _computeDigest(userOp);
-        bytes calldata sig = _userOpSignature(userOp);
+        bytes calldata sig = userOp.signature;
         address eoa = userOp.eoa;
         assembly ("memory-safe") {
             let m := mload(0x40)
@@ -399,7 +329,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     function _execute(UserOp calldata userOp, bytes32 keyHash) internal virtual {
         bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
             0x0100000000007821000100000000000000000000000000000000000000000000,
-            _userOpExecutionData(userOp),
+            userOp.executionData,
             abi.encode(userOp.nonce, keyHash)
         );
         address eoa = userOp.eoa;
@@ -413,7 +343,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
 
     /// @dev Computes the EIP712 digest for `userOp`.
     function _computeDigest(UserOp calldata userOp) internal view virtual returns (bytes32) {
-        bytes32[] calldata pointers = LibERC7579.decodeBatch(_userOpExecutionData(userOp));
+        bytes32[] calldata pointers = LibERC7579.decodeBatch(userOp.executionData);
         bytes32[] memory a = EfficientHashLib.malloc(pointers.length);
         unchecked {
             for (uint256 i; i != pointers.length; ++i) {
@@ -454,8 +384,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         if (!isValid) revert VerificationError();
         _execute(userOp, keyHash);
         assembly ("memory-safe") {
-            mstore(0x00, 0)
-            return(0x00, 0x20)
+            stop()
         }
     }
 
@@ -489,9 +418,11 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     }
 
     ////////////////////////////////////////////////////////////////////////
-    // Only owner
+    // Only Owner Functions
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev Allows the entry point owner to withdraw tokens.
+    /// If `token` is `address(0)`, withdraws the native gas token.
     function withdrawTokens(address token, address recipient, uint256 amount)
         public
         virtual
