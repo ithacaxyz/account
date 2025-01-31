@@ -76,8 +76,8 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     /// @dev Unable to perform the call.
     error CallError();
 
-    /// @dev The payment, verification, and call has failed. Unable to determine exact reason.
-    error CombinedError();
+    /// @dev Unable to perform the verification and the call.
+    error VerifiedCallError();
 
     /// @dev The function selector is not recognized.
     error FnSelectorNotRecognized();
@@ -106,6 +106,9 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
 
     /// @dev For gas estimation.
     uint256 internal constant _INNER_GAS_OVERHEAD = 100000;
+
+    /// @dev Caps the gas stipend for the payment.
+    uint256 internal constant _PAYMENT_GAS_CAP = 100000;
 
     ////////////////////////////////////////////////////////////////////////
     // Storage
@@ -141,22 +144,46 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
             if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
         }
         uint256 g = u.combinedGas;
+        uint256 gasBefore = gasleft();
         assembly ("memory-safe") {
-            // Check if there's sufficient gas left for the gas-limited self call
+            // Check if there's sufficient gas left for the gas-limited self calls
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
             if or(lt(shr(6, mul(gas(), 63)), add(g, _INNER_GAS_OVERHEAD)), shr(64, g)) {
                 mstore(0x00, 0x1c26714c) // `InsufficientGas()`.
                 revert(0x1c, 0x04)
             }
+
             let m := mload(0x40) // Grab the free memory pointer.
-            mstore(0x00, 0) // Zeroize the return slot.
             // Copy the encoded user op to the memory to be ready to pass to the self call.
-            calldatacopy(m, encodedUserOp.offset, encodedUserOp.length)
-            // Perform a gas-limited self call and check for success.
-            if iszero(call(g, address(), 0, m, encodedUserOp.length, 0x00, 0x20)) {
-                err := mload(0x00)
-                if iszero(returndatasize()) { err := shl(224, 0xbff2584f) } // `CombinedError()`.
+            calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
+            let s := add(m, 0x1c) // Start of the calldata in memory to pass to the self call.
+            let n := add(encodedUserOp.length, 0x44) // Length of the calldata to the self call.
+
+            // To prevent griefing, we need to do two non-reverting gas-limited calls.
+            // Even if the verify and call fails, which the gas will be burned, 
+            // the payment has already been made and can't be reverted.
+            for {} 1 {} {
+                // 1. Pay.
+                mstore(m, 0x1a3de5c3) // `_pay()`.
+                mstore(0x00, 0) // Zeroize the return slot.
+                let paymentGas := xor(g, mul(xor(g, _PAYMENT_GAS_CAP), lt(_PAYMENT_GAS_CAP, g))) // `min`.
+                if iszero(call(paymentGas, address(), 0, s, n, 0x00, 0x20)) {
+                    err := mload(0x00)
+                    if iszero(returndatasize()) { err := shl(224, 0xbff2584f) } // `PaymentError()`.
+                    break
+                }
+                let gasUsed := sub(gasBefore, gas())
+                g := mul(sub(g, gasUsed), gt(g, gasUsed))
+                // 2. Verify and call.
+                mstore(m, 0xe235a92a) // `_verifyAndCall()`.
+                mstore(0x00, 0) // Zeroize the return slot.
+                if iszero(call(g, address(), 0, s, n, 0x00, 0x20)) {
+                    err := mload(0x00)
+                    if iszero(returndatasize()) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
+                    break
+                }
+                break
             }
         }
     }
@@ -376,19 +403,26 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
     /// @dev Use the fallback function to implement gas limited verification and execution.
     /// Helps avoid unnecessary calldata decoding.
     fallback() external payable virtual {
-        if (msg.sig == 0) {
-            UserOp calldata userOp;
-            assembly ("memory-safe") {
-                userOp := calldataload(0x00)
-                if iszero(eq(caller(), address())) { revert(0x00, 0x00) }
-            }
+        UserOp calldata userOp;
+        assembly ("memory-safe") {
+            userOp := add(0x24, calldataload(0x24))
+        }
+        uint256 s = uint32(bytes4(msg.sig));
+        // `_pay()`.
+        if (s == 0x1a3de5c3) {
+            require(msg.sender == address(this));
             _pay(userOp);
+            return;
+        }
+        // `_verifyAndCall()`.
+        if (s == 0xe235a92a) {
+            require(msg.sender == address(this));
             (bool isValid, bytes32 keyHash) = _verify(userOp);
             if (!isValid) revert VerificationError();
             _execute(userOp, keyHash);
-        } else {
-            revert FnSelectorNotRecognized();
+            return;
         }
+        revert FnSelectorNotRecognized();
     }
 
     ////////////////////////////////////////////////////////////////////////
