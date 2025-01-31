@@ -144,7 +144,6 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
             if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
         }
         uint256 g = u.combinedGas;
-        uint256 gasBefore = gasleft();
         assembly ("memory-safe") {
             // Check if there's sufficient gas left for the gas-limited self calls
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
@@ -154,6 +153,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                 revert(0x1c, 0x04)
             }
 
+            let gasBefore := gas()
             let m := mload(0x40) // Grab the free memory pointer.
             // Copy the encoded user op to the memory to be ready to pass to the self call.
             calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
@@ -186,6 +186,10 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                 break
             }
         }
+        // TODO:
+        // If the remaining `g` is > 40k, AND 
+        // `toRefund = max(0, paymentMade - paymentPerGas * (gasUsed + 50k)) > 0`,
+        // Split temporarily escrowed payment between the user `and` the `paymentRecipient`.
     }
 
     /// @dev Executes the array of encoded user operations.
