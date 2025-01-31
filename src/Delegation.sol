@@ -80,15 +80,6 @@ contract Delegation is EIP712, GuardedExecutor {
     // Errors
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev This feature has not been implemented yet.
-    error Unimplemented();
-
-    /// @dev The key is expired or unauthorized.
-    error KeyExpiredOrUnauthorized();
-
-    /// @dev The signature is invalid.
-    error InvalidSignature();
-
     /// @dev The key does not exist.
     error KeyDoesNotExist();
 
@@ -196,9 +187,12 @@ contract Delegation is EIP712, GuardedExecutor {
         onlyThis
     {
         EnumerableSetLib.AddressSet storage imps = _getDelegationStorage().approvedImplementations;
-        if (isApproved) imps.add(implementation);
-        else imps.remove(implementation);
-        if (imps.length() > 512) revert ExceededApprovedImplementationsCapacity();
+        if (isApproved) {
+            imps.add(implementation);
+            if (imps.length() > 512) revert ExceededApprovedImplementationsCapacity();
+        } else {
+            imps.remove(implementation);
+        }
         emit ImplementationApprovalSet(implementation, isApproved);
     }
 
@@ -254,11 +248,11 @@ contract Delegation is EIP712, GuardedExecutor {
         bytes memory data = _getDelegationStorage().keyStorage[keyHash].get();
         if (data.length == 0) revert KeyDoesNotExist();
         unchecked {
-            uint256 n = data.length - 7;
+            uint256 n = data.length - 7; // 5 + 1 + 1 bytes of fixed length fields.
             uint256 packed = uint56(bytes7(LibBytes.load(data, n)));
-            key.expiry = uint40(packed >> 16);
-            key.keyType = KeyType(uint8(packed >> 8));
-            key.isSuperAdmin = uint8(packed) != 0;
+            key.expiry = uint40(packed >> 16); // 5 bytes.
+            key.keyType = KeyType(uint8(packed >> 8)); // 1 byte.
+            key.isSuperAdmin = uint8(packed) != 0; // 1 byte.
             key.publicKey = LibBytes.truncate(data, n);
         }
     }
