@@ -344,14 +344,10 @@ contract Delegation is EIP712, GuardedExecutor {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Pays `paymentAmount` of `paymentToken` to the Entry Point.
-    function payEntryPoint(address paymentToken, uint256 paymentAmount)
-        public
-        virtual
-        returns (bool)
-    {
+    /// The last address argument is `onBehalfOf`, which we don't use here.
+    function payEntryPoint(address paymentToken, uint256 paymentAmount, address) public virtual {
         if (msg.sender != ENTRY_POINT) revert Unauthorized();
         TokenTransferLib.safeTransfer(paymentToken, msg.sender, paymentAmount);
-        return true;
     }
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.
