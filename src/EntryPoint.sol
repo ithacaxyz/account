@@ -9,6 +9,7 @@ import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
 import {ReentrancyGuard} from "solady/utils/ReentrancyGuard.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
+import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 
 /// @title EntryPoint
@@ -56,6 +57,9 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         uint256 paymentAmount;
         /// @dev The maximum amount of the token to pay.
         uint256 paymentMaxAmount;
+        /// @dev The amount of ERC20 to pay per gas spent. For calculation of refunds.
+        /// If this is left at zero, it will be treated as infinity (i.e. no refunds).
+        uint256 paymentPerGas;
         /// @dev The combined gas limit for payment, verification, and calling the EOA.
         uint256 combinedGas;
         /// @dev The wrapped signature.
@@ -94,7 +98,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant USER_OP_TYPEHASH = keccak256(
-        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,uint256 nonceSalt,address paymentToken,uint256 paymentMaxAmount,uint256 combinedGas)Call(address target,uint256 value,bytes data)"
+        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,uint256 nonceSalt,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas)Call(address target,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
@@ -109,6 +113,9 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
 
     /// @dev Caps the gas stipend for the payment.
     uint256 internal constant _PAYMENT_GAS_CAP = 100000;
+
+    /// @dev The amount of expected gas for refunds.
+    uint256 internal constant _REFUND_GAS = 50000;
 
     ////////////////////////////////////////////////////////////////////////
     // Storage
@@ -144,6 +151,8 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
             if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
         }
         uint256 g = u.combinedGas;
+        uint256 gStart = gasleft();
+        uint256 paymentAmount;
         assembly ("memory-safe") {
             // Check if there's sufficient gas left for the gas-limited self calls
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
@@ -153,7 +162,6 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                 revert(0x1c, 0x04)
             }
 
-            let gasBefore := gas()
             let m := mload(0x40) // Grab the free memory pointer.
             // Copy the encoded user op to the memory to be ready to pass to the self call.
             calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
@@ -167,18 +175,19 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                 // 1. Pay.
                 mstore(m, 0x1a3de5c3) // `_pay()`.
                 mstore(0x00, 0) // Zeroize the return slot.
-                let paymentGas := xor(g, mul(xor(g, _PAYMENT_GAS_CAP), lt(_PAYMENT_GAS_CAP, g))) // `min`.
-                if iszero(call(paymentGas, address(), 0, s, n, 0x00, 0x20)) {
+                let gCapped := xor(g, mul(xor(g, _PAYMENT_GAS_CAP), lt(_PAYMENT_GAS_CAP, g))) // `min`.
+                if iszero(call(gCapped, address(), 0, s, n, 0x00, 0x20)) {
                     err := mload(0x00)
                     if iszero(returndatasize()) { err := shl(224, 0xbff2584f) } // `PaymentError()`.
                     break
                 }
-                let gasUsed := sub(gasBefore, gas())
-                g := mul(sub(g, gasUsed), gt(g, gasUsed))
+                paymentAmount := mload(0x00)
+                let gUsed := sub(gStart, gas())
+                let gLeft := mul(sub(g, gUsed), gt(g, gUsed))
                 // 2. Verify and call.
                 mstore(m, 0xe235a92a) // `_verifyAndCall()`.
                 mstore(0x00, 0) // Zeroize the return slot.
-                if iszero(call(g, address(), 0, s, n, 0x00, 0x20)) {
+                if iszero(call(gLeft, address(), 0, s, n, 0x00, 0x20)) {
                     err := mload(0x00)
                     if iszero(returndatasize()) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
                     break
@@ -186,10 +195,22 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
                 break
             }
         }
-        // TODO:
-        // If the remaining `g` is > 40k, AND 
-        // `toRefund = max(0, paymentMade - paymentPerGas * (gasUsed + 50k)) > 0`,
-        // Split temporarily escrowed payment between the user `and` the `paymentRecipient`.
+        uint256 gUsed = Math.rawSub(gStart, gasleft());
+        uint256 paymentPerGas = u.paymentPerGas;
+        if (paymentPerGas == uint256(0)) paymentPerGas = type(uint256).max;
+        uint256 finalPaymentAmount = Math.min(
+            paymentAmount,
+            Math.saturatingMul(paymentPerGas, Math.saturatingAdd(gUsed, _REFUND_GAS))
+        );
+        address paymentRecipient = u.paymentRecipient;
+        if (paymentRecipient == address(0)) paymentRecipient = address(this);
+        if (LibBit.and(finalPaymentAmount != 0, paymentRecipient != address(this))) {
+            TokenTransferLib.safeTransfer(u.paymentToken, paymentRecipient, finalPaymentAmount);   
+        }
+        if (paymentAmount > finalPaymentAmount) {
+            uint256 toRefund = Math.rawSub(paymentAmount, finalPaymentAmount);
+            TokenTransferLib.safeTransfer(u.paymentToken, u.eoa, toRefund);    
+        }
     }
 
     /// @dev Executes the array of encoded user operations.
@@ -282,14 +303,12 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
 
     /// @dev Makes the `eoa` perform a payment to the `entryPoint`.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
-    function _pay(UserOp calldata userOp) internal virtual {
-        uint256 paymentAmount = userOp.paymentAmount;
-        if (paymentAmount == uint256(0)) return; // If no payment is needed, early return.
+    function _pay(UserOp calldata userOp) internal virtual returns (uint256 paymentAmount) {
+        paymentAmount = userOp.paymentAmount;
+        if (paymentAmount == uint256(0)) return paymentAmount;
         address paymentToken = userOp.paymentToken;
-        address paymentRecipient = userOp.paymentRecipient;
-        if (paymentRecipient == address(0)) paymentRecipient = address(this);
         uint256 requiredBalanceAfter =
-            TokenTransferLib.balanceOf(paymentToken, paymentRecipient) + paymentAmount;
+            TokenTransferLib.balanceOf(paymentToken, address(this)) + paymentAmount;
         address eoa = userOp.eoa;
         if (paymentAmount > userOp.paymentMaxAmount) {
             revert PaymentError();
@@ -297,15 +316,13 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         bool success;
         assembly ("memory-safe") {
             let m := mload(0x40) // Cache the free memory pointer.
-            mstore(0x00, 0x0fdb506d) // `compensate(address,address,uint256)`.
+            mstore(0x00, 0x9c42fb59) // `payEntryPoint(address,uint256)`.
             mstore(0x20, shr(96, shl(96, paymentToken)))
-            mstore(0x40, shr(96, shl(96, paymentRecipient)))
-            mstore(0x60, paymentAmount)
-            success := and(eq(mload(0x00), 1), call(gas(), eoa, 0, 0x1c, 0x64, 0x00, 0x20))
+            mstore(0x40, paymentAmount)
+            success := and(eq(mload(0x00), 1), call(gas(), eoa, 0, 0x1c, 0x44, 0x00, 0x20))
             mstore(0x40, m) // Restore the free memory pointer.
-            mstore(0x60, 0) // Restore the zero pointer.
         }
-        uint256 actualBalanceAfter = TokenTransferLib.balanceOf(paymentToken, paymentRecipient);
+        uint256 actualBalanceAfter = TokenTransferLib.balanceOf(paymentToken, address(this));
         if (!LibBit.and(success, actualBalanceAfter >= requiredBalanceAfter)) {
             revert PaymentError();
         }
@@ -380,6 +397,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
             _nonceSalt(userOp.eoa),
             uint160(userOp.paymentToken),
             userOp.paymentMaxAmount,
+            userOp.paymentPerGas,
             userOp.combinedGas
         );
         return userOp.nonce & 1 > 0
@@ -415,8 +433,11 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuard {
         // `_pay()`.
         if (s == 0x1a3de5c3) {
             require(msg.sender == address(this));
-            _pay(userOp);
-            return;
+            uint256 paymentAmount = _pay(userOp);
+            assembly ("memory-safe") {
+                mstore(0x00, paymentAmount)
+                return(0x00, 0x20)
+            }
         }
         // `_verifyAndCall()`.
         if (s == 0xe235a92a) {
