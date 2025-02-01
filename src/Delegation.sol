@@ -421,13 +421,17 @@ contract Delegation is EIP712, GuardedExecutor {
     // ERC7821
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev Override to allow for a delegate call workflow.
+    /// Any implementation contract used in the delegate call workflow must be approved first.
     function execute(bytes32 mode, bytes calldata executionData) public payable virtual override {
+        // ERC7579 designates `mode[0]` to denote the call mode, and delegate call is `0xff`.
         if (bytes1(mode) == 0xff) {
+            // ERC7579 defines the delegate call encoding as `abi.encodePacked(implementation,data)`.
             address target = address(bytes20(LibBytes.loadCalldata(executionData, 0x00)));
+            bytes calldata data = LibBytes.sliceCalldata(executionData, 0x14);
             if (!_getDelegationStorage().approvedImplementations.contains(target)) {
                 revert Unauthorized();
             }
-            bytes calldata data = LibBytes.sliceCalldata(executionData, 0x14);
             assembly ("memory-safe") {
                 let m := mload(0x40)
                 calldatacopy(m, data.offset, data.length)
@@ -441,6 +445,11 @@ contract Delegation is EIP712, GuardedExecutor {
         super.execute(mode, executionData);
     }
 
+    /// @dev Supported modes:
+    /// - `0x01000000000000000000...`: Single batch. Does not support optional `opData`.
+    /// - `0x01000000000078210001...`: Single batch. Supports optional `opData`.
+    /// - `0x01000000000078210002...`: Batch of batches.
+    /// - `0xff000000000000000000...`: Delegate call.
     function supportsExecutionMode(bytes32 mode) public view virtual override returns (bool) {
         return LibBit.or(bytes1(mode) == 0xff, super.supportsExecutionMode(mode));
     }
