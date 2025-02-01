@@ -153,11 +153,15 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
         nonReentrant
         returns (bytes4 err)
     {
+        // This function does NOT allocate memory to avoid quadratic memory expansion costs.
+        // Otherwise, it will be unfair to the UserOps at the back of the batch.
         UserOp calldata u;
         assembly ("memory-safe") {
             let t := calldataload(encodedUserOp.offset)
             u := add(t, encodedUserOp.offset)
-            // Bounds check.
+            // Bounds check. We don't need to explicitly check the fields here.
+            // In the self call functions, we will use regular Solidity to access the fields,
+            // which generate the implicit bounds checks.
             if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
         }
         uint256 g = u.combinedGas;
@@ -207,6 +211,12 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
                 }
             }
         }
+
+        // Refund strategy:
+        // `totalAmountOfGasToPayFor = gasUsedThusFar + _REFUND_GAS`.
+        // `paymentAmountForGas = paymentPerGas * totalAmountOfGasToPayFor`.
+        // If we have overpaid, then refund `paymentAmount - paymentAmountForGas`.
+
         uint256 gUsed = Math.rawSub(gStart, gasleft());
         uint256 paymentPerGas = u.paymentPerGas;
         if (paymentPerGas == uint256(0)) paymentPerGas = type(uint256).max;
@@ -238,15 +248,18 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
     {
         // Allocate memory for `errs` without zeroizing it.
         assembly ("memory-safe") {
-            errs := mload(0x40)
-            mstore(errs, encodedUserOps.length)
-            mstore(0x40, add(add(0x20, errs), shl(5, encodedUserOps.length)))
+            errs := mload(0x40) // Grab the free memory pointer.
+            mstore(errs, encodedUserOps.length) // Store the length.
+            mstore(0x40, add(add(0x20, errs), shl(5, encodedUserOps.length))) // Allocate.
         }
         for (uint256 i; i != encodedUserOps.length;) {
+            // We reluctantly use regular Solidity to access `encodedUserOps[i]`.
+            // This generates an unnecessary check for `i < encodedUserOps.length`, but helps
+            // generate all the implicit calldata bound checks on `encodedUserOps[i]`.
             bytes4 err = execute(encodedUserOps[i]);
             // Set `errs[i]` without bounds checks.
             assembly ("memory-safe") {
-                i := add(i, 1)
+                i := add(i, 1) // Increment `i` here so we don't need `add(errs, 0x20)`.
                 mstore(add(errs, shl(5, i)), err)
             }
         }
@@ -277,6 +290,9 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
         address fundingToken;
         uint256 fundingAmount;
         address eoa;
+        // We have to do this cuz Solidity does not have a `abi.validateEncoding`.
+        // `abi.decode` is very inefficient, allocating and copying memory needlessly.
+        // Also, `execute` takes in a `bytes calldata`, so we can't use `abi.decode` here.
         assembly ("memory-safe") {
             fundingToken := calldataload(add(originData.offset, 0x20))
             fundingAmount := calldataload(add(originData.offset, 0x40))
@@ -285,6 +301,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
             encodedUserOp.length := calldataload(t)
             encodedUserOp.offset := add(t, 0x20)
             let e := add(originData.offset, originData.length)
+            // Bounds checks.
             if or(
                 or(shr(64, or(s, t)), or(lt(originData.length, 0x60), lt(s, 0x60))),
                 gt(add(encodedUserOp.length, encodedUserOp.offset), e)
