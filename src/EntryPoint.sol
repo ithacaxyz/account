@@ -146,95 +146,23 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
     /// `encodedUserOp` is given by `abi.encode(userOp)`, where `userOp` is a struct of type `UserOp`.
     /// If sufficient gas is provided, returns an error selector that is non-zero
     /// if there is an error during the payment, verification, and call execution.
-    function execute(bytes calldata encodedUserOp)
+    function execute(UserOp calldata u)
         public
         payable
         virtual
         nonReentrant
         returns (bytes4 err)
     {
-        // This function does NOT allocate memory to avoid quadratic memory expansion costs.
-        // Otherwise, it will be unfair to the UserOps at the back of the batch.
-        UserOp calldata u;
-        assembly ("memory-safe") {
-            let t := calldataload(encodedUserOp.offset)
-            u := add(t, encodedUserOp.offset)
-            // Bounds check. We don't need to explicitly check the fields here.
-            // In the self call functions, we will use regular Solidity to access the fields,
-            // which generate the implicit bounds checks.
-            if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
-        }
         uint256 g = u.combinedGas;
         uint256 gStart = gasleft();
-        uint256 paymentAmount;
-        assembly ("memory-safe") {
-            // Check if there's sufficient gas left for the gas-limited self calls
-            // via the 63/64 rule. This is for gas estimation. If the total amount of gas
-            // for the whole transaction is insufficient, revert.
-            if or(lt(shr(6, mul(gas(), 63)), add(g, _INNER_GAS_OVERHEAD)), shr(64, g)) {
-                mstore(0x00, 0x1c26714c) // `InsufficientGas()`.
-                revert(0x1c, 0x04)
-            }
+        (bool isValid, bytes32 keyHash) = _verify(u);
+        if (!isValid) revert VerificationError();
+        _execute(u, keyHash);
 
-            let m := mload(0x40) // Grab the free memory pointer.
-            // Copy the encoded user op to the memory to be ready to pass to the self call.
-            calldatacopy(add(m, 0x20), encodedUserOp.offset, encodedUserOp.length)
-            let s := add(m, 0x1c) // Start of the calldata in memory to pass to the self call.
-            let n := add(encodedUserOp.length, 0x24) // Length of the calldata to the self call.
-
-            // To prevent griefing, we need to do two non-reverting gas-limited calls.
-            // Even if the verify and call fails, which the gas will be burned,
-            // the payment has already been made and can't be reverted.
-
-            // 1. Pay.
-            mstore(m, 0x1a3de5c3) // `_pay()`.
-            mstore(0x00, 0) // Zeroize the return slot.
-            let gCapped := xor(g, mul(xor(g, _PAYMENT_GAS_CAP), lt(_PAYMENT_GAS_CAP, g))) // `min`.
-            // Perform the gas-limited self call.
-            switch call(gCapped, address(), 0, s, n, 0x00, 0x20)
-            case 0 {
-                err := mload(0x00)
-                if iszero(returndatasize()) { err := shl(224, 0xbff2584f) } // `PaymentError()`.
-            }
-            default {
-                // Since the payment is a success, load the returned `paymentAmount`.
-                paymentAmount := mload(0x00)
-                let gUsed := sub(gStart, gas())
-                let gLeft := mul(sub(g, gUsed), gt(g, gUsed))
-                // 2. Verify and call.
-                mstore(m, 0xe235a92a) // `_verifyAndCall()`.
-                mstore(0x00, 0) // Zeroize the return slot.
-                // Perform the gas-limited self call.
-                if iszero(call(gLeft, address(), 0, s, n, 0x00, 0x20)) {
-                    err := mload(0x00)
-                    if iszero(returndatasize()) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
-                }
-            }
-        }
-
-        // Refund strategy:
-        // `totalAmountOfGasToPayFor = gasUsedThusFar + _REFUND_GAS`.
-        // `paymentAmountForGas = paymentPerGas * totalAmountOfGasToPayFor`.
-        // If we have overpaid, then refund `paymentAmount - paymentAmountForGas`.
-
-        uint256 gUsed = Math.rawSub(gStart, gasleft());
-        uint256 paymentPerGas = u.paymentPerGas;
-        if (paymentPerGas == uint256(0)) paymentPerGas = type(uint256).max;
-        uint256 finalPaymentAmount = Math.min(
-            paymentAmount, Math.saturatingMul(paymentPerGas, Math.saturatingAdd(gUsed, _REFUND_GAS))
-        );
-        address paymentRecipient = u.paymentRecipient;
-        if (paymentRecipient == address(0)) paymentRecipient = address(this);
-        if (LibBit.and(finalPaymentAmount != 0, paymentRecipient != address(this))) {
-            TokenTransferLib.safeTransfer(u.paymentToken, paymentRecipient, finalPaymentAmount);
-        }
-        if (paymentAmount > finalPaymentAmount) {
-            TokenTransferLib.safeTransfer(
-                u.paymentToken,
-                u.payer == address(0) ? u.eoa : u.payer,
-                Math.rawSub(paymentAmount, finalPaymentAmount)
-            );
-        }
+        uint256 gasUsed = gStart - gasleft();
+        uint256 paymentAmount = (gasUsed + 100_000) * paymentPerGas;
+        require(paymentAmount > paymentMaxAmount, "fee too high");
+        Delegation(u.eoa).compensate(u.paymentToken, finalPaymentAmount, u.paymentRecipient);
     }
 
     /// @dev Executes the array of encoded user operations.
@@ -321,44 +249,6 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
     ////////////////////////////////////////////////////////////////////////
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
-
-    // Self call functions
-    // -------------------
-    // For these self call functions, we shall use the `fallback`.
-    // This is so that they can be hidden from the public api,
-    // and for facilitating unit testing via a mock.
-    //
-    // All write self call functions must be guarded with a
-    // `require(msg.sender == address(this))` in the fallback.
-
-    /// @dev Makes the `eoa` perform a payment to the `entryPoint`.
-    /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
-    function _pay(UserOp calldata u) internal virtual returns (uint256 paymentAmount) {
-        paymentAmount = u.paymentAmount;
-        if (paymentAmount == uint256(0)) return paymentAmount;
-        address paymentToken = u.paymentToken;
-        uint256 requiredBalanceAfter = Math.saturatingAdd(
-            TokenTransferLib.balanceOf(paymentToken, address(this)), paymentAmount
-        );
-        address eoa = u.eoa;
-        address payer = u.payer == address(0) ? eoa : u.payer;
-        if (paymentAmount > u.paymentMaxAmount) {
-            revert PaymentError();
-        }
-        assembly ("memory-safe") {
-            let m := mload(0x40) // Cache the free memory pointer.
-            mstore(0x00, 0x887f7d7c) // `payEntryPoint(address,uint256,address)`.
-            mstore(0x20, shr(96, shl(96, paymentToken)))
-            mstore(0x40, paymentAmount)
-            mstore(0x60, shr(96, shl(96, eoa)))
-            pop(call(gas(), payer, 0, 0x1c, 0x64, 0x00, 0x00))
-            mstore(0x40, m) // Restore the free memory pointer.
-            mstore(0x60, 0) // Restore the zero pointer.
-        }
-        if (TokenTransferLib.balanceOf(paymentToken, address(this)) < requiredBalanceAfter) {
-            revert PaymentError();
-        }
-    }
 
     /// @dev Calls `unwrapAndValidateSignature` on the `eoa`.
     function _verify(UserOp calldata u)
@@ -463,15 +353,6 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
             u := add(0x04, calldataload(0x04))
         }
         uint256 s = uint32(bytes4(msg.sig));
-        // `_pay()`.
-        if (s == 0x1a3de5c3) {
-            require(msg.sender == address(this));
-            uint256 paymentAmount = _pay(u);
-            assembly ("memory-safe") {
-                mstore(0x00, paymentAmount)
-                return(0x00, 0x20)
-            }
-        }
         // `_verifyAndCall()`.
         if (s == 0xe235a92a) {
             require(msg.sender == address(this));
