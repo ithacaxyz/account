@@ -12,6 +12,8 @@ import {LibBit} from "solady/utils/LibBit.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 
+import "./Delegation.sol";
+
 /// @title EntryPoint
 /// @notice Contract for ERC7702 delegations.
 contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransient {
@@ -160,31 +162,22 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
         _execute(u, keyHash);
 
         uint256 gasUsed = gStart - gasleft();
-        uint256 paymentAmount = (gasUsed + 100_000) * paymentPerGas;
-        require(paymentAmount > paymentMaxAmount, "fee too high");
-        Delegation(u.eoa).compensate(u.paymentToken, finalPaymentAmount, u.paymentRecipient);
+        uint256 paymentAmount = (gasUsed + 100_000) * u.paymentPerGas;
+        require(paymentAmount <= u.paymentMaxAmount, "fee too high");
+        Delegation(payable(u.eoa)).compensate(u.paymentToken, paymentAmount, u.paymentRecipient);
     }
 
     /// @dev Executes the array of encoded user operations.
     /// Each element in `encodedUserOps` is given by `abi.encode(userOp)`,
     /// where `userOp` is a struct of type `UserOp`.
-    function execute(bytes[] calldata encodedUserOps)
+    function execute(UserOp[] calldata uOps)
         public
         payable
         virtual
         returns (bytes4[] memory errs)
     {
-        // Allocate memory for `errs` without zeroizing it.
-        assembly ("memory-safe") {
-            errs := mload(0x40) // Grab the free memory pointer.
-            mstore(errs, encodedUserOps.length) // Store the length.
-            mstore(0x40, add(add(0x20, errs), shl(5, encodedUserOps.length))) // Allocate.
-        }
-        for (uint256 i; i != encodedUserOps.length;) {
-            // We reluctantly use regular Solidity to access `encodedUserOps[i]`.
-            // This generates an unnecessary check for `i < encodedUserOps.length`, but helps
-            // generate all the implicit calldata bound checks on `encodedUserOps[i]`.
-            bytes4 err = execute(encodedUserOps[i]);
+        for (uint256 i; i != uOps.length;) {
+            bytes4 err = execute(uOps[i]);
             // Set `errs[i]` without bounds checks.
             assembly ("memory-safe") {
                 i := add(i, 1) // Increment `i` here so we don't need `add(errs, 0x20)`.
@@ -237,7 +230,8 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
             eoa := calldataload(add(encodedUserOp.offset, calldataload(encodedUserOp.offset)))
         }
         TokenTransferLib.safeTransferFrom(fundingToken, msg.sender, eoa, fundingAmount);
-        return execute(encodedUserOp);
+        revert("tmp");
+        // return execute(encodedUserOp);
     }
 
     /// @dev Returns true if the order ID has been filled.
