@@ -11,7 +11,6 @@ import {EIP712} from "solady/utils/EIP712.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
-import {Delegation} from "./Delegation.sol";
 
 /// @title EntryPoint
 /// @notice Contract for ERC7702 delegations.
