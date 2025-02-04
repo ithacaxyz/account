@@ -511,8 +511,7 @@ contract Delegation is EIP712, GuardedExecutor {
             let thisCodeSize := extcodesize(address())
             extcodecopy(address(), 0x00, 0x00, 0x20)
             let hasPrefix := eq(0xef0100, shr(232, mload(0x00)))
-            // Require that the account has the ERC7702 prefix and a
-            // codesize of 1..23 (inclusive) bytes.
+            // The account must have the ERC7702 prefix and a codesize of 1..23 (inclusive) bytes.
             if iszero(and(hasPrefix, lt(sub(thisCodeSize, 1), 23))) { revert(0x00, 0x00) }
         }
     }

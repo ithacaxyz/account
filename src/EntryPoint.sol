@@ -488,6 +488,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 newOwner := calldataload(0x04)
             }
             _initializeOwner(newOwner);
+            return;
         }
         revert FnSelectorNotRecognized();
     }
