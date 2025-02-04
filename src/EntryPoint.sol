@@ -4,17 +4,17 @@ pragma solidity ^0.8.23;
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
-import {UUPSUpgradeable} from "solady/utils/UUPSUpgradeable.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
 import {ReentrancyGuardTransient} from "solady/utils/ReentrancyGuardTransient.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
+import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 
 /// @title EntryPoint
 /// @notice Contract for ERC7702 delegations.
-contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransient {
+contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTransient {
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
@@ -480,6 +480,15 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
             _execute(u, keyHash);
             return;
         }
+        // `_initializeOwner()`.
+        if (s == 0xfc90218d) {
+            _checkOnlyProxy();
+            address newOwner;
+            assembly ("memory-safe") {
+                newOwner := calldataload(0x04)
+            }
+            _initializeOwner(newOwner);
+        }
         revert FnSelectorNotRecognized();
     }
 
@@ -514,15 +523,13 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
     }
 
     ////////////////////////////////////////////////////////////////////////
-    // UUPS
+    // Other Overrides
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev For UUPSUpgradeable.
-    function _authorizeUpgrade(address) internal view override onlyOwner {}
-
-    ////////////////////////////////////////////////////////////////////////
-    // Reentrancy Guard Transient
-    ////////////////////////////////////////////////////////////////////////
+    /// @dev Prevent reinitialization of owner.
+    function _guardInitializeOwner() internal pure virtual override returns (bool) {
+        return true;
+    }
 
     /// @dev There won't be chains that have 7702 and without TSTORE.
     function _useTransientReentrancyGuardOnlyOnMainnet()

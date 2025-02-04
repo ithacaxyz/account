@@ -489,6 +489,7 @@ contract Delegation is EIP712, GuardedExecutor {
             if (!_getDelegationStorage().approvedImplementations.contains(target)) {
                 revert Unauthorized();
             }
+            _checkOnlyERC7702();
             assembly ("memory-safe") {
                 let m := mload(0x40)
                 calldatacopy(m, data.offset, data.length)
@@ -500,6 +501,20 @@ contract Delegation is EIP712, GuardedExecutor {
             return;
         }
         super.execute(mode, executionData);
+    }
+
+    /// @dev Requires that the call context is on an EOA with ERC7702 code.
+    /// This excludes regular proxies and the implementation itself.
+    /// This helps to protect the proxy and the implementation from vandalism.
+    function _checkOnlyERC7702() internal view virtual {
+        assembly ("memory-safe") {
+            let thisCodeSize := extcodesize(address())
+            extcodecopy(address(), 0x00, 0x00, 0x20)
+            let hasPrefix := eq(0xef0100, shr(232, mload(0x00)))
+            // Require that the account has the ERC7702 prefix and a
+            // codesize of 1..23 (inclusive) bytes.
+            if iszero(and(hasPrefix, lt(sub(thisCodeSize, 1), 23))) { revert(0x00, 0x00) }
+        }
     }
 
     /// @dev Supported modes:
