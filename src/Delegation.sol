@@ -350,11 +350,6 @@ contract Delegation is EIP712, GuardedExecutor {
         TokenTransferLib.safeTransfer(paymentToken, msg.sender, paymentAmount);
     }
 
-    function compensate(address paymentToken, uint256 paymentAmount, address to) public virtual {
-        if (msg.sender != ENTRY_POINT) revert Unauthorized();
-        TokenTransferLib.safeTransfer(paymentToken, to, paymentAmount);
-    }
-
     /// @dev Returns if the signature is valid, along with its `keyHash`.
     /// The `signature` is a wrapped signature, given by
     /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.

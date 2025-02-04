@@ -3,7 +3,7 @@ pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
 import {LibClone} from "solady/utils/LibClone.sol";
-import {Delegation} from "../src/Delegation.sol";
+import {Delegation, MockDelegation} from "./utils/mocks/MockDelegation.sol";
 import {EntryPoint, MockEntryPoint} from "./utils/mocks/MockEntryPoint.sol";
 import {ERC20, MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
 
@@ -21,11 +21,11 @@ contract EntryPointTest is SoladyTest {
     }
 
     function setUp() public {
-        Delegation tempDelegation = new Delegation();
+        MockDelegation tempDelegation = new MockDelegation();
         ep = MockEntryPoint(payable(tempDelegation.ENTRY_POINT()));
         MockEntryPoint tempMockEntryPoint = new MockEntryPoint();
         vm.etch(tempDelegation.ENTRY_POINT(), address(tempMockEntryPoint).code);
-        delegation = LibClone.clone(address(new Delegation()));
+        delegation = LibClone.clone(address(new MockDelegation()));
         paymentToken = new MockPaymentToken();
     }
 
