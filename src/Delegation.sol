@@ -10,6 +10,7 @@ import {ECDSA} from "solady/utils/ECDSA.sol";
 import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 import {P256} from "solady/utils/P256.sol";
 import {WebAuthn} from "solady/utils/WebAuthn.sol";
+import {LibStorage} from "solady/utils/LibStorage.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
@@ -21,6 +22,7 @@ contract Delegation is EIP712, GuardedExecutor {
     using EnumerableSetLib for *;
     using LibBytes for LibBytes.BytesStorage;
     using LibBitmap for LibBitmap.Bitmap;
+    using LibStorage for LibStorage.Bump;
 
     ////////////////////////////////////////////////////////////////////////
     // Data Structures
@@ -51,6 +53,13 @@ contract Delegation is EIP712, GuardedExecutor {
     // Storage
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev This struct contains extra data for a given key hash.
+    struct KeyExtraStorage {
+        /// @dev The `msg.senders` that can use `isValidSignature`
+        /// to successfully validate a signature for a given key hash.
+        EnumerableSetLib.AddressSet checkers;
+    }
+
     /// @dev Holds the storage.
     struct DelegationStorage {
         /// @dev The label.
@@ -63,6 +72,8 @@ contract Delegation is EIP712, GuardedExecutor {
         EnumerableSetLib.Bytes32Set keyHashes;
         /// @dev Mapping of key hash to the key in encoded form.
         mapping(bytes32 => LibBytes.BytesStorage) keyStorage;
+        /// @dev Mapping of key hash to the key's extra storage.
+        mapping(bytes32 => LibStorage.Bump) keyExtraStorage;
         /// @dev Set of approved implementations for delegate calls.
         EnumerableSetLib.AddressSet approvedImplementations;
     }
@@ -71,6 +82,18 @@ contract Delegation is EIP712, GuardedExecutor {
     function _getDelegationStorage() internal pure returns (DelegationStorage storage $) {
         // Truncate to 9 bytes to reduce bytecode size.
         uint256 s = uint72(bytes9(keccak256("PORTO_DELEGATION_STORAGE")));
+        assembly ("memory-safe") {
+            $.slot := s
+        }
+    }
+
+    /// @dev Returns the storage pointer.
+    function _getKeyExtraStorage(bytes32 keyHash)
+        internal
+        view
+        returns (KeyExtraStorage storage $)
+    {
+        bytes32 s = _getDelegationStorage().keyExtraStorage[keyHash].slot();
         assembly ("memory-safe") {
             $.slot := s
         }
@@ -91,6 +114,9 @@ contract Delegation is EIP712, GuardedExecutor {
 
     /// @dev There are too many approved implementations.
     error ExceededApprovedImplementationsCapacity();
+
+    /// @dev There are too many signature checkers.
+    error ExceededSignatureCheckersCapacity();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -113,6 +139,11 @@ contract Delegation is EIP712, GuardedExecutor {
 
     /// @dev The nonce salt has been incremented to `newNonceSalt`.
     event NonceSaltIncremented(uint256 newNonceSalt);
+
+    /// @dev The `checker` has been authorized to use `isValidSignature` for `keyHash`.
+    event SignatureCheckerApprovalSet(
+        bytes32 indexed keyHash, address indexed checker, bool isApproved
+    );
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
@@ -148,7 +179,11 @@ contract Delegation is EIP712, GuardedExecutor {
         virtual
         returns (bytes4)
     {
-        (bool isValid,) = _unwrapAndValidateSignature(digest, signature, true);
+        (bool isValid, bytes32 keyHash) = _unwrapAndValidateSignature(digest, signature);
+        if (LibBit.and(keyHash != 0, isValid)) {
+            isValid = getKey(keyHash).isSuperAdmin
+                || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
+        }
         // `bytes4(keccak256("isValidSignature(bytes32,bytes)")) = 0x1626ba7e`.
         // We use `0xffffffff` for invalid, in convention with the reference implementation.
         return bytes4(isValid ? 0x1626ba7e : 0xffffffff);
@@ -194,6 +229,23 @@ contract Delegation is EIP712, GuardedExecutor {
             imps.remove(implementation);
         }
         emit ImplementationApprovalSet(implementation, isApproved);
+    }
+
+    /// @dev Sets whether `checker` can use `isValidSignature` to successfully validate
+    /// a signature for a given key hash.
+    function setSignatureCheckerApproval(bytes32 keyHash, address checker, bool isApproved)
+        public
+        virtual
+        onlyThis
+    {
+        EnumerableSetLib.AddressSet storage checkers = _getKeyExtraStorage(keyHash).checkers;
+        if (isApproved) {
+            checkers.add(checker);
+            if (checkers.length() > 512) revert ExceededSignatureCheckersCapacity();
+        } else {
+            checkers.remove(checker);
+        }
+        emit SignatureCheckerApprovalSet(keyHash, checker, isApproved);
     }
 
     /// @dev Invalidates the nonce.
@@ -263,14 +315,19 @@ contract Delegation is EIP712, GuardedExecutor {
         return EfficientHashLib.hash(uint8(key.keyType), uint256(keccak256(key.publicKey)));
     }
 
-    /// @dev Returns whether `implementation` is approved.
-    function implementationIsApproved(address implementation) public view virtual returns (bool) {
-        return _getDelegationStorage().approvedImplementations.contains(implementation);
-    }
-
     /// @dev Returns the list of approved implementations.
     function approvedImplementations() public view virtual returns (address[] memory) {
         return _getDelegationStorage().approvedImplementations.values();
+    }
+
+    /// @dev Returns the list of approved signature checkers for `keyHash`.
+    function approvedSignatureCheckers(bytes32 keyHash)
+        public
+        view
+        virtual
+        returns (address[] memory)
+    {
+        return _getKeyExtraStorage(keyHash).checkers.values();
     }
 
     /// @dev Computes the EIP712 digest for `calls`, with `nonceSalt` from storage.
@@ -336,6 +393,7 @@ contract Delegation is EIP712, GuardedExecutor {
     function _removeKey(bytes32 keyHash) internal virtual {
         DelegationStorage storage $ = _getDelegationStorage();
         $.keyStorage[keyHash].clear();
+        $.keyExtraStorage[keyHash].invalidate();
         if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
     }
 
@@ -359,17 +417,18 @@ contract Delegation is EIP712, GuardedExecutor {
         virtual
         returns (bool isValid, bytes32 keyHash)
     {
-        return _unwrapAndValidateSignature(digest, signature, false);
+        return _unwrapAndValidateSignature(digest, signature);
     }
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.
     /// The `signature` is a wrapped signature, given by
     /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
-    function _unwrapAndValidateSignature(
-        bytes32 digest,
-        bytes calldata signature,
-        bool requireSuperAdmin
-    ) internal view virtual returns (bool isValid, bytes32 keyHash) {
+    function _unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
+        internal
+        view
+        virtual
+        returns (bool isValid, bytes32 keyHash)
+    {
         // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
             return (ECDSA.recoverCalldata(digest, signature) == address(this), 0);
@@ -388,8 +447,6 @@ contract Delegation is EIP712, GuardedExecutor {
             }
         }
         Key memory key = getKey(keyHash);
-
-        if (LibBit.and(requireSuperAdmin, !key.isSuperAdmin)) return (false, keyHash);
 
         // Early return if the key has expired.
         if (LibBit.and(key.expiry != 0, block.timestamp > key.expiry)) return (false, keyHash);
