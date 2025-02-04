@@ -47,6 +47,98 @@ contract EntryPointTest is SoladyTest {
         bytes[] encodedUserOps;
     }
 
+    function testExecuteWithRefundsViaBatchGas() public {
+        vm.pauseGasMetering();
+        _TestFullFlowTemps memory t;
+
+        t.userOps = new EntryPoint.UserOp[](1);
+        t.targetFunctionPayloads = new TargetFunctionPayload[](t.userOps.length);
+        t.privateKeys = new uint256[](t.userOps.length);
+        t.encodedUserOps = new bytes[](t.userOps.length);
+
+        EntryPoint.UserOp memory u = t.userOps[0];
+        (u.eoa, t.privateKeys[0]) = _randomSigner();
+        vm.etch(u.eoa, delegation.code);
+        vm.deal(u.eoa, 2 ** 128 - 1);
+        u.executionData = _getExecutionDataForThisTargetFunction(
+            t.targetFunctionPayloads[0].value = 123,
+            t.targetFunctionPayloads[0].data = "hello world"
+        );
+        u.nonce = 123456789 << 1;
+        paymentToken.mint(u.eoa, 2 ** 128 - 1);
+        u.paymentToken = address(paymentToken);
+        u.paymentAmount = 0.1 ether;
+        u.paymentMaxAmount = 1 ether;
+        u.combinedGas = 10000000;
+        u.paymentPerGas = 0.000000001 ether;
+        _fillSecp256k1Signature(u, t.privateKeys[0]);
+        t.encodedUserOps[0] = abi.encode(u);
+        vm.resumeGasMetering();
+
+        ep.execute(t.encodedUserOps);
+    }
+
+    function testExecuteWithRefundsGas() public {
+        vm.pauseGasMetering();
+        _TestFullFlowTemps memory t;
+
+        t.userOps = new EntryPoint.UserOp[](1);
+        t.targetFunctionPayloads = new TargetFunctionPayload[](t.userOps.length);
+        t.privateKeys = new uint256[](t.userOps.length);
+        t.encodedUserOps = new bytes[](t.userOps.length);
+
+        EntryPoint.UserOp memory u = t.userOps[0];
+        (u.eoa, t.privateKeys[0]) = _randomSigner();
+        vm.etch(u.eoa, delegation.code);
+        vm.deal(u.eoa, 2 ** 128 - 1);
+        u.executionData = _getExecutionDataForThisTargetFunction(
+            t.targetFunctionPayloads[0].value = 123,
+            t.targetFunctionPayloads[0].data = "hello world"
+        );
+        u.nonce = 123456789 << 1;
+        paymentToken.mint(u.eoa, 2 ** 128 - 1);
+        u.paymentToken = address(paymentToken);
+        u.paymentAmount = 0.1 ether;
+        u.paymentMaxAmount = 1 ether;
+        u.combinedGas = 10000000;
+        u.paymentPerGas = 0.000000001 ether;
+        _fillSecp256k1Signature(u, t.privateKeys[0]);
+        t.encodedUserOps[0] = abi.encode(u);
+        vm.resumeGasMetering();
+
+        ep.execute(t.encodedUserOps[0]);
+    }
+
+    function testExecutePostPaymentGas() public {
+        vm.pauseGasMetering();
+        _TestFullFlowTemps memory t;
+
+        t.userOps = new EntryPoint.UserOp[](1);
+        t.targetFunctionPayloads = new TargetFunctionPayload[](t.userOps.length);
+        t.privateKeys = new uint256[](t.userOps.length);
+        t.encodedUserOps = new bytes[](t.userOps.length);
+
+        EntryPoint.UserOp memory u = t.userOps[0];
+        (u.eoa, t.privateKeys[0]) = _randomSigner();
+        vm.etch(u.eoa, delegation.code);
+        vm.deal(u.eoa, 2 ** 128 - 1);
+        u.executionData = _getExecutionDataForThisTargetFunction(
+            t.targetFunctionPayloads[0].value = 123,
+            t.targetFunctionPayloads[0].data = "hello world"
+        );
+        u.nonce = 123456789 << 1;
+        paymentToken.mint(u.eoa, 2 ** 128 - 1);
+        u.paymentToken = address(paymentToken);
+        u.paymentAmount = 0.1 ether;
+        u.paymentMaxAmount = 1 ether;
+        u.combinedGas = 10000000;
+        u.paymentPerGas = 0.000000001 ether;
+        _fillSecp256k1Signature(u, t.privateKeys[0]);
+        vm.resumeGasMetering();
+
+        ep.execute(u);
+    }
+
     function testFullFlow(bytes32) public {
         _TestFullFlowTemps memory t;
 

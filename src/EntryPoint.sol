@@ -11,6 +11,7 @@ import {EIP712} from "solady/utils/EIP712.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
+import {Delegation} from "./Delegation.sol";
 
 /// @title EntryPoint
 /// @notice Contract for ERC7702 delegations.
@@ -120,6 +121,8 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
     /// @dev The amount of expected gas for refunds.
     uint256 internal constant _REFUND_GAS = 50000;
 
+    uint256 internal constant _SIMPLE_EXECUTE_GAS_OVERHEAD = 100000;
+
     ////////////////////////////////////////////////////////////////////////
     // Storage
     ////////////////////////////////////////////////////////////////////////
@@ -141,6 +144,38 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
     ////////////////////////////////////////////////////////////////////////
     // Main
     ////////////////////////////////////////////////////////////////////////
+
+    function execute(UserOp calldata u) public payable virtual {
+        uint256 gasBudget = u.combinedGas;
+        uint256 gasStart = gasleft();
+        (bool isValid, bytes32 keyHash) = _verify(u);
+        if (!isValid) revert VerificationError();
+        _execute(u, keyHash, gasBudget);
+        uint256 gasUsed = Math.rawSub(gasStart, gasleft());
+        uint256 billed = Math.saturatingAdd(gasUsed, _SIMPLE_EXECUTE_GAS_OVERHEAD);
+        uint256 finalPaymentAmount = Math.saturatingMul(billed, u.paymentPerGas);
+        if (finalPaymentAmount > u.paymentMaxAmount) revert PaymentError();
+
+        address paymentToken = u.paymentToken;
+        address paymentRecipient = u.paymentRecipient;
+        uint256 requiredBalanceAfter = Math.saturatingAdd(
+            TokenTransferLib.balanceOf(paymentToken, paymentRecipient), finalPaymentAmount
+        );
+        address eoa = u.eoa;
+        assembly ("memory-safe") {
+            let m := mload(0x40) // Cache the free memory pointer.
+            mstore(0x00, 0x07dfd24c) // `compensate(address,uint256,address)`.
+            mstore(0x20, shr(96, shl(96, paymentToken)))
+            mstore(0x40, finalPaymentAmount)
+            mstore(0x60, shr(96, shl(96, paymentRecipient)))
+            pop(call(gas(), eoa, 0, 0x1c, 0x64, 0x00, 0x00))
+            mstore(0x40, m) // Restore the free memory pointer.
+            mstore(0x60, 0) // Restore the zero pointer.
+        }
+        if (TokenTransferLib.balanceOf(paymentToken, paymentRecipient) < requiredBalanceAfter) {
+            revert PaymentError();
+        }
+    }
 
     /// @dev Executes a single encoded user operation.
     /// `encodedUserOp` is given by `abi.encode(userOp)`, where `userOp` is a struct of type `UserOp`.
@@ -385,7 +420,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
 
     /// @dev Sends the `executionData` to the `eoa`.
     /// This bubbles up the revert if any. Otherwise, returns nothing.
-    function _execute(UserOp calldata u, bytes32 keyHash) internal virtual {
+    function _execute(UserOp calldata u, bytes32 keyHash, uint256 gasBudget) internal virtual {
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
         bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
             0x0100000000007821000100000000000000000000000000000000000000000000,
@@ -394,7 +429,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
         );
         address eoa = u.eoa;
         assembly ("memory-safe") {
-            if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x00)) {
+            if iszero(call(gasBudget, eoa, 0, add(0x20, data), mload(data), 0x00, 0x00)) {
                 mstore(0x00, 0x6c9d47e8) // `CallError()`.
                 revert(0x1c, 0x04)
             }
@@ -477,7 +512,7 @@ contract EntryPoint is EIP712, UUPSUpgradeable, Ownable, ReentrancyGuardTransien
             require(msg.sender == address(this));
             (bool isValid, bytes32 keyHash) = _verify(u);
             if (!isValid) revert VerificationError();
-            _execute(u, keyHash);
+            _execute(u, keyHash, gasleft());
             return;
         }
         revert FnSelectorNotRecognized();
