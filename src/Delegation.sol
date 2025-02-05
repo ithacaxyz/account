@@ -12,12 +12,13 @@ import {P256} from "solady/utils/P256.sol";
 import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {LibStorage} from "solady/utils/LibStorage.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
+import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
-contract Delegation is EIP712, GuardedExecutor {
+contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for *;
     using LibBytes for LibBytes.BytesStorage;
@@ -489,7 +490,7 @@ contract Delegation is EIP712, GuardedExecutor {
             if (!_getDelegationStorage().approvedImplementations.contains(target)) {
                 revert Unauthorized();
             }
-            _checkOnlyERC7702();
+            _checkOnlyEIP7702Authority();
             assembly ("memory-safe") {
                 let m := mload(0x40)
                 calldatacopy(m, data.offset, data.length)
@@ -501,19 +502,6 @@ contract Delegation is EIP712, GuardedExecutor {
             return;
         }
         super.execute(mode, executionData);
-    }
-
-    /// @dev Requires that the call context is on an EOA with ERC7702 code.
-    /// This excludes regular proxies and the implementation itself.
-    /// This helps to protect the proxy and the implementation from vandalism.
-    function _checkOnlyERC7702() internal view virtual {
-        assembly ("memory-safe") {
-            let thisCodeSize := extcodesize(address())
-            extcodecopy(address(), 0x00, 0x00, 0x20)
-            let hasPrefix := eq(0xef0100, shr(232, mload(0x00)))
-            // The account must have the ERC7702 prefix and a codesize of 1..23 (inclusive) bytes.
-            if iszero(and(hasPrefix, lt(sub(thisCodeSize, 1), 23))) { revert(0x00, 0x00) }
-        }
     }
 
     /// @dev Supported modes:
