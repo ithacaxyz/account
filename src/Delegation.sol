@@ -77,6 +77,8 @@ contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
         mapping(bytes32 => LibStorage.Bump) keyExtraStorage;
         /// @dev Set of approved implementations for delegate calls.
         EnumerableSetLib.AddressSet approvedImplementations;
+        /// @dev Mapping of approved implementations to their callers storage.
+        mapping(address => LibStorage.Bump) approvedImplementationCallers;
     }
 
     /// @dev Returns the storage pointer.
@@ -100,6 +102,18 @@ contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
         }
     }
 
+    /// @dev Returns the storage pointer.
+    function _getApprovedImplementationCallers(address implementation)
+        internal
+        view
+        returns (EnumerableSetLib.AddressSet storage $)
+    {
+        bytes32 s = _getDelegationStorage().approvedImplementationCallers[implementation].slot();
+        assembly ("memory-safe") {
+            $.slot := s
+        }
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
@@ -113,12 +127,6 @@ contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
     /// @dev The `opData` is too short.
     error OpDataTooShort();
 
-    /// @dev There are too many approved implementations.
-    error ExceededApprovedImplementationsCapacity();
-
-    /// @dev There are too many signature checkers.
-    error ExceededSignatureCheckersCapacity();
-
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -131,6 +139,11 @@ contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
 
     /// @dev The `implementation` has been authorized.
     event ImplementationApprovalSet(address indexed implementation, bool isApproved);
+
+    /// @dev The `caller` has been authorized to delegate call into `implementation`.
+    event ImplementationCallerApprovalSet(
+        address indexed implementation, address indexed caller, bool isApproved
+    );
 
     /// @dev The key with a corresponding `keyHash` has been revoked.
     event Revoked(bytes32 indexed keyHash);
@@ -164,6 +177,10 @@ contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
 
     /// @dev For EIP712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
+
+    /// @dev General capacity for enumerable sets,
+    /// to prevent off-chain full enumeration from running out-of-gas.
+    uint256 internal constant _CAP = 512;
 
     ////////////////////////////////////////////////////////////////////////
     // ERC1271
@@ -222,14 +239,22 @@ contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
         virtual
         onlyThis
     {
-        EnumerableSetLib.AddressSet storage imps = _getDelegationStorage().approvedImplementations;
-        if (isApproved) {
-            imps.add(implementation);
-            if (imps.length() > 512) revert ExceededApprovedImplementationsCapacity();
-        } else {
-            imps.remove(implementation);
-        }
+        DelegationStorage storage $ = _getDelegationStorage();
+        $.approvedImplementations.update(implementation, isApproved, _CAP);
+        if (!isApproved) $.approvedImplementationCallers[implementation].invalidate();
         emit ImplementationApprovalSet(implementation, isApproved);
+    }
+
+    /// @dev Sets whether `implementation` can be delegate called by `caller`.
+    function setImplementationCallerApproval(
+        address implementation,
+        address caller,
+        bool isApproved
+    ) public virtual onlyThis {
+        DelegationStorage storage $ = _getDelegationStorage();
+        if (!$.approvedImplementations.contains(implementation)) revert Unauthorized();
+        _getApprovedImplementationCallers(implementation).update(caller, isApproved, _CAP);
+        emit ImplementationCallerApprovalSet(implementation, caller, isApproved);
     }
 
     /// @dev Sets whether `checker` can use `isValidSignature` to successfully validate
@@ -239,13 +264,8 @@ contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
         virtual
         onlyThis
     {
-        EnumerableSetLib.AddressSet storage checkers = _getKeyExtraStorage(keyHash).checkers;
-        if (isApproved) {
-            checkers.add(checker);
-            if (checkers.length() > 512) revert ExceededSignatureCheckersCapacity();
-        } else {
-            checkers.remove(checker);
-        }
+        if (_getDelegationStorage().keyStorage[keyHash].isEmpty()) revert KeyDoesNotExist();
+        _getKeyExtraStorage(keyHash).checkers.update(checker, isApproved, _CAP);
         emit SignatureCheckerApprovalSet(keyHash, checker, isApproved);
     }
 
@@ -319,6 +339,16 @@ contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
     /// @dev Returns the list of approved implementations.
     function approvedImplementations() public view virtual returns (address[] memory) {
         return _getDelegationStorage().approvedImplementations.values();
+    }
+
+    /// @dev Returns the list of callers approved to delegate call into `implementation`.
+    function approvedImplementationCallers(address implementation)
+        public
+        view
+        virtual
+        returns (address[] memory)
+    {
+        return _getApprovedImplementationCallers(implementation).values();
     }
 
     /// @dev Returns the list of approved signature checkers for `keyHash`.
@@ -484,24 +514,10 @@ contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
     function execute(bytes32 mode, bytes calldata executionData) public payable virtual override {
         // ERC7579 designates `mode[0]` to denote the call mode, and delegate call is `0xff`.
         if (bytes1(mode) == 0xff) {
-            // ERC7579 defines the delegate call encoding as `abi.encodePacked(implementation,data)`.
-            address target = address(bytes20(LibBytes.loadCalldata(executionData, 0x00)));
-            bytes calldata data = LibBytes.sliceCalldata(executionData, 0x14);
-            if (!_getDelegationStorage().approvedImplementations.contains(target)) {
-                revert Unauthorized();
-            }
-            _checkOnlyEIP7702Authority();
-            assembly ("memory-safe") {
-                let m := mload(0x40)
-                calldatacopy(m, data.offset, data.length)
-                if iszero(delegatecall(gas(), target, m, data.length, codesize(), 0x00)) {
-                    returndatacopy(m, 0x00, returndatasize())
-                    revert(m, returndatasize())
-                }
-            }
-            return;
+            _executeERC7579DelegateCall(executionData);
+        } else {
+            super.execute(mode, executionData);
         }
-        super.execute(mode, executionData);
     }
 
     /// @dev Supported modes:
@@ -511,6 +527,31 @@ contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
     /// - `0xff000000000000000000...`: Delegate call.
     function supportsExecutionMode(bytes32 mode) public view virtual override returns (bool) {
         return LibBit.or(bytes1(mode) == 0xff, super.supportsExecutionMode(mode));
+    }
+
+    /// @dev Special execute for the delegate call mode.
+    function _executeERC7579DelegateCall(bytes calldata executionData) internal virtual {
+        DelegationStorage storage $ = _getDelegationStorage();
+        // ERC7579 defines the delegate call encoding as `abi.encodePacked(implementation,data)`.
+        address target = address(bytes20(LibBytes.loadCalldata(executionData, 0x00)));
+        bytes calldata data = LibBytes.sliceCalldata(executionData, 0x14);
+        if (!$.approvedImplementations.contains(target)) {
+            revert Unauthorized();
+        }
+        _checkOnlyEIP7702Authority();
+        if (msg.sender != address(this)) {
+            if (!_getApprovedImplementationCallers(target).contains(msg.sender)) {
+                revert Unauthorized();
+            }
+        }
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            calldatacopy(m, data.offset, data.length)
+            if iszero(delegatecall(gas(), target, m, data.length, codesize(), 0x00)) {
+                returndatacopy(m, 0x00, returndatasize())
+                revert(m, returndatasize())
+            }
+        }
     }
 
     /// @dev For ERC7821.
