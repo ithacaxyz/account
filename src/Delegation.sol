@@ -18,7 +18,7 @@ import {TokenTransferLib} from "./TokenTransferLib.sol";
 
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
-contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
+contract Delegation is EIP712, GuardedExecutor {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for *;
     using LibBytes for LibBytes.BytesStorage;
@@ -538,7 +538,6 @@ contract Delegation is EIP712, GuardedExecutor, CallContextChecker {
         if (!$.approvedImplementations.contains(target)) {
             revert Unauthorized();
         }
-        _checkOnlyEIP7702Authority();
         if (msg.sender != address(this)) {
             if (!_getApprovedImplementationCallers(target).contains(msg.sender)) {
                 revert Unauthorized();
