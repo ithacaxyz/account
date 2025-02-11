@@ -8,7 +8,7 @@ import {LibBit} from "solady/utils/LibBit.sol";
 import {DynamicArrayLib} from "solady/utils/DynamicArrayLib.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
-import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
+import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {DateTimeLib} from "solady/utils/DateTimeLib.sol";
 
 contract GuardedExecutor is ERC7821 {
@@ -231,9 +231,8 @@ contract GuardedExecutor is ERC7821 {
             uint256 balance = SafeTransferLib.balanceOf(token, address(this));
             _incrementSpent(
                 spends.spends[token],
-                FixedPointMathLib.max(
-                    t.transferAmounts.get(i),
-                    FixedPointMathLib.zeroFloorSub(balancesBefore.get(i), balance)
+                Math.max(
+                    t.transferAmounts.get(i), Math.saturatingSub(balancesBefore.get(i), balance)
                 )
             );
         }
@@ -398,9 +397,9 @@ contract GuardedExecutor is ERC7821 {
         pure
         returns (uint256)
     {
-        if (period == SpendPeriod.Minute) return unixTimestamp / 60 * 60;
-        if (period == SpendPeriod.Hour) return unixTimestamp / 3600 * 3600;
-        if (period == SpendPeriod.Day) return unixTimestamp / 86400 * 86400;
+        if (period == SpendPeriod.Minute) return Math.rawMul(Math.rawDiv(unixTimestamp, 60), 60);
+        if (period == SpendPeriod.Hour) return Math.rawMul(Math.rawDiv(unixTimestamp, 3600), 3600);
+        if (period == SpendPeriod.Day) return Math.rawMul(Math.rawDiv(unixTimestamp, 86400), 86400);
         if (period == SpendPeriod.Week) return DateTimeLib.mondayTimestamp(unixTimestamp);
         (uint256 year, uint256 month,) = DateTimeLib.timestampToDate(unixTimestamp);
         // Note: DateTimeLib's months and month-days start from 1.

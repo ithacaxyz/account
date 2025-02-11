@@ -402,7 +402,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev Computes the EIP712 digest for the UserOp.
-    /// If the nonce is odd, the digest will be computed without the chain ID.
+    /// If the nonce is odd, the digest will be computed without the chain ID and with a zero nonce salt.
     /// Otherwise, the digest will be computed with the chain ID.
     function _computeDigest(UserOp calldata u) internal view virtual returns (bytes32) {
         bytes32[] calldata pointers = LibERC7579.decodeBatch(u.executionData);
@@ -428,7 +428,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         f.set(2, uint160(u.eoa));
         f.set(3, a.hash());
         f.set(4, u.nonce);
-        f.set(5, _nonceSalt(u.eoa));
+        f.set(5, u.nonce & 1 > 0 ? 0 : _nonceSalt(u.eoa));
         f.set(6, uint160(u.payer));
         f.set(7, uint160(u.paymentToken));
         f.set(8, u.paymentMaxAmount);

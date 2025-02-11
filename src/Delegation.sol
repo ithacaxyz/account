@@ -12,7 +12,6 @@ import {P256} from "solady/utils/P256.sol";
 import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {LibStorage} from "solady/utils/LibStorage.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
-import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 
@@ -362,7 +361,7 @@ contract Delegation is EIP712, GuardedExecutor {
     }
 
     /// @dev Computes the EIP712 digest for `calls`, with `nonceSalt` from storage.
-    /// If the nonce is odd, the digest will be computed without the chain ID.
+    /// If the nonce is odd, the digest will be computed without the chain ID and with a zero nonce salt.
     /// Otherwise, the digest will be computed with the chain ID.
     function computeDigest(Call[] calldata calls, uint256 nonce)
         public
@@ -388,7 +387,7 @@ contract Delegation is EIP712, GuardedExecutor {
             nonce & 1,
             uint256(a.hash()),
             nonce,
-            _getDelegationStorage().nonceSalt
+            nonce & 1 > 0 ? 0 : _getDelegationStorage().nonceSalt
         );
         return nonce & 1 > 0 ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
