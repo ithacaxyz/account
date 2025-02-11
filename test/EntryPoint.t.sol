@@ -71,10 +71,11 @@ contract EntryPointTest is SoladyTest {
             u.paymentMaxAmount = u.paymentAmount;
             u.combinedGas = 10000000;
             _fillSecp256k1Signature(u, t.privateKeys[i]);
-            t.encodedUserOps[i] = abi.encode(u);
+            // t.encodedUserOps[i] = abi.encode(u);
+            t.userOps[i] = u;
         }
 
-        bytes4[] memory errors = ep.execute(t.encodedUserOps);
+        bytes4[] memory errors = ep.execute(t.userOps);
         assertEq(errors.length, t.userOps.length);
         for (uint256 i; i != errors.length; ++i) {
             assertEq(errors[i], 0);
