@@ -353,12 +353,12 @@ contract GuardedExecutor is ERC7821 {
         if (_isSelfExecute(target, fnSel)) if (!_isSuperAdmin(keyHash)) return false;
 
         if (c[_hash(keyHash, target, fnSel)]) return true;
-        if (c[_hash(keyHash, ANY_TARGET, fnSel)]) return true;
-        if (c[_hash(ANY_KEYHASH, target, fnSel)]) return true;
-        if (c[_hash(ANY_KEYHASH, ANY_TARGET, fnSel)]) return true;
         if (c[_hash(keyHash, target, ANY_FN_SEL)]) return true;
+        if (c[_hash(keyHash, ANY_TARGET, fnSel)]) return true;
         if (c[_hash(keyHash, ANY_TARGET, ANY_FN_SEL)]) return true;
+        if (c[_hash(ANY_KEYHASH, target, fnSel)]) return true;
         if (c[_hash(ANY_KEYHASH, target, ANY_FN_SEL)]) return true;
+        if (c[_hash(ANY_KEYHASH, ANY_TARGET, fnSel)]) return true;
         if (c[_hash(ANY_KEYHASH, ANY_TARGET, ANY_FN_SEL)]) return true;
         return false;
     }
