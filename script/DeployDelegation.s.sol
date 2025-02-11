@@ -11,7 +11,7 @@ contract DeployDelegationScript is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.createWallet(deployerPrivateKey).addr;
-        address implementation = 0x4Ee65f4CEd87Ff98fd40627Ac19C159E99C9D295;
+        address implementation = 0x23165b46bee38d6FeCfC50f57c29F1035cA10B0F;
         vm.startBroadcast(deployerPrivateKey);
         new EIP7702Proxy{salt: bytes32(0)}(implementation, deployer);
         vm.stopBroadcast();
