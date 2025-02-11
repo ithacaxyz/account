@@ -57,10 +57,6 @@ contract GuardedExecutor is ERC7821 {
     /// @dev Exceeded the daily spend limit.
     error ExceededSpendLimit();
 
-    /// @dev Cannot add a new daily spend, as we have reached the maximum capacity.
-    /// This is required to prevent unbounded checking costs during execution.
-    error ExceededSpendsCapacity();
-
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -293,12 +289,10 @@ contract GuardedExecutor is ERC7821 {
         checkKeyHashIsNonZero(keyHash)
     {
         SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
-        spends.tokens.add(token);
-        if (spends.tokens.length() >= 64) revert ExceededSpendsCapacity();
+        spends.tokens.add(token, 64); // Max capacity of 64.
 
         TokenSpendStorage storage tokenSpends = spends.spends[token];
         tokenSpends.periods.add(uint8(period));
-        if (tokenSpends.periods.length() >= 8) revert ExceededSpendsCapacity();
 
         tokenSpends.spends[uint8(period)].limit = limit;
         emit SpendLimitSet(keyHash, token, period, limit);
