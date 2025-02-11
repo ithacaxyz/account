@@ -37,7 +37,9 @@ contract EntryPointTest is SoladyTest {
     }
 
     function targetFunction(bytes memory data) public payable {
-        targetFunctionPayloads.push(TargetFunctionPayload(msg.sender, msg.value, data));
+        targetFunctionPayloads.push(
+            TargetFunctionPayload(msg.sender, msg.value, data)
+        );
     }
 
     struct _TestFullFlowTemps {
@@ -51,7 +53,9 @@ contract EntryPointTest is SoladyTest {
         _TestFullFlowTemps memory t;
 
         t.userOps = new EntryPoint.UserOp[](_random() & 3);
-        t.targetFunctionPayloads = new TargetFunctionPayload[](t.userOps.length);
+        t.targetFunctionPayloads = new TargetFunctionPayload[](
+            t.userOps.length
+        );
         t.privateKeys = new uint256[](t.userOps.length);
         t.encodedUserOps = new bytes[](t.userOps.length);
 
@@ -61,8 +65,15 @@ contract EntryPointTest is SoladyTest {
             vm.etch(u.eoa, delegation.code);
             vm.deal(u.eoa, 2 ** 128 - 1);
             u.executionData = _getExecutionDataForThisTargetFunction(
-                t.targetFunctionPayloads[i].value = _bound(_random(), 0, 2 ** 32 - 1),
-                t.targetFunctionPayloads[i].data = _truncateBytes(_randomBytes(), 0xff)
+                t.targetFunctionPayloads[i].value = _bound(
+                    _random(),
+                    0,
+                    2 ** 32 - 1
+                ),
+                t.targetFunctionPayloads[i].data = _truncateBytes(
+                    _randomBytes(),
+                    0xff
+                )
             );
             u.nonce = _randomUnique() << 1;
             paymentToken.mint(u.eoa, 2 ** 128 - 1);
@@ -79,8 +90,14 @@ contract EntryPointTest is SoladyTest {
         for (uint256 i; i != errors.length; ++i) {
             assertEq(errors[i], 0);
             assertEq(targetFunctionPayloads[i].by, t.userOps[i].eoa);
-            assertEq(targetFunctionPayloads[i].value, t.targetFunctionPayloads[i].value);
-            assertEq(targetFunctionPayloads[i].data, t.targetFunctionPayloads[i].data);
+            assertEq(
+                targetFunctionPayloads[i].value,
+                t.targetFunctionPayloads[i].value
+            );
+            assertEq(
+                targetFunctionPayloads[i].data,
+                t.targetFunctionPayloads[i].data
+            );
         }
     }
 
@@ -103,8 +120,15 @@ contract EntryPointTest is SoladyTest {
             vm.etch(u.eoa, delegation.code);
             vm.deal(u.eoa, 2 ** 128 - 1);
             u.executionData = _getExecutionDataForThisTargetFunction(
-                t.targetFunctionPayload.value = _bound(_random(), 0, 2 ** 32 - 1),
-                t.targetFunctionPayload.data = _truncateBytes(_randomBytes(), 0xff)
+                t.targetFunctionPayload.value = _bound(
+                    _random(),
+                    0,
+                    2 ** 32 - 1
+                ),
+                t.targetFunctionPayload.data = _truncateBytes(
+                    _randomBytes(),
+                    0xff
+                )
             );
             u.nonce = _randomUnique() << 1;
             paymentToken.mint(address(this), 2 ** 128 - 1);
@@ -116,35 +140,83 @@ contract EntryPointTest is SoladyTest {
             u.paymentMaxAmount = u.paymentAmount;
             u.combinedGas = 10000000;
             _fillSecp256k1Signature(u, t.privateKey);
-            t.originData = abi.encode(abi.encode(u), t.fundingToken, t.fundingAmount);
+            t.originData = abi.encode(
+                abi.encode(u),
+                t.fundingToken,
+                t.fundingAmount
+            );
         }
         assertEq(ep.fill(t.orderId, t.originData, ""), 0);
     }
 
-    function _fillSecp256k1Signature(EntryPoint.UserOp memory userOp, uint256 privateKey)
-        internal
-        view
-    {
+    function testKeySlots() public {
+        Delegation eoa = Delegation(
+            payable(0xc2de75891512241015C26dA8fe953Aea05985DE3)
+        );
+        vm.etch(address(eoa), delegation.code);
+
+        Delegation.Key memory key;
+        key.expiry = 0;
+        key.keyType = Delegation.KeyType.Secp256k1;
+        key.publicKey = abi.encode(
+            address(0x45a2428367e115E9a8B0898dFB194a4Bdcd09a23)
+        );
+        key.isSuperAdmin = true;
+
+        vm.prank(address(eoa));
+        eoa.authorize(key);
+        vm.stopPrank();
+
+        EntryPoint.UserOp memory op;
+        op.eoa = address(eoa);
+        op.executionData = _getExecutionData(address(0), 0, bytes(""));
+        op.nonce = 0x2;
+        op.paymentToken = address(0x238c8CD93ee9F8c7Edf395548eF60c0d2e46665E);
+        op.paymentAmount = 0;
+        op.paymentMaxAmount = 0;
+        op.combinedGas = 20000000;
+        bytes32 digest = ep.computeDigest(op);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
+            uint256(
+                0x8ef24acf2c7974d38d2f2c4e1bb63515c57c48707df9831794bac28dbe4aa835
+            ),
+            digest
+        );
+        op.signature = abi.encodePacked(
+            abi.encode(r, s, v),
+            eoa.hash(key),
+            false
+        );
+
+        ep.execute(abi.encode(op));
+    }
+
+    function _fillSecp256k1Signature(
+        EntryPoint.UserOp memory userOp,
+        uint256 privateKey
+    ) internal view {
         bytes32 digest = ep.computeDigest(userOp);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         userOp.signature = abi.encodePacked(r, s, v);
     }
 
-    function _getExecutionDataForThisTargetFunction(uint256 value, bytes memory data)
-        internal
-        view
-        returns (bytes memory)
-    {
-        return _getExecutionData(
-            address(this), value, abi.encodeWithSignature("targetFunction(bytes)", data)
-        );
+    function _getExecutionDataForThisTargetFunction(
+        uint256 value,
+        bytes memory data
+    ) internal view returns (bytes memory) {
+        return
+            _getExecutionData(
+                address(this),
+                value,
+                abi.encodeWithSignature("targetFunction(bytes)", data)
+            );
     }
 
-    function _getExecutionData(address target, uint256 value, bytes memory data)
-        internal
-        pure
-        returns (bytes memory)
-    {
+    function _getExecutionData(
+        address target,
+        uint256 value,
+        bytes memory data
+    ) internal pure returns (bytes memory) {
         EntryPoint.Call[] memory calls = new EntryPoint.Call[](1);
         calls[0].target = target;
         calls[0].value = value;
