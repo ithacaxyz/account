@@ -95,6 +95,12 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev The order has already been filled.
     error OrderAlreadyFilled();
 
+    /// @dev For returning the gas used and the error from a simulation.
+    error SimulationResult(uint256 gUsed, bytes4 err);
+
+    /// @dev No revert has been encountered.
+    error NoRevertEncoutered();
+
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
@@ -153,9 +159,62 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         nonReentrant
         returns (bytes4 err)
     {
+        (, err) = _execute(encodedUserOp);
+    }
+
+    /// @dev Executes the array of encoded user operations.
+    /// Each element in `encodedUserOps` is given by `abi.encode(userOp)`,
+    /// where `userOp` is a struct of type `UserOp`.
+    function execute(bytes[] calldata encodedUserOps)
+        public
+        payable
+        virtual
+        nonReentrant
+        returns (bytes4[] memory errs)
+    {
+        // Allocate memory for `errs` without zeroizing it.
+        assembly ("memory-safe") {
+            errs := mload(0x40) // Grab the free memory pointer.
+            mstore(errs, encodedUserOps.length) // Store the length.
+            mstore(0x40, add(add(0x20, errs), shl(5, encodedUserOps.length))) // Allocate.
+        }
+        for (uint256 i; i != encodedUserOps.length;) {
+            // We reluctantly use regular Solidity to access `encodedUserOps[i]`.
+            // This generates an unnecessary check for `i < encodedUserOps.length`, but helps
+            // generate all the implicit calldata bound checks on `encodedUserOps[i]`.
+            (, bytes4 err) = _execute(encodedUserOps[i]);
+            // Set `errs[i]` without bounds checks.
+            assembly ("memory-safe") {
+                i := add(i, 1) // Increment `i` here so we don't need `add(errs, 0x20)`.
+                mstore(add(errs, shl(5, i)), err)
+            }
+        }
+    }
+
+    /// @dev This function does not actually execute. It simulates an execution
+    /// and reverts with the amount of gas used, and the error selector.
+    function simulateExecute(bytes calldata encodedUserOp) public payable virtual {
+        (uint256 gUsed, bytes4 err) = _execute(encodedUserOp);
+        revert SimulationResult(gUsed, err);
+    }
+
+    /// @dev This function is provided for debugging purposes.
+    function simulateFailedVerifyAndCall(bytes calldata encodedUserOp) public payable virtual {
+        UserOp calldata u = _extractUserOp(encodedUserOp);
+        (bool isValid, bytes32 keyHash) = _verify(u);
+        if (!isValid) revert VerificationError();
+        _execute(u, keyHash, true);
+        revert NoRevertEncoutered();
+    }
+
+    /// @dev Extracts the UserOp from the calldata bytes, with minimal checks.
+    function _extractUserOp(bytes calldata encodedUserOp)
+        internal
+        virtual
+        returns (UserOp calldata u)
+    {
         // This function does NOT allocate memory to avoid quadratic memory expansion costs.
         // Otherwise, it will be unfair to the UserOps at the back of the batch.
-        UserOp calldata u;
         assembly ("memory-safe") {
             let t := calldataload(encodedUserOp.offset)
             u := add(t, encodedUserOp.offset)
@@ -164,6 +223,15 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // which generate the implicit bounds checks.
             if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
         }
+    }
+
+    /// @dev Executes a single encoded UserOp.
+    function _execute(bytes calldata encodedUserOp)
+        internal
+        virtual
+        returns (uint256 gUsed, bytes4 err)
+    {
+        UserOp calldata u = _extractUserOp(encodedUserOp);
         uint256 g = u.combinedGas;
         uint256 gStart = gasleft();
         uint256 paymentAmount;
@@ -199,8 +267,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             default {
                 // Since the payment is a success, load the returned `paymentAmount`.
                 paymentAmount := mload(0x00)
-                let gUsed := sub(gStart, gas())
-                let gLeft := mul(sub(g, gUsed), gt(g, gUsed))
+                let gUsedTemp := sub(gStart, gas())
+                let gLeft := mul(sub(g, gUsedTemp), gt(g, gUsedTemp))
                 // 2. Verify and call.
                 mstore(m, 0xe235a92a) // `_verifyAndCall()`.
                 mstore(0x00, 0) // Zeroize the return slot.
@@ -217,7 +285,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // `paymentAmountForGas = paymentPerGas * totalAmountOfGasToPayFor`.
         // If we have overpaid, then refund `paymentAmount - paymentAmountForGas`.
 
-        uint256 gUsed = Math.rawSub(gStart, gasleft());
+        gUsed = Math.rawSub(gStart, gasleft());
         uint256 paymentPerGas = u.paymentPerGas;
         if (paymentPerGas == uint256(0)) paymentPerGas = type(uint256).max;
         uint256 finalPaymentAmount = Math.min(
@@ -234,34 +302,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 u.payer == address(0) ? u.eoa : u.payer,
                 Math.rawSub(paymentAmount, finalPaymentAmount)
             );
-        }
-    }
-
-    /// @dev Executes the array of encoded user operations.
-    /// Each element in `encodedUserOps` is given by `abi.encode(userOp)`,
-    /// where `userOp` is a struct of type `UserOp`.
-    function execute(bytes[] calldata encodedUserOps)
-        public
-        payable
-        virtual
-        returns (bytes4[] memory errs)
-    {
-        // Allocate memory for `errs` without zeroizing it.
-        assembly ("memory-safe") {
-            errs := mload(0x40) // Grab the free memory pointer.
-            mstore(errs, encodedUserOps.length) // Store the length.
-            mstore(0x40, add(add(0x20, errs), shl(5, encodedUserOps.length))) // Allocate.
-        }
-        for (uint256 i; i != encodedUserOps.length;) {
-            // We reluctantly use regular Solidity to access `encodedUserOps[i]`.
-            // This generates an unnecessary check for `i < encodedUserOps.length`, but helps
-            // generate all the implicit calldata bound checks on `encodedUserOps[i]`.
-            bytes4 err = execute(encodedUserOps[i]);
-            // Set `errs[i]` without bounds checks.
-            assembly ("memory-safe") {
-                i := add(i, 1) // Increment `i` here so we don't need `add(errs, 0x20)`.
-                mstore(add(errs, shl(5, i)), err)
-            }
         }
     }
 
@@ -384,8 +424,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev Sends the `executionData` to the `eoa`.
-    /// This bubbles up the revert if any. Otherwise, returns nothing.
-    function _execute(UserOp calldata u, bytes32 keyHash) internal virtual {
+    /// Returns nothing on success.
+    /// On failure, bubbles up the revert if required, or reverts with `CallError()`.
+    function _execute(UserOp calldata u, bytes32 keyHash, bool bubbleRevert) internal virtual {
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
         bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
             0x0100000000007821000100000000000000000000000000000000000000000000,
@@ -395,8 +436,12 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         address eoa = u.eoa;
         assembly ("memory-safe") {
             if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x00)) {
-                mstore(0x00, 0x6c9d47e8) // `CallError()`.
-                revert(0x1c, 0x04)
+                if iszero(bubbleRevert) {
+                    mstore(0x00, 0x6c9d47e8) // `CallError()`.
+                    revert(0x1c, 0x04)
+                }
+                returndatacopy(mload(0x40), 0x00, returndatasize())
+                revert(mload(0x40), returndatasize())
             }
         }
     }
@@ -477,7 +522,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             require(msg.sender == address(this));
             (bool isValid, bytes32 keyHash) = _verify(u);
             if (!isValid) revert VerificationError();
-            _execute(u, keyHash);
+            _execute(u, keyHash, false);
             return;
         }
         // `_initializeOwner()`.
