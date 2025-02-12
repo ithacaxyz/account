@@ -84,6 +84,55 @@ contract EntryPointTest is SoladyTest {
         }
     }
 
+    function testExecuteWithUnAuthorizedPayer() public {
+        uint256 alice = uint256(keccak256("alicePrivateKey"));
+
+        address aliceAddress = vm.addr(alice);
+        uint256 bob = uint256(keccak256("bobPrivateKey"));
+
+        address bobAddress = vm.addr(bob);
+
+        // eip-7702 delegation
+        vm.signAndAttachDelegation(delegation, alice);
+
+        // eip-7702 delegation
+        vm.signAndAttachDelegation(delegation, bob);
+
+        vm.deal(vm.addr(alice), 10 ether);
+        vm.deal(vm.addr(bob), 10 ether);
+
+        paymentToken.mint(aliceAddress, 50 ether);
+
+        bytes memory executionData = _getExecutionData(
+            address(paymentToken),
+            0,
+            abi.encodeWithSignature("transfer(address,uint256)", address(0xabcd), 1 ether)
+        );
+
+        EntryPoint.UserOp memory userOp = EntryPoint.UserOp({
+            eoa: aliceAddress,
+            nonce: 0,
+            executionData: executionData,
+            payer: bobAddress,
+            paymentToken: address(0x00),
+            paymentRecipient: address(0x00),
+            paymentAmount: 0.1 ether,
+            paymentMaxAmount: 0.5 ether,
+            paymentPerGas: 100000 wei,
+            combinedGas: 10000000,
+            signature: ""
+        });
+
+        bytes32 digest = ep.computeDigest(userOp);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alice, digest);
+
+        userOp.signature = abi.encodePacked(r, s, v);
+        
+        bytes4 err = ep.execute(abi.encode(userOp));
+        assertEq(EntryPoint.PaymentError.selector, err);
+    }
+
     struct _TestFillTemps {
         EntryPoint.UserOp userOp;
         bytes32 orderId;

@@ -4,7 +4,7 @@
 
 # The Default Profile
 [profile.default]
-evm_version = "cancun" # Cancun will be tested in the CI.
+evm_version = "prague" # Cancun will be tested in the CI.
 auto_detect_solc = false
 optimizer = true
 optimizer_runs = 200
