@@ -151,4 +151,35 @@ contract EntryPointTest is SoladyTest {
         calls[0].data = data;
         return abi.encode(calls);
     }
+
+    function testKeySlots() public {
+        Delegation eoa = Delegation(payable(0xc2de75891512241015C26dA8fe953Aea05985DE3));
+        vm.etch(address(eoa), delegation.code);
+
+        Delegation.Key memory key;
+        key.expiry = 0;
+        key.keyType = Delegation.KeyType.Secp256k1;
+        key.publicKey = abi.encode(address(0x45a2428367e115E9a8B0898dFB194a4Bdcd09a23));
+        key.isSuperAdmin = true;
+
+        vm.prank(address(eoa));
+        eoa.authorize(key);
+        vm.stopPrank();
+
+        EntryPoint.UserOp memory op;
+        op.eoa = address(eoa);
+        op.executionData = _getExecutionData(address(0), 0, bytes(""));
+        op.nonce = 0x2;
+        op.paymentToken = address(0x238c8CD93ee9F8c7Edf395548eF60c0d2e46665E);
+        op.paymentAmount = 0;
+        op.paymentMaxAmount = 0;
+        op.combinedGas = 20000000;
+        bytes32 digest = ep.computeDigest(op);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
+            uint256(0x8ef24acf2c7974d38d2f2c4e1bb63515c57c48707df9831794bac28dbe4aa835), digest
+        );
+        op.signature = abi.encodePacked(abi.encodePacked(r, s, v), eoa.hash(key), false);
+
+        ep.execute(abi.encode(op));
+    }
 }

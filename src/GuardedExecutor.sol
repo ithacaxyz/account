@@ -57,6 +57,9 @@ contract GuardedExecutor is ERC7821 {
     /// @dev Exceeded the daily spend limit.
     error ExceededSpendLimit();
 
+    /// @dev Super admin keys can execute everything.
+    error SuperAdminCanExecuteEverything();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -267,14 +270,14 @@ contract GuardedExecutor is ERC7821 {
         onlyThis
         checkKeyHashIsNonZero(keyHash)
     {
+        if (_isSuperAdmin(keyHash)) revert SuperAdminCanExecuteEverything();
+
         // All calls not from the EOA itself has to go through the single `execute` function.
         // For security, only EOA key and super admin keys can call into `execute`.
         // Otherwise any low-stakes app key can call super admin functions
         // such as like `authorize` and `revoke`.
         // This check is for sanity. We will still validate this in `canExecute`.
-        if (_isSelfExecute(target, fnSel)) {
-            if (!_isSuperAdmin(keyHash)) revert CannotSelfExecute();
-        }
+        if (_isSelfExecute(target, fnSel)) revert CannotSelfExecute();
 
         mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
         c[_hash(keyHash, target, fnSel)] = can;
@@ -330,6 +333,9 @@ contract GuardedExecutor is ERC7821 {
         // by the EOA's secp256k1 key itself.
         if (keyHash == bytes32(0)) return true;
 
+        // Super admin keys can execute everything.
+        if (_isSuperAdmin(keyHash)) return true;
+
         mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
 
         bytes4 fnSel = ANY_FN_SEL;
@@ -343,7 +349,7 @@ contract GuardedExecutor is ERC7821 {
 
         // This check is required to ensure that authorizing any function selector
         // or any target will still NOT allow for self execution.
-        if (_isSelfExecute(target, fnSel)) if (!_isSuperAdmin(keyHash)) return false;
+        if (_isSelfExecute(target, fnSel)) return false;
 
         if (c[_hash(keyHash, target, fnSel)]) return true;
         if (c[_hash(keyHash, target, ANY_FN_SEL)]) return true;
