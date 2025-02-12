@@ -17,7 +17,7 @@ contract UpgradeDelegationScript is Script {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         // address deployer = vm.createWallet(deployerPrivateKey).addr;
         address proxy = 0xF9a8529Bb95ac7707129700f06343338E4767A27;
-        address newImplementation = 0xa12767Cada47951f79772d673e53a84133537c87;
+        address newImplementation = 0x4DEFe57A9a185A3Ad8892Fe4E9795e7748295125;
         vm.startBroadcast(deployerPrivateKey);
         IEIP7702ProxyWithAdminABI(proxy).upgrade(newImplementation);
         vm.stopBroadcast();
