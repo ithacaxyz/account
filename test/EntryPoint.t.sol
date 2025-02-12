@@ -128,7 +128,7 @@ contract EntryPointTest is SoladyTest {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(alice, digest);
 
         userOp.signature = abi.encodePacked(r, s, v);
-        
+
         bytes4 err = ep.execute(abi.encode(userOp));
         assertEq(EntryPoint.PaymentError.selector, err);
     }
