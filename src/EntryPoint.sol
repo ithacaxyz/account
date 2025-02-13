@@ -262,7 +262,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             switch call(gCapped, address(), 0, s, n, 0x00, 0x20)
             case 0 {
                 err := mload(0x00)
-                if iszero(returndatasize()) { err := shl(224, 0xbff2584f) } // `PaymentError()`.
+                if iszero(returndatasize()) { err := shl(224, 0xabab8fc9) } // `PaymentError()`.
             }
             default {
                 // Since the payment is a success, load the returned `paymentAmount`.
@@ -417,7 +417,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             mstore(add(m, 0x40), 0x40)
             mstore(add(m, 0x60), sig.length)
             calldatacopy(add(m, 0x80), sig.offset, sig.length)
-            isValid := staticcall(gas(), eoa, add(m, 0x1c), add(sig.length, 0x84), 0x00, 0x40)
+            isValid := staticcall(gas(), eoa, add(m, 0x1c), add(sig.length, 0x64), 0x00, 0x40)
             isValid := and(eq(mload(0x00), 1), and(gt(returndatasize(), 0x3f), isValid))
             keyHash := mload(0x20)
         }

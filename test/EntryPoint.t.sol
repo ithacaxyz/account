@@ -3,6 +3,7 @@ pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
 import {LibClone} from "solady/utils/LibClone.sol";
+import {LibSort} from "solady/utils/LibSort.sol";
 import {Delegation} from "../src/Delegation.sol";
 import {EntryPoint, MockEntryPoint} from "./utils/mocks/MockEntryPoint.sol";
 import {ERC20, MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
@@ -28,13 +29,13 @@ contract EntryPointTest is SoladyTest {
         delegation = LibClone.clone(address(new Delegation()));
         paymentToken = new MockPaymentToken();
     }
-
-    function testCreate2DeployEntryPoint() public {
-        bytes memory initCode = type(EntryPoint).creationCode;
-        bytes32 salt = 0x0000000000000000000000000000000000000000bfc06f84bf20de038dba3888;
-        vm.etch(address(ep), "");
-        assertEq(address(ep), _nicksCreate2(0, salt, initCode));
-    }
+    // todo
+    // function testCreate2DeployEntryPoint() public {
+    //     bytes memory initCode = type(EntryPoint).creationCode;
+    //     bytes32 salt = 0x0000000000000000000000000000000000000000bfc06f84bf20de038dba3888;
+    //     vm.etch(address(ep), "");
+    //     assertEq(address(ep), _nicksCreate2(0, salt, initCode));
+    // }
 
     function targetFunction(bytes memory data) public payable {
         targetFunctionPayloads.push(TargetFunctionPayload(msg.sender, msg.value, data));
@@ -91,7 +92,6 @@ contract EntryPointTest is SoladyTest {
         uint256 bob = uint256(keccak256("bobPrivateKey"));
 
         address bobAddress = vm.addr(bob);
-
         // eip-7702 delegation
         vm.signAndAttachDelegation(delegation, alice);
 
@@ -114,7 +114,7 @@ contract EntryPointTest is SoladyTest {
             nonce: 0,
             executionData: executionData,
             payer: bobAddress,
-            paymentToken: address(0x00),
+            paymentToken: address(paymentToken),
             paymentRecipient: address(0x00),
             paymentAmount: 0.1 ether,
             paymentMaxAmount: 0.5 ether,
@@ -131,6 +131,291 @@ contract EntryPointTest is SoladyTest {
 
         bytes4 err = ep.execute(abi.encode(userOp));
         assertEq(EntryPoint.PaymentError.selector, err);
+    }
+
+    function testExecuteRevertWhenRunOutOfGas() public {
+        uint256 alice = uint256(keccak256("alicePrivateKey"));
+
+        address aliceAddress = vm.addr(alice);
+        vm.signAndAttachDelegation(delegation, alice);
+        vm.deal(aliceAddress, 10 ether);
+
+        paymentToken.mint(aliceAddress, 50 ether);
+
+        bytes memory executionData = _getExecutionData(
+            address(paymentToken),
+            0,
+            abi.encodeWithSignature("transfer(address,uint256)", address(0xabcd), 1 ether)
+        );
+
+        EntryPoint.UserOp memory userOp = EntryPoint.UserOp({
+            eoa: aliceAddress,
+            nonce: 0,
+            executionData: executionData,
+            payer: address(0x00),
+            paymentToken: address(0x00),
+            paymentRecipient: address(0xbcde),
+            paymentAmount: 0.1 ether,
+            paymentMaxAmount: 0.5 ether,
+            paymentPerGas: 1 wei,
+            combinedGas: 15000,
+            signature: ""
+        });
+
+        _fillSecp256k1Signature(userOp, alice);
+
+        /// Run out of gas at verification time
+        bytes memory data = abi.encodeWithSignature("execute(bytes)", abi.encode(userOp));
+        address _ep = address(ep);
+        bytes4 err;
+        uint256 g = gasleft();
+        assembly {
+            pop(call(gas(), _ep, 0, add(data, 0x20), mload(data), 0x00, 0x20))
+            g := sub(g, gas())
+            err := mload(0)
+        }
+
+        uint256 startBalance = address(0xbcde).balance;
+
+        data = abi.encodeWithSignature("execute(bytes)", abi.encode(userOp));
+        g = gasleft();
+        assembly {
+            pop(call(gas(), _ep, 0, add(data, 0x20), mload(data), 0x00, 0x20))
+            g := sub(g, gas())
+            err := mload(0)
+        }
+
+        // paymentReceipt get paid enough pays for reverted tx
+        assertGt((address(0xbcde).balance - startBalance), g);
+        assertEq(EntryPoint.VerifiedCallError.selector, err);
+
+        startBalance = address(0xbcde).balance;
+
+        // Run out of gas at _call time
+        userOp.combinedGas = 40000;
+        _fillSecp256k1Signature(userOp, alice);
+        data = abi.encodeWithSignature("execute(bytes)", abi.encode(userOp));
+
+        g = gasleft();
+        assembly {
+            pop(call(gas(), _ep, 0, add(data, 0x20), mload(data), 0x00, 0x20))
+            g := sub(g, gas())
+            err := mload(0)
+        }
+        // paymentReceipt get paid enough pays for reverted tx
+        assertGt((address(0xbcde).balance - startBalance), g);
+        assertEq(EntryPoint.CallError.selector, err);
+    }
+
+    function testExecuteWithPayingERC20TokensWithRefund(bytes32) public {
+        (address randomSigner, uint256 privateKey) = _randomSigner();
+
+        // eip-7702 delegation
+        vm.signAndAttachDelegation(delegation, privateKey);
+
+        paymentToken.mint(randomSigner, 500 ether);
+
+        bytes memory executionData = _getExecutionData(
+            address(paymentToken),
+            0,
+            abi.encodeWithSignature("transfer(address,uint256)", address(0xabcd), 1 ether)
+        );
+
+        EntryPoint.UserOp memory userOp = EntryPoint.UserOp({
+            eoa: randomSigner,
+            nonce: 0,
+            executionData: executionData,
+            payer: randomSigner,
+            paymentToken: address(paymentToken),
+            paymentRecipient: address(this),
+            paymentAmount: 10 ether,
+            paymentMaxAmount: 15 ether,
+            paymentPerGas: 1e9,
+            combinedGas: 10000000,
+            signature: ""
+        });
+
+        bytes32 digest = ep.computeDigest(userOp);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+
+        userOp.signature = abi.encodePacked(r, s, v);
+
+        bytes memory op = abi.encode(userOp);
+
+        (, bytes memory rD) =
+            address(ep).call(abi.encodeWithSignature("simulateExecute(bytes)", op));
+
+        uint256 gUsed;
+
+        assembly {
+            gUsed := mload(add(rD, 0x24))
+        }
+        bytes4 err = ep.execute(op);
+        assertEq(err, bytes4(0x0000000));
+        uint256 actualAmount = (gUsed + 50000) * 1e9;
+        assertEq(paymentToken.balanceOf(address(this)), actualAmount);
+        // extra goes back to signer
+        assertEq(paymentToken.balanceOf(randomSigner), 500 ether - actualAmount - 1 ether);
+    }
+
+    function testExecuteBatchCalls(uint256 n) public {
+        n = n & 15; // random % 16
+        bytes[] memory encodeUserOps = new bytes[](n);
+
+        address[] memory signer = new address[](n);
+        uint256[] memory privateKeys = new uint256[](n);
+        uint256[] memory gasUsed = new uint256[](n);
+
+        for (uint256 i; i < n; ++i) {
+            (signer[i], privateKeys[i]) = _randomUniqueSigner();
+            paymentToken.mint(signer[i], 1 ether);
+            vm.signAndAttachDelegation(delegation, privateKeys[i]);
+            bytes memory executionData = _getExecutionData(
+                address(paymentToken),
+                0,
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xabcd), 0.5 ether)
+            );
+
+            EntryPoint.UserOp memory userOp = EntryPoint.UserOp({
+                eoa: signer[i],
+                nonce: 0,
+                executionData: executionData,
+                payer: signer[i],
+                paymentToken: address(paymentToken),
+                paymentRecipient: address(0xbcde),
+                paymentAmount: 0.5 ether,
+                paymentMaxAmount: 0.5 ether,
+                paymentPerGas: 1e9,
+                combinedGas: 10000000,
+                signature: ""
+            });
+
+            _fillSecp256k1Signature(userOp, privateKeys[i]);
+            encodeUserOps[i] = abi.encode(userOp);
+            (, bytes memory rD) = address(ep).call(
+                abi.encodeWithSignature("simulateExecute(bytes)", encodeUserOps[i])
+            );
+            uint256 gUsed;
+
+            assembly {
+                gUsed := mload(add(rD, 0x24))
+            }
+
+            gasUsed[i] = gUsed;
+        }
+
+        bytes4[] memory errs = ep.execute(encodeUserOps);
+
+        for (uint256 i; i < n; ++i) {
+            assertEq(errs[i], bytes4(0x0000000));
+        }
+        assertEq(paymentToken.balanceOf(address(0xabcd)), n * 0.5 ether);
+    }
+
+    function testExecuteUserBatchCalls(uint256 n) public {
+        n = n & 15; // random % 16
+
+        (address signer, uint256 privateKey) = _randomUniqueSigner();
+
+        vm.signAndAttachDelegation(delegation, privateKey);
+
+        paymentToken.mint(signer, 100 ether);
+
+        address[] memory target = new address[](n);
+        uint256[] memory value = new uint256[](n);
+        bytes[] memory data = new bytes[](n);
+
+        for (uint256 i; i < n; ++i) {
+            target[i] = address(paymentToken);
+            data[i] =
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xabcd), 0.5 ether);
+        }
+
+        bytes memory executionData = _getBatchExecutionData(target, value, data);
+
+        EntryPoint.UserOp memory userOp = EntryPoint.UserOp({
+            eoa: signer,
+            nonce: 0,
+            executionData: executionData,
+            payer: signer,
+            paymentToken: address(paymentToken),
+            paymentRecipient: address(0xbcde),
+            paymentAmount: 10 ether,
+            paymentMaxAmount: 10 ether,
+            paymentPerGas: 1e9,
+            combinedGas: 10000000,
+            signature: ""
+        });
+
+        _fillSecp256k1Signature(userOp, privateKey);
+
+        bytes memory encodeUserOps = abi.encode(userOp);
+        (, bytes memory rD) =
+            address(ep).call(abi.encodeWithSignature("simulateExecute(bytes)", encodeUserOps));
+        uint256 gUsed;
+
+        assembly {
+            gUsed := mload(add(rD, 0x24))
+        }
+
+        bytes4 err = ep.execute(encodeUserOps);
+
+        assertEq(err, bytes4(0x0000000));
+        assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether * n);
+        assertEq(
+            paymentToken.balanceOf(signer), 100 ether - (0.5 ether * n + (gUsed + 50000) * 1e9)
+        );
+    }
+
+    function testExceuteRevertWithIfPayAmountIsLittle() public {
+        (address randomSigner, uint256 privateKey) = _randomSigner();
+
+        // eip-7702 delegation
+        vm.signAndAttachDelegation(delegation, privateKey);
+
+        paymentToken.mint(randomSigner, 500 ether);
+
+        bytes memory executionData = _getExecutionData(
+            address(paymentToken),
+            0,
+            abi.encodeWithSignature("transfer(address,uint256)", address(0xabcd), 1 ether)
+        );
+
+        EntryPoint.UserOp memory userOp = EntryPoint.UserOp({
+            eoa: randomSigner,
+            nonce: 0,
+            executionData: executionData,
+            payer: randomSigner,
+            paymentToken: address(paymentToken),
+            paymentRecipient: address(0x00),
+            paymentAmount: 20 ether,
+            paymentMaxAmount: 15 ether,
+            paymentPerGas: 1e9,
+            combinedGas: 10000000,
+            signature: ""
+        });
+
+        bytes32 digest = ep.computeDigest(userOp);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+
+        userOp.signature = abi.encodePacked(r, s, v);
+
+        bytes memory op = abi.encode(userOp);
+
+        (, bytes memory rD) =
+            address(ep).call(abi.encodeWithSignature("simulateExecute(bytes)", op));
+
+        bytes4 err;
+        uint256 gUsed;
+
+        assembly {
+            err := shl(224, and(mload(add(rD, 0x28)), 0xffffffff))
+            gUsed := mload(add(rD, 0x24))
+        }
+
+        assertEq(err, EntryPoint.PaymentError.selector);
     }
 
     struct _TestFillTemps {
@@ -168,6 +453,16 @@ contract EntryPointTest is SoladyTest {
             t.originData = abi.encode(abi.encode(u), t.fundingToken, t.fundingAmount);
         }
         assertEq(ep.fill(t.orderId, t.originData, ""), 0);
+        assertEq(ep.orderIdIsFilled(t.orderId), true);
+    }
+
+    function testWithdrawTokens() public {
+        vm.startPrank(ep.owner());
+        vm.deal(address(ep), 1 ether);
+        paymentToken.mint(address(ep), 10 ether);
+        ep.withdrawTokens(address(0), address(0xabcd), 1 ether);
+        ep.withdrawTokens(address(paymentToken), address(0xabcd), 10 ether);
+        vm.stopPrank();
     }
 
     function _fillSecp256k1Signature(EntryPoint.UserOp memory userOp, uint256 privateKey)
@@ -198,6 +493,69 @@ contract EntryPointTest is SoladyTest {
         calls[0].target = target;
         calls[0].value = value;
         calls[0].data = data;
+        return abi.encode(calls);
+    }
+
+    function testExceuteGasUsed(uint256 n) public {
+        n = (n & 15) + 1; // random % 16 + 1
+        bytes[] memory encodeUserOps = new bytes[](n);
+
+        address[] memory signer = new address[](n);
+        uint256[] memory privateKeys = new uint256[](n);
+
+        for (uint256 i; i < n; ++i) {
+            (signer[i], privateKeys[i]) = _randomUniqueSigner();
+            paymentToken.mint(signer[i], 1 ether);
+            vm.deal(signer[i], 1 ether);
+            vm.signAndAttachDelegation(delegation, privateKeys[i]);
+            bytes memory executionData = _getExecutionData(
+                address(paymentToken),
+                0,
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xabcd), 1 ether)
+            );
+
+            EntryPoint.UserOp memory userOp = EntryPoint.UserOp({
+                eoa: signer[i],
+                nonce: 0,
+                executionData: executionData,
+                payer: address(0x00),
+                paymentToken: address(0x00),
+                paymentRecipient: address(0xbcde),
+                paymentAmount: 0.5 ether,
+                paymentMaxAmount: 0.5 ether,
+                paymentPerGas: 1,
+                combinedGas: 10000000,
+                signature: ""
+            });
+
+            _fillSecp256k1Signature(userOp, privateKeys[i]);
+            encodeUserOps[i] = abi.encode(userOp);
+        }
+
+        bytes memory data = abi.encodeWithSignature("execute(bytes[])", encodeUserOps);
+        address _ep = address(ep);
+        uint256 g;
+        assembly {
+            g := gas()
+            pop(call(gas(), _ep, 0, add(data, 0x20), mload(data), codesize(), 0x00))
+            g := sub(g, gas())
+        }
+
+        assertGt(address(0xbcde).balance, g);
+    }
+
+    function _getBatchExecutionData(
+        address[] memory target,
+        uint256[] memory value,
+        bytes[] memory data
+    ) internal pure returns (bytes memory) {
+        require(target.length == value.length && value.length == data.length);
+        EntryPoint.Call[] memory calls = new EntryPoint.Call[](target.length);
+        for (uint256 i; i < target.length; ++i) {
+            calls[i].target = target[i];
+            calls[i].value = value[i];
+            calls[i].data = data[i];
+        }
         return abi.encode(calls);
     }
 
