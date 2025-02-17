@@ -564,7 +564,6 @@ contract Delegation is EIP712, GuardedExecutor {
         // Entry point workflow.
         if (msg.sender == ENTRY_POINT) {
             if (opData.length < 0x40) revert OpDataTooShort();
-            _useNonce(uint256(LibBytes.loadCalldata(opData, 0x00)));
             return _execute(calls, LibBytes.loadCalldata(opData, 0x20));
         }
 

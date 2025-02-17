@@ -101,6 +101,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev No revert has been encountered.
     error NoRevertEncoutered();
 
+    /// @dev EOA nonce is not valid.
+    error InvalidNonce();
+
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
@@ -133,6 +136,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev Holds the storage.
     struct EntryPointStorage {
         LibBitmap.Bitmap filledOrderIds;
+        mapping(address => mapping(uint192 => uint64)) accountsNonce;
     }
 
     /// @dev Returns the storage pointer.
@@ -205,6 +209,11 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         if (!isValid) revert VerificationError();
         _execute(u, keyHash, true);
         revert NoRevertEncoutered();
+    }
+
+    /// @dev Return account current nonce with sequence key.
+    function getAccountNonce(address eoa, uint192 seqKey) public view virtual returns (uint256) {
+        return _getEntryPointStorage().accountsNonce[eoa][seqKey] | (uint256(seqKey) << 64);
     }
 
     /// @dev Extracts the UserOp from the calldata bytes, with minimal checks.
@@ -400,6 +409,12 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         }
     }
 
+    /// @dev Validate UserOp nonce and increment by 1.
+    function _validateNonceAndIncrement(address account, uint256 nonce) internal {
+        uint64 _nonce = _getEntryPointStorage().accountsNonce[account][uint192(nonce >> 64)]++;
+        if (_nonce != uint64(nonce)) revert InvalidNonce();
+    }
+
     /// @dev Calls `unwrapAndValidateSignature` on the `eoa`.
     function _verify(UserOp calldata u)
         internal
@@ -447,7 +462,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev Computes the EIP712 digest for the UserOp.
-    /// If the nonce is odd, the digest will be computed without the chain ID and with a zero nonce salt.
+    /// If the `nonceSeq == 0xb014aac5b0d6328e584ecc632bc05bad2f720d727ce21382`,
+    /// the digest will be computed without the chain ID and with a zero nonce salt.
     /// Otherwise, the digest will be computed with the chain ID.
     function _computeDigest(UserOp calldata u) internal view virtual returns (bytes32) {
         bytes32[] calldata pointers = LibERC7579.decodeBatch(u.executionData);
@@ -466,32 +482,22 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 );
             }
         }
+        bool isMultichain =
+            (u.nonce >> 224) == uint256(0xb014aac5b0d6328e584ecc632bc05bad2f720d727ce21382);
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(11);
+        bytes32[] memory f = EfficientHashLib.malloc(10);
         f.set(0, USER_OP_TYPEHASH);
-        f.set(1, u.nonce & 1);
+        f.set(1, isMultichain ? 1 : 0);
         f.set(2, uint160(u.eoa));
         f.set(3, a.hash());
         f.set(4, u.nonce);
-        f.set(5, u.nonce & 1 > 0 ? 0 : _nonceSalt(u.eoa));
-        f.set(6, uint160(u.payer));
-        f.set(7, uint160(u.paymentToken));
-        f.set(8, u.paymentMaxAmount);
-        f.set(9, u.paymentPerGas);
-        f.set(10, u.combinedGas);
+        f.set(5, uint160(u.payer));
+        f.set(6, uint160(u.paymentToken));
+        f.set(7, u.paymentMaxAmount);
+        f.set(8, u.paymentPerGas);
+        f.set(9, u.combinedGas);
 
-        return u.nonce & 1 > 0 ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
-    }
-
-    /// @dev Returns the nonce salt on the `eoa`.
-    function _nonceSalt(address eoa) internal view virtual returns (uint256 result) {
-        assembly ("memory-safe") {
-            mstore(0x00, 0x6ae269cc) // `nonceSalt()`.
-            if iszero(
-                and(gt(returndatasize(), 0x1f), staticcall(gas(), eoa, 0x1c, 0x04, 0x00, 0x20))
-            ) { revert(0x00, 0x00) }
-            result := mload(0x00)
-        }
+        return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -520,6 +526,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // `_verifyAndCall()`.
         if (s == 0xe235a92a) {
             require(msg.sender == address(this));
+            _validateNonceAndIncrement(u.eoa, u.nonce);
             (bool isValid, bytes32 keyHash) = _verify(u);
             if (!isValid) revert VerificationError();
             _execute(u, keyHash, false);

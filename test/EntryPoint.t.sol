@@ -48,7 +48,7 @@ contract EntryPointTest is SoladyTest {
         bytes[] encodedUserOps;
     }
 
-    function testFullFlow(bytes32) public {
+    function testFullFlow(uint256) public {
         _TestFullFlowTemps memory t;
 
         t.userOps = new EntryPoint.UserOp[](_random() & 3);
@@ -58,14 +58,14 @@ contract EntryPointTest is SoladyTest {
 
         for (uint256 i; i != t.userOps.length; ++i) {
             EntryPoint.UserOp memory u = t.userOps[i];
-            (u.eoa, t.privateKeys[i]) = _randomSigner();
+            (u.eoa, t.privateKeys[i]) = _randomUniqueSigner();
             vm.etch(u.eoa, delegation.code);
             vm.deal(u.eoa, 2 ** 128 - 1);
             u.executionData = _getExecutionDataForThisTargetFunction(
                 t.targetFunctionPayloads[i].value = _bound(_random(), 0, 2 ** 32 - 1),
                 t.targetFunctionPayloads[i].data = _truncateBytes(_randomBytes(), 0xff)
             );
-            u.nonce = _randomUnique() << 1;
+            u.nonce = ep.getAccountNonce(u.eoa, 0);
             paymentToken.mint(u.eoa, 2 ** 128 - 1);
             u.paymentToken = address(paymentToken);
             u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
@@ -290,7 +290,7 @@ contract EntryPointTest is SoladyTest {
             paymentAmount: 0.1 ether,
             paymentMaxAmount: 0.5 ether,
             paymentPerGas: 1 wei,
-            combinedGas: 15000,
+            combinedGas: 20000,
             signature: ""
         });
 
@@ -324,7 +324,7 @@ contract EntryPointTest is SoladyTest {
         startBalance = address(0xbcde).balance;
 
         // Run out of gas at _call time
-        userOp.combinedGas = 40000;
+        userOp.combinedGas = 50000;
         _fillSecp256k1Signature(userOp, alice, bytes32(0x00));
         data = abi.encodeWithSignature("execute(bytes)", abi.encode(userOp));
 
@@ -572,7 +572,7 @@ contract EntryPointTest is SoladyTest {
                 t.targetFunctionPayload.value = _bound(_random(), 0, 2 ** 32 - 1),
                 t.targetFunctionPayload.data = _truncateBytes(_randomBytes(), 0xff)
             );
-            u.nonce = _randomUnique() << 1;
+            u.nonce = ep.getAccountNonce(u.eoa, 0);
             paymentToken.mint(address(this), 2 ** 128 - 1);
             paymentToken.approve(address(ep), 2 ** 128 - 1);
             t.fundingToken = address(paymentToken);
@@ -585,7 +585,7 @@ contract EntryPointTest is SoladyTest {
             t.originData = abi.encode(abi.encode(u), t.fundingToken, t.fundingAmount);
         }
         assertEq(ep.fill(t.orderId, t.originData, ""), 0);
-        assertEq(ep.orderIdIsFilled(t.orderId), true);
+        assertEq(ep.orderIdIsFilled(t.orderId), t.orderId != bytes32(0x00));
     }
 
     function testWithdrawTokens() public {
