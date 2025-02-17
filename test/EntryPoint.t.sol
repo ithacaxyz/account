@@ -71,7 +71,7 @@ contract EntryPointTest is SoladyTest {
             u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
             u.paymentMaxAmount = u.paymentAmount;
             u.combinedGas = 10000000;
-            _fillSecp256k1Signature(u, t.privateKeys[i]);
+            _fillSecp256k1Signature(u, t.privateKeys[i], bytes32(0x00));
             t.encodedUserOps[i] = abi.encode(u);
         }
 
@@ -198,6 +198,73 @@ contract EntryPointTest is SoladyTest {
         assertEq(paymentToken.balanceOf(aliceAddress), 50 ether - actualAmount - 1 ether);
     }
 
+    function testExecuteWith256K1Signature() public {
+        uint256 alice = uint256(keccak256("alicePrivateKey"));
+
+        uint256 alice2 = uint256(keccak256("alicePrivateKey2"));
+
+        address payable aliceAddress = payable(vm.addr(alice));
+
+        address alice2Address = payable(vm.addr(alice2));
+
+        vm.signAndAttachDelegation(delegation, alice);
+        vm.deal(aliceAddress, 10 ether);
+
+        _activateRIPPRECOMPILE(true);
+
+        Delegation.Key memory key = Delegation.Key({
+            expiry: 0,
+            keyType: Delegation.KeyType.Secp256k1,
+            isSuperAdmin: true,
+            publicKey: abi.encode(alice2Address)
+        });
+
+        paymentToken.mint(aliceAddress, 50 ether);
+
+        vm.prank(aliceAddress);
+        bytes32 keyHash = Delegation(aliceAddress).authorize(key);
+
+        bytes memory executionData = _getExecutionData(
+            address(paymentToken),
+            0,
+            abi.encodeWithSignature("transfer(address,uint256)", address(0xabcd), 1 ether)
+        );
+
+        EntryPoint.UserOp memory userOp = EntryPoint.UserOp({
+            eoa: aliceAddress,
+            nonce: 0,
+            executionData: executionData,
+            payer: address(0x00),
+            paymentToken: address(paymentToken),
+            paymentRecipient: address(0x00),
+            paymentAmount: 0.1 ether,
+            paymentMaxAmount: 0.5 ether,
+            paymentPerGas: 1e9,
+            combinedGas: 1000000,
+            signature: ""
+        });
+
+        _fillSecp256k1Signature(userOp, alice2, keyHash);
+
+        bytes memory op = abi.encode(userOp);
+
+        (, bytes memory rD) =
+            address(ep).call(abi.encodeWithSignature("simulateExecute(bytes)", op));
+
+        uint256 gUsed;
+
+        assembly {
+            gUsed := mload(add(rD, 0x24))
+        }
+
+        bytes4 err = ep.execute(op);
+        assertEq(err, bytes4(0x0000000));
+        uint256 actualAmount = (gUsed + 50000) * 1e9;
+        assertEq(paymentToken.balanceOf(address(ep)), actualAmount);
+        // extra goes back to alice
+        assertEq(paymentToken.balanceOf(aliceAddress), 50 ether - actualAmount - 1 ether);
+    }
+
     function testExecuteRevertWhenRunOutOfGas() public {
         uint256 alice = uint256(keccak256("alicePrivateKey"));
 
@@ -227,7 +294,7 @@ contract EntryPointTest is SoladyTest {
             signature: ""
         });
 
-        _fillSecp256k1Signature(userOp, alice);
+        _fillSecp256k1Signature(userOp, alice, bytes32(0x00));
 
         /// Run out of gas at verification time
         bytes memory data = abi.encodeWithSignature("execute(bytes)", abi.encode(userOp));
@@ -258,7 +325,7 @@ contract EntryPointTest is SoladyTest {
 
         // Run out of gas at _call time
         userOp.combinedGas = 40000;
-        _fillSecp256k1Signature(userOp, alice);
+        _fillSecp256k1Signature(userOp, alice, bytes32(0x00));
         data = abi.encodeWithSignature("execute(bytes)", abi.encode(userOp));
 
         g = gasleft();
@@ -356,7 +423,7 @@ contract EntryPointTest is SoladyTest {
                 signature: ""
             });
 
-            _fillSecp256k1Signature(userOp, privateKeys[i]);
+            _fillSecp256k1Signature(userOp, privateKeys[i], bytes32(0x00));
             encodeUserOps[i] = abi.encode(userOp);
             (, bytes memory rD) = address(ep).call(
                 abi.encodeWithSignature("simulateExecute(bytes)", encodeUserOps[i])
@@ -413,7 +480,7 @@ contract EntryPointTest is SoladyTest {
             signature: ""
         });
 
-        _fillSecp256k1Signature(userOp, privateKey);
+        _fillSecp256k1Signature(userOp, privateKey, bytes32(0x00));
 
         bytes memory encodeUserOps = abi.encode(userOp);
         (, bytes memory rD) =
@@ -514,7 +581,7 @@ contract EntryPointTest is SoladyTest {
             u.paymentAmount = t.fundingAmount;
             u.paymentMaxAmount = u.paymentAmount;
             u.combinedGas = 10000000;
-            _fillSecp256k1Signature(u, t.privateKey);
+            _fillSecp256k1Signature(u, t.privateKey, bytes32(0x00));
             t.originData = abi.encode(abi.encode(u), t.fundingToken, t.fundingAmount);
         }
         assertEq(ep.fill(t.orderId, t.originData, ""), 0);
@@ -530,13 +597,18 @@ contract EntryPointTest is SoladyTest {
         vm.stopPrank();
     }
 
-    function _fillSecp256k1Signature(EntryPoint.UserOp memory userOp, uint256 privateKey)
-        internal
-        view
-    {
+    function _fillSecp256k1Signature(
+        EntryPoint.UserOp memory userOp,
+        uint256 privateKey,
+        bytes32 keyHash
+    ) internal view {
         bytes32 digest = ep.computeDigest(userOp);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        userOp.signature = abi.encodePacked(r, s, v);
+        if (keyHash == bytes32(0x00)) {
+            userOp.signature = abi.encodePacked(r, s, v);
+        } else {
+            userOp.signature = abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(0));
+        }
     }
 
     function _fillSecp256r1Signature(
@@ -614,7 +686,7 @@ contract EntryPointTest is SoladyTest {
                 signature: ""
             });
 
-            _fillSecp256k1Signature(userOp, privateKeys[i]);
+            _fillSecp256k1Signature(userOp, privateKeys[i], bytes32(0x00));
             encodeUserOps[i] = abi.encode(userOp);
         }
 
@@ -671,7 +743,7 @@ contract EntryPointTest is SoladyTest {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(
             uint256(0x8ef24acf2c7974d38d2f2c4e1bb63515c57c48707df9831794bac28dbe4aa835), digest
         );
-        op.signature = abi.encodePacked(abi.encodePacked(r, s, v), eoa.hash(key), false);
+        op.signature = abi.encodePacked(abi.encodePacked(r, s, v), eoa.hash(key), bytes32(0x00));
 
         ep.execute(abi.encode(op));
     }
