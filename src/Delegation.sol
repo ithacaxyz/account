@@ -64,6 +64,8 @@ contract Delegation is EIP712, GuardedExecutor {
     struct DelegationStorage {
         /// @dev The label.
         LibBytes.BytesStorage label;
+        /// @dev Reserved spacer.
+        uint256 _spacer0;
         /// @dev Mapping for 4337-style 2D nonce sequences.
         /// Each nonce has the following bit layout:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
@@ -71,7 +73,6 @@ contract Delegation is EIP712, GuardedExecutor {
         ///   then the UserOp EIP-712 hash will exclude the chain ID.
         /// - Lower 64 bits are used for the sequential nonce corresponding to the `seqKey`.
         mapping(uint192 => LibStorage.Ref) nonceSeqs;
-        uint256 _spacer0;
         /// @dev Set of key hashes for onchain enumeration of authorized keys.
         EnumerableSetLib.Bytes32Set keyHashes;
         /// @dev Mapping of key hash to the key in encoded form.
