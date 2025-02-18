@@ -155,7 +155,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
     /// @dev Holds the storage.
     struct EntryPointStorage {
-        mapping(address => mapping(uint192 => LibStorage.Ref)) nonceSequences;
+        mapping(address => mapping(uint192 => LibStorage.Ref)) nonceSeqs;
         mapping(address => mapping(uint256 => bytes4)) errs;
         LibBitmap.Bitmap filledOrderIds;
     }
@@ -273,11 +273,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
         unchecked {
             uint256 nonce = u.nonce;
-            uint256 seq =
-                _getEntryPointStorage().nonceSequences[u.eoa][uint192(nonce >> 64)].value++;
-            if (LibBit.or(seq >> 64 != 0, uint64(seq) != uint64(nonce))) {
-                err = InvalidNonce.selector;
-            }
+            uint256 seq = _getEntryPointStorage().nonceSeqs[u.eoa][uint192(nonce >> 64)].value++;
+            if (seq != uint64(nonce)) err = InvalidNonce.selector;
         }
 
         assembly ("memory-safe") {
@@ -357,7 +354,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
     /// @dev Return current nonce with sequence key.
     function getNonce(address eoa, uint192 seqKey) public view virtual returns (uint256) {
-        return _getEntryPointStorage().nonceSequences[eoa][seqKey].value | (uint256(seqKey) << 64);
+        return _getEntryPointStorage().nonceSeqs[eoa][seqKey].value | (uint256(seqKey) << 64);
     }
 
     /// @dev Returns the current sequence for the `seqKey` in nonce (i.e. upper 192 bits).
@@ -370,7 +367,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         virtual
         returns (uint64 seq, bytes4 err)
     {
-        LibStorage.Ref storage s = _getEntryPointStorage().nonceSequences[eoa][uint192(nonce >> 64)];
+        LibStorage.Ref storage s = _getEntryPointStorage().nonceSeqs[eoa][uint192(nonce >> 64)];
         seq = uint64(s.value);
         err = _getEntryPointStorage().errs[eoa][nonce];
     }
@@ -379,7 +376,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// This invalidates the nonces for the `seqKey`, up to `uint64(nonce)`.
     function invalidateNonce(uint256 nonce) public virtual {
         LibStorage.Ref storage s =
-            _getEntryPointStorage().nonceSequences[msg.sender][uint192(nonce >> 64)];
+            _getEntryPointStorage().nonceSeqs[msg.sender][uint192(nonce >> 64)];
         if (uint64(nonce) <= s.value) revert NewSequenceMustBeLarger();
         s.value = uint64(nonce);
         emit NonceInvalidated(msg.sender, nonce);

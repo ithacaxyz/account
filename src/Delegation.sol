@@ -64,8 +64,14 @@ contract Delegation is EIP712, GuardedExecutor {
     struct DelegationStorage {
         /// @dev The label.
         LibBytes.BytesStorage label;
-        /// @dev Account nonce.
-        mapping(uint192 => uint64) nonce;
+        /// @dev Mapping for 4337-style 2D nonce sequences.
+        /// Each nonce has the following bit layout:
+        /// - Upper 192 bits are used for the `seqKey` (sequence key).
+        ///   The upper 16 bits of the `seqKey` is `MULTICHAIN_NONCE_PREFIX`,
+        ///   then the UserOp EIP-712 hash will exclude the chain ID.
+        /// - Lower 64 bits are used for the sequential nonce corresponding to the `seqKey`.
+        mapping(uint192 => LibStorage.Ref) nonceSeqs;
+        uint256 _spacer0;
         /// @dev Set of key hashes for onchain enumeration of authorized keys.
         EnumerableSetLib.Bytes32Set keyHashes;
         /// @dev Mapping of key hash to the key in encoded form.
@@ -124,6 +130,9 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev The `opData` is too short.
     error OpDataTooShort();
 
+    /// @dev When invalidating a nonce sequence, the new sequence must be larger than the current.
+    error NewSequenceMustBeLarger();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -150,6 +159,9 @@ contract Delegation is EIP712, GuardedExecutor {
         bytes32 indexed keyHash, address indexed checker, bool isApproved
     );
 
+    /// @dev The nonce sequence is incremented.
+    event NonceInvalidated(uint256 nonce);
+
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
@@ -169,8 +181,9 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev For EIP712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
 
-    /// @dev Special nonce sequence key for multichain operations.
-    uint192 public constant MULTICHAIN_SEQ_KEY = 0xb014aac5b0d6328e584ecc632bc05bad2f720d727ce21382;
+    /// @dev Nonce prefix to signal that the payload is to be signed with EIP-712 without the chain ID.
+    /// This constant is a pun for "chain ID 0".
+    uint16 public constant MULTICHAIN_NONCE_PREFIX = 0xc1d0;
 
     /// @dev General capacity for enumerable sets,
     /// to prevent off-chain full enumeration from running out-of-gas.
@@ -263,14 +276,23 @@ contract Delegation is EIP712, GuardedExecutor {
         emit SignatureCheckerApprovalSet(keyHash, checker, isApproved);
     }
 
-    /// @dev Invalidates the nonce.
-    function incrementNonce(uint192 key) public virtual onlyThis {
-        _getDelegationStorage().nonce[key]++;
+    /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
+    /// This invalidates the nonces for the `seqKey`, up to `uint64(nonce)`.
+    function invalidateNonce(uint256 nonce) public virtual onlyThis {
+        LibStorage.Ref storage s = _getDelegationStorage().nonceSeqs[uint192(nonce >> 64)];
+        if (uint64(nonce) <= s.value) revert NewSequenceMustBeLarger();
+        s.value = uint64(nonce);
+        emit NonceInvalidated(nonce);
     }
 
     ////////////////////////////////////////////////////////////////////////
     // Public View Functions
     ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Return current nonce with sequence key.
+    function getNonce(uint192 seqKey) public view virtual returns (uint256) {
+        return _getDelegationStorage().nonceSeqs[seqKey].value | (uint256(seqKey) << 64);
+    }
 
     /// @dev Returns the label.
     function label() public view virtual returns (string memory) {
@@ -332,8 +354,9 @@ contract Delegation is EIP712, GuardedExecutor {
         return _getKeyExtraStorage(keyHash).checkers.values();
     }
 
-    /// @dev Computes the EIP712 digest for `calls`, with `nonceSalt` from storage.
-    /// If the nonce is odd, the digest will be computed without the chain ID and with a zero nonce salt.
+    /// @dev Computes the EIP712 digest for `calls`.
+    /// If the the nonce starts with `MULTICHAIN_NONCE_PREFIX`,
+    /// the digest will be computed without the chain ID.
     /// Otherwise, the digest will be computed with the chain ID.
     function computeDigest(Call[] calldata calls, uint256 nonce)
         public
@@ -354,9 +377,9 @@ contract Delegation is EIP712, GuardedExecutor {
                 )
             );
         }
-        bool isMultichain = uint192(nonce >> 64) == MULTICHAIN_SEQ_KEY;
+        bool isMultichain = nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         bytes32 structHash = EfficientHashLib.hash(
-            uint256(EXECUTE_TYPEHASH), isMultichain ? 1 : 0, uint256(a.hash()), nonce
+            uint256(EXECUTE_TYPEHASH), LibBit.toUint(isMultichain), uint256(a.hash()), nonce
         );
         return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
@@ -364,12 +387,6 @@ contract Delegation is EIP712, GuardedExecutor {
     ////////////////////////////////////////////////////////////////////////
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
-
-    /// @dev Invalidates the nonce. Reverts if the nonce is already invalidated.
-    function _useNonce(uint256 nonce) internal virtual {
-        uint64 _nonce = _getDelegationStorage().nonce[uint192(nonce >> 64)]++;
-        if (_nonce != uint64(nonce)) revert InvalidNonce();
-    }
 
     /// @dev Adds the key. If the key already exist, its expiry will be updated.
     function _addKey(Key memory key) internal virtual returns (bytes32 keyHash) {
@@ -539,7 +556,11 @@ contract Delegation is EIP712, GuardedExecutor {
         // Simple workflow with `opData`.
         if (opData.length < 0x20) revert OpDataTooShort();
         uint256 nonce = uint256(LibBytes.loadCalldata(opData, 0x00));
-        _useNonce(nonce);
+        unchecked {
+            uint256 seq = _getDelegationStorage().nonceSeqs[uint192(nonce >> 64)].value++;
+            if (seq != uint64(nonce)) revert InvalidNonce();
+        }
+
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
