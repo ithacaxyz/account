@@ -311,15 +311,30 @@ contract EntryPointTest is SoladyTest {
 
         data = abi.encodeWithSignature("execute(bytes)", abi.encode(userOp));
         g = gasleft();
+
         assembly {
             pop(call(gas(), _ep, 0, add(data, 0x20), mload(data), 0x00, 0x20))
             g := sub(g, gas())
             err := mload(0)
         }
+        vm.breakpoint("a");
 
         // paymentReceipt get paid enough pays for reverted tx
         assertGt((address(0xbcde).balance - startBalance), g);
         assertEq(EntryPoint.VerifiedCallError.selector, err);
+
+        bytes32 slot0 = keccak256(
+            abi.encode(
+                0,
+                keccak256(
+                    abi.encode(
+                        aliceAddress, uint72(bytes9(keccak256("PORTO_ENTRY_POINT_STORAGE"))) + 1
+                    )
+                )
+            )
+        );
+
+        bytes32 errMsg = vm.load(address(ep), slot0);
 
         startBalance = address(0xbcde).balance;
 
@@ -337,6 +352,21 @@ contract EntryPointTest is SoladyTest {
         // paymentReceipt get paid enough pays for reverted tx
         assertGt((address(0xbcde).balance - startBalance), g);
         assertEq(EntryPoint.CallError.selector, err);
+        bytes32 slot = keccak256(
+            abi.encode(
+                0,
+                keccak256(
+                    abi.encode(
+                        aliceAddress, uint72(bytes9(keccak256("PORTO_ENTRY_POINT_STORAGE"))) + 1
+                    )
+                )
+            )
+        );
+
+        errMsg = vm.load(address(ep), slot);
+        assertEq(EntryPoint.CallError.selector, errMsg);
+
+        ep.getAccountNonce(aliceAddress, 0);
     }
 
     function testExecuteWithPayingERC20TokensWithRefund(bytes32) public {
@@ -389,6 +419,7 @@ contract EntryPointTest is SoladyTest {
         assertEq(paymentToken.balanceOf(address(this)), actualAmount);
         // extra goes back to signer
         assertEq(paymentToken.balanceOf(randomSigner), 500 ether - actualAmount - 1 ether);
+        assertEq(ep.getAccountNonce(randomSigner, 0), 1);
     }
 
     function testExecuteBatchCalls(uint256 n) public {
@@ -441,6 +472,7 @@ contract EntryPointTest is SoladyTest {
 
         for (uint256 i; i < n; ++i) {
             assertEq(errs[i], bytes4(0x0000000));
+            assertEq(ep.getAccountNonce(signer[i], 0), 1);
         }
         assertEq(paymentToken.balanceOf(address(0xabcd)), n * 0.5 ether);
     }
@@ -498,6 +530,7 @@ contract EntryPointTest is SoladyTest {
         assertEq(
             paymentToken.balanceOf(signer), 100 ether - (0.5 ether * n + (gUsed + 50000) * 1e9)
         );
+        assertEq(ep.getAccountNonce(signer, 0), 1);
     }
 
     function testExceuteRevertWithIfPayAmountIsLittle() public {

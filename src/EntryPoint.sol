@@ -139,7 +139,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev Holds the storage.
     struct EntryPointStorage {
         mapping(address => mapping(uint192 => uint64)) accountsNonce;
-        mapping(address => mapping(uint256 => bytes4)) errMsg;
+        mapping(address => mapping(uint256 => bytes32)) errMsg;
         LibBitmap.Bitmap filledOrderIds;
     }
 
