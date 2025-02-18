@@ -483,8 +483,10 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// On failure, bubbles up the revert if required, or reverts with `CallError()`.
     function _execute(UserOp calldata u, bytes32 keyHash, bool bubbleRevert) internal virtual {
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
+        // We expect that the delegation supports ERC7821
+        // (an extension of ERC7579 tailored for 7702 accounts).
         bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
-            0x0100000000007821000100000000000000000000000000000000000000000000,
+            0x0100000000007821000100000000000000000000000000000000000000000000, // ERC7821 batch execution mode.
             u.executionData,
             abi.encode(keyHash) // `opData`.
         );
