@@ -261,17 +261,14 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         uint256 gStart = gasleft();
         uint256 paymentAmount;
 
-        assembly ("memory-safe") {
+        unchecked {
             // Check if there's sufficient gas left for the gas-limited self calls
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
-            if or(lt(shr(6, mul(gas(), 63)), add(g, _INNER_GAS_OVERHEAD)), shr(64, g)) {
-                mstore(0x00, 0x1c26714c) // `InsufficientGas()`.
-                revert(0x1c, 0x04)
+            if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
+                revert InsufficientGas();
             }
-        }
 
-        unchecked {
             uint256 nonce = u.nonce;
             uint256 seq = _getEntryPointStorage().nonceSeqs[u.eoa][uint192(nonce >> 64)].value++;
             if (seq != uint64(nonce)) err = InvalidNonce.selector;
