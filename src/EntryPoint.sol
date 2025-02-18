@@ -197,34 +197,30 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         nonReentrant
         returns (bytes4[] memory errs)
     {
-        // Allocate memory for `errs` without zeroizing it.
-        assembly ("memory-safe") {
-            errs := mload(0x40) // Grab the free memory pointer.
-            mstore(errs, encodedUserOps.length) // Store the length.
-            mstore(0x40, add(add(0x20, errs), shl(5, encodedUserOps.length))) // Allocate.
-        }
-        for (uint256 i; i != encodedUserOps.length;) {
+        // This allocation and loop was initially in assembly, but I've normified it for now.
+        errs = new bytes4[](encodedUserOps.length);
+        for (uint256 i; i < encodedUserOps.length; ++i) {
             // We reluctantly use regular Solidity to access `encodedUserOps[i]`.
             // This generates an unnecessary check for `i < encodedUserOps.length`, but helps
             // generate all the implicit calldata bound checks on `encodedUserOps[i]`.
-            (, bytes4 err) = _execute(encodedUserOps[i]);
-            // Set `errs[i]` without bounds checks.
-            assembly ("memory-safe") {
-                i := add(i, 1) // Increment `i` here so we don't need `add(errs, 0x20)`.
-                mstore(add(errs, shl(5, i)), err)
-            }
+            (, errs[i]) = _execute(encodedUserOps[i]);
         }
     }
 
     /// @dev This function does not actually execute. It simulates an execution
     /// and reverts with the amount of gas used, and the error selector.
-    function simulateExecute(bytes calldata encodedUserOp) public payable virtual {
+    function simulateExecute(bytes calldata encodedUserOp) public payable virtual nonReentrant {
         (uint256 gUsed, bytes4 err) = _execute(encodedUserOp);
         revert SimulationResult(gUsed, err);
     }
 
     /// @dev This function is provided for debugging purposes.
-    function simulateFailedVerifyAndCall(bytes calldata encodedUserOp) public payable virtual {
+    function simulateFailedVerifyAndCall(bytes calldata encodedUserOp)
+        public
+        payable
+        virtual
+        nonReentrant
+    {
         UserOp calldata u = _extractUserOp(encodedUserOp);
         (bool isValid, bytes32 keyHash) = _verify(u);
         if (!isValid) revert VerificationError();
@@ -244,8 +240,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             let t := calldataload(encodedUserOp.offset)
             u := add(t, encodedUserOp.offset)
             // Bounds check. We don't need to explicitly check the fields here.
-            // In the self call functions, we will use regular Solidity to access the fields,
-            // which generate the implicit bounds checks.
+            // In the self call functions, we will use regular Solidity to access the
+            // dynamic fields like `signature`, which generate the implicit bounds checks.
             if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
         }
     }
@@ -279,6 +275,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // Even if the verify and call fails, which the gas will be burned,
             // the payment has already been made and can't be reverted.
 
+            // We'll use assembly for frequently used call related stuff to save massive memory gas.
             for {} iszero(err) {} {
                 let m := mload(0x40) // Grab the free memory pointer.
                 // Copy the encoded user op to the memory to be ready to pass to the self call.
@@ -398,32 +395,16 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 revert OrderAlreadyFilled();
             }
         }
-        // `originData` is encoded as:
-        // `abi.encode(bytes(encodedUserOp), address(fundingToken), uint256(fundingAmount))`.
-        bytes calldata encodedUserOp;
-        address fundingToken;
-        uint256 fundingAmount;
-        address eoa;
-        // We have to do this cuz Solidity does not have a `abi.validateEncoding`.
-        // `abi.decode` is very inefficient, allocating and copying memory needlessly.
-        // Also, `execute` takes in a `bytes calldata`, so we can't use `abi.decode` here.
-        assembly ("memory-safe") {
-            fundingToken := calldataload(add(originData.offset, 0x20))
-            fundingAmount := calldataload(add(originData.offset, 0x40))
-            let s := calldataload(originData.offset)
-            let t := add(originData.offset, s)
-            encodedUserOp.length := calldataload(t)
-            encodedUserOp.offset := add(t, 0x20)
-            let e := add(originData.offset, originData.length)
-            // Bounds checks.
-            if or(
-                or(shr(64, or(s, t)), or(lt(originData.length, 0x60), lt(s, 0x60))),
-                gt(add(encodedUserOp.length, encodedUserOp.offset), e)
-            ) { revert(0x00, 0x00) }
-            eoa := calldataload(add(encodedUserOp.offset, calldataload(encodedUserOp.offset)))
-        }
+        // This entire `abi.decode` was initially written in assembly, but I've normified
+        // it for now so that reviewers won't get too distracted by assembly noise.
+        // `abi.decode` is extremely wasteful, but yeah, readability.
+        // Plus I think ERC7683 crosschain filling won't be used that often
+        // (also not sure if this is the best high-level approach in the long term).
+        (bytes memory encodedUserOp, address fundingToken, uint256 fundingAmount) =
+            abi.decode(originData, (bytes, address, uint256));
+        address eoa = abi.decode(encodedUserOp, (UserOp)).eoa;
         TokenTransferLib.safeTransferFrom(fundingToken, msg.sender, eoa, fundingAmount);
-        return execute(encodedUserOp);
+        return this.execute(encodedUserOp);
     }
 
     /// @dev Returns true if the order ID has been filled.
@@ -584,7 +565,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // `_verifyAndCall()`.
         if (s == 0xe235a92a) {
             require(msg.sender == address(this));
-
             (bool isValid, bytes32 keyHash) = _verify(u);
             if (!isValid) revert VerificationError();
             _execute(u, keyHash, false);
