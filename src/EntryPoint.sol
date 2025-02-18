@@ -129,14 +129,18 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev The amount of expected gas for refunds.
     uint256 internal constant _REFUND_GAS = 50000;
 
+    /// @dev Special nonce sequence key for multichain operations.
+    uint192 public constant MULTICHAIN_SEQ_KEY = 0xb014aac5b0d6328e584ecc632bc05bad2f720d727ce21382;
+
     ////////////////////////////////////////////////////////////////////////
     // Storage
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Holds the storage.
     struct EntryPointStorage {
-        LibBitmap.Bitmap filledOrderIds;
         mapping(address => mapping(uint192 => uint64)) accountsNonce;
+        mapping(address => mapping(uint256 => bytes4)) errMsg;
+        LibBitmap.Bitmap filledOrderIds;
     }
 
     /// @dev Returns the storage pointer.
@@ -288,6 +292,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 }
             }
         }
+
+        // Store err msg to check UserOp failure reason.
+        if (err != bytes4(0x00)) _getEntryPointStorage().errMsg[u.eoa][u.nonce] = err;
 
         // Refund strategy:
         // `totalAmountOfGasToPayFor = gasUsedThusFar + _REFUND_GAS`.
@@ -462,8 +469,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev Computes the EIP712 digest for the UserOp.
-    /// If the `nonceSeq == 0xb014aac5b0d6328e584ecc632bc05bad2f720d727ce21382`,
-    /// the digest will be computed without the chain ID and with a zero nonce salt.
+    /// If the `nonceSeq == MULTICHAIN_SEQ_KEY`, the digest will be computed without the chain ID.
     /// Otherwise, the digest will be computed with the chain ID.
     function _computeDigest(UserOp calldata u) internal view virtual returns (bytes32) {
         bytes32[] calldata pointers = LibERC7579.decodeBatch(u.executionData);
@@ -482,8 +488,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 );
             }
         }
-        bool isMultichain =
-            (u.nonce >> 224) == uint256(0xb014aac5b0d6328e584ecc632bc05bad2f720d727ce21382);
+        bool isMultichain = uint192(u.nonce >> 64) == MULTICHAIN_SEQ_KEY;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
         bytes32[] memory f = EfficientHashLib.malloc(10);
         f.set(0, USER_OP_TYPEHASH);
