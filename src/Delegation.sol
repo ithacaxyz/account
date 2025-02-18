@@ -64,10 +64,8 @@ contract Delegation is EIP712, GuardedExecutor {
     struct DelegationStorage {
         /// @dev The label.
         LibBytes.BytesStorage label;
-        /// @dev Bitmap of invalidated nonces. Set bit means invalidated.
-        LibBitmap.Bitmap invalidatedNonces;
-        /// @dev The current nonce salt.
-        uint256 nonceSalt;
+        /// @dev Account nonce.
+        mapping(uint192 => uint64) nonce;
         /// @dev Set of key hashes for onchain enumeration of authorized keys.
         EnumerableSetLib.Bytes32Set keyHashes;
         /// @dev Mapping of key hash to the key in encoded form.
@@ -147,12 +145,6 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev The key with a corresponding `keyHash` has been revoked.
     event Revoked(bytes32 indexed keyHash);
 
-    /// @dev The `nonce` have been invalidated.
-    event NonceInvalidated(uint256 nonce);
-
-    /// @dev The nonce salt has been incremented to `newNonceSalt`.
-    event NonceSaltIncremented(uint256 newNonceSalt);
-
     /// @dev The `checker` has been authorized to use `isValidSignature` for `keyHash`.
     event SignatureCheckerApprovalSet(
         bytes32 indexed keyHash, address indexed checker, bool isApproved
@@ -167,7 +159,7 @@ contract Delegation is EIP712, GuardedExecutor {
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant EXECUTE_TYPEHASH = keccak256(
-        "Execute(bool multichain,Call[] calls,uint256 nonce,uint256 nonceSalt)Call(address target,uint256 value,bytes data)"
+        "Execute(bool multichain,Call[] calls,uint256 nonce)Call(address target,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
@@ -176,6 +168,9 @@ contract Delegation is EIP712, GuardedExecutor {
 
     /// @dev For EIP712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
+
+    /// @dev Special nonce sequence key for multichain operations.
+    uint192 public constant MULTICHAIN_SEQ_KEY = 0xb014aac5b0d6328e584ecc632bc05bad2f720d727ce21382;
 
     /// @dev General capacity for enumerable sets,
     /// to prevent off-chain full enumeration from running out-of-gas.
@@ -269,21 +264,8 @@ contract Delegation is EIP712, GuardedExecutor {
     }
 
     /// @dev Invalidates the nonce.
-    function invalidateNonce(uint256 nonce) public virtual onlyThis {
-        _invalidateNonce(nonce);
-    }
-
-    /// @dev Increments the nonce salt by a pseudorandom uint32 value.
-    function incrementNonceSalt() public virtual onlyThis returns (uint256 newNonceSalt) {
-        DelegationStorage storage $ = _getDelegationStorage();
-        newNonceSalt = $.nonceSalt;
-        unchecked {
-            newNonceSalt += uint32(
-                uint256(EfficientHashLib.hash(newNonceSalt, block.timestamp, uint160(msg.sender)))
-            );
-        }
-        $.nonceSalt = newNonceSalt;
-        emit NonceSaltIncremented(newNonceSalt);
+    function incrementNonce(uint192 key) public virtual onlyThis {
+        _getDelegationStorage().nonce[key]++;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -293,16 +275,6 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev Returns the label.
     function label() public view virtual returns (string memory) {
         return string(_getDelegationStorage().label.get());
-    }
-
-    /// @dev Returns true if the nonce is invalidated.
-    function nonceIsInvalidated(uint256 nonce) public view virtual returns (bool) {
-        return _getDelegationStorage().invalidatedNonces.get(nonce);
-    }
-
-    /// @dev Returns the nonce salt.
-    function nonceSalt() public view virtual returns (uint256) {
-        return _getDelegationStorage().nonceSalt;
     }
 
     /// @dev Returns the number of authorized keys.
@@ -382,30 +354,21 @@ contract Delegation is EIP712, GuardedExecutor {
                 )
             );
         }
+        bool isMultichain = uint192(nonce >> 64) == MULTICHAIN_SEQ_KEY;
         bytes32 structHash = EfficientHashLib.hash(
-            uint256(EXECUTE_TYPEHASH),
-            nonce & 1,
-            uint256(a.hash()),
-            nonce,
-            nonce & 1 > 0 ? 0 : _getDelegationStorage().nonceSalt
+            uint256(EXECUTE_TYPEHASH), isMultichain ? 1 : 0, uint256(a.hash()), nonce
         );
-        return nonce & 1 > 0 ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
+        return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
 
     ////////////////////////////////////////////////////////////////////////
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Invalidates the nonce.
-    function _invalidateNonce(uint256 nonce) internal virtual {
-        _getDelegationStorage().invalidatedNonces.set(nonce);
-        emit NonceInvalidated(nonce);
-    }
-
     /// @dev Invalidates the nonce. Reverts if the nonce is already invalidated.
     function _useNonce(uint256 nonce) internal virtual {
-        if (nonceIsInvalidated(nonce)) revert InvalidNonce();
-        _invalidateNonce(nonce);
+        uint64 _nonce = _getDelegationStorage().nonce[uint192(nonce >> 64)]++;
+        if (_nonce != uint64(nonce)) revert InvalidNonce();
     }
 
     /// @dev Adds the key. If the key already exist, its expiry will be updated.
@@ -563,7 +526,7 @@ contract Delegation is EIP712, GuardedExecutor {
     {
         // Entry point workflow.
         if (msg.sender == ENTRY_POINT) {
-            if (opData.length < 0x40) revert OpDataTooShort();
+            if (opData.length < 0x20) revert OpDataTooShort();
             return _execute(calls, LibBytes.loadCalldata(opData, 0x20));
         }
 
