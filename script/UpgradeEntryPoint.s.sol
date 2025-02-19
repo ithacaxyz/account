@@ -15,7 +15,7 @@ contract UpgradeEntryPointScript is Script {
         address newImplementation = 0xcaC83d258BAA181b686bA7b3f6FCD0FCF75d5082;
         bytes memory initializeOwnerData = abi.encodeWithSignature("_initializeOwner()", deployer);
         vm.startBroadcast(deployerPrivateKey);
-        erc1967Factory.upgradeAndCall(proxy, newImplementation, "");
+        erc1967Factory.upgradeAndCall(proxy, newImplementation, initializeOwnerData);
         vm.stopBroadcast();
     }
 }
