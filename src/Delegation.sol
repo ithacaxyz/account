@@ -12,6 +12,7 @@ import {P256} from "solady/utils/P256.sol";
 import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {LibStorage} from "solady/utils/LibStorage.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
+import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 
@@ -286,6 +287,16 @@ contract Delegation is EIP712, GuardedExecutor {
         emit NonceInvalidated(nonce);
     }
 
+    /// @dev Upgrades the proxy delegation.
+    /// If this delegation is delegated directly without usage of EIP7702Proxy,
+    /// this operation will not affect the logic until the authority is redelegated
+    /// to a proper EIP7702Proxy. The `newImplementation` should implement
+    /// `upgradeProxyDelegation` or similar, otherwise upgrades will be locked and
+    /// only a new EIP-7702 transaction can change the authority's logic.
+    function upgradeProxyDelegation(address newImplementation) public virtual onlyThis {
+        LibEIP7702.upgradeProxyDelegation(newImplementation);
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Public View Functions
     ////////////////////////////////////////////////////////////////////////
@@ -501,6 +512,7 @@ contract Delegation is EIP712, GuardedExecutor {
         } else {
             super.execute(mode, executionData);
         }
+        LibEIP7702.requestProxyDelegationInitialization();
     }
 
     /// @dev Supported modes:
