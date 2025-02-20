@@ -7,8 +7,8 @@ import {PaymentPriorityLib} from "../src/PaymentPriorityLib.sol";
 
 contract EntryPointTest is SoladyTest {
     function testPackAndUnpack(
-        address priorityRecipient, 
-        uint40 startTimestamp, 
+        address priorityRecipient,
+        uint40 startTimestamp,
         uint16 gatedDuration,
         uint16 reverseDutchAuctionDuration,
         uint16 futureUse,
@@ -26,5 +26,4 @@ contract EntryPointTest is SoladyTest {
         assertEq(PaymentPriorityLib.getPriorityRecipient(paymentPriority), priorityRecipient);
         assertEq(PaymentPriorityLib.getStartTimestamp(paymentPriority), startTimestamp);
     }
-    
 }

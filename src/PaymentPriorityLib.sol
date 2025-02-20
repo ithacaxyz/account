@@ -19,8 +19,8 @@ import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 /// When `block.timestamp <= startTimestamp + gatedDuration`, only the `priorityRecipient`
 /// can get paid. If the `paymentRecipient` is non-zero and is someone else, payment is skipped.
 ///
-/// The `finalPaymentMaxAmount` will be linearly interpolated from 
-/// 0 -> `paymentMaxAmount` as `block.timestamp` goes from 
+/// The `finalPaymentMaxAmount` will be linearly interpolated from
+/// 0 -> `paymentMaxAmount` as `block.timestamp` goes from
 /// `startTimestamp` -> `startTimestamp + reverseDutchAuctionDuration`.
 library PaymentPriorityLib {
     error UnsupportedPaymentPriorityVersion();
@@ -29,7 +29,11 @@ library PaymentPriorityLib {
         if (getVersion(paymentPriority) != 0) revert UnsupportedPaymentPriorityVersion();
     }
 
-    function finalPaymentMaxAmount(bytes32 paymentPriority, uint256 paymentMaxAmount) internal view returns (uint256 result) {
+    function finalPaymentMaxAmount(bytes32 paymentPriority, uint256 paymentMaxAmount)
+        internal
+        view
+        returns (uint256 result)
+    {
         uint256 begin = getStartTimestamp(paymentPriority);
         if (block.timestamp <= begin) return 0;
         uint256 dur = getReverseDutchAuctionDuration(paymentPriority);
@@ -39,12 +43,21 @@ library PaymentPriorityLib {
         }
     }
 
-    function finalPaymentRecipient(bytes32 paymentPriority, address paymentRecipient) internal view returns (address) {
+    function finalPaymentRecipient(bytes32 paymentPriority, address paymentRecipient)
+        internal
+        view
+        returns (address)
+    {
         address priorityRecipient = getPriorityRecipient(paymentPriority);
         unchecked {
-            if (priorityRecipient != address(0)) 
-                if (block.timestamp <= getStartTimestamp(paymentPriority) + getGatedDuration(paymentPriority)) 
+            if (priorityRecipient != address(0)) {
+                if (
+                    block.timestamp
+                        <= getStartTimestamp(paymentPriority) + getGatedDuration(paymentPriority)
+                ) {
                     return priorityRecipient;
+                }
+            }
         }
         return paymentRecipient;
     }
@@ -65,7 +78,11 @@ library PaymentPriorityLib {
     }
 
     /// @dev Returns the `reverseDutchAuctionDuration`.
-    function getReverseDutchAuctionDuration(bytes32 paymentPriority) internal pure returns (uint256) {
+    function getReverseDutchAuctionDuration(bytes32 paymentPriority)
+        internal
+        pure
+        returns (uint256)
+    {
         return (uint256(paymentPriority) << ((20 + 5 + 2) * 8)) >> (256 - 2 * 8);
     }
 
