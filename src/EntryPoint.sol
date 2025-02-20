@@ -419,6 +419,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
         gUsed = Math.rawSub(gStart, gasleft());
         uint256 paymentPerGas = Math.coalesce(u.paymentPerGas, type(uint256).max);
+        // If the `paymentPerGas` is not `type(uint256).max`, it means refunds are desired.
         if (paymentPerGas != type(uint256).max) {
             uint256 finalPaymentAmount = Math.min(
                 paymentAmount,
@@ -534,6 +535,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     function _pay(UserOp calldata u) internal virtual returns (uint256 paymentAmount) {
         paymentAmount = u.paymentAmount;
         if (paymentAmount == uint256(0)) return paymentAmount;
+        if (!u.paymentPriority.modeIsSupported()) revert PaymentError();
+
         address paymentToken = u.paymentToken;
         uint256 requiredBalanceAfter = Math.saturatingAdd(
             TokenTransferLib.balanceOf(paymentToken, address(this)), paymentAmount
@@ -543,6 +546,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         if (paymentAmount > u.paymentPriority.finalPaymentMaxAmount(u.paymentMaxAmount)) {
             revert PaymentError();
         }
+        // If refunds are desired, escrow the payment in the EntryPoint first.
         address to = Math.coalesce(u.paymentPerGas, type(uint256).max) != type(uint256).max
             ? address(this)
             : u.paymentPriority.finalPaymentRecipient(u.paymentRecipient);
