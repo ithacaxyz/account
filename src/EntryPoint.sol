@@ -332,20 +332,18 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // If we have overpaid, then refund `paymentAmount - paymentAmountForGas`.
 
         gUsed = Math.rawSub(gStart, gasleft());
-        uint256 paymentPerGas = u.paymentPerGas;
-        if (paymentPerGas == uint256(0)) paymentPerGas = type(uint256).max;
+        uint256 paymentPerGas = Math.coalesce(u.paymentPerGas, type(uint256).max);
         uint256 finalPaymentAmount = Math.min(
             paymentAmount, Math.saturatingMul(paymentPerGas, Math.saturatingAdd(gUsed, _REFUND_GAS))
         );
-        address paymentRecipient = u.paymentRecipient;
-        if (paymentRecipient == address(0)) paymentRecipient = address(this);
+        address paymentRecipient = Math.coalesce(u.paymentRecipient, address(this));
         if (LibBit.and(finalPaymentAmount != 0, paymentRecipient != address(this))) {
             TokenTransferLib.safeTransfer(u.paymentToken, paymentRecipient, finalPaymentAmount);
         }
         if (paymentAmount > finalPaymentAmount) {
             TokenTransferLib.safeTransfer(
                 u.paymentToken,
-                u.payer == address(0) ? u.eoa : u.payer,
+                Math.coalesce(u.payer, u.eoa),
                 Math.rawSub(paymentAmount, finalPaymentAmount)
             );
         }
@@ -450,7 +448,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             TokenTransferLib.balanceOf(paymentToken, address(this)), paymentAmount
         );
         address eoa = u.eoa;
-        address payer = u.payer == address(0) ? eoa : u.payer;
+        address payer = Math.coalesce(u.payer, eoa);
         if (paymentAmount > u.paymentMaxAmount) {
             revert PaymentError();
         }
