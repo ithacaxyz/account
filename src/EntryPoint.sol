@@ -8,6 +8,7 @@ import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
 import {ReentrancyGuardTransient} from "solady/utils/ReentrancyGuardTransient.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
+import {LibBytes} from "solady/utils/LibBytes.sol";
 import {LibStorage} from "solady/utils/LibStorage.sol";
 import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
@@ -416,16 +417,18 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 revert OrderAlreadyFilled();
             }
         }
-        // This entire `abi.decode` was initially written in assembly, but I've normified
-        // it for now so that reviewers won't get too distracted by assembly noise.
-        // `abi.decode` is extremely wasteful, but yeah, readability.
-        // Plus I think ERC7683 crosschain filling won't be used that often
-        // (also not sure if this is the best high-level approach in the long term).
-        (bytes memory encodedUserOp, address fundingToken, uint256 fundingAmount) =
-            abi.decode(originData, (bytes, address, uint256));
-        address eoa = abi.decode(encodedUserOp, (UserOp)).eoa;
+        // Like `abi.decode(originData, (bytes, address, uint256))`, but way faster.
+        if (originData.length < 0x60) revert();
+        bytes calldata encodedUserOp = LibBytes.bytesInCalldata(originData, 0x00);
+        address fundingToken = address(uint160(uint256(LibBytes.loadCalldata(originData, 0x20))));
+        uint256 fundingAmount = uint256(LibBytes.loadCalldata(originData, 0x40));
+
+        // Like `abi.decode(encodedUserOp, (UserOp)).eoa`, but way faster.
+        bytes calldata u = LibBytes.dynamicStructInCalldata(encodedUserOp, 0x00);
+        address eoa = address(uint160(uint256(LibBytes.loadCalldata(u, 0x00))));
+
         TokenTransferLib.safeTransferFrom(fundingToken, msg.sender, eoa, fundingAmount);
-        return this.execute(encodedUserOp);
+        return execute(encodedUserOp);
     }
 
     /// @dev Returns true if the order ID has been filled.
