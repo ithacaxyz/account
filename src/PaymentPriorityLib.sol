@@ -82,20 +82,20 @@ library PaymentPriorityLib {
     /// @dev Packs the parameters into a single word.
     /// Provided mainly for testing and reference purposes.
     function pack(
-        address priorityRecipient,
-        uint40 startTimestamp,
-        uint16 gatedDuration,
-        uint16 reverseDutchAuctionDuration,
-        uint16 futureUse,
-        uint8 mode
+        address priorityRecipient_,
+        uint40 startTimestamp_,
+        uint16 gatedDuration_,
+        uint16 reverseDutchAuctionDuration_,
+        uint16 futureUse_,
+        uint8 mode_
     ) internal pure returns (bytes32) {
         bytes memory encoded = abi.encodePacked(
-            priorityRecipient,
-            startTimestamp,
-            gatedDuration,
-            reverseDutchAuctionDuration,
-            futureUse,
-            mode
+            priorityRecipient_,
+            startTimestamp_,
+            gatedDuration_,
+            reverseDutchAuctionDuration_,
+            futureUse_,
+            mode_
         );
         assert(encoded.length == 32);
         return abi.decode(encoded, (bytes32));
