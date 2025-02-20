@@ -572,6 +572,7 @@ contract Delegation is EIP712, GuardedExecutor {
         unchecked {
             uint256 seq = _getDelegationStorage().nonceSeqs[uint192(nonce >> 64)].value++;
             if (seq != uint64(nonce)) revert InvalidNonce();
+            emit NonceInvalidated(nonce);
         }
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
