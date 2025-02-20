@@ -140,8 +140,8 @@ contract EntryPointTest is SoladyTest {
             paymentRecipient: address(0x00),
             paymentAmount: 0.1 ether,
             paymentMaxAmount: 0.5 ether,
-            paymentPerGas: 100000 wei,
             paymentPriority: bytes32(0),
+            paymentPerGas: 100000 wei,
             combinedGas: 10000000,
             signature: ""
         });
@@ -283,8 +283,8 @@ contract EntryPointTest is SoladyTest {
             paymentRecipient: address(0x00),
             paymentAmount: 0.1 ether,
             paymentMaxAmount: 0.5 ether,
-            paymentPerGas: 1e9,
             paymentPriority: bytes32(0),
+            paymentPerGas: 1e9,
             combinedGas: 1000000,
             signature: ""
         });
@@ -351,8 +351,8 @@ contract EntryPointTest is SoladyTest {
             paymentRecipient: address(0x00),
             paymentAmount: 0.1 ether,
             paymentMaxAmount: 0.5 ether,
-            paymentPerGas: 1e9,
             paymentPriority: bytes32(0),
+            paymentPerGas: 1e9,
             combinedGas: 1000000,
             signature: ""
         });
@@ -402,8 +402,8 @@ contract EntryPointTest is SoladyTest {
             paymentRecipient: address(0xbcde),
             paymentAmount: 0.1 ether,
             paymentMaxAmount: 0.5 ether,
-            paymentPerGas: 1 wei,
             paymentPriority: bytes32(0),
+            paymentPerGas: 1 wei,
             combinedGas: 20000,
             signature: ""
         });
@@ -480,8 +480,8 @@ contract EntryPointTest is SoladyTest {
             paymentRecipient: address(this),
             paymentAmount: 10 ether,
             paymentMaxAmount: 15 ether,
-            paymentPerGas: 1e9,
             paymentPriority: bytes32(0),
+            paymentPerGas: 1e9,
             combinedGas: 10000000,
             signature: ""
         });
@@ -538,8 +538,8 @@ contract EntryPointTest is SoladyTest {
                 paymentRecipient: address(0xbcde),
                 paymentAmount: 0.5 ether,
                 paymentMaxAmount: 0.5 ether,
-                paymentPerGas: 1e9,
                 paymentPriority: bytes32(0),
+                paymentPerGas: 1e9,
                 combinedGas: 10000000,
                 signature: ""
             });
@@ -596,8 +596,8 @@ contract EntryPointTest is SoladyTest {
             paymentRecipient: address(0xbcde),
             paymentAmount: 10 ether,
             paymentMaxAmount: 10 ether,
-            paymentPerGas: 1e9,
             paymentPriority: bytes32(0),
+            paymentPerGas: 1e9,
             combinedGas: 10000000,
             signature: ""
         });
@@ -646,8 +646,8 @@ contract EntryPointTest is SoladyTest {
             paymentRecipient: address(0x00),
             paymentAmount: 20 ether,
             paymentMaxAmount: 15 ether,
-            paymentPerGas: 1e9,
             paymentPriority: bytes32(0),
+            paymentPerGas: 1e9,
             combinedGas: 10000000,
             signature: ""
         });
@@ -809,8 +809,8 @@ contract EntryPointTest is SoladyTest {
                 paymentRecipient: address(0xbcde),
                 paymentAmount: 0.5 ether,
                 paymentMaxAmount: 0.5 ether,
-                paymentPerGas: 1,
                 paymentPriority: bytes32(0),
+                paymentPerGas: 1,
                 combinedGas: 10000000,
                 signature: ""
             });
