@@ -121,6 +121,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     event NonceInvalidated(address indexed eoa, uint256 nonce);
 
     /// @dev Emitted when a UserOp is executed.
+    /// This event replaces `NonceInvalidated` in the `execute` function.
+    /// It serves to signal that `nonce` has been invalidated,
+    /// while also emitting the `err` in a single event.
     event UserOpExecuted(address indexed eoa, uint256 nonce, bytes4 err);
 
     ////////////////////////////////////////////////////////////////////////
