@@ -462,13 +462,12 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         }
         assembly ("memory-safe") {
             let m := mload(0x40) // Cache the free memory pointer.
-            mstore(0x00, 0x887f7d7c) // `payEntryPoint(address,uint256,address)`.
-            mstore(0x20, shr(96, shl(96, paymentToken)))
-            mstore(0x40, paymentAmount)
-            mstore(0x60, shr(96, shl(96, eoa)))
-            pop(call(gas(), payer, 0, 0x1c, 0x64, 0x00, 0x00))
-            mstore(0x40, m) // Restore the free memory pointer.
-            mstore(0x60, 0) // Restore the zero pointer.
+            mstore(m, 0x56298c98) // `compensate(address,address,uint256,address)`.
+            mstore(add(m, 0x20), shr(96, shl(96, paymentToken)))
+            mstore(add(m, 0x40), address())
+            mstore(add(m, 0x60), paymentAmount)
+            mstore(add(m, 0x80), shr(96, shl(96, eoa)))
+            pop(call(gas(), payer, 0, add(m, 0x1c), 0x84, 0x00, 0x00))
         }
         if (TokenTransferLib.balanceOf(paymentToken, address(this)) < requiredBalanceAfter) {
             revert PaymentError();
