@@ -35,12 +35,8 @@ library PaymentPriorityLib {
         returns (uint256 result)
     {
         uint256 begin = getStartTimestamp(paymentPriority);
-        if (block.timestamp <= begin) return 0;
-        uint256 dur = getReverseDutchAuctionDuration(paymentPriority);
-        unchecked {
-            if (block.timestamp >= begin + dur) return paymentMaxAmount;
-            return paymentMaxAmount - Math.rawDiv(paymentMaxAmount * (block.timestamp - begin), dur);
-        }
+        uint256 end = Math.rawAdd(begin, getReverseDutchAuctionDuration(paymentPriority));
+        return Math.lerp(0, paymentMaxAmount, block.timestamp, begin, end);
     }
 
     function finalPaymentRecipient(bytes32 paymentPriority, address paymentRecipient)
