@@ -17,7 +17,7 @@ Even if an EOA has a valid delegation during transaction preparation, the delega
 
 ### Execution Flow (Single UserOp)
 
-1. Check remaining gas using the 63/64 rule (reverts on failure).
+1. Check remaining gas using the 63/64 rule (reverts on insufficient gas).
 2. Invalidate the UserOp nonce (non-reverting).
 3. If step 2 succeeds, make a gas-limited compensation call (non-reverting).
 4. If step 3 succeeds, make a gas-limited call for UserOp validation and execution (non-reverting).
@@ -32,3 +32,15 @@ Gas-limited calls use a self-call with a gas stipend to perform calls to untrust
 This is just a loop across an array of encoded UserOps. Only reverts if there is insufficient gas provided to the transaction.
 
 The total amount of required gas can be reliably determined during transaction preparation via the `combinedGas` parameter in each UserOp.
+
+## Upgradeability
+
+The `EntryPoint` is currently behind a minimal ERC1967 transparent proxy. This proxy can be upgraded if the expected `Delegation` ABI does not change, and this requires no action on the EOAs.
+
+The `Delegation` requires a novel proxy pattern. There are several ways which an EOA can upgrade their Delegation:
+
+- Simply sign a new EIP7702 transaction to redelegate. Supports direct delegation to the `Delegation` itself, or via an `EIP7702Proxy`.
+- Delegate to an `EIP7702Proxy`. 
+  Upon fresh delegation via a EIP7702 transaction, the initial implementation will be the latest official implementation on the proxy.
+  A call to `execute` on the EOA is required for this initial implementation to be written to storage.
+  Subsequent upgrades can be signed by an authorized passkey.
