@@ -67,6 +67,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         uint256 paymentAmount;
         /// @dev The maximum amount of the token to pay.
         uint256 paymentMaxAmount;
+        /// @dev A packed field that encodes the payment priority parameters.
+        /// Leaving `paymentPrority` as `bytes32(0)` will simply turn off the gating and auction.
+        bytes32 paymentPriority;
         /// @dev The amount of ERC20 to pay per gas spent. For calculation of refunds.
         /// If this is left at zero, it will be treated as infinity (i.e. no refunds).
         uint256 paymentPerGas;
@@ -144,7 +147,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant USER_OP_TYPEHASH = keccak256(
-        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas)Call(address target,uint256 value,bytes data)"
+        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,bytes32 paymentPriority,uint256 paymentPerGas,uint256 combinedGas)Call(address target,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
@@ -638,7 +641,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         }
         bool isMultichain = u.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(10);
+        bytes32[] memory f = EfficientHashLib.malloc(11);
         f.set(0, USER_OP_TYPEHASH);
         f.set(1, LibBit.toUint(isMultichain));
         f.set(2, uint160(u.eoa));
@@ -647,8 +650,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         f.set(5, uint160(u.payer));
         f.set(6, uint160(u.paymentToken));
         f.set(7, u.paymentMaxAmount);
-        f.set(8, u.paymentPerGas);
-        f.set(9, u.combinedGas);
+        f.set(8, u.paymentPriority);
+        f.set(9, u.paymentPerGas);
+        f.set(10, u.combinedGas);
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
