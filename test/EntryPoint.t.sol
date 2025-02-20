@@ -186,7 +186,7 @@ contract EntryPointTest is SoladyTest {
 
         uint256 gUsed;
 
-        assembly {
+        assembly ("memory-safe") {
             gUsed := mload(add(rD, 0x24))
         }
 
@@ -253,7 +253,7 @@ contract EntryPointTest is SoladyTest {
 
         uint256 gUsed;
 
-        assembly {
+        assembly ("memory-safe") {
             gUsed := mload(add(rD, 0x24))
         }
 
@@ -303,7 +303,7 @@ contract EntryPointTest is SoladyTest {
         uint256 startBalance = address(0xbcde).balance;
 
         uint256 g = gasleft();
-        assembly {
+        assembly ("memory-safe") {
             pop(call(gas(), _ep, 0, add(data, 0x20), mload(data), 0x00, 0x20))
             g := sub(g, gas())
             err := mload(0)
@@ -329,7 +329,7 @@ contract EntryPointTest is SoladyTest {
         data = abi.encodeWithSignature("execute(bytes)", abi.encode(userOp));
 
         g = gasleft();
-        assembly {
+        assembly ("memory-safe") {
             pop(call(gas(), _ep, 0, add(data, 0x20), mload(data), 0x00, 0x20))
             g := sub(g, gas())
             err := mload(0)
@@ -384,7 +384,7 @@ contract EntryPointTest is SoladyTest {
 
         uint256 gUsed;
 
-        assembly {
+        assembly ("memory-safe") {
             gUsed := mload(add(rD, 0x24))
         }
         bytes4 err = ep.execute(op);
@@ -397,7 +397,7 @@ contract EntryPointTest is SoladyTest {
     }
 
     function testExecuteBatchCalls(uint256 n) public {
-        n = n & 15; // random % 16
+        n = _bound(n, 0, _randomChance(64) ? 16 : 3);
         bytes[] memory encodeUserOps = new bytes[](n);
 
         address[] memory signer = new address[](n);
@@ -435,7 +435,7 @@ contract EntryPointTest is SoladyTest {
             );
             uint256 gUsed;
 
-            assembly {
+            assembly ("memory-safe") {
                 gUsed := mload(add(rD, 0x24))
             }
 
@@ -452,8 +452,7 @@ contract EntryPointTest is SoladyTest {
     }
 
     function testExecuteUserBatchCalls(uint256 n) public {
-        n = n & 15; // random % 16
-
+        n = _bound(n, 0, _randomChance(64) ? 16 : 3);
         (address signer, uint256 privateKey) = _randomUniqueSigner();
 
         vm.signAndAttachDelegation(delegation, privateKey);
@@ -493,7 +492,7 @@ contract EntryPointTest is SoladyTest {
             address(ep).call(abi.encodeWithSignature("simulateExecute(bytes)", encodeUserOps));
         uint256 gUsed;
 
-        assembly {
+        assembly ("memory-safe") {
             gUsed := mload(add(rD, 0x24))
         }
 
@@ -549,7 +548,7 @@ contract EntryPointTest is SoladyTest {
         bytes4 err;
         uint256 gUsed;
 
-        assembly {
+        assembly ("memory-safe") {
             err := shl(224, and(mload(add(rD, 0x28)), 0xffffffff))
             gUsed := mload(add(rD, 0x24))
         }
@@ -661,8 +660,8 @@ contract EntryPointTest is SoladyTest {
         return abi.encode(calls);
     }
 
-    function testExceuteGasUsed(uint256 n) public {
-        n = (n & 15) + 1; // random % 16 + 1
+    function testExceuteGasUsed() public {
+        uint256 n = 7;
         bytes[] memory encodeUserOps = new bytes[](n);
 
         address[] memory signer = new address[](n);
@@ -700,7 +699,7 @@ contract EntryPointTest is SoladyTest {
         bytes memory data = abi.encodeWithSignature("execute(bytes[])", encodeUserOps);
         address _ep = address(ep);
         uint256 g;
-        assembly {
+        assembly ("memory-safe") {
             g := gas()
             pop(call(gas(), _ep, 0, add(data, 0x20), mload(data), codesize(), 0x00))
             g := sub(g, gas())

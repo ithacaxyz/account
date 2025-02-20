@@ -296,6 +296,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // the payment has already been made and can't be reverted.
 
             // We'll use assembly for frequently used call related stuff to save massive memory gas.
+            // forgefmt: disable-next-item
             for {} iszero(err) {} {
                 let m := mload(0x40) // Grab the free memory pointer.
                 // Copy the encoded user op to the memory to be ready to pass to the self call.
@@ -306,10 +307,10 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 // 1. Pay.
                 mstore(m, 0x1a3de5c3) // `_pay()`.
                 mstore(0x00, 0) // Zeroize the return slot.
-                let gCapped := xor(g, mul(xor(g, _PAYMENT_GAS_CAP), lt(_PAYMENT_GAS_CAP, g))) // `min`.
-                // Perform the gas-limited self call.
-
-                if iszero(call(gCapped, address(), 0, s, n, 0x00, 0x20)) {
+                if iszero(call( // Gas-limited self call.
+                    xor(g, mul(xor(g, _PAYMENT_GAS_CAP), lt(_PAYMENT_GAS_CAP, g))), // `min`.
+                    address(), 0, s, n, 0x00, 0x20
+                )) {
                     err := mload(0x00)
                     if iszero(err) { err := shl(224, 0xabab8fc9) } // `PaymentError()`.
                     break
@@ -317,14 +318,14 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 // Since the payment is a success, load the returned `paymentAmount`.
                 paymentAmount := mload(0x00)
 
-                let gUsedTemp := sub(gStart, gas())
-                let gLeft := mul(sub(g, gUsedTemp), gt(g, gUsedTemp))
-
                 // 2. Verify and call.
+                let gUsedTemp := sub(gStart, gas())
                 mstore(m, 0xe235a92a) // `_verifyAndCall()`.
                 mstore(0x00, 0) // Zeroize the return slot.
-                // Perform the gas-limited self call.
-                if iszero(call(gLeft, address(), 0, s, n, 0x00, 0x20)) {
+                if iszero(call( // Gas-limited self call.
+                    mul(sub(g, gUsedTemp), gt(g, gUsedTemp)), // `saturatingSub`.
+                    address(), 0, s, n, 0x00, 0x20
+                )) {
                     err := mload(0x00)
                     if iszero(err) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
                 }
