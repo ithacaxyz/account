@@ -10,9 +10,9 @@ import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 ///
 /// `paymentPriority` bytes Layout:
 /// - [0..19]  (20 bytes)  `priorityRecipient`.
-/// - [20..24] ( 5 bytes)  `startTimestamp`. Upto year 36811.
-/// - [25..26] ( 2 bytes)  `gatedDuration`. Upto ~18 hours.
-/// - [27..28] ( 2 bytes)  `reverseDutchAuctionDuration`. Upto ~18 hours.
+/// - [20..24] ( 5 bytes)  `startTimestamp`. Up to about year 36811.
+/// - [25..26] ( 2 bytes)  `gatedDuration`. Up to about 18 hours.
+/// - [27..28] ( 2 bytes)  `reverseDutchAuctionDuration`. Up to about 18 hours.
 /// - [29..30] ( 2 bytes)  `futureUse` (hook IDs maybe?).
 /// - [31]     ( 1 byte )  `version` (currently only 0 is supported).
 library PaymentPriorityLib {
