@@ -41,7 +41,7 @@ There are 2 ways which an EOA can upgrade their `Delegation`:
   Supports direct delegation to the `Delegation` itself, or via an `EIP7702Proxy`.
 
 - Application layer: Delegate to an `EIP7702Proxy` (a novel proxy pattern tailored for EIP7702). 
-  Upon fresh delegation via a EIP7702 transaction, the initial implementation will be the latest official implementation on the proxy.
+  Upon fresh delegation, the initial implementation will be the latest official implementation on the proxy.
   A call to `execute` on the EOA is required for this initial implementation to be written to storage.
   Subsequent upgrades can be signed by an authorized passkey or the EOA key.
 
