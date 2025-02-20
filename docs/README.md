@@ -35,12 +35,14 @@ The total amount of required gas can be reliably determined during transaction p
 
 ## Upgradeability
 
-The `EntryPoint` is currently behind a minimal ERC1967 transparent proxy. This proxy can be upgraded if the expected `Delegation` ABI does not change, and this requires no action on the EOAs.
+There are 2 ways which an EOA can upgrade their `Delegation`:
 
-There are 2 ways which an EOA can upgrade their Delegation:
+- Execution layer: Sign a new EIP7702 transaction with the EOA key to redelegate. 
+  Supports direct delegation to the `Delegation` itself, or via an `EIP7702Proxy`.
 
-- Simply sign a new EIP7702 transaction to redelegate. Supports direct delegation to the `Delegation` itself, or via an `EIP7702Proxy`.
-- Delegate to an `EIP7702Proxy` (a novel proxy pattern tailored for EIP7702). 
+- Application layer: Delegate to an `EIP7702Proxy` (a novel proxy pattern tailored for EIP7702). 
   Upon fresh delegation via a EIP7702 transaction, the initial implementation will be the latest official implementation on the proxy.
   A call to `execute` on the EOA is required for this initial implementation to be written to storage.
-  Subsequent upgrades can be signed by an authorized passkey.
+  Subsequent upgrades can be signed by an authorized passkey or the EOA key.
+
+The `EntryPoint` is currently behind a minimal ERC1967 transparent proxy. This proxy can be upgraded if the expected `Delegation` ABI does not change, and this requires no action on the EOAs.
