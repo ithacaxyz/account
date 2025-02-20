@@ -14,7 +14,7 @@ contract EntryPointTest is SoladyTest {
         uint16 gatedDuration,
         uint16 reverseDutchAuctionDuration,
         uint16 futureUse,
-        uint8 version
+        uint8 mode
     ) public pure {
         bytes32 paymentPriority = PaymentPriorityLib.pack(
             priorityRecipient,
@@ -22,14 +22,14 @@ contract EntryPointTest is SoladyTest {
             gatedDuration,
             reverseDutchAuctionDuration,
             futureUse,
-            version
+            mode
         );
         assertEq(paymentPriority.priorityRecipient(), priorityRecipient);
         assertEq(paymentPriority.startTimestamp(), startTimestamp);
         assertEq(paymentPriority.gatedDuration(), gatedDuration);
         assertEq(paymentPriority.reverseDutchAuctionDuration(), reverseDutchAuctionDuration);
         assertEq(paymentPriority.futureUse(), futureUse);
-        assertEq(paymentPriority.version(), version);
+        assertEq(paymentPriority.mode(), mode);
     }
 
     function testFinalPaymentMaxAmount(
