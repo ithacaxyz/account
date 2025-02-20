@@ -14,25 +14,9 @@ import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 /// - [25..26] ( 2 bytes)  `gatedDuration`. Up to about 18 hours.
 /// - [27..28] ( 2 bytes)  `reverseDutchAuctionDuration`. Up to about 18 hours.
 /// - [29..30] ( 2 bytes)  `futureUse` (hook IDs maybe?).
-/// - [31]     ( 1 byte )  `version` (currently only 0 is supported).
+/// - [31]     ( 1 byte )  `mode` (currently 0, so ignored).
+/// In the future, `mode` might be used for conditional features.
 library PaymentPriorityLib {
-    ////////////////////////////////////////////////////////////////////////
-    // Errors
-    ////////////////////////////////////////////////////////////////////////
-
-    /// @dev The version in the `paymentPriority` is not supported.
-    error UnsupportedPaymentPriorityVersion();
-
-    ////////////////////////////////////////////////////////////////////////
-    // Operations
-    ////////////////////////////////////////////////////////////////////////
-
-    /// @dev Checks that the `paymentPriority` has a supported version.
-    /// Provided as a separate function, since we only want to test this once.
-    function checkVersion(bytes32 paymentPriority) internal pure {
-        if (version(paymentPriority) != 0) revert UnsupportedPaymentPriorityVersion();
-    }
-
     /// @dev Returns the final payment max amount.
     /// Linearly interpolated from 0 to `paymentMaxAmount`
     /// as `block.timestamp` goes from
@@ -89,8 +73,8 @@ library PaymentPriorityLib {
         return uint16(uint256(paymentPriority) >> (256 - (20 + 5 + 2 + 2 + 2) * 8));
     }
 
-    /// @dev Returns the version.
-    function version(bytes32 paymentPriority) internal pure returns (uint8) {
+    /// @dev Returns the mode.
+    function mode(bytes32 paymentPriority) internal pure returns (uint8) {
         return uint8(uint256(paymentPriority));
     }
 
@@ -102,7 +86,7 @@ library PaymentPriorityLib {
         uint16 gatedDuration,
         uint16 reverseDutchAuctionDuration,
         uint16 futureUse,
-        uint8 version
+        uint8 mode
     ) internal pure returns (bytes32) {
         bytes memory encoded = abi.encodePacked(
             priorityRecipient,
@@ -110,7 +94,7 @@ library PaymentPriorityLib {
             gatedDuration,
             reverseDutchAuctionDuration,
             futureUse,
-            version
+            mode
         );
         return abi.decode(encoded, (bytes32));
     }

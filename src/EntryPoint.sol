@@ -13,6 +13,7 @@ import {LibStorage} from "solady/utils/LibStorage.sol";
 import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
+import {PaymentPriorityLib} from "./PaymentPriorityLib.sol";
 
 /// @title EntryPoint
 /// @notice Contract for ERC7702 delegations.
@@ -20,6 +21,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
+    using PaymentPriorityLib for bytes32;
 
     ////////////////////////////////////////////////////////////////////////
     // Data Structures
@@ -419,9 +421,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         uint256 finalPaymentAmount = Math.min(
             paymentAmount, Math.saturatingMul(paymentPerGas, Math.saturatingAdd(gUsed, _REFUND_GAS))
         );
-        address paymentRecipient = Math.coalesce(u.paymentRecipient, address(this));
-        if (LibBit.and(finalPaymentAmount != 0, paymentRecipient != address(this))) {
-            TokenTransferLib.safeTransfer(u.paymentToken, paymentRecipient, finalPaymentAmount);
+        address finalPaymentRecipient = u.paymentPriority.finalPaymentRecipient(u.paymentRecipient);
+        if (LibBit.and(finalPaymentAmount != 0, finalPaymentRecipient != address(this))) {
+            TokenTransferLib.safeTransfer(u.paymentToken, finalPaymentRecipient, finalPaymentAmount);
         }
         if (paymentAmount > finalPaymentAmount) {
             TokenTransferLib.safeTransfer(
@@ -534,7 +536,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         );
         address eoa = u.eoa;
         address payer = Math.coalesce(u.payer, eoa);
-        if (paymentAmount > u.paymentMaxAmount) {
+        if (paymentAmount > u.paymentPriority.finalPaymentMaxAmount(u.paymentMaxAmount)) {
             revert PaymentError();
         }
         assembly ("memory-safe") {
