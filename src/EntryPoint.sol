@@ -595,6 +595,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // `_initializeOwner()`.
         if (s == 0xfc90218d) {
             _checkOnlyProxy();
+            if (owner() != address(0)) return; // Prevent reinitialization if there's owner.
             address newOwner;
             assembly ("memory-safe") {
                 newOwner := calldataload(0x04)
@@ -638,11 +639,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     ////////////////////////////////////////////////////////////////////////
     // Other Overrides
     ////////////////////////////////////////////////////////////////////////
-
-    /// @dev Prevent reinitialization of owner.
-    function _guardInitializeOwner() internal pure virtual override returns (bool) {
-        return true;
-    }
 
     /// @dev There won't be chains that have 7702 and without TSTORE.
     function _useTransientReentrancyGuardOnlyOnMainnet()
