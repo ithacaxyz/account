@@ -14,9 +14,15 @@ import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 /// - [25..26] ( 2 bytes)  `gatedDuration`. Up to about 18 hours.
 /// - [27..28] ( 2 bytes)  `reverseDutchAuctionDuration`. Up to about 18 hours.
 /// - [29..30] ( 2 bytes)  `futureUse` (hook IDs maybe?).
-/// - [31]     ( 1 byte )  `mode` (currently 0, so ignored).
+/// - [31]     ( 1 byte )  `mode` (currently only 0 is supported).
 /// In the future, `mode` might be used for conditional features.
 library PaymentPriorityLib {
+    /// @dev Returns if the `mode` in `paymentPriority` is supported.
+    /// This is provided as a separate function, so we only need to check once.
+    function modeIsSupported(bytes32 paymentPriority) internal pure returns (bool) {
+        return mode(paymentPriority) == uint256(0);
+    }
+
     /// @dev Returns the final payment max amount.
     /// Linearly interpolated from 0 to `paymentMaxAmount`
     /// as `block.timestamp` goes from
@@ -40,7 +46,7 @@ library PaymentPriorityLib {
         view
         returns (address result)
     {
-        result = priorityRecipient(paymentPriority);
+        result = address(bytes20(paymentPriority));
         if (result != address(0)) {
             uint256 begin = startTimestamp(paymentPriority);
             uint256 end = Math.rawAdd(begin, gatedDuration(paymentPriority));
