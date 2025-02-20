@@ -38,14 +38,15 @@ library PaymentPriorityLib {
     function finalPaymentRecipient(bytes32 paymentPriority, address paymentRecipient)
         internal
         view
-        returns (address)
+        returns (address result)
     {
-        if (priorityRecipient(paymentPriority) != address(0)) {
+        result = priorityRecipient(paymentPriority);
+        if (result != address(0)) {
             uint256 begin = startTimestamp(paymentPriority);
             uint256 end = Math.rawAdd(begin, gatedDuration(paymentPriority));
-            if (block.timestamp <= end) return priorityRecipient(paymentPriority);
+            if (block.timestamp <= end) return result;
         }
-        return Math.coalesce(paymentRecipient, address(this));
+        result = Math.coalesce(paymentRecipient, address(this));
     }
 
     /// @dev Returns the priority recipient.
@@ -78,7 +79,7 @@ library PaymentPriorityLib {
         return uint8(uint256(paymentPriority));
     }
 
-    /// @dev Packs the arguments into a single word.
+    /// @dev Packs the parameters into a single word.
     /// Provided mainly for testing and reference purposes.
     function pack(
         address priorityRecipient,
@@ -96,6 +97,7 @@ library PaymentPriorityLib {
             futureUse,
             mode
         );
+        assert(encoded.length == 32);
         return abi.decode(encoded, (bytes32));
     }
 }

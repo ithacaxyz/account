@@ -70,7 +70,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         /// @dev The maximum amount of the token to pay.
         uint256 paymentMaxAmount;
         /// @dev A packed field that encodes the payment priority parameters.
-        /// Leaving `paymentPrority` as `bytes32(0)` will simply turn off the gating and auction.
+        /// Leaving `paymentPrority` as `bytes32(0)` will simply turn off the gating and auction,
+        /// which is default behavior. See `PaymentPriorityLib` for more details.
         bytes32 paymentPriority;
         /// @dev The amount of ERC20 to pay per gas spent. For calculation of refunds.
         /// If this is left at zero, it will be treated as infinity (i.e. no refunds).
