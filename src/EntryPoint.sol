@@ -472,6 +472,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // The UserOp can be retrieved via assembly: `userOp := add(0x84, calldataload(0x84))`.
             // This pattern is extremely efficient, as it avoids unnecessary decoding of UserOp args.
             // It is also extremely flexible, allowing multiple variants of UserOps to be supported.
+            // Additionally, `encodedUserOp` can be abused to add additional data, e.g.:
+            // `encodedUserOp = abi.encode(userOp, someCustomStructForThePayer)`.
             let n := sub(calldatasize(), 0x04)
             calldatacopy(add(m, 0xa0), 0x04, n)
             pop(call(gas(), payer, 0, add(m, 0x1c), add(0x84, n), 0x00, 0x00))
