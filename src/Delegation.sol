@@ -162,6 +162,9 @@ contract Delegation is EIP712, GuardedExecutor {
     );
 
     /// @dev The nonce sequence is incremented.
+    /// This event is emitted in the `invalidateNonce` function,
+    /// as well as the `execute` function when an execution is performed directly
+    /// on the Delegation with a `keyHash`, bypassing the EntryPoint.
     event NonceInvalidated(uint256 nonce);
 
     ////////////////////////////////////////////////////////////////////////
