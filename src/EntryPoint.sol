@@ -467,7 +467,14 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             mstore(add(m, 0x40), address())
             mstore(add(m, 0x60), paymentAmount)
             mstore(add(m, 0x80), shr(96, shl(96, eoa)))
-            pop(call(gas(), payer, 0, add(m, 0x1c), 0x84, 0x00, 0x00))
+            // Copy the entire `UserOp` to the end of the calldata, in case `payer` needs
+            // bespoke logic to validate the payment.
+            // The UserOp can be easily retrieved via assembly: `userOp := 0x84`.
+            // This pattern is extremely efficient, as it avoids unnecessary decoding of UserOp args.
+            // It is also extremely flexible, allowing multiple variants of UserOps to be supported.
+            let n := sub(calldatasize(), u)
+            calldatacopy(add(m, 0xa0), u, n)
+            pop(call(gas(), payer, 0, add(m, 0x1c), add(0x84, u), 0x00, 0x00))
         }
         if (TokenTransferLib.balanceOf(paymentToken, address(this)) < requiredBalanceAfter) {
             revert PaymentError();
