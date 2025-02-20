@@ -14,81 +14,104 @@ import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 /// - [25..26] ( 2 bytes)  `gatedDuration`. Upto ~18 hours.
 /// - [27..28] ( 2 bytes)  `reverseDutchAuctionDuration`. Upto ~18 hours.
 /// - [29..30] ( 2 bytes)  `futureUse` (hook IDs maybe?).
-/// - [31]     ( 1 byte )  `priorityVersion` (currently 0).
-///
-/// When `block.timestamp <= startTimestamp + gatedDuration`, only the `priorityRecipient`
-/// can get paid. If the `paymentRecipient` is non-zero and is someone else, payment is skipped.
-///
-/// The `finalPaymentMaxAmount` will be linearly interpolated from
-/// 0 -> `paymentMaxAmount` as `block.timestamp` goes from
-/// `startTimestamp` -> `startTimestamp + reverseDutchAuctionDuration`.
+/// - [31]     ( 1 byte )  `version` (currently only 0 is supported).
 library PaymentPriorityLib {
+    ////////////////////////////////////////////////////////////////////////
+    // Errors
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev The version in the `paymentPriority` is not supported.
     error UnsupportedPaymentPriorityVersion();
 
+    ////////////////////////////////////////////////////////////////////////
+    // Operations
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Checks that the `paymentPriority` has a supported version.
+    /// Provided as a separate function, since we only want to test this once.
     function checkVersion(bytes32 paymentPriority) internal pure {
-        if (getVersion(paymentPriority) != 0) revert UnsupportedPaymentPriorityVersion();
+        if (version(paymentPriority) != 0) revert UnsupportedPaymentPriorityVersion();
     }
 
+    /// @dev Returns the final payment max amount.
+    /// Linearly interpolated from 0 to `paymentMaxAmount`
+    /// as `block.timestamp` goes from
+    /// `startTimestamp` to `startTimestamp + reverseDutchAuctionDuration`.
     function finalPaymentMaxAmount(bytes32 paymentPriority, uint256 paymentMaxAmount)
         internal
         view
-        returns (uint256 result)
+        returns (uint256)
     {
-        uint256 begin = getStartTimestamp(paymentPriority);
-        uint256 end = Math.rawAdd(begin, getReverseDutchAuctionDuration(paymentPriority));
+        uint256 begin = startTimestamp(paymentPriority);
+        uint256 end = Math.rawAdd(begin, reverseDutchAuctionDuration(paymentPriority));
         return Math.lerp(0, paymentMaxAmount, block.timestamp, begin, end);
     }
 
+    /// @dev Returns the final payment recipient.
+    /// If `priorityRecipient != address(0) && block.timestamp <= startTimestamp + gatedDuration`,
+    /// returns `priorityRecipient`.
+    /// Otherwise, returns `paymentRecipient == address(0) ? address(this) : paymentRecipient`.
     function finalPaymentRecipient(bytes32 paymentPriority, address paymentRecipient)
         internal
         view
         returns (address)
     {
-        address priorityRecipient = getPriorityRecipient(paymentPriority);
-        unchecked {
-            if (priorityRecipient != address(0)) {
-                if (
-                    block.timestamp
-                        <= getStartTimestamp(paymentPriority) + getGatedDuration(paymentPriority)
-                ) {
-                    return priorityRecipient;
-                }
-            }
+        if (priorityRecipient(paymentPriority) != address(0)) {
+            uint256 begin = startTimestamp(paymentPriority);
+            uint256 end = Math.rawAdd(begin, gatedDuration(paymentPriority));
+            if (block.timestamp <= end) return priorityRecipient(paymentPriority);
         }
-        return paymentRecipient;
+        return Math.coalesce(paymentRecipient, address(this));
     }
 
-    /// @dev Returns the `priorityRecipient`.
-    function getPriorityRecipient(bytes32 paymentPriority) internal pure returns (address) {
+    /// @dev Returns the priority recipient.
+    function priorityRecipient(bytes32 paymentPriority) internal pure returns (address) {
         return address(bytes20(paymentPriority));
     }
 
-    /// @dev Returns the `startTimestamp`.
-    function getStartTimestamp(bytes32 paymentPriority) internal pure returns (uint256) {
-        return (uint256(paymentPriority) << ((20) * 8)) >> (256 - 5 * 8);
+    /// @dev Returns the start timestamp.
+    function startTimestamp(bytes32 paymentPriority) internal pure returns (uint40) {
+        return uint40(uint256(paymentPriority) >> (256 - (20 + 5) * 8));
     }
 
-    /// @dev Returns the `gatedDuration`.
-    function getGatedDuration(bytes32 paymentPriority) internal pure returns (uint256) {
-        return (uint256(paymentPriority) << ((20 + 5) * 8)) >> (256 - 2 * 8);
+    /// @dev Returns the gated duration.
+    function gatedDuration(bytes32 paymentPriority) internal pure returns (uint16) {
+        return uint16(uint256(paymentPriority) >> (256 - (20 + 5 + 2) * 8));
     }
 
-    /// @dev Returns the `reverseDutchAuctionDuration`.
-    function getReverseDutchAuctionDuration(bytes32 paymentPriority)
-        internal
-        pure
-        returns (uint256)
-    {
-        return (uint256(paymentPriority) << ((20 + 5 + 2) * 8)) >> (256 - 2 * 8);
+    /// @dev Returns the reverse dutch auction duration.
+    function reverseDutchAuctionDuration(bytes32 paymentPriority) internal pure returns (uint256) {
+        return uint16(uint256(paymentPriority) >> (256 - (20 + 5 + 2 + 2) * 8));
     }
 
-    /// @dev Returns the `futureUse`.
-    function getFutureUse(bytes32 paymentPriority) internal pure returns (uint256) {
-        return (uint256(paymentPriority) << ((20 + 5 + 2 + 2) * 8)) >> (256 - 2 * 8);
+    /// @dev Returns the future use.
+    function futureUse(bytes32 paymentPriority) internal pure returns (uint256) {
+        return uint16(uint256(paymentPriority) >> (256 - (20 + 5 + 2 + 2 + 2) * 8));
     }
 
-    /// @dev Returns the `version`.
-    function getVersion(bytes32 paymentPriority) internal pure returns (uint256) {
-        return uint256(paymentPriority) & 0xff;
+    /// @dev Returns the version.
+    function version(bytes32 paymentPriority) internal pure returns (uint8) {
+        return uint8(uint256(paymentPriority));
+    }
+
+    /// @dev Packs the arguments into a single word.
+    /// Provided mainly for testing and reference purposes.
+    function pack(
+        address priorityRecipient,
+        uint40 startTimestamp,
+        uint16 gatedDuration,
+        uint16 reverseDutchAuctionDuration,
+        uint16 futureUse,
+        uint8 version
+    ) internal pure returns (bytes32) {
+        bytes memory encoded = abi.encodePacked(
+            priorityRecipient,
+            startTimestamp,
+            gatedDuration,
+            reverseDutchAuctionDuration,
+            futureUse,
+            version
+        );
+        return abi.decode(encoded, (bytes32));
     }
 }
