@@ -419,19 +419,25 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
         gUsed = Math.rawSub(gStart, gasleft());
         uint256 paymentPerGas = Math.coalesce(u.paymentPerGas, type(uint256).max);
-        uint256 finalPaymentAmount = Math.min(
-            paymentAmount, Math.saturatingMul(paymentPerGas, Math.saturatingAdd(gUsed, _REFUND_GAS))
-        );
-        address finalPaymentRecipient = u.paymentPriority.finalPaymentRecipient(u.paymentRecipient);
-        if (LibBit.and(finalPaymentAmount != 0, finalPaymentRecipient != address(this))) {
-            TokenTransferLib.safeTransfer(u.paymentToken, finalPaymentRecipient, finalPaymentAmount);
-        }
-        if (paymentAmount > finalPaymentAmount) {
-            TokenTransferLib.safeTransfer(
-                u.paymentToken,
-                Math.coalesce(u.payer, u.eoa),
-                Math.rawSub(paymentAmount, finalPaymentAmount)
+        if (paymentPerGas != type(uint256).max) {
+            uint256 finalPaymentAmount = Math.min(
+                paymentAmount,
+                Math.saturatingMul(paymentPerGas, Math.saturatingAdd(gUsed, _REFUND_GAS))
             );
+            address finalPaymentRecipient =
+                u.paymentPriority.finalPaymentRecipient(u.paymentRecipient);
+            if (LibBit.and(finalPaymentAmount != 0, finalPaymentRecipient != address(this))) {
+                TokenTransferLib.safeTransfer(
+                    u.paymentToken, finalPaymentRecipient, finalPaymentAmount
+                );
+            }
+            if (paymentAmount > finalPaymentAmount) {
+                TokenTransferLib.safeTransfer(
+                    u.paymentToken,
+                    Math.coalesce(u.payer, u.eoa),
+                    Math.rawSub(paymentAmount, finalPaymentAmount)
+                );
+            }
         }
 
         // If there is an error, store it.
@@ -540,11 +546,15 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         if (paymentAmount > u.paymentPriority.finalPaymentMaxAmount(u.paymentMaxAmount)) {
             revert PaymentError();
         }
+        address to = Math.coalesce(u.paymentPerGas, type(uint256).max) != type(uint256).max
+            ? address(this)
+            : u.paymentPriority.finalPaymentRecipient(u.paymentRecipient);
+
         assembly ("memory-safe") {
             let m := mload(0x40) // Cache the free memory pointer.
             mstore(m, 0x56298c98) // `compensate(address,address,uint256,address)`.
             mstore(add(m, 0x20), shr(96, shl(96, paymentToken)))
-            mstore(add(m, 0x40), address())
+            mstore(add(m, 0x40), shr(96, shl(96, to)))
             mstore(add(m, 0x60), paymentAmount)
             mstore(add(m, 0x80), shr(96, shl(96, eoa)))
             // Copy the entire `encodedUserOp` to the end of the calldata, in case `payer` needs
