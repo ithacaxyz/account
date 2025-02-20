@@ -424,12 +424,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 paymentAmount,
                 Math.saturatingMul(paymentPerGas, Math.saturatingAdd(gUsed, _REFUND_GAS))
             );
-            address finalPaymentRecipient =
-                u.paymentPriority.finalPaymentRecipient(u.paymentRecipient);
-            if (LibBit.and(finalPaymentAmount != 0, finalPaymentRecipient != address(this))) {
-                TokenTransferLib.safeTransfer(
-                    u.paymentToken, finalPaymentRecipient, finalPaymentAmount
-                );
+            address to = u.paymentPriority.finalPaymentRecipient(u.paymentRecipient);
+            if (LibBit.and(finalPaymentAmount != 0, to != address(this))) {
+                TokenTransferLib.safeTransfer(u.paymentToken, to, finalPaymentAmount);
             }
             if (paymentAmount > finalPaymentAmount) {
                 TokenTransferLib.safeTransfer(
