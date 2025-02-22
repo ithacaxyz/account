@@ -238,7 +238,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev This function does not actually execute.
-    /// It simulates an execution and reverts with `SimulationResult2`.
+    /// It simulates an execution and reverts with `SimulationResult2(gExecute, gCombined, gUsed, err)`.
     function simulateExecute2(bytes calldata encodedUserOp) public payable virtual {
         bytes memory data = abi.encodeCall(this.simulateExecute, encodedUserOp);
         uint256 gExecute = gasleft();
@@ -246,17 +246,19 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         uint256 gUsed;
         bytes4 err;
         assembly ("memory-safe") {
-            let m := mload(0x40)
-            calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
-            pop(call(gas(), address(), 0, add(data, 0x20), mload(data), m, 0x60))
-            if iszero(and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686))) {
+            function callSimulateExecute(g_, data_) -> _success {
+                calldatacopy(0x00, calldatasize(), 0x44) // Zeroize the memory for the return data.
+                pop(call(g_, address(), 0, add(data_, 0x20), mload(data_), 0x00, 0x44))
+                _success := eq(shr(224, mload(0x00)), 0xb6013686) // `SimulationResult(uint256,bytes4)`.
+            }
+            function revertSimulateExecute2Failed() {
                 mstore(0x00, 0x0fdb7b86) // `SimulateExecute2Failed()`.
                 revert(0x1c, 0x04)
             }
-            gUsed := mload(add(m, 0x04))
-            err := mload(add(m, 0x24))
-            if shr(96, gUsed) { invalid() } // This should never happen.
 
+            if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecute2Failed() }
+            gUsed := mload(0x04)
+            err := mload(0x24)
             // If the UserOp results in a successful execution, let's try to determine
             // the amount of gas that needs to be passed in.
             if iszero(err) {
@@ -264,48 +266,34 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 sstore(_COMBINED_GAS_OVERRIDE_SLOT, not(0))
                 // We need to use a reverting simulation call to measure the verification gas,
                 // as it resets warm address and storage access.
-                pop(call(gas(), address(), 0, add(data, 0x20), mload(data), m, 0x60))
-                if iszero(and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686))) {
-                    mstore(0x00, 0x0fdb7b86) // `SimulateExecute2Failed()`.
-                    revert(0x1c, 0x04)
-                }
+                if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecute2Failed() }
 
                 // Heuristic: if the verification gas is > 60k, assume it is P256 verification
                 // without the precompile, which has quite a large variance in verification gas.
                 // Add 100k (emprically determined) to the `gUsed` to account for the variance.
-                gCombined := add(gUsed, mul(100000, gt(mload(add(m, 0x04)), 60000)))
-                for {} 1 {} {
+                for { gCombined := add(gUsed, mul(100000, gt(mload(0x04), 60000))) } 1 {} {
                     gCombined := add(gCombined, shr(4, gCombined)) // Heuristic: multiply by 1.0625.
                     sstore(_COMBINED_GAS_OVERRIDE_SLOT, gCombined)
-                    calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
-                    pop(call(gExecute, address(), 0, add(data, 0x20), mload(data), m, 0x60))
-                    if and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686)) {
-                        // We don't need to overwrite the `gUsed`.
-                        if iszero(mload(add(m, 0x24))) { break }
-                    }
+                    if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecute2Failed() }
+                    if iszero(mload(0x24)) { break }
                 }
                 // Tell `_execute` to early return, as we just want to test the 63/64 rule.
                 sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(96, address()), gCombined))
-                gExecute := gCombined
-                for {} 1 {} {
+                for { gExecute := gCombined } 1 {} {
                     gExecute := add(gExecute, shr(5, gExecute)) // Heuristic: multiply by 1.03125.
-                    calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
-                    pop(call(gExecute, address(), 0, add(data, 0x20), mload(data), m, 0x60))
-                    if and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686)) {
-                        // We don't need to overwrite the `gUsed`.
-                        if iszero(mload(add(m, 0x24))) { break }
-                    }
+                    if callSimulateExecute(gExecute, data) { if iszero(mload(0x24)) { break } }
                 }
                 // Add a bit of buffer to account for the variations in
                 // function dispatch between `execute` and `simulateExecute`.
                 gExecute := add(gExecute, 500)
             }
+            mstore(0x24, 0) // Restore the part of the free memory pointer that was overwritten.
         }
         revert SimulationResult2(gExecute, gCombined, gUsed, err);
     }
 
     /// @dev This function does not actually execute.
-    /// It simulates an execution and reverts with `SimulationResult`.
+    /// It simulates an execution and reverts with `SimulationResult(gUsed, err)`.
     function simulateExecute(bytes calldata encodedUserOp) public payable virtual {
         uint256 g = LibStorage.ref(_COMBINED_GAS_OVERRIDE_SLOT).value;
         if (g == type(uint256).max) {
