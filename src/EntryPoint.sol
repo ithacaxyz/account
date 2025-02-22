@@ -214,7 +214,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         nonReentrant
         returns (bytes4 err)
     {
-        (, err) = _execute(encodedUserOp, 0);
+        (, err) = _execute(encodedUserOp);
     }
 
     /// @dev Executes the array of encoded user operations.
@@ -233,7 +233,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // We reluctantly use regular Solidity to access `encodedUserOps[i]`.
             // This generates an unnecessary check for `i < encodedUserOps.length`, but helps
             // generate all the implicit calldata bound checks on `encodedUserOps[i]`.
-            (, errs[i]) = _execute(encodedUserOps[i], 0);
+            (, errs[i]) = _execute(encodedUserOps[i]);
         }
     }
 
@@ -260,8 +260,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             if iszero(err) {
                 gPassedIn := gUsed
                 for {} 1 {} {
-                    // Heuristic: multiply by 1.02, then add 1.
-                    let gPassedInNew := add(div(mul(gPassedIn, 102), 100), 1)
+                    // Heuristic: multiply by 1.05, then add 500.
+                    let gPassedInNew := add(div(mul(gPassedIn, 105), 100), 500)
                     if iszero(gt(gPassedInNew, gPassedIn)) {
                         mstore(0x00, 0x4e487b71) // `Panic(uint256)`.
                         mstore(0x20, 0x11) // Underflow or overflow panic.
@@ -276,6 +276,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                         if iszero(err) { break }
                     }
                 }
+                // Add a small buffer to account for misc overheads
+                // such as differences in function dispatch location.
+                gPassedIn := add(gPassedIn, 1000)
             }
         }
         revert SimulationResult2(gPassedIn, gUsed, err);
@@ -284,11 +287,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev This function does not actually execute. It simulates an execution
     /// and reverts with the amount of gas used, and the error selector.
     function simulateExecute(bytes calldata encodedUserOp) public payable virtual {
-        uint256 combinedGasOverride;
-        assembly ("memory-safe") {
-            combinedGasOverride := sload(_COMBINED_GAS_OVERRIDE_SLOT)
-        }
-        (uint256 gUsed, bytes4 err) = _execute(encodedUserOp, combinedGasOverride);
+        (uint256 gUsed, bytes4 err) = _execute(encodedUserOp);
         revert SimulationResult(gUsed, err);
     }
 
@@ -320,7 +319,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev Executes a single encoded UserOp.
-    function _execute(bytes calldata encodedUserOp, uint256 combinedGasOverride)
+    function _execute(bytes calldata encodedUserOp)
         internal
         virtual
         returns (uint256 gUsed, bytes4 err)
@@ -334,10 +333,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // Check if there's sufficient gas left for the gas-limited self calls
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
-            if (
-                ((gasleft() * 63) >> 6)
-                    < Math.saturatingAdd(Math.coalesce(combinedGasOverride, g), _INNER_GAS_OVERHEAD)
-            ) {
+            if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
                 revert InsufficientGas();
             }
 
