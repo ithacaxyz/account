@@ -275,10 +275,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 // without the precompile, which has quite a large variance in verification gas.
                 // Add 100k (emprically determined) to the `gUsed` to account for the variance.
                 gCombined := add(gUsed, mul(100000, gt(mload(add(m, 0x04)), 60000)))
-
                 for {} 1 {} {
-                    // Heuristic: multiply by 1.05, then add 500.
-                    gCombined := add(div(mul(gCombined, 105), 100), 500)
+                    // Heuristic: multiply by 1.06, then add 500.
+                    gCombined := add(div(mul(gCombined, 106), 100), 500)
                     sstore(_COMBINED_GAS_OVERRIDE_SLOT, gCombined)
                     calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
                     pop(call(gExecute, address(), 0, add(data, 0x20), mload(data), m, 0x60))
@@ -287,10 +286,12 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                         if iszero(mload(add(m, 0x24))) { break }
                     }
                 }
+                // Tell `_execute` to early return, as we just want to test the 63/64 rule.
+                sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(64, address()), gCombined))
                 gExecute := gCombined
                 for {} 1 {} {
-                    // Heuristic: multiply by 1.05, then add 500.
-                    let gExecuteNew := add(div(mul(gExecute, 105), 100), 500)
+                    // Heuristic: multiply by 1.02, then add 100.
+                    let gExecuteNew := add(div(mul(gExecute, 102), 100), 100)
                     gExecute := gExecuteNew
                     calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
                     pop(call(gExecute, address(), 0, add(data, 0x20), mload(data), m, 0x60))
@@ -354,7 +355,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         returns (uint256 gUsed, bytes4 err)
     {
         UserOp calldata u = _extractUserOp(encodedUserOp);
-        uint256 g = Math.coalesce(combinedGasOverride, u.combinedGas);
+        uint256 g = Math.coalesce(combinedGasOverride & type(uint64).max, u.combinedGas);
         uint256 gStart = gasleft();
         uint256 paymentAmount;
 
@@ -365,6 +366,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
                 revert InsufficientGas();
             }
+            if (combinedGasOverride >> 64 != 0) return (0, 0);
 
             // Verify and invalidate the nonce.
             // The nonce will be invalidated even if the UserOp fails.
