@@ -11,9 +11,20 @@ import {EntryPoint, MockEntryPoint} from "./utils/mocks/MockEntryPoint.sol";
 import {ERC20, MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
 
 contract GasBurner {
-    function burnGas(uint256 x) public {
+    function burnGas(uint256 x, uint256 randomness) public {
         assembly ("memory-safe") {
-            if call(x, address(), 0, 0x00, 0x00, 0x00, 0x00) { revert(0x00, 0x00) }
+            switch and(randomness, 1)
+            case 0 { if call(x, address(), 0, 0x00, 0x00, 0x00, 0x00) { revert(0x00, 0x00) } }
+            default {
+                mstore(0x00, randomness)
+                let m := mload(0x40)
+                mstore(m, 0x388b608b) // `burnGas(uint256,uint256)`.
+                mstore(add(m, 0x20), x)
+                mstore(add(m, 0x40), keccak256(0x00, 0x20))
+                if iszero(call(gas(), address(), 0, add(m, 0x1c), 0x44, 0x00, 0x00)) {
+                    revert(0x00, 0x00)
+                }
+            }
         }
     }
 
@@ -178,7 +189,9 @@ contract EntryPointTest is SoladyTest {
         uint256 gasToBurn = _bound(_random(), 0, 10000000);
         emit LogUint("gasToBurn", gasToBurn);
         bytes memory executionData = _getExecutionData(
-            address(gasBurner), 0, abi.encodeWithSignature("burnGas(uint256)", gasToBurn)
+            address(gasBurner),
+            0,
+            abi.encodeWithSignature("burnGas(uint256,uint256)", gasToBurn, _random())
         );
 
         EntryPoint.UserOp memory userOp = EntryPoint.UserOp({

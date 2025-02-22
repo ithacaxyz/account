@@ -285,10 +285,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                         if iszero(mload(add(m, 0x24))) { break }
                     }
                 }
-                // Add a small buffer to account for misc overheads
-                // such as differences in function dispatch location,
-                // or variations in non-native signature verification.
-                gExecute := add(gExecute, 1000)
             }
         }
         revert SimulationResult2(gExecute, gCombined, gUsed, err);
