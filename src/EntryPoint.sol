@@ -13,6 +13,7 @@ import {LibStorage} from "solady/utils/LibStorage.sol";
 import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
+import {PaymentPriorityLib} from "./PaymentPriorityLib.sol";
 
 /// @title EntryPoint
 /// @notice Contract for ERC7702 delegations.
@@ -20,6 +21,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
+    using PaymentPriorityLib for bytes32;
 
     ////////////////////////////////////////////////////////////////////////
     // Data Structures
@@ -67,6 +69,10 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         uint256 paymentAmount;
         /// @dev The maximum amount of the token to pay.
         uint256 paymentMaxAmount;
+        /// @dev A packed field that encodes the payment priority parameters.
+        /// Leaving `paymentPrority` as `bytes32(0)` will simply turn off the gating and auction,
+        /// which is default behavior. See `PaymentPriorityLib` for more details.
+        bytes32 paymentPriority;
         /// @dev The amount of ERC20 to pay per gas spent. For calculation of refunds.
         /// If this is left at zero, it will be treated as infinity (i.e. no refunds).
         uint256 paymentPerGas;
@@ -144,7 +150,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant USER_OP_TYPEHASH = keccak256(
-        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas)Call(address target,uint256 value,bytes data)"
+        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,bytes32 paymentPriority,uint256 paymentPerGas,uint256 combinedGas)Call(address target,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
@@ -423,19 +429,23 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
         gUsed = Math.rawSub(gStart, gasleft());
         uint256 paymentPerGas = Math.coalesce(u.paymentPerGas, type(uint256).max);
-        uint256 finalPaymentAmount = Math.min(
-            paymentAmount, Math.saturatingMul(paymentPerGas, Math.saturatingAdd(gUsed, _REFUND_GAS))
-        );
-        address paymentRecipient = Math.coalesce(u.paymentRecipient, address(this));
-        if (LibBit.and(finalPaymentAmount != 0, paymentRecipient != address(this))) {
-            TokenTransferLib.safeTransfer(u.paymentToken, paymentRecipient, finalPaymentAmount);
-        }
-        if (paymentAmount > finalPaymentAmount) {
-            TokenTransferLib.safeTransfer(
-                u.paymentToken,
-                Math.coalesce(u.payer, u.eoa),
-                Math.rawSub(paymentAmount, finalPaymentAmount)
+        // If the `paymentPerGas` is not `type(uint256).max`, it means refunds are desired.
+        if (paymentPerGas != type(uint256).max) {
+            uint256 finalPaymentAmount = Math.min(
+                paymentAmount,
+                Math.saturatingMul(paymentPerGas, Math.saturatingAdd(gUsed, _REFUND_GAS))
             );
+            address to = u.paymentPriority.finalPaymentRecipient(u.paymentRecipient);
+            if (LibBit.and(finalPaymentAmount != 0, to != address(this))) {
+                TokenTransferLib.safeTransfer(u.paymentToken, to, finalPaymentAmount);
+            }
+            if (paymentAmount > finalPaymentAmount) {
+                TokenTransferLib.safeTransfer(
+                    u.paymentToken,
+                    Math.coalesce(u.payer, u.eoa),
+                    Math.rawSub(paymentAmount, finalPaymentAmount)
+                );
+            }
         }
 
         // If there is an error, store it.
@@ -535,20 +545,27 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     function _pay(UserOp calldata u) internal virtual returns (uint256 paymentAmount) {
         paymentAmount = u.paymentAmount;
         if (paymentAmount == uint256(0)) return paymentAmount;
+        if (!u.paymentPriority.modeIsSupported()) revert PaymentError();
+
         address paymentToken = u.paymentToken;
         uint256 requiredBalanceAfter = Math.saturatingAdd(
             TokenTransferLib.balanceOf(paymentToken, address(this)), paymentAmount
         );
         address eoa = u.eoa;
         address payer = Math.coalesce(u.payer, eoa);
-        if (paymentAmount > u.paymentMaxAmount) {
+        if (paymentAmount > u.paymentPriority.finalPaymentMaxAmount(u.paymentMaxAmount)) {
             revert PaymentError();
         }
+        // If refunds are desired, escrow the payment in the EntryPoint first.
+        address to = Math.coalesce(u.paymentPerGas, type(uint256).max) != type(uint256).max
+            ? address(this)
+            : u.paymentPriority.finalPaymentRecipient(u.paymentRecipient);
+
         assembly ("memory-safe") {
             let m := mload(0x40) // Cache the free memory pointer.
             mstore(m, 0x56298c98) // `compensate(address,address,uint256,address)`.
             mstore(add(m, 0x20), shr(96, shl(96, paymentToken)))
-            mstore(add(m, 0x40), address())
+            mstore(add(m, 0x40), shr(96, shl(96, to)))
             mstore(add(m, 0x60), paymentAmount)
             mstore(add(m, 0x80), shr(96, shl(96, eoa)))
             // Copy the entire `encodedUserOp` to the end of the calldata, in case `payer` needs
@@ -638,7 +655,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         }
         bool isMultichain = u.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(10);
+        bytes32[] memory f = EfficientHashLib.malloc(11);
         f.set(0, USER_OP_TYPEHASH);
         f.set(1, LibBit.toUint(isMultichain));
         f.set(2, uint160(u.eoa));
@@ -647,8 +664,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         f.set(5, uint160(u.payer));
         f.set(6, uint160(u.paymentToken));
         f.set(7, u.paymentMaxAmount);
-        f.set(8, u.paymentPerGas);
-        f.set(9, u.combinedGas);
+        f.set(8, u.paymentPriority);
+        f.set(9, u.paymentPerGas);
+        f.set(10, u.combinedGas);
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
