@@ -191,7 +191,7 @@ contract EntryPointTest is SoladyTest {
         bytes memory executionData = _getExecutionData(
             address(gasBurner),
             0,
-            abi.encodeWithSignature("burnGas(uint256,uint256)", gasToBurn, _random())
+            abi.encodeWithSignature("burnGas(uint256,uint256)", gasToBurn, _randomUniform())
         );
 
         EntryPoint.UserOp memory userOp = EntryPoint.UserOp({
