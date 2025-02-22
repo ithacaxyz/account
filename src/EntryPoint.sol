@@ -254,7 +254,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             }
             gUsed := mload(add(m, 0x04))
             err := mload(add(m, 0x24))
-            // This should not happen unless we are way past gigagas.
+            // This should not happen unless we have already scaled way past terragas.
             if shr(128, gUsed) { invalid() }
 
             // If the UserOp results in a successful execution, let's try to determine
@@ -276,6 +276,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 // such as differences in function dispatch location,
                 // or variations in non-native signature verification.
                 gPassedIn := add(gPassedIn, 1000)
+                // Add to `gUsed` too, since it might be set to `combinedGas`.
                 gUsed := add(gUsed, 1000)
             }
         }
