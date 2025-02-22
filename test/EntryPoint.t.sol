@@ -228,7 +228,7 @@ contract EntryPointTest is SoladyTest {
         emit LogUint(gPassedIn);
         emit LogUint(gUsed);
 
-        assertEq(ep.execute{gas: gPassedIn + 200}(abi.encode(userOp)), 0);
+        assertEq(ep.execute{gas: gPassedIn}(abi.encode(userOp)), 0);
     }
 
     function testExecuteWithP256Signature() public {
