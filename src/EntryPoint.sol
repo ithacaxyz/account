@@ -275,8 +275,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 // Add 100k (emprically determined) to the `gUsed` to account for the variance.
                 gCombined := add(gUsed, mul(100000, gt(mload(add(m, 0x04)), 60000)))
                 for {} 1 {} {
-                    // Heuristic: multiply by 1.0625.
-                    gCombined := add(gCombined, shr(4, gCombined))
+                    gCombined := add(gCombined, shr(4, gCombined)) // Heuristic: multiply by 1.0625.
                     sstore(_COMBINED_GAS_OVERRIDE_SLOT, gCombined)
                     calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
                     pop(call(gExecute, address(), 0, add(data, 0x20), mload(data), m, 0x60))
@@ -289,8 +288,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(96, address()), gCombined))
                 gExecute := gCombined
                 for {} 1 {} {
-                    // Heuristic: multiply by 1.03125.
-                    gExecute := add(gExecute, shr(5, gExecute))
+                    gExecute := add(gExecute, shr(5, gExecute)) // Heuristic: multiply by 1.03125.
                     calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
                     pop(call(gExecute, address(), 0, add(data, 0x20), mload(data), m, 0x60))
                     if and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686)) {
