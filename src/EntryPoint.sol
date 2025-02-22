@@ -237,23 +237,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         }
     }
 
-    /// @dev This function does not actually execute. It simulates an execution
-    /// and reverts with the max amount of gas passed in, and the error selector.
+    /// @dev This function does not actually execute.
+    /// It simulates an execution and reverts with `SimulationResult2`.
     function simulateExecute2(bytes calldata encodedUserOp) public payable virtual {
-        // When validating P256 signatures without the precompile,
-        // the amount of gas used by the verifier can vary greatly.
-        // The buffer is determined emprically via fuzzing.
-        uint256 gBuffer = 100000;
-        simulateExecute2(encodedUserOp, gBuffer);
-    }
-
-    /// @dev This function does not actually execute. It simulates an execution
-    /// and reverts with the max amount of gas passed in, and the error selector.
-    function simulateExecute2(bytes calldata encodedUserOp, uint256 gBuffer)
-        public
-        payable
-        virtual
-    {
         bytes memory data = abi.encodeCall(this.simulateExecute, encodedUserOp);
         uint256 gExecute = gasleft();
         uint256 gCombined;
@@ -275,7 +261,19 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // If the UserOp results in a successful execution, let's try to determine
             // the amount of gas that needs to be passed in.
             if iszero(err) {
-                gCombined := add(gUsed, gBuffer)
+                // Tell `simulateExecute` that we just want the verification gas.
+                sstore(_COMBINED_GAS_OVERRIDE_SLOT, not(0))
+                pop(call(gas(), address(), 0, add(data, 0x20), mload(data), m, 0x60))
+                if iszero(and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686))) {
+                    mstore(0x00, 0x0fdb7b86) // `SimulateExecute2Failed()`.
+                    revert(0x1c, 0x04)
+                }
+
+                // Heuristic: if the verification gas is > 60k, assume it is P256 verification
+                // without the precompile, which has quite a large variance in verification gas.
+                // Add 100k (emprically determined) to the `gUsed` to account for the variance.
+                gCombined := add(gUsed, mul(100000, gt(mload(add(m, 0x04)), 60000)))
+
                 for {} 1 {} {
                     // Heuristic: multiply by 1.05, then add 500.
                     gCombined := add(div(mul(gCombined, 105), 100), 500)
@@ -307,10 +305,15 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         revert SimulationResult2(gExecute, gCombined, gUsed, err);
     }
 
-    /// @dev This function does not actually execute. It simulates an execution
-    /// and reverts with the amount of gas used, and the error selector.
+    /// @dev This function does not actually execute.
+    /// It simulates an execution and reverts with `SimulationResult`.
     function simulateExecute(bytes calldata encodedUserOp) public payable virtual {
         uint256 g = LibStorage.ref(_COMBINED_GAS_OVERRIDE_SLOT).value;
+        if (g == type(uint256).max) {
+            uint256 gVerifyStart = gasleft();
+            _verify(_extractUserOp(encodedUserOp));
+            revert SimulationResult(Math.rawSub(gVerifyStart, gasleft()), 0);
+        }
         (uint256 gUsed, bytes4 err) = _execute(encodedUserOp, g);
         revert SimulationResult(gUsed, err);
     }

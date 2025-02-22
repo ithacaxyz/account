@@ -166,9 +166,69 @@ contract EntryPointTest is SoladyTest {
         bytes result;
     }
 
-    function testSimulateExecute2(bytes32) public {
-        uint256 alice = uint256(keccak256("alicePrivateKey"));
+    function testSimulateExecute2WithEOAKey(bytes32) public {
+        (address randomSigner, uint256 privateKey) = _randomSigner();
 
+        // eip-7702 delegation
+        vm.signAndAttachDelegation(delegation, privateKey);
+
+        paymentToken.mint(randomSigner, 500 ether);
+
+        _SimulateExecute2Temps memory t;
+
+        gasBurner.setRandomness(1); // Warm the storage first.
+
+        t.gasToBurn = _bound(_random(), 0, 1000000);
+        do {
+            t.randomness = _randomUniform();
+        } while (t.randomness == 0);
+        emit LogUint("gasToBurn", t.gasToBurn);
+        t.executionData = _getExecutionData(
+            address(gasBurner),
+            0,
+            abi.encodeWithSignature("burnGas(uint256,uint256)", t.gasToBurn, t.randomness)
+        );
+
+        EntryPoint.UserOp memory userOp = EntryPoint.UserOp({
+            eoa: randomSigner,
+            nonce: 0,
+            executionData: t.executionData,
+            payer: address(0x00),
+            paymentToken: address(paymentToken),
+            paymentRecipient: address(0x00),
+            paymentAmount: 0.1 ether,
+            paymentMaxAmount: 0.5 ether,
+            paymentPerGas: 1e9,
+            combinedGas: 30000000,
+            signature: ""
+        });
+
+        _fillSecp256k1Signature(userOp, privateKey, 0);
+
+        (t.success, t.result) =
+            address(ep).call(abi.encodeWithSignature("simulateExecute2(bytes)", abi.encode(userOp)));
+
+        assertFalse(t.success);
+        assertEq(bytes4(LibBytes.load(t.result, 0x00)), EntryPoint.SimulationResult2.selector);
+
+        t.gExecute = uint256(LibBytes.load(t.result, 0x04));
+        t.gCombined = uint256(LibBytes.load(t.result, 0x24));
+        t.gUsed = uint256(LibBytes.load(t.result, 0x44));
+        emit LogUint(t.gExecute);
+        emit LogUint(t.gCombined);
+        emit LogUint(t.gUsed);
+        assertEq(bytes4(LibBytes.load(t.result, 0x64)), 0);
+
+        userOp.combinedGas = t.gCombined;
+        userOp.signature = "";
+        _fillSecp256k1Signature(userOp, privateKey, 0);
+
+        assertEq(ep.execute{gas: t.gExecute}(abi.encode(userOp)), 0);
+        assertEq(gasBurner.randomness(), t.randomness);
+    }
+
+    function testSimulateExecute2WithP256(bytes32) public {
+        uint256 alice = uint256(keccak256("alicePrivateKey"));
         address payable aliceAddress = payable(vm.addr(alice));
 
         vm.signAndAttachDelegation(delegation, alice);
