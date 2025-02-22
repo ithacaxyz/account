@@ -240,6 +240,20 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev This function does not actually execute. It simulates an execution
     /// and reverts with the max amount of gas passed in, and the error selector.
     function simulateExecute2(bytes calldata encodedUserOp) public payable virtual {
+        // When validating P256 signatures without the precompile,
+        // the amount of gas used by the verifier can vary greatly.
+        // The buffer is determined emprically via fuzzing.
+        uint256 gBuffer = 100000;
+        simulateExecute2(encodedUserOp, gBuffer);
+    }
+
+    /// @dev This function does not actually execute. It simulates an execution
+    /// and reverts with the max amount of gas passed in, and the error selector.
+    function simulateExecute2(bytes calldata encodedUserOp, uint256 gBuffer)
+        public
+        payable
+        virtual
+    {
         bytes memory data = abi.encodeCall(this.simulateExecute, encodedUserOp);
         uint256 gExecute = gasleft();
         uint256 gCombined;
@@ -261,10 +275,10 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // If the UserOp results in a successful execution, let's try to determine
             // the amount of gas that needs to be passed in.
             if iszero(err) {
-                gCombined := gUsed
+                gCombined := add(gUsed, gBuffer)
                 for {} 1 {} {
-                    // Heuristic: multiply by 1.02, then add 100.
-                    gCombined := add(div(mul(gCombined, 102), 100), 100)
+                    // Heuristic: multiply by 1.05, then add 500.
+                    gCombined := add(div(mul(gCombined, 105), 100), 500)
                     sstore(_COMBINED_GAS_OVERRIDE_SLOT, gCombined)
                     calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
                     pop(call(gExecute, address(), 0, add(data, 0x20), mload(data), m, 0x60))
@@ -285,6 +299,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                         if iszero(mload(add(m, 0x24))) { break }
                     }
                 }
+                // Add a bit of buffer to account for the variations in
+                // function dispatch between `execute` and `simulateExecute`.
+                gExecute := add(gExecute, 500)
             }
         }
         revert SimulationResult2(gExecute, gCombined, gUsed, err);
