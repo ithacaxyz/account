@@ -247,8 +247,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         bytes4 err;
         assembly ("memory-safe") {
             function callSimulateExecute(g_, data_) -> _success {
-                calldatacopy(0x00, calldatasize(), 0x44) // Zeroize the memory for the return data.
-                pop(call(g_, address(), 0, add(data_, 0x20), mload(data_), 0x00, 0x44))
+                calldatacopy(0x00, calldatasize(), 0x40) // Zeroize the memory for the return data.
+                pop(call(g_, address(), 0, add(data_, 0x20), mload(data_), 0x00, 0x40))
                 _success := eq(shr(224, mload(0x00)), 0xb6013686) // `SimulationResult(uint256,bytes4)`.
             }
             function revertSimulateExecute2Failed() {
@@ -287,7 +287,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 // function dispatch between `execute` and `simulateExecute`.
                 gExecute := add(gExecute, 500)
             }
-            mstore(0x24, 0) // Restore the part of the free memory pointer that was overwritten.
         }
         revert SimulationResult2(gExecute, gCombined, gUsed, err);
     }
