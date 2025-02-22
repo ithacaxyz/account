@@ -255,8 +255,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             }
             gUsed := mload(add(m, 0x04))
             err := mload(add(m, 0x24))
-            // This should not happen unless we have already scaled way past terragas.
-            if shr(128, gUsed) { invalid() }
+            if shr(96, gUsed) { invalid() } // This should never happen.
 
             // If the UserOp results in a successful execution, let's try to determine
             // the amount of gas that needs to be passed in.
@@ -276,8 +275,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 // Add 100k (emprically determined) to the `gUsed` to account for the variance.
                 gCombined := add(gUsed, mul(100000, gt(mload(add(m, 0x04)), 60000)))
                 for {} 1 {} {
-                    // Heuristic: multiply by 1.06, then add 500.
-                    gCombined := add(div(mul(gCombined, 106), 100), 500)
+                    // Heuristic: multiply by 1.0625.
+                    gCombined := add(gCombined, shr(4, gCombined))
                     sstore(_COMBINED_GAS_OVERRIDE_SLOT, gCombined)
                     calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
                     pop(call(gExecute, address(), 0, add(data, 0x20), mload(data), m, 0x60))
@@ -287,12 +286,11 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                     }
                 }
                 // Tell `_execute` to early return, as we just want to test the 63/64 rule.
-                sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(64, address()), gCombined))
+                sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(96, address()), gCombined))
                 gExecute := gCombined
                 for {} 1 {} {
-                    // Heuristic: multiply by 1.02, then add 100.
-                    let gExecuteNew := add(div(mul(gExecute, 102), 100), 100)
-                    gExecute := gExecuteNew
+                    // Heuristic: multiply by 1.03125.
+                    gExecute := add(gExecute, shr(5, gExecute))
                     calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
                     pop(call(gExecute, address(), 0, add(data, 0x20), mload(data), m, 0x60))
                     if and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686)) {
@@ -355,7 +353,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         returns (uint256 gUsed, bytes4 err)
     {
         UserOp calldata u = _extractUserOp(encodedUserOp);
-        uint256 g = Math.coalesce(combinedGasOverride & type(uint64).max, u.combinedGas);
+        uint256 g = Math.coalesce(uint96(combinedGasOverride), u.combinedGas);
         uint256 gStart = gasleft();
         uint256 paymentAmount;
 
@@ -366,7 +364,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
                 revert InsufficientGas();
             }
-            if (combinedGasOverride >> 64 != 0) return (0, 0);
+            if (combinedGasOverride >> 96 != 0) return (0, 0);
 
             // Verify and invalidate the nonce.
             // The nonce will be invalidated even if the UserOp fails.
