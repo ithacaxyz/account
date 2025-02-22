@@ -213,7 +213,7 @@ contract EntryPointTest is SoladyTest {
         emit LogUint(gPassedIn);
         emit LogUint(gUsed);
 
-        userOp.combinedGas = gUsed * 64 / 63 + 1;
+        userOp.combinedGas = gUsed * 64 / 63;
         userOp.signature = "";
         _fillSecp256r1Signature(userOp, alice, keyHash);
 

@@ -254,6 +254,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             }
             gUsed := mload(add(m, 0x04))
             err := mload(add(m, 0x24))
+            // This should not happen unless we are way past gigagas.
+            if shr(128, gUsed) { invalid() }
 
             // If the UserOp results in a successful execution, let's try to determine
             // the amount of gas that needs to be passed in.
@@ -262,23 +264,19 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 for {} 1 {} {
                     // Heuristic: multiply by 1.05, then add 500.
                     let gPassedInNew := add(div(mul(gPassedIn, 105), 100), 500)
-                    if iszero(gt(gPassedInNew, gPassedIn)) {
-                        mstore(0x00, 0x4e487b71) // `Panic(uint256)`.
-                        mstore(0x20, 0x11) // Underflow or overflow panic.
-                        revert(0x1c, 0x24)
-                    }
                     gPassedIn := gPassedInNew
                     calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
                     pop(call(gPassedIn, address(), 0, add(data, 0x20), mload(data), m, 0x60))
                     if and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686)) {
-                        gUsed := mload(add(m, 0x04))
-                        err := mload(add(m, 0x24))
-                        if iszero(err) { break }
+                        // We don't need to overwrite the `gUsed`.
+                        if iszero(mload(add(m, 0x24))) { break }
                     }
                 }
                 // Add a small buffer to account for misc overheads
-                // such as differences in function dispatch location.
+                // such as differences in function dispatch location,
+                // or variations in non-native signature verification.
                 gPassedIn := add(gPassedIn, 1000)
+                gUsed := add(gUsed, 1000)
             }
         }
         revert SimulationResult2(gPassedIn, gUsed, err);
