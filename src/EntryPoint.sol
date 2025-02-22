@@ -260,8 +260,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             if iszero(err) {
                 gPassedIn := gUsed
                 for {} 1 {} {
-                    // Heuristic: multiply by 1.05, then add 500.
-                    let gPassedInNew := add(div(mul(gPassedIn, 105), 100), 500)
+                    // Heuristic: multiply by 1.02, then add 1.
+                    let gPassedInNew := add(div(mul(gPassedIn, 102), 100), 1)
                     if iszero(gt(gPassedInNew, gPassedIn)) {
                         mstore(0x00, 0x4e487b71) // `Panic(uint256)`.
                         mstore(0x20, 0x11) // Underflow or overflow panic.
