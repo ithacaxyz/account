@@ -105,6 +105,17 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev For returning the gas used and the error from a simulation.
     error SimulationResult(uint256 gUsed, bytes4 err);
 
+    /// @dev For returning the gas required and the error from a simulation.
+    /// `gPassedIn` is the largest amount of gas that has been attempted.
+    /// `gUsed` is the amount of gas that has been eaten.
+    /// `combinedGas` should be set to `gUsed * 64 / 63 + 1`.
+    /// If the `err` is non-zero, it means that the simulation with `gPassedIn`
+    /// has not resulted in a success execution.
+    error SimulationResult2(uint256 gPassedIn, uint256 gUsed, bytes4 err);
+
+    /// @dev The simulate execute 2 run has failed.
+    error SimulateExecute2Failed();
+
     /// @dev No revert has been encountered.
     error NoRevertEncoutered();
 
@@ -156,6 +167,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev The amount of expected gas for refunds.
     uint256 internal constant _REFUND_GAS = 50000;
 
+    /// @dev The storage slot to determine if the simulation should check the amount of gas left.
+    uint256 internal constant _COMBINED_GAS_OVERRIDE_SLOT = 0xadfa658cdd8b2da0a825;
+
     ////////////////////////////////////////////////////////////////////////
     // Storage
     ////////////////////////////////////////////////////////////////////////
@@ -200,7 +214,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         nonReentrant
         returns (bytes4 err)
     {
-        (, err) = _execute(encodedUserOp);
+        (, err) = _execute(encodedUserOp, 0);
     }
 
     /// @dev Executes the array of encoded user operations.
@@ -219,24 +233,67 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // We reluctantly use regular Solidity to access `encodedUserOps[i]`.
             // This generates an unnecessary check for `i < encodedUserOps.length`, but helps
             // generate all the implicit calldata bound checks on `encodedUserOps[i]`.
-            (, errs[i]) = _execute(encodedUserOps[i]);
+            (, errs[i]) = _execute(encodedUserOps[i], 0);
         }
     }
 
     /// @dev This function does not actually execute. It simulates an execution
+    /// and reverts with the max amount of gas passed in, and the error selector.
+    function simulateExecute2(bytes calldata encodedUserOp) public payable virtual {
+        bytes memory data = abi.encodeCall(this.simulateExecute, encodedUserOp);
+        uint256 gPassedIn = gasleft();
+        uint256 gUsed;
+        bytes4 err;
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
+            pop(call(gas(), address(), 0, add(data, 0x20), mload(data), m, 0x60))
+            if iszero(and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686))) {
+                mstore(0x00, 0x0fdb7b86) // `SimulateExecute2Failed()`.
+                revert(0x1c, 0x04)
+            }
+            gUsed := mload(add(m, 0x04))
+            err := mload(add(m, 0x24))
+
+            // If the UserOp results in a successful execution, let's try to determine
+            // the amount of gas that needs to be passed in.
+            if iszero(err) {
+                gPassedIn := gUsed
+                for {} 1 {} {
+                    // Heuristic: multiply by 1.05, then add 500.
+                    let gPassedInNew := add(div(mul(gPassedIn, 105), 100), 500)
+                    if iszero(gt(gPassedInNew, gPassedIn)) {
+                        mstore(0x00, 0x4e487b71) // `Panic(uint256)`.
+                        mstore(0x20, 0x11) // Underflow or overflow panic.
+                        revert(0x1c, 0x24)
+                    }
+                    gPassedIn := gPassedInNew
+                    calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
+                    pop(call(gPassedIn, address(), 0, add(data, 0x20), mload(data), m, 0x60))
+                    if and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686)) {
+                        gUsed := mload(add(m, 0x04))
+                        err := mload(add(m, 0x24))
+                        if iszero(err) { break }
+                    }
+                }
+            }
+        }
+        revert SimulationResult2(gPassedIn, gUsed, err);
+    }
+
+    /// @dev This function does not actually execute. It simulates an execution
     /// and reverts with the amount of gas used, and the error selector.
-    function simulateExecute(bytes calldata encodedUserOp) public payable virtual nonReentrant {
-        (uint256 gUsed, bytes4 err) = _execute(encodedUserOp);
+    function simulateExecute(bytes calldata encodedUserOp) public payable virtual {
+        uint256 combinedGasOverride;
+        assembly ("memory-safe") {
+            combinedGasOverride := sload(_COMBINED_GAS_OVERRIDE_SLOT)
+        }
+        (uint256 gUsed, bytes4 err) = _execute(encodedUserOp, combinedGasOverride);
         revert SimulationResult(gUsed, err);
     }
 
     /// @dev This function is provided for debugging purposes.
-    function simulateFailedVerifyAndCall(bytes calldata encodedUserOp)
-        public
-        payable
-        virtual
-        nonReentrant
-    {
+    function simulateFailedVerifyAndCall(bytes calldata encodedUserOp) public payable virtual {
         UserOp calldata u = _extractUserOp(encodedUserOp);
         (bool isValid, bytes32 keyHash) = _verify(u);
         if (!isValid) revert VerificationError();
@@ -263,7 +320,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev Executes a single encoded UserOp.
-    function _execute(bytes calldata encodedUserOp)
+    function _execute(bytes calldata encodedUserOp, uint256 combinedGasOverride)
         internal
         virtual
         returns (uint256 gUsed, bytes4 err)
@@ -277,7 +334,10 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // Check if there's sufficient gas left for the gas-limited self calls
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
-            if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
+            if (
+                ((gasleft() * 63) >> 6)
+                    < Math.saturatingAdd(Math.coalesce(combinedGasOverride, g), _INNER_GAS_OVERHEAD)
+            ) {
                 revert InsufficientGas();
             }
 
