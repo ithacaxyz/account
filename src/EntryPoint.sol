@@ -106,12 +106,12 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     error SimulationResult(uint256 gUsed, bytes4 err);
 
     /// @dev For returning the gas required and the error from a simulation.
-    /// `gPassedIn` is the largest amount of gas that has been attempted.
+    /// `gExecute` is the recommended amount of gas to pass into execute.
+    /// `gCombined` is the recommendation for `gasCombined`.
     /// `gUsed` is the amount of gas that has been eaten.
-    /// `combinedGas` should be set to `gUsed * 64 / 63 + 1`.
-    /// If the `err` is non-zero, it means that the simulation with `gPassedIn`
+    /// If the `err` is non-zero, it means that the simulation with `gExecute`
     /// has not resulted in a success execution.
-    error SimulationResult2(uint256 gPassedIn, uint256 gUsed, bytes4 err);
+    error SimulationResult2(uint256 gExecute, uint256 gCombined, uint256 gUsed, bytes4 err);
 
     /// @dev The simulate execute 2 run has failed.
     error SimulateExecute2Failed();
@@ -214,7 +214,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         nonReentrant
         returns (bytes4 err)
     {
-        (, err) = _execute(encodedUserOp);
+        (, err) = _execute(encodedUserOp, 0);
     }
 
     /// @dev Executes the array of encoded user operations.
@@ -233,7 +233,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // We reluctantly use regular Solidity to access `encodedUserOps[i]`.
             // This generates an unnecessary check for `i < encodedUserOps.length`, but helps
             // generate all the implicit calldata bound checks on `encodedUserOps[i]`.
-            (, errs[i]) = _execute(encodedUserOps[i]);
+            (, errs[i]) = _execute(encodedUserOps[i], 0);
         }
     }
 
@@ -241,7 +241,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// and reverts with the max amount of gas passed in, and the error selector.
     function simulateExecute2(bytes calldata encodedUserOp) public payable virtual {
         bytes memory data = abi.encodeCall(this.simulateExecute, encodedUserOp);
-        uint256 gPassedIn = gasleft();
+        uint256 gExecute = gasleft();
+        uint256 gCombined;
         uint256 gUsed;
         bytes4 err;
         assembly ("memory-safe") {
@@ -260,13 +261,25 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // If the UserOp results in a successful execution, let's try to determine
             // the amount of gas that needs to be passed in.
             if iszero(err) {
-                gPassedIn := gUsed
+                gCombined := gUsed
+                for {} 1 {} {
+                    // Heuristic: multiply by 1.02, then add 100.
+                    gCombined := add(div(mul(gCombined, 102), 100), 100)
+                    sstore(_COMBINED_GAS_OVERRIDE_SLOT, gCombined)
+                    calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
+                    pop(call(gExecute, address(), 0, add(data, 0x20), mload(data), m, 0x60))
+                    if and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686)) {
+                        // We don't need to overwrite the `gUsed`.
+                        if iszero(mload(add(m, 0x24))) { break }
+                    }
+                }
+                gExecute := gCombined
                 for {} 1 {} {
                     // Heuristic: multiply by 1.05, then add 500.
-                    let gPassedInNew := add(div(mul(gPassedIn, 105), 100), 500)
-                    gPassedIn := gPassedInNew
+                    let gExecuteNew := add(div(mul(gExecute, 105), 100), 500)
+                    gExecute := gExecuteNew
                     calldatacopy(m, calldatasize(), 0x60) // Zeroize the memory for the return data.
-                    pop(call(gPassedIn, address(), 0, add(data, 0x20), mload(data), m, 0x60))
+                    pop(call(gExecute, address(), 0, add(data, 0x20), mload(data), m, 0x60))
                     if and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686)) {
                         // We don't need to overwrite the `gUsed`.
                         if iszero(mload(add(m, 0x24))) { break }
@@ -275,18 +288,17 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 // Add a small buffer to account for misc overheads
                 // such as differences in function dispatch location,
                 // or variations in non-native signature verification.
-                gPassedIn := add(gPassedIn, 1000)
-                // Add to `gUsed` too, since it might be set to `combinedGas`.
-                gUsed := add(gUsed, 1000)
+                gExecute := add(gExecute, 1000)
             }
         }
-        revert SimulationResult2(gPassedIn, gUsed, err);
+        revert SimulationResult2(gExecute, gCombined, gUsed, err);
     }
 
     /// @dev This function does not actually execute. It simulates an execution
     /// and reverts with the amount of gas used, and the error selector.
     function simulateExecute(bytes calldata encodedUserOp) public payable virtual {
-        (uint256 gUsed, bytes4 err) = _execute(encodedUserOp);
+        uint256 g = LibStorage.ref(_COMBINED_GAS_OVERRIDE_SLOT).value;
+        (uint256 gUsed, bytes4 err) = _execute(encodedUserOp, g);
         revert SimulationResult(gUsed, err);
     }
 
@@ -318,13 +330,13 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev Executes a single encoded UserOp.
-    function _execute(bytes calldata encodedUserOp)
+    function _execute(bytes calldata encodedUserOp, uint256 combinedGasOverride)
         internal
         virtual
         returns (uint256 gUsed, bytes4 err)
     {
         UserOp calldata u = _extractUserOp(encodedUserOp);
-        uint256 g = u.combinedGas;
+        uint256 g = Math.coalesce(combinedGasOverride, u.combinedGas);
         uint256 gStart = gasleft();
         uint256 paymentAmount;
 

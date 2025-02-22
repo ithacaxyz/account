@@ -151,7 +151,7 @@ contract EntryPointTest is SoladyTest {
         assertEq(EntryPoint.PaymentError.selector, err);
     }
 
-    function testSimulateExecute2(uint256) public {
+    function testSimulateExecute2(bytes32) public {
         uint256 alice = uint256(keccak256("alicePrivateKey"));
 
         address payable aliceAddress = payable(vm.addr(alice));
@@ -175,7 +175,7 @@ contract EntryPointTest is SoladyTest {
         vm.prank(aliceAddress);
         bytes32 keyHash = Delegation(aliceAddress).authorize(key);
 
-        uint256 gasToBurn = _bound(_random(), 0, 1000000);
+        uint256 gasToBurn = _bound(_random(), 0, 10000000);
         emit LogUint("gasToBurn", gasToBurn);
         bytes memory executionData = _getExecutionData(
             address(gasBurner), 0, abi.encodeWithSignature("burnGas(uint256)", gasToBurn)
@@ -199,7 +199,8 @@ contract EntryPointTest is SoladyTest {
 
         bool success;
         bytes memory result;
-        uint256 gPassedIn;
+        uint256 gExecute;
+        uint256 gCombined;
         uint256 gUsed;
 
         (success, result) =
@@ -207,28 +208,20 @@ contract EntryPointTest is SoladyTest {
 
         assertFalse(success);
         assertEq(bytes4(LibBytes.load(result, 0x00)), EntryPoint.SimulationResult2.selector);
-        assertEq(bytes4(LibBytes.load(result, 0x44)), 0);
-        gPassedIn = uint256(LibBytes.load(result, 0x04));
-        gUsed = uint256(LibBytes.load(result, 0x24));
-        emit LogUint(gPassedIn);
-        emit LogUint(gUsed);
 
-        userOp.combinedGas = gUsed * 64 / 63;
+        gExecute = uint256(LibBytes.load(result, 0x04));
+        gCombined = uint256(LibBytes.load(result, 0x24));
+        gUsed = uint256(LibBytes.load(result, 0x44));
+        emit LogUint(gExecute);
+        emit LogUint(gCombined);
+        emit LogUint(gUsed);
+        assertEq(bytes4(LibBytes.load(result, 0x64)), 0);
+
+        userOp.combinedGas = gCombined;
         userOp.signature = "";
         _fillSecp256r1Signature(userOp, alice, keyHash);
 
-        (success, result) =
-            address(ep).call(abi.encodeWithSignature("simulateExecute2(bytes)", abi.encode(userOp)));
-
-        assertFalse(success);
-        assertEq(bytes4(LibBytes.load(result, 0x00)), EntryPoint.SimulationResult2.selector);
-        assertEq(bytes4(LibBytes.load(result, 0x44)), 0);
-        gPassedIn = uint256(LibBytes.load(result, 0x04));
-        gUsed = uint256(LibBytes.load(result, 0x24));
-        emit LogUint(gPassedIn);
-        emit LogUint(gUsed);
-
-        assertEq(ep.execute{gas: gPassedIn}(abi.encode(userOp)), 0);
+        assertEq(ep.execute{gas: gExecute}(abi.encode(userOp)), 0);
     }
 
     function testExecuteWithP256Signature() public {
