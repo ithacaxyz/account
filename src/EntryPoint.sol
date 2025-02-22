@@ -263,6 +263,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             if iszero(err) {
                 // Tell `simulateExecute` that we just want the verification gas.
                 sstore(_COMBINED_GAS_OVERRIDE_SLOT, not(0))
+                // We need to use a reverting simulation call to measure the verification gas,
+                // as it resets warm address and storage access.
                 pop(call(gas(), address(), 0, add(data, 0x20), mload(data), m, 0x60))
                 if iszero(and(gt(returndatasize(), 0x43), eq(shr(224, mload(m)), 0xb6013686))) {
                     mstore(0x00, 0x0fdb7b86) // `SimulateExecute2Failed()`.
