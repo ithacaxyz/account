@@ -603,7 +603,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                     revert(m, returndatasize())
                 }
                 // If the reverted returndata fits within a single word.
-                if iszero(gt(returndatasize(), 0x1f)) {
+                if iszero(gt(returndatasize(), 0x20)) {
                     returndatacopy(m, 0x00, returndatasize())
                     // And if it is not `bytes4(0)`, revert it with.
                     if shr(224, mload(m)) { revert(m, returndatasize()) }
