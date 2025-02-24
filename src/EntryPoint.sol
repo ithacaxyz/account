@@ -595,17 +595,18 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         address eoa = u.eoa;
         assembly ("memory-safe") {
             if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x00)) {
+                let m := mload(0x40)
                 // If `bubbleRevert` is true, just bubble up the entire revert,
                 // this is for `simulateFailedVerifyAndCall`.
                 if bubbleRevert {
-                    returndatacopy(mload(0x40), 0x00, returndatasize())
-                    revert(mload(0x40), returndatasize())
+                    returndatacopy(m, 0x00, returndatasize())
+                    revert(m, returndatasize())
                 }
                 // If the reverted returndata fits within a single word.
                 if iszero(gt(returndatasize(), 0x1f)) {
-                    returndatacopy(mload(0x40), 0x00, returndatasize())
+                    returndatacopy(m, 0x00, returndatasize())
                     // And if it is not `bytes4(0)`, revert it with.
-                    if shr(224, mload(0x40)) { revert(mload(0x40), returndatasize()) }
+                    if shr(224, mload(m)) { revert(m, returndatasize()) }
                 }
                 // Else, just revert with `CallError()
                 mstore(0x00, 0x6c9d47e8) // `CallError()`.
