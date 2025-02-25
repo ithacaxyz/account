@@ -32,7 +32,7 @@ contract GuardedExecutorTest is SoladyTest {
         bytes32 p256KeyHash;
     }
 
-    function testSpendERC20ViaEntryPoint() public {
+    function testSpendERC20WithP256KeyViaEntryPoint() public {
         _activateRIPPRECOMPILE(true);
 
         EntryPoint.UserOp memory u;
@@ -51,31 +51,58 @@ contract GuardedExecutorTest is SoladyTest {
         u.combinedGas = 10000000;
         paymentToken.mint(u.eoa, type(uint128).max);
 
+        // Authorize.
         {
             Delegation.Key memory k;
             k.keyType = Delegation.KeyType.P256;
             t.p256PrivateKey = _randomUniform() & type(uint192).max;
-            (uint256 x, uint256 y) = vm.publicKeyP256(t.p256PrivateKey);
-            k.publicKey = abi.encode(x, y);
 
-            vm.startPrank(u.eoa);
+            {
+                (uint256 x, uint256 y) = vm.publicKeyP256(t.p256PrivateKey);
+                k.publicKey = abi.encode(x, y);
+            }
 
-            bytes32 keyHash = d.hash(k);
-            t.p256KeyHash = d.authorize(k);
-            assertEq(t.p256KeyHash, keyHash);
+            t.p256KeyHash = d.hash(k);
 
-            d.setCanExecute(keyHash, d.ANY_TARGET(), d.ANY_FN_SEL(), true);
-            assertEq(d.spendInfos(t.p256KeyHash).length, 0);
-            d.setSpendLimit(
-                keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether
+            ERC7821.Call[] memory calls = new ERC7821.Call[](3);
+            // Authorize the P256 key.
+            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, k);
+            // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
+            calls[1].data = abi.encodeWithSelector(
+                GuardedExecutor.setCanExecute.selector,
+                t.p256KeyHash,
+                d.ANY_TARGET(),
+                d.ANY_FN_SEL(),
+                true
             );
+            // Set some spend limit.
+            calls[2].data = abi.encodeWithSelector(
+                GuardedExecutor.setSpendLimit.selector,
+                t.p256KeyHash,
+                address(paymentToken),
+                GuardedExecutor.SpendPeriod.Day,
+                1 ether
+            );
+
+            u.executionData = abi.encode(calls);
+
+            u.nonce = 0xc1d0 << 240;
+
+            {
+                (uint8 v, bytes32 r, bytes32 s) = vm.sign(t.eoaPrivateKey, ep.computeDigest(u));
+                u.signature = abi.encodePacked(r, s, v);
+            }
+
+            assertEq(ep.execute(abi.encode(u)), 0);
+
             assertEq(d.spendInfos(t.p256KeyHash).length, 1);
             assertEq(d.spendInfos(t.p256KeyHash)[0].spent, 0);
-
-            vm.stopPrank();
         }
 
+        // Prep UserOp.
         {
+            u.nonce = 0;
+
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
             calls[0].target = address(paymentToken);
             calls[0].data =
@@ -86,28 +113,31 @@ contract GuardedExecutorTest is SoladyTest {
             s = P256.normalized(s);
             u.signature = abi.encodePacked(abi.encode(r, s), t.p256KeyHash, uint8(0));
         }
-
+        // UserOp should pass.
         assertEq(ep.execute(abi.encode(u)), 0);
         assertEq(paymentToken.balanceOf(address(0xb0b)), 0.6 ether);
         assertEq(d.spendInfos(t.p256KeyHash)[0].spent, 0.6 ether);
 
+        // Prep UserOp to try to exceed daily spend limit.
         {
             u.nonce++;
             (bytes32 r, bytes32 s) = vm.signP256(t.p256PrivateKey, ep.computeDigest(u));
             s = P256.normalized(s);
             u.signature = abi.encodePacked(abi.encode(r, s), t.p256KeyHash, uint8(0));
         }
-
+        // UserOp should fail.
         assertEq(ep.execute(abi.encode(u)), GuardedExecutor.ExceededSpendLimit.selector);
 
+        // Prep UserOp to try to exactly hit daily spend limit.
         {
+            u.nonce++;
+
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
             calls[0].target = address(paymentToken);
             calls[0].data =
                 abi.encodeWithSignature("transfer(address,uint256)", address(0xb0b), 0.4 ether);
             u.executionData = abi.encode(calls);
 
-            u.nonce++;
             (bytes32 r, bytes32 s) = vm.signP256(t.p256PrivateKey, ep.computeDigest(u));
             s = P256.normalized(s);
             u.signature = abi.encodePacked(abi.encode(r, s), t.p256KeyHash, uint8(0));
@@ -117,6 +147,7 @@ contract GuardedExecutorTest is SoladyTest {
         assertEq(paymentToken.balanceOf(address(0xb0b)), 1 ether);
         assertEq(d.spendInfos(t.p256KeyHash)[0].spent, 1 ether);
 
+        // Test the spend info.
         uint256 current = d.spendInfos(t.p256KeyHash)[0].current;
         vm.warp(current + 86400 - 1);
         info = d.spendInfos(t.p256KeyHash)[0];
@@ -133,15 +164,29 @@ contract GuardedExecutorTest is SoladyTest {
         assertEq(info.spent, 1 ether);
         assertEq(info.currentSpent, 0);
         assertEq(info.current, current + 86400);
+        // Check the remaining values.
+        assertEq(info.token, address(paymentToken));
+        assertEq(uint8(info.period), uint8(GuardedExecutor.SpendPeriod.Day));
+        assertEq(info.limit, 1 ether);
 
+        // Prep UserOp to try to see if we can start spending again in a new day.
         {
             u.nonce++;
+
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            calls[0].target = address(paymentToken);
+            calls[0].data =
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xb0b), 0.5 ether);
+            u.executionData = abi.encode(calls);
+
             (bytes32 r, bytes32 s) = vm.signP256(t.p256PrivateKey, ep.computeDigest(u));
             s = P256.normalized(s);
             u.signature = abi.encodePacked(abi.encode(r, s), t.p256KeyHash, uint8(0));
         }
 
         assertEq(ep.execute(abi.encode(u)), 0);
+        assertEq(paymentToken.balanceOf(address(0xb0b)), 1.5 ether);
+        assertEq(d.spendInfos(t.p256KeyHash)[0].spent, 0.5 ether);
     }
 
     function _activateRIPPRECOMPILE(bool active) internal {
