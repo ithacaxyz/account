@@ -259,7 +259,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 revert(0x1c, 0x04)
             }
 
-            // Setting the bit at `1 << 254` tells `simulateExecute` that we want the
+            // Setting the bit at `1 << 254` tells `_execute` that we want the
             // simulation to skip the invalid signature revert and also the 63/64 rule revert.
             // Also use `2**96 - 1` as the `combinedGas` for the very first guess.
             sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(254, 1), 0xffffffffffffffffffffffff))
@@ -286,7 +286,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                     if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecute2Failed() }
                     if iszero(mload(0x24)) { break } // If `err` is zero, we've found the `gCombined`.
                 }
-                // Tell `_execute` to early return, as we just want to test the 63/64 rule.
+                // Setting the `1 << 255` bit tells `_execute` to early return,
+                // as we just want to test the 63/64 rule on `gExecute` for the given `gCombined`.
                 sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(255, 1), gCombined))
                 for { gExecute := gCombined } 1 {} {
                     gExecute := add(gExecute, shr(5, gExecute)) // Heuristic: multiply by 1.03125.
