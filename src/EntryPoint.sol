@@ -106,11 +106,14 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     error SimulationResult(uint256 gUsed, bytes4 err);
 
     /// @dev For returning the gas required and the error from a simulation.
-    /// `gExecute` is the recommended amount of gas to pass into execute.
-    /// `gCombined` is the recommendation for `gasCombined`.
-    /// `gUsed` is the amount of gas that has been eaten.
-    /// If the `err` is non-zero, it means that the simulation with `gExecute`
-    /// has not resulted in a success execution.
+    /// - `gExecute` is the recommended amount of gas to pass into execute.
+    ///    This does not include the minimum transaction overhead of 21k gas.
+    ///    You will need to add that in.
+    /// - `gCombined` is the recommendation for `gasCombined`.
+    /// - `gUsed` is the amount of gas that has been eaten.
+    /// - `err` is the error selector from the simulation.
+    ///   If the `err` is non-zero, it means that the simulation with `gExecute`
+    ///   has not resulted in a success execution.
     error SimulationResult2(uint256 gExecute, uint256 gCombined, uint256 gUsed, bytes4 err);
 
     /// @dev The simulate execute 2 run has failed. Try passing in more gas to the simulation.
@@ -256,8 +259,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 revert(0x1c, 0x04)
             }
 
-            // Tell `simulateExecute` that we want the simulation to pass even
-            // if the signature is invalid. Also use `2**96 - 1` as the gas limit.
+            // Setting the bit at `1 << 254` tells `simulateExecute` that we want the
+            // simulation to skip the invalid signature revert and also the 63/64 rule revert.
+            // Also use `2**96 - 1` as the `combinedGas` for the very first guess.
             sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(254, 1), 0xffffffffffffffffffffffff))
             if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecute2Failed() }
             gUsed := mload(0x04)
@@ -276,9 +280,11 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 // Add 100k (emprically determined) to the `gUsed` to account for the variance.
                 for { gCombined := add(gUsed, mul(100000, gt(mload(0x04), 60000))) } 1 {} {
                     gCombined := add(gCombined, shr(4, gCombined)) // Heuristic: multiply by 1.0625.
+                    // Now that we are trying to hone in onto a good estimate for `combinedGas`, we
+                    // still want to skip the invalid signature revert and also the 63/64 rule revert.
                     sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(254, 1), gCombined))
                     if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecute2Failed() }
-                    if iszero(mload(0x24)) { break }
+                    if iszero(mload(0x24)) { break } // If `err` is zero, we've found the `gCombined`.
                 }
                 // Tell `_execute` to early return, as we just want to test the 63/64 rule.
                 sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(255, 1), gCombined))
