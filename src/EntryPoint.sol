@@ -257,7 +257,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             }
 
             // Tell `simulateExecute` that we want the simulation to pass even
-            // if the signature is invalid. Also use `type(uint64).max` as the gas limit.
+            // if the signature is invalid. Also use `2**96 - 1` as the gas limit.
             sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(254, 1), 0xffffffffffffffffffffffff))
             if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecute2Failed() }
             gUsed := mload(0x04)
