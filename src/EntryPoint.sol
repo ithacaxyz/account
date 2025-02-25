@@ -257,7 +257,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             }
 
             // Tell `simulateExecute` that we want the simulation to pass even
-            // if the signature is invalid.
+            // if the signature is invalid. Also use `type(uint64).max` as the gas limit.
             sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(254, 1), 0xffffffffffffffffffffffff))
             if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecute2Failed() }
             gUsed := mload(0x04)
@@ -350,6 +350,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
             if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
+                // Don't revert if the bit at `1 << 254` is set. For `simulateExecute2` to be able to
+                // get a simulation before knowing how much gas is needed without reverting.
                 if ((combinedGasOverride >> 254) & 1 == 0) revert InsufficientGas();
             }
             if ((combinedGasOverride >> 255) & 1 != 0) return (0, 0);
