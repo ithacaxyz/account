@@ -261,7 +261,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
             // Setting the bit at `1 << 254` tells `_execute` that we want the
             // simulation to skip the invalid signature revert and also the 63/64 rule revert.
-            // Also use `2**96 - 1` as the `combinedGas` for the very first guess.
+            // Also use `2**96 - 1` as the `combinedGas` for the very first call to `_execute`.
             sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(254, 1), 0xffffffffffffffffffffffff))
             if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecute2Failed() }
             gUsed := mload(0x04)
