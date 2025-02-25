@@ -178,7 +178,7 @@ contract EntryPointTest is SoladyTest {
 
         gasBurner.setRandomness(1); // Warm the storage first.
 
-        t.gasToBurn = _bound(_random(), 0, 1000000);
+        t.gasToBurn = _bound(_random(), 0, _randomChance(32) ? 15000000 : 300000);
         do {
             t.randomness = _randomUniform();
         } while (t.randomness == 0);
@@ -199,11 +199,15 @@ contract EntryPointTest is SoladyTest {
             paymentAmount: 0.1 ether,
             paymentMaxAmount: 0.5 ether,
             paymentPerGas: 1e9,
-            combinedGas: 30000000,
+            combinedGas: 0, // This will be ignored during `simulateExecute2`.
             signature: ""
         });
-
-        _fillSecp256k1Signature(userOp, privateKey, 0);
+        {
+            // Just pass in a junk secp256k1 signature.
+            (uint8 v, bytes32 r, bytes32 s) =
+                vm.sign(uint128(_randomUniform()), bytes32(_randomUniform()));
+            userOp.signature = abi.encodePacked(r, s, v);
+        }
 
         (t.success, t.result) =
             address(ep).call(abi.encodeWithSignature("simulateExecute2(bytes)", abi.encode(userOp)));
@@ -214,9 +218,9 @@ contract EntryPointTest is SoladyTest {
         t.gExecute = uint256(LibBytes.load(t.result, 0x04));
         t.gCombined = uint256(LibBytes.load(t.result, 0x24));
         t.gUsed = uint256(LibBytes.load(t.result, 0x44));
-        emit LogUint(t.gExecute);
-        emit LogUint(t.gCombined);
-        emit LogUint(t.gUsed);
+        emit LogUint("gExecute", t.gExecute);
+        emit LogUint("gCombined", t.gCombined);
+        emit LogUint("gUsed", t.gUsed);
         assertEq(bytes4(LibBytes.load(t.result, 0x64)), 0);
 
         userOp.combinedGas = t.gCombined;
@@ -228,15 +232,15 @@ contract EntryPointTest is SoladyTest {
     }
 
     function testSimulateExecute2WithP256(bytes32) public {
-        uint256 alice = uint256(keccak256("alicePrivateKey"));
-        address payable aliceAddress = payable(vm.addr(alice));
+        uint256 privateKey = _randomUniform() & type(uint128).max;
+        address payable eoa = payable(vm.addr(privateKey));
 
-        vm.signAndAttachDelegation(delegation, alice);
-        vm.deal(aliceAddress, 10 ether);
+        vm.signAndAttachDelegation(delegation, privateKey);
+        vm.deal(eoa, 10 ether);
 
         _activateRIPPRECOMPILE(true);
 
-        (uint256 x, uint256 y) = vm.publicKeyP256(alice);
+        (uint256 x, uint256 y) = vm.publicKeyP256(privateKey);
 
         Delegation.Key memory key = Delegation.Key({
             expiry: 0,
@@ -245,16 +249,14 @@ contract EntryPointTest is SoladyTest {
             publicKey: abi.encode(x, y)
         });
 
-        paymentToken.mint(aliceAddress, 50 ether);
+        paymentToken.mint(eoa, 50 ether);
 
-        vm.prank(aliceAddress);
-        bytes32 keyHash = Delegation(aliceAddress).authorize(key);
+        vm.prank(eoa);
+        bytes32 keyHash = Delegation(eoa).authorize(key);
 
         _SimulateExecute2Temps memory t;
 
-        gasBurner.setRandomness(1); // Warm the storage first.
-
-        t.gasToBurn = _bound(_random(), 0, 1000000);
+        t.gasToBurn = _bound(_random(), 0, _randomChance(32) ? 15000000 : 300000);
         do {
             t.randomness = _randomUniform();
         } while (t.randomness == 0);
@@ -266,7 +268,7 @@ contract EntryPointTest is SoladyTest {
         );
 
         EntryPoint.UserOp memory userOp = EntryPoint.UserOp({
-            eoa: aliceAddress,
+            eoa: eoa,
             nonce: 0,
             executionData: t.executionData,
             payer: address(0x00),
@@ -275,11 +277,15 @@ contract EntryPointTest is SoladyTest {
             paymentAmount: 0.1 ether,
             paymentMaxAmount: 0.5 ether,
             paymentPerGas: 1e9,
-            combinedGas: 30000000,
+            combinedGas: 0,
             signature: ""
         });
-
-        _fillSecp256r1Signature(userOp, alice, keyHash);
+        // Just fill with some non-zero junk P256 signature that contains the `keyHash`,
+        // so that the `simulateExecute2` knows that
+        // it needs to add the variance for non-precompile P256 verification.
+        // We need the `keyHash` in the signature so that the simulation is able
+        // to hit all the gas for the GuardedExecutor stuff for the `keyHash`.
+        userOp.signature = abi.encodePacked(keccak256("a"), keccak256("b"), keyHash, uint8(0));
 
         (t.success, t.result) =
             address(ep).call(abi.encodeWithSignature("simulateExecute2(bytes)", abi.encode(userOp)));
@@ -290,14 +296,14 @@ contract EntryPointTest is SoladyTest {
         t.gExecute = uint256(LibBytes.load(t.result, 0x04));
         t.gCombined = uint256(LibBytes.load(t.result, 0x24));
         t.gUsed = uint256(LibBytes.load(t.result, 0x44));
-        emit LogUint(t.gExecute);
-        emit LogUint(t.gCombined);
-        emit LogUint(t.gUsed);
+        emit LogUint("gExecute", t.gExecute);
+        emit LogUint("gCombined", t.gCombined);
+        emit LogUint("gUsed", t.gUsed);
         assertEq(bytes4(LibBytes.load(t.result, 0x64)), 0);
 
         userOp.combinedGas = t.gCombined;
         userOp.signature = "";
-        _fillSecp256r1Signature(userOp, alice, keyHash);
+        _fillSecp256r1Signature(userOp, privateKey, keyHash);
 
         assertEq(ep.execute{gas: t.gExecute}(abi.encode(userOp)), 0);
         assertEq(gasBurner.randomness(), t.randomness);
