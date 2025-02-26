@@ -485,6 +485,7 @@ contract Delegation is EIP712, GuardedExecutor {
             // Check that `s` begins with hex"64bd801814b6f04586b2680170".
             bytes13(s) != bytes13(keccak256("PREP_MAGIC"));
         ) {
+            if (signature.length < 0x20 * 2 + 0x14) break; // Length check, just in case.
             // Break if `isRootless` has already been initialized.
             if (_getDelegationStorage().isRootless) break;
             // Break if `r` does not match digest. There is an astronomically low chance that `digest`
