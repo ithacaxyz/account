@@ -68,8 +68,8 @@ contract Delegation is EIP712, GuardedExecutor {
         /// @dev The label.
         LibBytes.BytesStorage label;
         /// @dev Set to true if this account is initialized via
-        /// the Provably Rootless EIP-7702 Proxy method.
-        bool isRootless;
+        /// the Provably Rootless EIP-7702 Proxy (PREP) method.
+        bool isPrep;
         /// @dev Mapping for 4337-style 2D nonce sequences.
         /// Each nonce has the following bit layout:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
@@ -406,8 +406,8 @@ contract Delegation is EIP712, GuardedExecutor {
     }
 
     /// @dev Returns if the account is a rootless initialized account.
-    function isRootless() public view virtual returns (bool) {
-        return _getDelegationStorage().isRootless;
+    function isPrep() public view virtual returns (bool) {
+        return _getDelegationStorage().isPrep;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -483,11 +483,11 @@ contract Delegation is EIP712, GuardedExecutor {
             // Mask `s` by `2**255 - 1`. This allows for the `(r,s,v)` and ERC-2098 `(r,vs)` formats.
             bytes32 s = bytes32((uint256(LibBytes.loadCalldata(signature, 0x20)) << 1) >> 1);
             // Check that `s` begins with the magic.
-            bytes13(s) != bytes13("DMJ\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00");
+            bytes20(s) != bytes20("DMJ");
         ) {
             if (signature.length < 0x20 * 2 + 0x14) break; // Length check, just in case.
-            // Break if `isRootless` has already been initialized.
-            if (_getDelegationStorage().isRootless) break;
+            // Break if `isPrep` has already been initialized.
+            if (_getDelegationStorage().isPrep) break;
             // Break if `r` does not match digest. There is an astronomically low chance that `digest`
             // might be greater or equal than `N` (about 3.7e-39), so we'll just do full comparison.
             if (LibBytes.loadCalldata(signature, 0x00) != digest) break;
@@ -630,12 +630,12 @@ contract Delegation is EIP712, GuardedExecutor {
         _execute(calls, _initializeRootless(keyHash));
     }
 
-    /// @dev If the `keyHash` is `bytes32(uint256(1))`, initializes the `isRootless` variable,
+    /// @dev If the `keyHash` is `bytes32(uint256(1))`, initializes the `isPrep` variable,
     /// and returns `bytes32(0)`. Otherwise, returns `keyHash`.
     function _initializeRootless(bytes32 keyHash) internal virtual returns (bytes32) {
         if (keyHash != bytes32(uint256(1))) return keyHash;
-        if (_getDelegationStorage().isRootless) revert RootlessAlreadyInitialized();
-        _getDelegationStorage().isRootless = true;
+        if (_getDelegationStorage().isPrep) revert RootlessAlreadyInitialized();
+        _getDelegationStorage().isPrep = true;
         return 0;
     }
 
