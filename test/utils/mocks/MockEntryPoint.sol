@@ -10,4 +10,8 @@ contract MockEntryPoint is EntryPoint, Brutalizer {
     function computeDigest(UserOp calldata userOp) public view returns (bytes32) {
         return _computeDigest(userOp, false);
     }
+
+    function computePREPDigest(UserOp calldata userOp) public view returns (bytes32) {
+    	return _computeDigest(userOp, true);
+    }
 }
