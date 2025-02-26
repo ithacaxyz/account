@@ -106,11 +106,14 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     error SimulationResult(uint256 gUsed, bytes4 err);
 
     /// @dev For returning the gas required and the error from a simulation.
-    /// `gExecute` is the recommended amount of gas to pass into execute.
-    /// `gCombined` is the recommendation for `gasCombined`.
-    /// `gUsed` is the amount of gas that has been eaten.
-    /// If the `err` is non-zero, it means that the simulation with `gExecute`
-    /// has not resulted in a success execution.
+    /// - `gExecute` is the recommended amount of gas to pass into execute.
+    ///    This does not include the minimum transaction overhead of 21k gas.
+    ///    You will need to add that in.
+    /// - `gCombined` is the recommendation for `gasCombined`.
+    /// - `gUsed` is the amount of gas that has been eaten.
+    /// - `err` is the error selector from the simulation.
+    ///   If the `err` is non-zero, it means that the simulation with `gExecute`
+    ///   has not resulted in a success execution.
     error SimulationResult2(uint256 gExecute, uint256 gCombined, uint256 gUsed, bytes4 err);
 
     /// @dev The simulate execute 2 run has failed. Try passing in more gas to the simulation.
@@ -256,6 +259,10 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 revert(0x1c, 0x04)
             }
 
+            // Setting the bit at `1 << 254` tells `_execute` that we want the
+            // simulation to skip the invalid signature revert and also the 63/64 rule revert.
+            // Also use `2**96 - 1` as the `combinedGas` for the very first call to `_execute`.
+            sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(254, 1), 0xffffffffffffffffffffffff))
             if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecute2Failed() }
             gUsed := mload(0x04)
             err := mload(0x24)
@@ -273,12 +280,15 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 // Add 100k (emprically determined) to the `gUsed` to account for the variance.
                 for { gCombined := add(gUsed, mul(100000, gt(mload(0x04), 60000))) } 1 {} {
                     gCombined := add(gCombined, shr(4, gCombined)) // Heuristic: multiply by 1.0625.
-                    sstore(_COMBINED_GAS_OVERRIDE_SLOT, gCombined)
+                    // Now that we are trying to hone in onto a good estimate for `combinedGas`, we
+                    // still want to skip the invalid signature revert and also the 63/64 rule revert.
+                    sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(254, 1), gCombined))
                     if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecute2Failed() }
-                    if iszero(mload(0x24)) { break }
+                    if iszero(mload(0x24)) { break } // If `err` is zero, we've found the `gCombined`.
                 }
-                // Tell `_execute` to early return, as we just want to test the 63/64 rule.
-                sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(96, address()), gCombined))
+                // Setting the `1 << 255` bit tells `_execute` to early return,
+                // as we just want to test the 63/64 rule on `gExecute` for the given `gCombined`.
+                sstore(_COMBINED_GAS_OVERRIDE_SLOT, or(shl(255, 1), gCombined))
                 for { gExecute := gCombined } 1 {} {
                     gExecute := add(gExecute, shr(5, gExecute)) // Heuristic: multiply by 1.03125.
                     if callSimulateExecute(gExecute, data) { if iszero(mload(0x24)) { break } }
@@ -347,9 +357,13 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
             if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
-                revert InsufficientGas();
+                // Don't revert if the bit at `1 << 254` is set. For `simulateExecute2` to be able to
+                // get a simulation before knowing how much gas is needed without reverting.
+                if ((combinedGasOverride >> 254) & 1 == 0) revert InsufficientGas();
             }
-            if (combinedGasOverride >> 96 != 0) return (0, 0);
+            // If the bit at `1 << 255` is set, this means `simulateExecute2` just wants
+            // to check the 63/64 rule, so early return to skip the rest of the computations.
+            if ((combinedGasOverride >> 255) & 1 != 0) return (0, 0);
 
             // Verify and invalidate the nonce.
             // The nonce will be invalidated even if the UserOp fails.
@@ -391,7 +405,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
                 // 2. Verify and call.
                 let gUsedTemp := sub(gStart, gas())
-                mstore(m, 0xe235a92a) // `_verifyAndCall()`.
+                mstore(m, 0xe235a92a) // `_verifyAndCall()`.    
+                // If the bit at `1 << 254` is set, replace with `_simulateVerifyAndCall()`.
+                mstore(mul(and(1, shr(254, combinedGasOverride)), m), 0x151f46c8)
                 mstore(0x00, 0) // Zeroize the return slot.
                 if iszero(call( // Gas-limited self call.
                     mul(sub(g, gUsedTemp), gt(g, gUsedTemp)), // `saturatingSub`.
@@ -681,6 +697,13 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             require(msg.sender == address(this));
             (bool isValid, bytes32 keyHash) = _verify(u);
             if (!isValid) revert VerificationError();
+            _execute(u, keyHash, false);
+            return;
+        }
+        // `_simulateVerifyAndCall()`.
+        if (s == 0x151f46c8) {
+            require(msg.sender == address(this));
+            (, bytes32 keyHash) = _verify(u);
             _execute(u, keyHash, false);
             return;
         }

@@ -34,11 +34,20 @@ contract GuardedExecutor is ERC7821 {
 
     /// @dev Information about a daily spend.
     struct SpendInfo {
+        /// @dev Address of the token. `address(0)` denotes native token.
         address token;
+        /// @dev The type of period.
         SpendPeriod period;
+        /// @dev The maximum spend limit for the period.
         uint256 limit;
+        /// @dev The amount spent in the last updated period.
         uint256 spent;
+        /// @dev The last updated timestamp.
         uint256 lastUpdated;
+        /// @dev The amount spent in the current period.
+        uint256 currentSpent;
+        /// @dev The start of the current period.
+        uint256 current;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -379,6 +388,9 @@ contract GuardedExecutor is ERC7821 {
                 info.token = token;
                 info.limit = tokenPeriodSpend.limit;
                 info.lastUpdated = tokenPeriodSpend.lastUpdated;
+                info.spent = tokenPeriodSpend.spent;
+                info.current = startOfSpendPeriod(block.timestamp, SpendPeriod(period));
+                info.currentSpent = info.lastUpdated < info.current ? 0 : info.spent;
                 uint256 pointer;
                 assembly ("memory-safe") {
                     pointer := info
