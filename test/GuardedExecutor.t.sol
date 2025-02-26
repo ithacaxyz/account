@@ -177,7 +177,7 @@ contract GuardedExecutorTest is SoladyTest {
             u.executionData = abi.encode(calls);
 
             uint256 gExecute;
-            (gExecute, u.combinedGas, ) = _estimateGas(u);
+            (gExecute, u.combinedGas,) = _estimateGas(u);
 
             u.signature = _secp256r1Sig(t.p256PrivateKey, t.p256KeyHash, u);
 
@@ -187,8 +187,12 @@ contract GuardedExecutorTest is SoladyTest {
         }
     }
 
-    function _estimateGas(EntryPoint.UserOp memory u) internal returns (uint256 gExecute, uint256 gCombined, uint256 gUsed) {
-        bytes memory data = abi.encodeWithSelector(EntryPoint.simulateExecute2.selector, abi.encode(u));
+    function _estimateGas(EntryPoint.UserOp memory u)
+        internal
+        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+    {
+        bytes memory data =
+            abi.encodeWithSelector(EntryPoint.simulateExecute2.selector, abi.encode(u));
         (bool success, bytes memory result) = address(ep).call(data);
         assertFalse(success);
 
