@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {LibBit} from "solady/utils/LibBit.sol";
+import {LibRLP} from "solady/utils/LibRLP.sol";
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
@@ -24,6 +25,7 @@ contract Delegation is EIP712, GuardedExecutor {
     using LibBytes for LibBytes.BytesStorage;
     using LibBitmap for LibBitmap.Bitmap;
     using LibStorage for LibStorage.Bump;
+    using LibRLP for LibRLP.List;
 
     ////////////////////////////////////////////////////////////////////////
     // Data Structures
@@ -65,8 +67,9 @@ contract Delegation is EIP712, GuardedExecutor {
     struct DelegationStorage {
         /// @dev The label.
         LibBytes.BytesStorage label;
-        /// @dev Reserved spacer.
-        uint256 _spacer0;
+        /// @dev Set to true if this account is initialized via
+        /// the Provably Rootless EIP-7702 Proxy method.
+        bool isRootless;
         /// @dev Mapping for 4337-style 2D nonce sequences.
         /// Each nonce has the following bit layout:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
@@ -134,6 +137,9 @@ contract Delegation is EIP712, GuardedExecutor {
 
     /// @dev When invalidating a nonce sequence, the new sequence must be larger than the current.
     error NewSequenceMustBeLarger();
+
+    /// @dev The rootless slot has already been initialized.
+    error RootlessAlreadyInitialized();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -399,6 +405,11 @@ contract Delegation is EIP712, GuardedExecutor {
         return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
 
+    /// @dev Returns if the account is a rootless initialized account.
+    function isRootless() public view virtual returns (bool) {
+        return _getDelegationStorage().isRootless;
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
@@ -466,6 +477,37 @@ contract Delegation is EIP712, GuardedExecutor {
 
         // Early return if unable to unwrap the signature.
         if (signature.length < 0x21) return (false, 0);
+
+        // Workflow for PREP. `signature` is `abi.encodePacked(abi.encodePacked(r,s,v), delegation)`.
+        for (
+            // Mask `s` by `2**255 - 1`. This allows for the `(r,s,v)` and ERC-2098 `(r,vs)` formats.
+            bytes32 s = bytes32((uint256(LibBytes.loadCalldata(signature, 0x20)) << 1) >> 1);
+            // Check that `s` begins with hex"64bd801814b6f04586b2680170".
+            bytes13(s) != bytes13(keccak256("PREP_MAGIC"));
+        ) {
+            // Break if `isRootless` has already been initialized.
+            if (_getDelegationStorage().isRootless) break;
+            // Break if `r` does not match digest. There is an astronomically low chance that `digest`
+            // might be greater or equal than `N` (about 3.7e-39), so we'll just do full comparison.
+            if (LibBytes.loadCalldata(signature, 0x00) != digest) break;
+            // Break if the EIP-7702 struct hash and the signature do not result in the address.
+            unchecked {
+                uint256 n = signature.length - 0x14;
+                // The `delegation` will be on the last 20 bytes of the signature.
+                address d = address(bytes20(LibBytes.loadCalldata(signature, n)));
+                if (
+                    ECDSA.recoverCalldata(
+                        keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(d).p(0).encode())),
+                        LibBytes.truncatedCalldata(signature, n)
+                    ) != address(this)
+                ) break;
+            }
+            // We'll use `keyHash` is `bytes32(1)` to denote that this is a signature
+            // for PREP initialization. In `_execute`, we will detect it, initialize
+            // the rootless storage variable, and replace it back with `bytes32(0)`,
+            // so that the initialization execution has full EOA access.
+            return (true, bytes32(uint256(1)));
+        }
 
         unchecked {
             uint256 n = signature.length - 0x21;
@@ -562,7 +604,7 @@ contract Delegation is EIP712, GuardedExecutor {
         // Entry point workflow.
         if (msg.sender == ENTRY_POINT) {
             if (opData.length < 0x20) revert OpDataTooShort();
-            return _execute(calls, LibBytes.loadCalldata(opData, 0x00));
+            return _execute(calls, _initializeRootless(LibBytes.loadCalldata(opData, 0x00)));
         }
 
         // Simple workflow without `opData`.
@@ -584,7 +626,16 @@ contract Delegation is EIP712, GuardedExecutor {
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
         if (!isValid) revert Unauthorized();
-        _execute(calls, keyHash);
+        _execute(calls, _initializeRootless(keyHash));
+    }
+
+    /// @dev If the `keyHash` is `bytes32(uint256(1))`, initializes the `isRootless` variable,
+    /// and returns `bytes32(0)`. Otherwise, returns `keyHash`.
+    function _initializeRootless(bytes32 keyHash) internal virtual returns (bytes32) {
+        if (keyHash != bytes32(uint256(1))) return keyHash;
+        if (_getDelegationStorage().isRootless) revert RootlessAlreadyInitialized();
+        _getDelegationStorage().isRootless = true;
+        return 0;
     }
 
     ////////////////////////////////////////////////////////////////////////
