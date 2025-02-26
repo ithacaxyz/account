@@ -16,6 +16,7 @@ import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
+import {LibPREP} from "./LibPREP.sol";
 
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
@@ -67,9 +68,9 @@ contract Delegation is EIP712, GuardedExecutor {
     struct DelegationStorage {
         /// @dev The label.
         LibBytes.BytesStorage label;
-        /// @dev Set to true if this account is initialized via
+        /// @dev Set to a non-zero value if this account is initialized via
         /// the Provably Rootless EIP-7702 Proxy (PREP) method.
-        bytes32 prepSignature;
+        bytes32 compactPREPSigature;
         /// @dev Mapping for 4337-style 2D nonce sequences.
         /// Each nonce has the following bit layout:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
@@ -138,8 +139,8 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev When invalidating a nonce sequence, the new sequence must be larger than the current.
     error NewSequenceMustBeLarger();
 
-    /// @dev The rootless slot has already been initialized.
-    error RootlessAlreadyInitialized();
+    /// @dev The compact PREP signature has already been initialized.
+    error CompactPREPSignatureAlreadyInitialized();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -406,17 +407,8 @@ contract Delegation is EIP712, GuardedExecutor {
     }
 
     /// @dev Returns if the account is a rootless initialized account.
-    /// This function can only be used after the initial EIP-7702 transaction.
-    function isPrep() public view virtual returns (bool result) {
-        bytes32 prepSignature = _getDelegationStorage().prepSignature;
-        address d = LibEIP7702.delegation(address(this));
-        if (LibBit.and(d != address(0), prepSignature != 0)) {
-            // (r << 96) | ((s << 160) >> 160).
-            bytes32 r = prepSignature >> 96;
-            bytes32 s = ((prepSignature << 160) >> 160);
-            bytes32 h = keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(d).p(0).encode()));
-            result = ECDSA.tryRecover(h, 27, r, s) == d || ECDSA.tryRecover(h, 28, r, s) == d;
-        }
+    function isPREP() public view virtual returns (bool) {
+        return LibPREP.isPREP(_getDelegationStorage().compactPREPSigature);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -487,37 +479,6 @@ contract Delegation is EIP712, GuardedExecutor {
         // Early return if unable to unwrap the signature.
         if (signature.length < 0x21) return (false, 0);
 
-        // Workflow for PREP. `signature` is `abi.encodePacked(abi.encodePacked(r,s,v), delegation)`.
-        for (
-            // Mask `s` by `2**255 - 1`. This allows for the `(r,s,v)` and ERC-2098 `(r,vs)` formats.
-            bytes32 s = bytes32((uint256(LibBytes.loadCalldata(signature, 0x20)) << 1) >> 1);
-            // Check that `s` begins with 20 leading zero bytes.
-            bytes20(s) != bytes20(0);
-        ) {
-            if (signature.length < 0x20 * 2 + 0x14) break; // Length check, just in case.
-            // Break if `isPrep` has already been initialized.
-            if (_getDelegationStorage().prepSignature != 0) break;
-            // Break if the `r` does not match the lower 20 bytes of `digest`.
-            if (LibBytes.loadCalldata(signature, 0x00) != ((digest << 96) >> 96)) break;
-            // Break if the EIP-7702 struct hash and the signature do not result in the address.
-            unchecked {
-                uint256 n = signature.length - 0x14;
-                // The `delegation` will be on the last 20 bytes of the signature.
-                address d = address(bytes20(LibBytes.loadCalldata(signature, n)));
-                if (
-                    ECDSA.recoverCalldata(
-                        keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(d).p(0).encode())),
-                        LibBytes.truncatedCalldata(signature, n)
-                    ) != address(this)
-                ) break;
-            }
-            // We'll use the lower 20 bytes of `digest` concatenated with lower 12 bytes of `s`
-            // as the `keyHash`. In `_execute`, the absence of this `keyHash` is used to denote
-            // that it is a PREP payload. We will replace it with `bytes32(0)` (denotes EOA)
-            // so that the initialization execution has full EOA access.
-            return (true, (digest << 96) | ((s << 160) >> 160));
-        }
-
         unchecked {
             uint256 n = signature.length - 0x21;
             keyHash = LibBytes.loadCalldata(signature, n);
@@ -553,6 +514,14 @@ contract Delegation is EIP712, GuardedExecutor {
                 abi.decode(key.publicKey, (address)), digest, signature
             );
         }
+    }
+
+    /// @dev Allows the entry point to set the compact PREP signature.
+    function initializeCompactPREPSignature(bytes32 compactPREPSigature) public virtual {
+        if (msg.sender != ENTRY_POINT) revert Unauthorized();
+        DelegationStorage storage $ = _getDelegationStorage();
+        if ($.compactPREPSigature != 0) revert CompactPREPSignatureAlreadyInitialized();
+        $.compactPREPSigature = compactPREPSigature;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -613,7 +582,7 @@ contract Delegation is EIP712, GuardedExecutor {
         // Entry point workflow.
         if (msg.sender == ENTRY_POINT) {
             if (opData.length < 0x20) revert OpDataTooShort();
-            return _execute(calls, _initializeRootless(LibBytes.loadCalldata(opData, 0x00)));
+            return _execute(calls, LibBytes.loadCalldata(opData, 0x00));
         }
 
         // Simple workflow without `opData`.
@@ -635,16 +604,7 @@ contract Delegation is EIP712, GuardedExecutor {
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
         if (!isValid) revert Unauthorized();
-        _execute(calls, _initializeRootless(keyHash));
-    }
-
-    /// @dev If the `keyHash` is `bytes32(uint256(1))`, initializes the `isPrep` variable,
-    /// and returns `bytes32(0)`. Otherwise, returns `keyHash`.
-    function _initializeRootless(bytes32 keyHash) internal virtual returns (bytes32) {
-        if (_getDelegationStorage().keyHashes.contains(keyHash)) return keyHash;
-        if (_getDelegationStorage().prepSignature != 0) revert RootlessAlreadyInitialized();
-        _getDelegationStorage().prepSignature = keyHash;
-        return 0;
+        _execute(calls, keyHash);
     }
 
     ////////////////////////////////////////////////////////////////////////
