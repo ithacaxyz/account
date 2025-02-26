@@ -505,7 +505,7 @@ contract Delegation is EIP712, GuardedExecutor {
             }
             // We'll use `keyHash` is `bytes32(1)` to denote that this is a signature
             // for PREP initialization. In `_execute`, we will detect it, initialize
-            // the rootless storage variable, and replace it back with `bytes32(0)`,
+            // the rootless storage variable, and replace it with `bytes32(0)` (denoting EOA access),
             // so that the initialization execution has full EOA access.
             return (true, bytes32(uint256(1)));
         }
