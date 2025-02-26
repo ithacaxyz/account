@@ -482,8 +482,8 @@ contract Delegation is EIP712, GuardedExecutor {
         for (
             // Mask `s` by `2**255 - 1`. This allows for the `(r,s,v)` and ERC-2098 `(r,vs)` formats.
             bytes32 s = bytes32((uint256(LibBytes.loadCalldata(signature, 0x20)) << 1) >> 1);
-            // Check that `s` begins with hex"64bd801814b6f04586b2680170".
-            bytes13(s) != bytes13(keccak256("PREP_MAGIC"));
+            // Check that `s` begins with the magic.
+            bytes13(s) != bytes13("DMJ\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00");
         ) {
             if (signature.length < 0x20 * 2 + 0x14) break; // Length check, just in case.
             // Break if `isRootless` has already been initialized.
