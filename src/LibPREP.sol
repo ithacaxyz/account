@@ -15,8 +15,10 @@ library LibPREP {
     using LibRLP for LibRLP.List;
 
     /// @dev `signature` is `abi.encodePacked(bytes32(r), uint96(s), address(delegation))`.
-    /// You will have to mine a signature such that the `v` is 27,
-    /// and `s` is less than or equal to `2**96 - 1`.
+    /// You will have to mine a signature such that:
+    /// - `r <= 2**160 - 1`, and matches the a hash of the digest, see `getCompactPREPSignature`
+    /// - `s <= 2**96 - 1`
+    /// - `v == 27`
     function signatureMaybeForPREP(bytes calldata signature) internal pure returns (bool) {
         return LibBit.and(
             // Check that `r` begins with 12 leading zero bytes.
