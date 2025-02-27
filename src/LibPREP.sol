@@ -55,15 +55,15 @@ library LibPREP {
         return (r << 96) | ((s << 160) >> 160);
     }
 
-    /// @dev Returns if the current address is a PREP account.
-    function isPREP(bytes32 compactPREPSigature) internal view returns (bool) {
-        address d = LibEIP7702.delegation(address(this));
+    /// @dev Returns if the target address is a PREP account.
+    function isPREP(address target, bytes32 compactPREPSigature) internal view returns (bool) {
+        address d = LibEIP7702.delegation(target);
         if (LibBit.and(d != address(0), compactPREPSigature != 0)) {
             bytes32 r = compactPREPSigature >> 96;
             bytes32 s = ((compactPREPSigature << 160) >> 160);
             bytes32 h = keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(d).p(0).encode()));
-            if (ECDSA.tryRecover(h, 27, r, s) == address(this)) return true;
-            if (ECDSA.tryRecover(h, 28, r, s) == address(this)) return true;
+            if (ECDSA.tryRecover(h, 27, r, s) == target) return true;
+            if (ECDSA.tryRecover(h, 28, r, s) == target) return true;
         }
         return false;
     }

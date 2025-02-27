@@ -79,7 +79,7 @@ contract LibPREPTest is SoladyTest {
 
         assertEq(sampleTarget.x(), t.x);
 
-        assertTrue(Delegation(payable(u.eoa)).isPREP());
+        assertTrue(LibPREP.isPREP(u.eoa, Delegation(payable(u.eoa)).compactPREPSignature()));
     }
 
     function getCompactPREPSignature(bytes calldata signature, bytes32 digest, address eoa)

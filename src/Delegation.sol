@@ -406,9 +406,14 @@ contract Delegation is EIP712, GuardedExecutor {
         return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
 
-    /// @dev Returns if the account is a rootless initialized account.
+    /// @dev Returns the compact PREP signature.
+    function compactPREPSignature() public view virtual returns (bytes32) {
+        return _getDelegationStorage().compactPREPSigature;
+    }
+
+    /// @dev Returns if the compact PREP signature is valid.
     function isPREP() public view virtual returns (bool) {
-        return LibPREP.isPREP(_getDelegationStorage().compactPREPSigature);
+        return LibPREP.isPREP(address(this), _getDelegationStorage().compactPREPSigature);
     }
 
     ////////////////////////////////////////////////////////////////////////
