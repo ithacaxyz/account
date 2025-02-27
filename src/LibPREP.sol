@@ -22,7 +22,7 @@ library LibPREP {
         return LibBit.and(
             // Check that `s` begins with 20 leading zero bytes.
             // And that `r` begins with 12 leading zero bytes.
-            LibBit.and(bytes20(s) == bytes20(0), bytes12(r) == 0),
+            LibBit.and(bytes20(s) == 0, bytes12(r) == 0),
             // And length check, just in case.
             signature.length >= 0x20 * 2 + 0x14
         );
