@@ -517,11 +517,16 @@ contract Delegation is EIP712, GuardedExecutor {
     }
 
     /// @dev Allows the entry point to set the compact PREP signature.
-    function initializeCompactPREPSignature(bytes32 compactPREPSigature) public virtual {
+    function initializeCompactPREPSignature(bytes32 compactPREPSigature)
+        public
+        virtual
+        returns (bool)
+    {
         if (msg.sender != ENTRY_POINT) revert Unauthorized();
         DelegationStorage storage $ = _getDelegationStorage();
         if ($.compactPREPSigature != 0) revert CompactPREPSignatureAlreadyInitialized();
         $.compactPREPSigature = compactPREPSigature;
+        return true;
     }
 
     ////////////////////////////////////////////////////////////////////////

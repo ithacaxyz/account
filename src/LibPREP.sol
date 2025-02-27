@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
+import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 import {LibRLP} from "solady/utils/LibRLP.sol";
 import {ECDSA} from "solady/utils/ECDSA.sol";
@@ -23,7 +24,7 @@ library LibPREP {
             // And that `r` begins with 12 leading zero bytes.
             LibBit.and(bytes20(s) == bytes20(0), bytes12(r) == 0),
             // And length check, just in case.
-            signature.length < 0x20 * 2 + 0x14
+            signature.length >= 0x20 * 2 + 0x14
         );
     }
 
@@ -36,9 +37,11 @@ library LibPREP {
     {
         bytes32 s = bytes32((uint256(LibBytes.loadCalldata(signature, 0x20)) << 1) >> 1);
         bytes32 r = LibBytes.loadCalldata(signature, 0x00);
-        // Check if `r` matches the lower 20 bytes of `digest`.
-        if (r != (digest << 96) >> 96) return 0;
         unchecked {
+            // Check if `r` matches the lower 20 bytes of the mined `digest`.
+            for (uint256 i;; ++i) {
+                if (r == (EfficientHashLib.hash(digest, bytes32(i)) << 96) >> 96) break;
+            }
             uint256 n = signature.length - 0x14;
             // The `delegation` will be on the last 20 bytes of the signature.
             address d = address(bytes20(LibBytes.loadCalldata(signature, n)));
@@ -59,7 +62,8 @@ library LibPREP {
             bytes32 r = compactPREPSigature >> 96;
             bytes32 s = ((compactPREPSigature << 160) >> 160);
             bytes32 h = keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(d).p(0).encode()));
-            return ECDSA.tryRecover(h, 27, r, s) == d || ECDSA.tryRecover(h, 28, r, s) == d;
+            if (ECDSA.tryRecover(h, 27, r, s) == address(this)) return true;
+            if (ECDSA.tryRecover(h, 28, r, s) == address(this)) return true;
         }
         return false;
     }
