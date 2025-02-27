@@ -9,22 +9,20 @@ import {LibBytes} from "solady/utils/LibBytes.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 
 /// @title LibPREP
-/// @notice A library to encapsulate the PREP workflow.
+/// @notice A library to encapsulate the PREP (Provably Rootless EIP-7702 Proxy) workflow.
+/// See: https://blog.biconomy.io/prep-deep-dive/
 library LibPREP {
     using LibRLP for LibRLP.List;
 
-    /// @dev `signature` is `abi.encodePacked(abi.encodePacked(r,s,v), delegation)`.
+    /// @dev `signature` is `abi.encodePacked(bytes32(r), uint96(s), address(delegation))`.
+    /// You will have to mine a signature such that the `v` is 27,
+    /// and `s` is less than or equal to `2**96 - 1`.
     function signatureMaybeForPREP(bytes calldata signature) internal pure returns (bool) {
-        // Mask `s` by `2**255 - 1`. This allows for the `(r,s,v)` and ERC-2098 `(r,vs)` formats.
-        bytes32 s = bytes32((uint256(LibBytes.loadCalldata(signature, 0x20)) << 1) >> 1);
-        bytes32 r = LibBytes.loadCalldata(signature, 0x00);
-
         return LibBit.and(
-            // Check that `s` begins with 20 leading zero bytes.
-            // And that `r` begins with 12 leading zero bytes.
-            LibBit.and(bytes20(s) == 0, bytes12(r) == 0),
+            // Check that `r` begins with 12 leading zero bytes.
+            bytes12(LibBytes.loadCalldata(signature, 0x00)) == 0,
             // And length check, just in case.
-            signature.length >= 0x20 * 2 + 0x14
+            signature.length == 64
         );
     }
 
@@ -35,22 +33,17 @@ library LibPREP {
         view
         returns (bytes32)
     {
-        bytes32 s = bytes32((uint256(LibBytes.loadCalldata(signature, 0x20)) << 1) >> 1);
+        bytes32 sAndDelegation = LibBytes.loadCalldata(signature, 0x20);
+        bytes32 s = sAndDelegation >> 160;
         bytes32 r = LibBytes.loadCalldata(signature, 0x00);
         unchecked {
             // Check if `r` matches the lower 20 bytes of the mined `digest`.
             for (uint256 i;; ++i) {
                 if (r == (EfficientHashLib.hash(digest, bytes32(i)) << 96) >> 96) break;
             }
-            uint256 n = signature.length - 0x14;
-            // The `delegation` will be on the last 20 bytes of the signature.
-            address d = address(bytes20(LibBytes.loadCalldata(signature, n)));
-            if (
-                ECDSA.recoverCalldata(
-                    keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(d).p(0).encode())),
-                    LibBytes.truncatedCalldata(signature, n)
-                ) != eoa
-            ) return 0;
+            address d = address(uint160(uint256(sAndDelegation))); // `delegation`.
+            bytes32 h = keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(d).p(0).encode()));
+            if (ECDSA.tryRecover(h, 27, r, s) != eoa) return 0;
         }
         return (r << 96) | ((s << 160) >> 160);
     }
@@ -63,7 +56,6 @@ library LibPREP {
             bytes32 s = ((compactPREPSigature << 160) >> 160);
             bytes32 h = keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(d).p(0).encode()));
             if (ECDSA.tryRecover(h, 27, r, s) == target) return true;
-            if (ECDSA.tryRecover(h, 28, r, s) == target) return true;
         }
         return false;
     }

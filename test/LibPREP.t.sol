@@ -68,8 +68,8 @@ contract LibPREPTest is SoladyTest {
         u.executionData = abi.encode(calls);
 
         t.digest = ep.computePREPDigest(u);
-        (t.r, t.s, t.v, u.eoa) = _mine(t.digest);
-        u.signature = abi.encodePacked(t.r, t.s, t.v, delegation);
+        (t.r, t.s, u.eoa) = _mine(t.digest);
+        u.signature = abi.encodePacked(bytes32(t.r), uint96(uint256(t.s)), address(delegation));
         assertNotEq(this.getCompactPREPSignature(u.signature, t.digest, u.eoa), 0);
 
         paymentToken.mint(u.eoa, type(uint128).max);
@@ -91,18 +91,13 @@ contract LibPREPTest is SoladyTest {
         return LibPREP.getCompactPREPSignature(signature, digest, eoa);
     }
 
-    function _mine(bytes32 digest) internal returns (bytes32 r, bytes32 s, uint8 v, address eoa) {
+    function _mine(bytes32 digest) internal returns (bytes32 r, bytes32 s, address eoa) {
         bytes32 h = keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(delegation).p(0).encode()));
 
         for (uint256 i;; ++i) {
             r = bytes32(uint256(uint160(uint256(EfficientHashLib.hash(digest, bytes32(i))))));
-            uint256 q = _randomUniform();
-            s = bytes32(uint256(uint96(q)));
-            v = 27;
-            eoa = ecrecover(h, v, r, s);
-            if (eoa != address(0)) break;
-            v = 28;
-            eoa = ecrecover(h, v, r, s);
+            s = bytes32(uint256(uint96(_randomUniform())));
+            eoa = ecrecover(h, 27, r, s);
             if (eoa != address(0)) break;
         }
         assert(uint256(r) <= 2 ** 160 - 1);
