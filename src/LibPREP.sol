@@ -15,18 +15,22 @@ library LibPREP {
     using LibRLP for LibRLP.List;
 
     /// @dev Validates if `digest` and `saltAndDelegation` results in `target`.
-    /// Returns a non-zero `r` for the PREP signature, if valid. 
+    /// Returns a non-zero `r` for the PREP signature, if valid.
     /// Otherwise returns 0.
-    function proof(address target, bytes32 digest, bytes32 saltAndDelegation) internal view returns (uint160 r) {
+    function signature(address target, bytes32 digest, bytes32 saltAndDelegation)
+        internal
+        view
+        returns (uint160 r)
+    {
         address delegation = address(uint160(uint256(saltAndDelegation))); // Lower 20 bytes (160 bits).
-        uint256 salt = uint96(uint256(saltAndDelegation)); // Upper 12 bytes (96 bits).
+        uint256 salt = uint256(saltAndDelegation) >> 160; // Upper 12 bytes (96 bits).
         r = uint160(uint256(EfficientHashLib.hash(uint256(digest), salt))); // Lower 20 bytes (160 bits).
         if (!isValid(target, r, delegation)) r = 0;
     }
 
-    /// @dev Returns if `r` and `delegation` results in `target`. 
+    /// @dev Returns if `r` and `delegation` results in `target`.
     function isValid(address target, uint160 r, address delegation) internal view returns (bool) {
-        uint96 s = uint96(uint256(EfficientHashLib.hash(r))); // Lower 12 bytes (96 bits).
+        uint128 s = uint128(uint256(EfficientHashLib.hash(r))); // Lower 16 bytes (128 bits).
         bytes32 h = keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(delegation).p(0).encode()));
         return ECDSA.tryRecover(h, 27, bytes32(uint256(r)), bytes32(uint256(s))) == target;
     }

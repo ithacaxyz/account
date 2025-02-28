@@ -617,12 +617,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// If the the nonce starts with `MULTICHAIN_NONCE_PREFIX`,
     /// the digest will be computed without the chain ID.
     /// Otherwise, the digest will be computed with the chain ID.
-    function _computeDigest(UserOp calldata u)
-        internal
-        view
-        virtual
-        returns (bytes32)
-    {
+    function _computeDigest(UserOp calldata u) internal view virtual returns (bytes32) {
         bytes32[] calldata pointers = LibERC7579.decodeBatch(u.executionData);
         bytes32[] memory a = EfficientHashLib.malloc(pointers.length);
         unchecked {
@@ -656,6 +651,22 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
 
+    /// @dev Initializes the PREP.
+    function _initializePREP(UserOp calldata u) internal {
+        bytes calldata initData = u.initData;
+        if (initData.length == uint256(0)) return;
+        address eoa = u.eoa;
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, 0x36745d10) // `initializePREP(bytes)`.
+            mstore(add(m, 0x20), 0x20)
+            mstore(add(m, 0x40), initData.length)
+            calldatacopy(add(m, 0x60), initData.offset, initData.length)
+            let success := call(gas(), eoa, 0, add(m, 0x1c), add(0x64, initData.length), m, 0x20)
+            if iszero(and(eq(mload(m), 1), success)) { revert(0x00, 0x20) }
+        }
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Fallback
     ////////////////////////////////////////////////////////////////////////
@@ -682,6 +693,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // `_verifyAndCall()`.
         if (s == 0xe235a92a) {
             require(msg.sender == address(this));
+            _initializePREP(u);
             (bool isValid, bytes32 keyHash) = _verify(u);
             if (!isValid) revert VerificationError();
             _execute(u, keyHash, false);
