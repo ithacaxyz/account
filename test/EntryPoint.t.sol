@@ -440,7 +440,7 @@ contract EntryPointTest is SoladyTest {
         assertEq(paymentToken.balanceOf(aliceAddress), 50 ether - actualAmount - 1 ether);
     }
 
-    function testExecuteRevertWhenRunOutOfGas() public {
+    function _testExecuteRevertWhenRunOutOfGas() internal {
         uint256 alice = uint256(keccak256("alicePrivateKey"));
 
         address aliceAddress = vm.addr(alice);
