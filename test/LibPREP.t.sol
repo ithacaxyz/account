@@ -96,7 +96,7 @@ contract LibPREPTest is SoladyTest {
 
         assertEq(sampleTarget.x(), t.x);
 
-        assertTrue(LibPREP.isPREP(u.eoa, Delegation(payable(u.eoa)).initializePREPSignature()));
+        assertTrue(LibPREP.isPREP(u.eoa, Delegation(payable(u.eoa)).rPREP()));
     }
 
     function _secp256r1Sig(uint256 privateKey, bytes32 keyHash, EntryPoint.UserOp memory u)

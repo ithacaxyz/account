@@ -70,7 +70,7 @@ contract Delegation is EIP712, GuardedExecutor {
         /// @dev The label.
         LibBytes.BytesStorage label;
         /// @dev The `r` value for the secp256k1 curve to show that this contract is a PREP.
-        uint160 initializePREPSignature;
+        uint160 rPREP;
         /// @dev Mapping for 4337-style 2D nonce sequences.
         /// Each nonce has the following bit layout:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
@@ -409,14 +409,14 @@ contract Delegation is EIP712, GuardedExecutor {
         return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
 
-    /// @dev Returns the signature for initializing the PREP.
-    function initializePREPSignature() public view virtual returns (uint160) {
-        return _getDelegationStorage().initializePREPSignature;
+    /// @dev Returns the `r` value for initializing the PREP.
+    function rPREP() public view virtual returns (uint160) {
+        return _getDelegationStorage().rPREP;
     }
 
     /// @dev Returns if the compact PREP signature is valid.
     function isPREP() public view virtual returns (bool) {
-        return LibPREP.isPREP(address(this), _getDelegationStorage().initializePREPSignature);
+        return LibPREP.isPREP(address(this), _getDelegationStorage().rPREP);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -528,7 +528,7 @@ contract Delegation is EIP712, GuardedExecutor {
     function initializePREP(bytes calldata initData) public virtual returns (bool) {
         if (msg.sender != ENTRY_POINT) revert Unauthorized();
         DelegationStorage storage $ = _getDelegationStorage();
-        if ($.initializePREPSignature != 0) revert PREPAlreadyInitialized();
+        if ($.rPREP != 0) revert PREPAlreadyInitialized();
 
         (bytes32[] calldata pointers, bytes calldata opData) =
             LibERC7579.decodeBatchAndOpData(initData);
@@ -546,9 +546,9 @@ contract Delegation is EIP712, GuardedExecutor {
                 )
             );
         }
-        uint160 r = LibPREP.signature(address(this), a.hash(), LibBytes.loadCalldata(opData, 0x00));
+        uint160 r = LibPREP.rPREP(address(this), a.hash(), LibBytes.loadCalldata(opData, 0x00));
         if (r == 0) revert InvalidPREP();
-        $.initializePREPSignature = r;
+        $.rPREP = r;
 
         Call[] calldata calls;
         assembly ("memory-safe") {

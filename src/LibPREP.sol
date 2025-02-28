@@ -17,7 +17,7 @@ library LibPREP {
     /// @dev Validates if `digest` and `saltAndDelegation` results in `target`.
     /// Returns a non-zero `r` for the PREP signature, if valid.
     /// Otherwise returns 0.
-    function signature(address target, bytes32 digest, bytes32 saltAndDelegation)
+    function rPREP(address target, bytes32 digest, bytes32 saltAndDelegation)
         internal
         view
         returns (uint160 r)
