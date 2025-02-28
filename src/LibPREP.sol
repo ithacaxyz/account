@@ -30,9 +30,9 @@ library LibPREP {
 
     /// @dev Returns if `r` and `delegation` results in `target`.
     function isValid(address target, uint160 r, address delegation) internal view returns (bool) {
-        uint128 s = uint128(uint256(EfficientHashLib.hash(r))); // Lower 16 bytes (128 bits).
+        bytes32 s = EfficientHashLib.hash(r);
         bytes32 h = keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(delegation).p(0).encode()));
-        return ECDSA.tryRecover(h, 27, bytes32(uint256(r)), bytes32(uint256(s))) == target;
+        return ECDSA.tryRecover(h, 27, bytes32(uint256(r)), s) == target;
     }
 
     /// @dev Returns if `target` is a PREP.
