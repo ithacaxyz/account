@@ -103,17 +103,11 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     error OrderAlreadyFilled();
 
     /// @dev For returning the gas used and the error from a simulation.
+    /// For the meaning of the returned variables, see `simulateExecute`.
     error SimulationResult(uint256 gUsed, bytes4 err);
 
     /// @dev For returning the gas required and the error from a simulation.
-    /// - `gExecute` is the recommended amount of gas to pass into execute.
-    ///    This does not include the minimum transaction overhead of 21k gas.
-    ///    You will need to add that in.
-    /// - `gCombined` is the recommendation for `gasCombined`.
-    /// - `gUsed` is the amount of gas that has been eaten.
-    /// - `err` is the error selector from the simulation.
-    ///   If the `err` is non-zero, it means that the simulation with `gExecute`
-    ///   has not resulted in a success execution.
+    /// For the meaning of the returned variables, see `simulateExecute2`.
     error SimulationResult2(uint256 gExecute, uint256 gCombined, uint256 gUsed, bytes4 err);
 
     /// @dev The simulate execute 2 run has failed. Try passing in more gas to the simulation.
@@ -241,7 +235,28 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev This function does not actually execute.
-    /// It simulates an execution and reverts with `SimulationResult2(gExecute, gCombined, gUsed, err)`.
+    /// It simulates an execution and reverts with
+    /// `SimulationResult2(gExecute, gCombined, gUsed, err)`:
+    /// - `gExecute` is the recommended amount of gas to pass into execute.
+    ///    This does not include the minimum transaction overhead of 21k gas.
+    ///    You will need to add that in.
+    /// - `gCombined` is the recommendation for `gasCombined`.
+    /// - `gUsed` is the amount of gas that has been eaten.
+    /// - `err` is the error selector from the simulation.
+    ///   If the `err` is non-zero, it means that the simulation with `gExecute`
+    ///   has not resulted in a success execution.
+    /// Notes:
+    /// - `combinedGas` will be ignored and overwritten during estimation. Just leave it as zero.
+    /// - `signature` is NOT required to be valid, but sufficient for triggering
+    ///    the code paths to meter the gas required.
+    ///   - EOA (no `keyHash`): `abi.encodePacked(r, s, v)`.
+    ///   - Others (e.g. P256, with `keyHash`):
+    ///     `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
+    ///     The `keyHash` is required for triggering to validation and GuardedExecutor
+    ///     code paths for that particular `keyHash`.
+    ///   For most accurate metering, the signatures should be actual signatures,
+    ///   but signed by a different private key of the same key type.
+    ///   For simulations, we want to avoid early returns for trivially invalid signatures.
     function simulateExecute2(bytes calldata encodedUserOp) public payable virtual {
         bytes memory data = abi.encodeCall(this.simulateExecute, encodedUserOp);
         uint256 gExecute = gasleft();
@@ -303,6 +318,12 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
     /// @dev This function does not actually execute.
     /// It simulates an execution and reverts with `SimulationResult(gUsed, err)`.
+    /// This function requires that `combinedGas` be set to a high enough value.
+    /// Notes:
+    /// - `gUsed` is the amount of gas that has been eaten.
+    /// - `err` is the error selector from the simulation.
+    ///   If the `err` is non-zero, it means that the simulation with `gExecute`
+    ///   has not resulted in a success execution.
     function simulateExecute(bytes calldata encodedUserOp) public payable virtual {
         uint256 g = LibStorage.ref(_COMBINED_GAS_OVERRIDE_SLOT).value;
         if (g == type(uint256).max) {
