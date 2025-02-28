@@ -76,6 +76,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         /// @dev The wrapped signature.
         /// `abi.encodePacked(innerSignature, keyHash, prehash)`.
         bytes signature;
+        /// @dev Optional data for `initPREP` on the delegation.
+        bytes initData;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -562,19 +564,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     function _verify(UserOp calldata u) internal virtual returns (bool isValid, bytes32 keyHash) {
         bytes calldata sig = u.signature;
         address eoa = u.eoa;
-        if (LibPREP.signatureMaybeForPREP(sig)) {
-            bytes32 cps = LibPREP.getCompactPREPSignature(sig, _computeDigest(u, true), eoa);
-            if (cps != 0) {
-                assembly ("memory-safe") {
-                    mstore(0x00, 0x0208dc02) // `initializeCompactPREPSignature(bytes32)`.
-                    mstore(0x20, cps)
-                    let success := call(gas(), eoa, 0, 0x1c, 0x24, 0x00, 0x20)
-                    if iszero(and(eq(mload(0x00), 1), success)) { revert(0x00, 0x20) }
-                }
-                return (true, bytes32(0));
-            }
-        }
-        bytes32 digest = _computeDigest(u, false);
+        bytes32 digest = _computeDigest(u);
         assembly ("memory-safe") {
             let m := mload(0x40)
             mstore(m, 0x0cef73b4) // `unwrapAndValidateSignature(bytes32,bytes)`.
@@ -627,7 +617,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// If the the nonce starts with `MULTICHAIN_NONCE_PREFIX`,
     /// the digest will be computed without the chain ID.
     /// Otherwise, the digest will be computed with the chain ID.
-    function _computeDigest(UserOp calldata u, bool isPrep)
+    function _computeDigest(UserOp calldata u)
         internal
         view
         virtual
@@ -654,7 +644,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         bytes32[] memory f = EfficientHashLib.malloc(10);
         f.set(0, USER_OP_TYPEHASH);
         f.set(1, LibBit.toUint(isMultichain));
-        f.set(2, Math.ternary(isPrep, 0, uint160(u.eoa)));
+        f.set(2, uint160(u.eoa));
         f.set(3, a.hash());
         f.set(4, u.nonce);
         f.set(5, uint160(u.payer));

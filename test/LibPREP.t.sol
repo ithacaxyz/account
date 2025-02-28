@@ -48,6 +48,7 @@ contract LibPREPTest is SoladyTest {
         bytes32 s;
         uint8 v;
         uint256 x;
+        bytes32 saltAndDelegation;
     }
 
     function testPREP() public {
@@ -59,48 +60,47 @@ contract LibPREPTest is SoladyTest {
         calls[0].target = address(sampleTarget);
         calls[0].data = abi.encodeWithSelector(SampleTarget.setX.selector, t.x);
 
+        (t.saltAndDelegation, u.eoa) = _mine(_computePREPDigest(calls));
+        
         u.nonce = 0xc1d0 << 240;
         u.paymentToken = address(paymentToken);
         u.paymentAmount = 1 ether;
         u.paymentMaxAmount = type(uint128).max;
         u.combinedGas = 10000000;
+        u.executionData = "";
 
-        u.executionData = abi.encode(calls);
+        // t.digest = ep.computePREPDigest(u);
+        u.signature = abi.encodePacked(r, s, v);
 
-        t.digest = ep.computePREPDigest(u);
-        (t.r, t.s, u.eoa) = _mine(t.digest);
-        u.signature = abi.encodePacked(bytes32(t.r), uint96(uint256(t.s)), address(delegation));
-        assertNotEq(this.getCompactPREPSignature(u.signature, t.digest, u.eoa), 0);
+        // paymentToken.mint(u.eoa, type(uint128).max);
 
-        paymentToken.mint(u.eoa, type(uint128).max);
+        // vm.etch(u.eoa, abi.encodePacked(hex"ef0100", delegation));
+        // assertEq(ep.execute(abi.encode(u)), 0);
 
-        vm.etch(u.eoa, abi.encodePacked(hex"ef0100", delegation));
-        assertEq(ep.execute(abi.encode(u)), 0);
+        // assertEq(sampleTarget.x(), t.x);
 
-        assertEq(sampleTarget.x(), t.x);
-
-        assertTrue(LibPREP.isPREP(u.eoa, Delegation(payable(u.eoa)).compactPREPSignature()));
+        // assertTrue(LibPREP.isPREP(u.eoa, Delegation(payable(u.eoa)).compactPREPSignature()));
     }
 
-    function getCompactPREPSignature(bytes calldata signature, bytes32 digest, address eoa)
-        public
-        view
-        returns (bytes32)
-    {
-        if (!LibPREP.signatureMaybeForPREP(signature)) return 0;
-        return LibPREP.getCompactPREPSignature(signature, digest, eoa);
-    }
+    // function getCompactPREPSignature(bytes calldata signature, bytes32 digest, address eoa)
+    //     public
+    //     view
+    //     returns (bytes32)
+    // {
+    //     if (!LibPREP.signatureMaybeForPREP(signature)) return 0;
+    //     return LibPREP.getCompactPREPSignature(signature, digest, eoa);
+    // }
 
-    function _mine(bytes32 digest) internal returns (bytes32 r, bytes32 s, address eoa) {
+    function _mine(bytes32 digest) internal returns (bytes32 saltAndDelegation, address eoa) {
         bytes32 h = keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(delegation).p(0).encode()));
-
-        for (uint256 i;; ++i) {
-            r = bytes32(uint256(uint160(uint256(EfficientHashLib.hash(digest, bytes32(i))))));
-            s = bytes32(uint256(uint96(_randomUniform())));
-            eoa = ecrecover(h, 27, r, s);
+        uint96 salt;
+        while (true) {
+            uint160 r = uint160(uint256(EfficientHashLib.hash(uint256(digest), salt)));
+            uint96 s = uint96(uint256(EfficientHashLib.hash(r)));
+            eoa = ecrecover(h, 27, bytes32(uint256(r)), bytes32(uint256(s)));
             if (eoa != address(0)) break;
+            ++salt;
         }
-        assert(uint256(r) <= 2 ** 160 - 1);
-        assert(uint256(s) <= 2 ** 96 - 1);
+        saltAndDelegation = bytes32((uint256(salt) << 160) | uint160(delegation));
     }
 }

@@ -14,51 +14,26 @@ import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 library LibPREP {
     using LibRLP for LibRLP.List;
 
-    /// @dev `signature` is `abi.encodePacked(bytes32(r), uint96(s), address(delegation))`.
-    /// You will have to mine a signature such that:
-    /// - `r <= 2**160 - 1`, and matches the a hash of the digest, see `getCompactPREPSignature`
-    /// - `s <= 2**96 - 1`
-    /// - `v == 27`
-    function signatureMaybeForPREP(bytes calldata signature) internal pure returns (bool) {
-        return LibBit.and(
-            // Check that `r` begins with 12 leading zero bytes.
-            bytes12(LibBytes.loadCalldata(signature, 0x00)) == 0,
-            // And length check, just in case.
-            signature.length == 64
-        );
+    /// @dev Validates if `digest` and `saltAndDelegation` results in `target`.
+    /// Returns a non-zero `r` for the PREP signature, if valid. 
+    /// Otherwise returns 0.
+    function proof(address target, bytes32 digest, bytes32 saltAndDelegation) internal view returns (uint160 r) {
+        address delegation = address(uint160(uint256(saltAndDelegation))); // Lower 20 bytes (160 bits).
+        uint256 salt = uint96(uint256(saltAndDelegation)); // Upper 12 bytes (96 bits).
+        r = uint160(uint256(EfficientHashLib.hash(uint256(digest), salt))); // Lower 20 bytes (160 bits).
+        if (!isValid(target, r, delegation)) r = 0;
     }
 
-    /// @dev Returns the compact representation of the PREP signature.
-    /// If the `signature` is invalid, returns `bytes32(0)`.
-    function getCompactPREPSignature(bytes calldata signature, bytes32 digest, address eoa)
-        internal
-        view
-        returns (bytes32)
-    {
-        bytes32 sAndDelegation = LibBytes.loadCalldata(signature, 0x20);
-        bytes32 s = sAndDelegation >> 160;
-        bytes32 r = LibBytes.loadCalldata(signature, 0x00);
-        unchecked {
-            // Check if `r` matches the lower 20 bytes of the mined `digest`.
-            for (uint256 i;; ++i) {
-                if (r == (EfficientHashLib.hash(digest, bytes32(i)) << 96) >> 96) break;
-            }
-            address d = address(uint160(uint256(sAndDelegation))); // `delegation`.
-            bytes32 h = keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(d).p(0).encode()));
-            if (ECDSA.tryRecover(h, 27, r, s) != eoa) return 0;
-        }
-        return (r << 96) | ((s << 160) >> 160);
+    /// @dev Returns if `r` and `delegation` results in `target`. 
+    function isValid(address target, uint160 r, address delegation) internal view returns (bool) {
+        uint96 s = uint96(uint256(EfficientHashLib.hash(r))); // Lower 12 bytes (96 bits).
+        bytes32 h = keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(delegation).p(0).encode()));
+        return ECDSA.tryRecover(h, 27, bytes32(uint256(r)), bytes32(uint256(s))) == target;
     }
 
-    /// @dev Returns if the target address is a PREP account.
-    function isPREP(address target, bytes32 compactPREPSigature) internal view returns (bool) {
-        address d = LibEIP7702.delegation(target);
-        if (LibBit.and(d != address(0), compactPREPSigature != 0)) {
-            bytes32 r = compactPREPSigature >> 96;
-            bytes32 s = ((compactPREPSigature << 160) >> 160);
-            bytes32 h = keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(d).p(0).encode()));
-            if (ECDSA.tryRecover(h, 27, r, s) == target) return true;
-        }
-        return false;
+    /// @dev Returns if `target` is a PREP.
+    function isPREP(address target, uint160 r) internal view returns (bool) {
+        address delegation = LibEIP7702.delegation(target);
+        return LibBit.and(delegation != address(0), r != 0) && isValid(target, r, delegation);
     }
 }

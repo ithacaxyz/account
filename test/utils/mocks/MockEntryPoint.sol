@@ -8,10 +8,6 @@ import {Brutalizer} from "../Brutalizer.sol";
 /// Do NOT copy anything here into production code unless you really know what you are doing.
 contract MockEntryPoint is EntryPoint, Brutalizer {
     function computeDigest(UserOp calldata userOp) public view returns (bytes32) {
-        return _computeDigest(userOp, false);
-    }
-
-    function computePREPDigest(UserOp calldata userOp) public view returns (bytes32) {
-        return _computeDigest(userOp, true);
+        return _computeDigest(userOp);
     }
 }

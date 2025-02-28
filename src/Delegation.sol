@@ -14,6 +14,7 @@ import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {LibStorage} from "solady/utils/LibStorage.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
+import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 import {LibPREP} from "./LibPREP.sol";
@@ -68,9 +69,8 @@ contract Delegation is EIP712, GuardedExecutor {
     struct DelegationStorage {
         /// @dev The label.
         LibBytes.BytesStorage label;
-        /// @dev Set to a non-zero value if this account is initialized via
-        /// the Provably Rootless EIP-7702 Proxy (PREP) method.
-        bytes32 compactPREPSigature;
+        /// @dev The `r` value for the secp256k1 curve to show that this contract is a PREP.
+        uint160 rPREP;
         /// @dev Mapping for 4337-style 2D nonce sequences.
         /// Each nonce has the following bit layout:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
@@ -139,8 +139,11 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev When invalidating a nonce sequence, the new sequence must be larger than the current.
     error NewSequenceMustBeLarger();
 
-    /// @dev The compact PREP signature has already been initialized.
-    error CompactPREPSignatureAlreadyInitialized();
+    /// @dev The PREP has already been initialized.
+    error PREPAlreadyInitialized();
+
+    /// @dev The PREP `initData` is invalid.
+    error InvalidPREP();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -407,13 +410,13 @@ contract Delegation is EIP712, GuardedExecutor {
     }
 
     /// @dev Returns the compact PREP signature.
-    function compactPREPSignature() public view virtual returns (bytes32) {
-        return _getDelegationStorage().compactPREPSigature;
+    function rPREP() public view virtual returns (uint160) {
+        return _getDelegationStorage().rPREP;
     }
 
     /// @dev Returns if the compact PREP signature is valid.
     function isPREP() public view virtual returns (bool) {
-        return LibPREP.isPREP(address(this), _getDelegationStorage().compactPREPSigature);
+        return LibPREP.isPREP(address(this), _getDelegationStorage().rPREP);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -521,16 +524,37 @@ contract Delegation is EIP712, GuardedExecutor {
         }
     }
 
-    /// @dev Allows the entry point to set the compact PREP signature.
-    function initializeCompactPREPSignature(bytes32 compactPREPSigature)
-        public
-        virtual
-        returns (bool)
-    {
+    /// @dev Allows the entry point to initialize the PREP.
+    function initializePREP(bytes calldata initData) public virtual returns (bool) {
         if (msg.sender != ENTRY_POINT) revert Unauthorized();
         DelegationStorage storage $ = _getDelegationStorage();
-        if ($.compactPREPSigature != 0) revert CompactPREPSignatureAlreadyInitialized();
-        $.compactPREPSigature = compactPREPSigature;
+        if ($.rPREP != 0) revert PREPAlreadyInitialized();
+        
+        (bytes32[] calldata pointers, bytes calldata opData) = LibERC7579.decodeBatchAndOpData(initData);
+        bytes32[] memory a = EfficientHashLib.malloc(pointers.length);
+        for (uint256 i; i < pointers.length; ++i) {
+            (address target, uint256 value, bytes calldata data) = LibERC7579.getExecution(pointers, i);
+            a.set(
+                i,
+                EfficientHashLib.hash(
+                    CALL_TYPEHASH,
+                    bytes32(uint256(uint160(target))),
+                    bytes32(value),
+                    EfficientHashLib.hashCalldata(data)
+                )
+            );
+        }
+        uint160 r = LibPREP.proof(address(this), a.hash(), LibBytes.loadCalldata(opData, 0x00));
+        if (r == 0) revert InvalidPREP();
+        $.rPREP = r;
+
+        Call[] calldata calls;
+        assembly ("memory-safe") {
+            calls.length := pointers.length
+            calls.offset := pointers.offset
+        }
+        _execute(calls, bytes32(0));
+
         return true;
     }
 
