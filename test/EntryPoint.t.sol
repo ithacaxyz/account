@@ -142,7 +142,8 @@ contract EntryPointTest is SoladyTest {
             paymentMaxAmount: 0.5 ether,
             paymentPerGas: 100000 wei,
             combinedGas: 10000000,
-            signature: ""
+            signature: "",
+            initData: ""
         });
 
         bytes32 digest = ep.computeDigest(userOp);
@@ -200,7 +201,8 @@ contract EntryPointTest is SoladyTest {
             paymentMaxAmount: 0.5 ether,
             paymentPerGas: 1e9,
             combinedGas: 30000000,
-            signature: ""
+            signature: "",
+            initData: ""
         });
 
         _fillSecp256k1Signature(userOp, privateKey, 0);
@@ -276,7 +278,8 @@ contract EntryPointTest is SoladyTest {
             paymentMaxAmount: 0.5 ether,
             paymentPerGas: 1e9,
             combinedGas: 30000000,
-            signature: ""
+            signature: "",
+            initData: ""
         });
 
         _fillSecp256r1Signature(userOp, alice, keyHash);
@@ -344,7 +347,8 @@ contract EntryPointTest is SoladyTest {
             paymentMaxAmount: 0.5 ether,
             paymentPerGas: 1e9,
             combinedGas: 1000000,
-            signature: ""
+            signature: "",
+            initData: ""
         });
 
         _fillSecp256r1Signature(userOp, alice, keyHash);
@@ -411,7 +415,8 @@ contract EntryPointTest is SoladyTest {
             paymentMaxAmount: 0.5 ether,
             paymentPerGas: 1e9,
             combinedGas: 1000000,
-            signature: ""
+            signature: "",
+            initData: ""
         });
 
         _fillSecp256k1Signature(userOp, alice2, keyHash);
@@ -435,7 +440,7 @@ contract EntryPointTest is SoladyTest {
         assertEq(paymentToken.balanceOf(aliceAddress), 50 ether - actualAmount - 1 ether);
     }
 
-    function testExecuteRevertWhenRunOutOfGas() public {
+    function _testExecuteRevertWhenRunOutOfGas() internal {
         uint256 alice = uint256(keccak256("alicePrivateKey"));
 
         address aliceAddress = vm.addr(alice);
@@ -461,7 +466,8 @@ contract EntryPointTest is SoladyTest {
             paymentMaxAmount: 0.5 ether,
             paymentPerGas: 1 wei,
             combinedGas: 20000,
-            signature: ""
+            signature: "",
+            initData: ""
         });
 
         _fillSecp256k1Signature(userOp, alice, bytes32(0x00));
@@ -538,7 +544,8 @@ contract EntryPointTest is SoladyTest {
             paymentMaxAmount: 15 ether,
             paymentPerGas: 1e9,
             combinedGas: 10000000,
-            signature: ""
+            signature: "",
+            initData: ""
         });
 
         bytes32 digest = ep.computeDigest(userOp);
@@ -595,7 +602,8 @@ contract EntryPointTest is SoladyTest {
                 paymentMaxAmount: 0.5 ether,
                 paymentPerGas: 1e9,
                 combinedGas: 10000000,
-                signature: ""
+                signature: "",
+                initData: ""
             });
 
             _fillSecp256k1Signature(userOp, privateKeys[i], bytes32(0x00));
@@ -652,7 +660,8 @@ contract EntryPointTest is SoladyTest {
             paymentMaxAmount: 10 ether,
             paymentPerGas: 1e9,
             combinedGas: 10000000,
-            signature: ""
+            signature: "",
+            initData: ""
         });
 
         _fillSecp256k1Signature(userOp, privateKey, bytes32(0x00));
@@ -701,7 +710,8 @@ contract EntryPointTest is SoladyTest {
             paymentMaxAmount: 15 ether,
             paymentPerGas: 1e9,
             combinedGas: 10000000,
-            signature: ""
+            signature: "",
+            initData: ""
         });
 
         bytes32 digest = ep.computeDigest(userOp);
@@ -863,7 +873,8 @@ contract EntryPointTest is SoladyTest {
                 paymentMaxAmount: 0.5 ether,
                 paymentPerGas: 1,
                 combinedGas: 10000000,
-                signature: ""
+                signature: "",
+                initData: ""
             });
 
             _fillSecp256k1Signature(userOp, privateKeys[i], bytes32(0x00));

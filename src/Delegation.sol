@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {LibBit} from "solady/utils/LibBit.sol";
+import {LibRLP} from "solady/utils/LibRLP.sol";
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
@@ -13,8 +14,10 @@ import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {LibStorage} from "solady/utils/LibStorage.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
+import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
+import {LibPREP} from "./LibPREP.sol";
 
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
@@ -24,6 +27,7 @@ contract Delegation is EIP712, GuardedExecutor {
     using LibBytes for LibBytes.BytesStorage;
     using LibBitmap for LibBitmap.Bitmap;
     using LibStorage for LibStorage.Bump;
+    using LibRLP for LibRLP.List;
 
     ////////////////////////////////////////////////////////////////////////
     // Data Structures
@@ -65,8 +69,8 @@ contract Delegation is EIP712, GuardedExecutor {
     struct DelegationStorage {
         /// @dev The label.
         LibBytes.BytesStorage label;
-        /// @dev Reserved spacer.
-        uint256 _spacer0;
+        /// @dev The `r` value for the secp256k1 curve to show that this contract is a PREP.
+        bytes32 rPREP;
         /// @dev Mapping for 4337-style 2D nonce sequences.
         /// Each nonce has the following bit layout:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
@@ -134,6 +138,12 @@ contract Delegation is EIP712, GuardedExecutor {
 
     /// @dev When invalidating a nonce sequence, the new sequence must be larger than the current.
     error NewSequenceMustBeLarger();
+
+    /// @dev The PREP has already been initialized.
+    error PREPAlreadyInitialized();
+
+    /// @dev The PREP `initData` is invalid.
+    error InvalidPREP();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -399,6 +409,16 @@ contract Delegation is EIP712, GuardedExecutor {
         return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
 
+    /// @dev Returns the `r` value for initializing the PREP.
+    function rPREP() public view virtual returns (bytes32) {
+        return _getDelegationStorage().rPREP;
+    }
+
+    /// @dev Returns if the compact PREP signature is valid.
+    function isPREP() public view virtual returns (bool) {
+        return LibPREP.isPREP(address(this), _getDelegationStorage().rPREP);
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
@@ -502,6 +522,42 @@ contract Delegation is EIP712, GuardedExecutor {
                 abi.decode(key.publicKey, (address)), digest, signature
             );
         }
+    }
+
+    /// @dev Allows the entry point to initialize the PREP.
+    function initializePREP(bytes calldata initData) public virtual returns (bool) {
+        if (msg.sender != ENTRY_POINT) revert Unauthorized();
+        DelegationStorage storage $ = _getDelegationStorage();
+        if ($.rPREP != 0) revert PREPAlreadyInitialized();
+
+        (bytes32[] calldata pointers, bytes calldata opData) =
+            LibERC7579.decodeBatchAndOpData(initData);
+        bytes32[] memory a = EfficientHashLib.malloc(pointers.length);
+        for (uint256 i; i < pointers.length; ++i) {
+            (address target, uint256 value, bytes calldata data) =
+                LibERC7579.getExecution(pointers, i);
+            a.set(
+                i,
+                EfficientHashLib.hash(
+                    CALL_TYPEHASH,
+                    bytes32(uint256(uint160(target))),
+                    bytes32(value),
+                    EfficientHashLib.hashCalldata(data)
+                )
+            );
+        }
+        bytes32 r = LibPREP.rPREP(address(this), a.hash(), LibBytes.loadCalldata(opData, 0x00));
+        if (LibBit.or(opData.length < 0x20, r == 0)) revert InvalidPREP();
+        $.rPREP = r;
+
+        Call[] calldata calls;
+        assembly ("memory-safe") {
+            calls.length := pointers.length
+            calls.offset := pointers.offset
+        }
+        _execute(calls, bytes32(0));
+
+        return true;
     }
 
     ////////////////////////////////////////////////////////////////////////

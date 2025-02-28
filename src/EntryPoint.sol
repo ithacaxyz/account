@@ -13,6 +13,7 @@ import {LibStorage} from "solady/utils/LibStorage.sol";
 import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
+import {LibPREP} from "./LibPREP.sol";
 
 /// @title EntryPoint
 /// @notice Contract for ERC7702 delegations.
@@ -75,6 +76,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         /// @dev The wrapped signature.
         /// `abi.encodePacked(innerSignature, keyHash, prehash)`.
         bytes signature;
+        /// @dev Optional data for `initPREP` on the delegation.
+        bytes initData;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -558,15 +561,10 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev Calls `unwrapAndValidateSignature` on the `eoa`.
-    function _verify(UserOp calldata u)
-        internal
-        view
-        virtual
-        returns (bool isValid, bytes32 keyHash)
-    {
-        bytes32 digest = _computeDigest(u);
+    function _verify(UserOp calldata u) internal virtual returns (bool isValid, bytes32 keyHash) {
         bytes calldata sig = u.signature;
         address eoa = u.eoa;
+        bytes32 digest = _computeDigest(u);
         assembly ("memory-safe") {
             let m := mload(0x40)
             mstore(m, 0x0cef73b4) // `unwrapAndValidateSignature(bytes32,bytes)`.
@@ -653,6 +651,22 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
 
+    /// @dev Initializes the PREP.
+    function _initializePREP(UserOp calldata u) internal {
+        bytes calldata initData = u.initData;
+        if (initData.length == uint256(0)) return;
+        address eoa = u.eoa;
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, 0x36745d10) // `initializePREP(bytes)`.
+            mstore(add(m, 0x20), 0x20)
+            mstore(add(m, 0x40), initData.length)
+            calldatacopy(add(m, 0x60), initData.offset, initData.length)
+            let success := call(gas(), eoa, 0, add(m, 0x1c), add(0x64, initData.length), m, 0x20)
+            if iszero(and(eq(mload(m), 1), success)) { revert(0x00, 0x20) }
+        }
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Fallback
     ////////////////////////////////////////////////////////////////////////
@@ -679,6 +693,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // `_verifyAndCall()`.
         if (s == 0xe235a92a) {
             require(msg.sender == address(this));
+            _initializePREP(u);
             (bool isValid, bytes32 keyHash) = _verify(u);
             if (!isValid) revert VerificationError();
             _execute(u, keyHash, false);
