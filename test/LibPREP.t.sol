@@ -130,9 +130,10 @@ contract LibPREPTest is SoladyTest {
         uint96 salt;
         while (true) {
             salt = uint96(uint256(saltRandomnessSeed));
-            uint160 r = uint160(uint256(EfficientHashLib.hash(uint256(digest), salt)));
+            bytes32 r =
+                EfficientHashLib.hash(uint256(digest), salt) & bytes32(uint256(2 ** 160 - 1));
             bytes32 s = EfficientHashLib.hash(r);
-            eoa = ecrecover(h, 27, bytes32(uint256(r)), bytes32(uint256(s)));
+            eoa = ecrecover(h, 27, r, s);
             if (eoa != address(0)) break;
             saltRandomnessSeed = EfficientHashLib.hash(saltRandomnessSeed);
         }

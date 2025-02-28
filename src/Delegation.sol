@@ -70,7 +70,7 @@ contract Delegation is EIP712, GuardedExecutor {
         /// @dev The label.
         LibBytes.BytesStorage label;
         /// @dev The `r` value for the secp256k1 curve to show that this contract is a PREP.
-        uint160 rPREP;
+        bytes32 rPREP;
         /// @dev Mapping for 4337-style 2D nonce sequences.
         /// Each nonce has the following bit layout:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
@@ -410,7 +410,7 @@ contract Delegation is EIP712, GuardedExecutor {
     }
 
     /// @dev Returns the `r` value for initializing the PREP.
-    function rPREP() public view virtual returns (uint160) {
+    function rPREP() public view virtual returns (bytes32) {
         return _getDelegationStorage().rPREP;
     }
 
@@ -546,8 +546,8 @@ contract Delegation is EIP712, GuardedExecutor {
                 )
             );
         }
-        uint160 r = LibPREP.rPREP(address(this), a.hash(), LibBytes.loadCalldata(opData, 0x00));
-        if (r == 0) revert InvalidPREP();
+        bytes32 r = LibPREP.rPREP(address(this), a.hash(), LibBytes.loadCalldata(opData, 0x00));
+        if (LibBit.or(opData.length < 0x20, r == 0)) revert InvalidPREP();
         $.rPREP = r;
 
         Call[] calldata calls;
