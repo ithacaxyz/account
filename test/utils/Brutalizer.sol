@@ -33,6 +33,9 @@ contract Brutalizer {
             r := mulmod(mload(0x10), _LPRNG_MULTIPLIER, _LPRNG_MODULO)
 
             let cSize := add(codesize(), iszero(codesize()))
+
+            if eq(cSize, 0) { cSize := 1 }
+
             if iszero(lt(cSize, 32)) { cSize := sub(cSize, and(mload(0x02), 0x1f)) }
             let start := mod(mload(0x10), cSize)
             let size := mul(sub(cSize, start), gt(cSize, start))
