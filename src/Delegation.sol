@@ -632,8 +632,10 @@ contract Delegation is EIP712, GuardedExecutor {
         if (opData.length < 0x20) revert OpDataTooShort();
         uint256 nonce = uint256(LibBytes.loadCalldata(opData, 0x00));
         unchecked {
-            uint256 seq = _getDelegationStorage().nonceSeqs[uint192(nonce >> 64)].value++;
-            if (seq != uint64(nonce)) revert InvalidNonce();
+            LibStorage.Ref storage s = _getDelegationStorage().nonceSeqs[uint192(nonce >> 64)];
+            uint256 seq = s.value;
+            if (!LibBit.and(seq < type(uint64).max, seq == uint64(nonce))) revert InvalidNonce();
+            s.value = seq + 1;
             emit NonceInvalidated(nonce);
         }
 
