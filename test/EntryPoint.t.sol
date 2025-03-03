@@ -944,4 +944,41 @@ contract EntryPointTest is SoladyTest {
 
         ep.execute(abi.encode(op));
     }
+
+    function testInvalidateNonce(uint96 seqKey, uint64 seq) public {
+        uint256 nonce = (uint256(seqKey) << 64) | uint256(seq);
+        EntryPoint.UserOp memory u;
+        uint256 privateKey;
+        (u.eoa, privateKey) = _randomSigner();
+        vm.etch(u.eoa, delegation.code);
+
+        vm.startPrank(u.eoa);
+        if (seq == type(uint64).max || seq == 0) {
+            vm.expectRevert();
+            ep.invalidateNonce(nonce);
+            return;
+        }
+
+        ep.invalidateNonce(nonce);
+
+        vm.deal(u.eoa, 2 ** 128 - 1);
+        u.executionData = _getExecutionDataForThisTargetFunction(
+            _bound(_random(), 0, 2 ** 32 - 1), _truncateBytes(_randomBytes(), 0xff)
+        );
+        u.nonce = ep.getNonce(u.eoa, seqKey);
+        paymentToken.mint(u.eoa, 2 ** 128 - 1);
+        u.paymentToken = address(paymentToken);
+        u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
+        u.paymentMaxAmount = u.paymentAmount;
+        u.combinedGas = 10000000;
+        _fillSecp256k1Signature(u, privateKey, bytes32(0x00));
+
+        bytes4 err = ep.execute(abi.encode(u));
+
+        if (seq > type(uint64).max - 2) {
+            assertEq(err, EntryPoint.InvalidNonce.selector);
+        } else {
+            assertEq(err, 0);
+        }
+    }
 }
