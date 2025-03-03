@@ -440,6 +440,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             }
 
             // If there is an error when the self call is successful, store it.
+            // We only do this here because to protect against vandalism of
+            // previously written errs and future errs.
             // We exclude this from the gas recording, which gives a tiny side benefit of
             // incentivizing relayers to submit UserOps when they are likely to succeed.
             if (err != 0) _getEntryPointStorage().errs[u.eoa][u.nonce] = err;
