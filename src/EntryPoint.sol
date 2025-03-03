@@ -392,9 +392,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // to check the 63/64 rule, so early return to skip the rest of the computations.
             if ((combinedGasOverride >> 255) & 1 != 0) return (0, 0);
         }
-        // If the self call is successful, we know that the payment has been made,
-        // and the sequence for `nonce` has been incremented.
-        bool selfCallSuccess;
+
+        bool s; // Denotes whether the self call is successful.
         assembly ("memory-safe") {
             let m := mload(0x40) // Grab the free memory pointer.
             // Copy the encoded user op to the memory to be ready to pass to the self call.
@@ -405,19 +404,18 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             mstore(add(m, 0x20), shr(254, combinedGasOverride)) // Whether it's a gas simulation.
             mstore(0x00, 0) // Zeroize the return slot.
 
-            let s := add(m, 0x1c) // Start of the calldata in memory to pass to the self call.
-            let n := add(encodedUserOp.length, 0x44) // Length of the calldata to the self call.
-
             // To prevent griefing, we need to do a non-reverting gas-limited self call.
-            selfCallSuccess := call(g, address(), 0, s, n, 0x00, 0x40)
+            // If the self call is successful, we know that the payment has been made,
+            // and the sequence for `nonce` has been incremented.
+            s := call(g, address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x40)
             err := mload(0x00) // The self call will do another self call to execute.
-            paymentAmount := mload(0x20) // Only used when `selfCallSuccess` is true.
-            if iszero(selfCallSuccess) { if iszero(err) { err := shl(224, 0xad4db224) } } // `VerifiedCallError()`.
+            paymentAmount := mload(0x20) // Only used when `s` is true.
+            if iszero(s) { if iszero(err) { err := shl(224, 0xad4db224) } } // `VerifiedCallError()`.
         }
 
-        emit UserOpExecuted(u.eoa, u.nonce, selfCallSuccess, err);
+        emit UserOpExecuted(u.eoa, u.nonce, s, err);
 
-        if (selfCallSuccess) {
+        if (s) {
             // Refund strategy:
             // `totalAmountOfGasToPayFor = gasUsedThusFar + _REFUND_GAS`.
             // `paymentAmountForGas = paymentPerGas * totalAmountOfGasToPayFor`.
@@ -441,7 +439,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 );
             }
 
-            // If there is an error, store it.
+            // If there is an error when the self call is successful, store it.
             // We exclude this from the gas recording, which gives a tiny side benefit of
             // incentivizing relayers to submit UserOps when they are likely to succeed.
             if (err != 0) _getEntryPointStorage().errs[u.eoa][u.nonce] = err;
