@@ -171,7 +171,8 @@ contract Delegation is EIP712, GuardedExecutor {
         bytes32 indexed keyHash, address indexed checker, bool isApproved
     );
 
-    /// @dev The nonce sequence is incremented.
+    /// @dev The nonce sequence of is invalidated up to (inclusive) of `nonce`.
+    /// The new available nonce will be `nonce + 1`.
     /// This event is emitted in the `invalidateNonce` function,
     /// as well as the `execute` function when an execution is performed directly
     /// on the Delegation with a `keyHash`, bypassing the EntryPoint.
@@ -292,11 +293,11 @@ contract Delegation is EIP712, GuardedExecutor {
     }
 
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
-    /// This invalidates the nonces for the `seqKey`, up to `uint64(nonce)`.
+    /// This invalidates the nonces for the `seqKey`, up to (inclusive) `uint64(nonce)`.
     function invalidateNonce(uint256 nonce) public virtual onlyThis {
         LibStorage.Ref storage s = _getDelegationStorage().nonceSeqs[uint192(nonce >> 64)];
         if (uint64(nonce) <= s.value) revert NewSequenceMustBeLarger();
-        s.value = uint64(nonce);
+        s.value = uint64(nonce) + 1;
         emit NonceInvalidated(nonce);
     }
 

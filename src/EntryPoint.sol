@@ -129,14 +129,17 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     // Events
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev The nonce sequence of `eoa` is incremented.
+    /// @dev The nonce sequence of `eoa` is invalidated up to (inclusive) of `nonce`.
+    /// The new available nonce will be `nonce + 1`.
     event NonceInvalidated(address indexed eoa, uint256 nonce);
 
     /// @dev Emitted when a UserOp is executed.
-    /// This event replaces `NonceInvalidated` in the `execute` function.
-    /// It serves to signal that `nonce` has been invalidated,
-    /// while also emitting the `err` in a single event.
-    event UserOpExecuted(address indexed eoa, uint256 nonce, bytes4 err);
+    /// This event is emitted in the `execute` function.
+    /// - `incremented` denotes that `nonce`'s sequence has been incremented to invalidate `nonce`,
+    /// - `err` denotes the resultant error selector.
+    /// If `incremented` is true and `err` is non-zero,
+    /// `err` will be stored for retrieval with `nonceStatus`.
+    event UserOpExecuted(address indexed eoa, uint256 nonce, bool incremented, bytes4 err);
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
@@ -388,51 +391,38 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // If the bit at `1 << 255` is set, this means `simulateExecute2` just wants
             // to check the 63/64 rule, so early return to skip the rest of the computations.
             if ((combinedGasOverride >> 255) & 1 != 0) return (0, 0);
-
-            // Verify and invalidate the nonce.
-            // The nonce will be invalidated even if the UserOp fails.
-            // Otherwise, an attacker can keep replaying the UserOp to take payment and drain the user.
-            // EntryPoint UserOp nonce bookkeeping is stored on the EntryPoint itself
-            // to make implementing this nonce-invalidation pattern more performant.
-            uint256 nonce = u.nonce;
-            uint256 seq = _getEntryPointStorage().nonceSeqs[u.eoa][uint192(nonce >> 64)].value++;
-            if (seq != uint64(nonce)) err = InvalidNonce.selector;
         }
-
+        // If the self call is successful, we know that the payment has been made,
+        // and the sequence for `nonce` has been incremented.
+        bool selfCallSuccess;
         assembly ("memory-safe") {
-            // To prevent griefing, we need to do non-reverting gas-limited calls.
-            for {} iszero(err) {} {
-                let m := mload(0x40) // Grab the free memory pointer.
-                // Copy the encoded user op to the memory to be ready to pass to the self call.
-                calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
+            let m := mload(0x40) // Grab the free memory pointer.
+            // Copy the encoded user op to the memory to be ready to pass to the self call.
+            calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
 
-                // We'll use assembly for frequently used call related stuff to save massive memory gas.
-                mstore(m, 0xf427f8da) // `_payVerifyAndCall()`.
-                mstore(add(m, 0x20), shr(254, combinedGasOverride)) // Whether it's a gas simulation.
-                calldatacopy(0x00, calldatasize(), 0x40) // Zeroize the return slots.
+            // We'll use assembly for frequently used call related stuff to save massive memory gas.
+            mstore(m, 0xf427f8da) // `_payVerifyAndCall()`.
+            mstore(add(m, 0x20), shr(254, combinedGasOverride)) // Whether it's a gas simulation.
+            calldatacopy(0x00, calldatasize(), 0x40) // Zeroize the return slots.
 
-                let s := add(m, 0x1c) // Start of the calldata in memory to pass to the self call.
-                let n := add(encodedUserOp.length, 0x44) // Length of the calldata to the self call.
+            let s := add(m, 0x1c) // Start of the calldata in memory to pass to the self call.
+            let n := add(encodedUserOp.length, 0x44) // Length of the calldata to the self call.
 
-                if iszero(call(g, address(), 0, s, n, 0x00, 0x40)) {
-                    err := mload(0x00)
-                    if iszero(err) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
-                    break
-                }
-                err := mload(0x00)
-                paymentAmount := mload(0x20)
-                break
-            }
+            // To prevent griefing, we need to do a non-reverting gas-limited self call.
+            selfCallSuccess := call(g, address(), 0, s, n, 0x00, 0x40)
+            err := mload(0x00) // The self call will do another self call to execute.
+            paymentAmount := mload(0x20)
+            if iszero(selfCallSuccess) { if iszero(err) { err := shl(224, 0xad4db224) } } // `VerifiedCallError()`.
         }
 
-        emit UserOpExecuted(u.eoa, u.nonce, err);
+        emit UserOpExecuted(u.eoa, u.nonce, selfCallSuccess, err);
 
-        // Refund strategy:
-        // `totalAmountOfGasToPayFor = gasUsedThusFar + _REFUND_GAS`.
-        // `paymentAmountForGas = paymentPerGas * totalAmountOfGasToPayFor`.
-        // If we have overpaid, then refund `paymentAmount - paymentAmountForGas`.
+        if (selfCallSuccess) {
+            // Refund strategy:
+            // `totalAmountOfGasToPayFor = gasUsedThusFar + _REFUND_GAS`.
+            // `paymentAmountForGas = paymentPerGas * totalAmountOfGasToPayFor`.
+            // If we have overpaid, then refund `paymentAmount - paymentAmountForGas`.
 
-        if (paymentAmount != 0) {
             gUsed = Math.rawSub(gStart, gasleft());
             uint256 paymentPerGas = Math.coalesce(u.paymentPerGas, type(uint256).max);
             uint256 finalPaymentAmount = Math.min(
@@ -450,12 +440,12 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                     Math.rawSub(paymentAmount, finalPaymentAmount)
                 );
             }
-        }
 
-        // If there is an error, store it.
-        // We exclude this from the gas recording, which gives a tiny side benefit of
-        // incentivizing relayers to submit UserOps when they are likely to succeed.
-        if (err != 0) _getEntryPointStorage().errs[u.eoa][u.nonce] = err;
+            // If there is an error, store it.
+            // We exclude this from the gas recording, which gives a tiny side benefit of
+            // incentivizing relayers to submit UserOps when they are likely to succeed.
+            if (err != 0) _getEntryPointStorage().errs[u.eoa][u.nonce] = err;
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -483,12 +473,12 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
-    /// This invalidates the nonces for the `seqKey`, up to `uint64(nonce)`.
+    /// This invalidates the nonces for the `seqKey`, up to (inclusive) `uint64(nonce)`.
     function invalidateNonce(uint256 nonce) public virtual {
         LibStorage.Ref storage s =
             _getEntryPointStorage().nonceSeqs[msg.sender][uint192(nonce >> 64)];
         if (uint64(nonce) <= s.value) revert NewSequenceMustBeLarger();
-        s.value = uint64(nonce);
+        s.value = uint64(nonce) + 1;
         emit NonceInvalidated(msg.sender, nonce);
     }
 
@@ -708,11 +698,16 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             u := add(0x24, calldataload(0x24))
             w := calldataload(0x04)
         }
-        uint256 s = uint32(bytes4(msg.sig));
+        uint256 fnSel = uint32(bytes4(msg.sig));
         // `_payVerifyAndCall()`.
-        if (s == 0xf427f8da) {
+        if (fnSel == 0xf427f8da) {
             require(msg.sender == address(this));
-            uint256 paymentAmount = _pay(u);
+            // Verify the nonce, early reverting to save gas.
+            uint256 nonce = u.nonce;
+            LibStorage.Ref storage s =
+                _getEntryPointStorage().nonceSeqs[u.eoa][uint192(nonce >> 64)];
+            uint256 seq = s.value;
+            if (seq != uint64(nonce)) revert InvalidNonce();
 
             // If `_initializePREP` or `_verify` is invalid, just revert the payment.
             // There's a chicken and egg problem:
@@ -724,6 +719,14 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             _initializePREP(u);
             (bool isValid, bytes32 keyHash) = _verify(u);
             if (!isValid) if (w == 0) revert VerificationError();
+
+            uint256 paymentAmount = _pay(u);
+
+            // Once the payment has been made, the nonce must be invalidated.
+            // Otherwise, an attacker can keep replaying the UserOp to take payment and drain the user.
+            // EntryPoint UserOp nonce bookkeeping is stored on the EntryPoint itself
+            // to make implementing this nonce-invalidation pattern more performant.
+            s.value = Math.rawAdd(seq, 1);
 
             assembly ("memory-safe") {
                 let m := mload(0x40)
@@ -738,13 +741,13 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             }
         }
         // `_execute()`.
-        if (s == 0x420aadb8) {
+        if (fnSel == 0x420aadb8) {
             require(msg.sender == address(this));
             _execute(u, w, false);
             return;
         }
         // `_initializeOwner()`.
-        if (s == 0xfc90218d) {
+        if (fnSel == 0xfc90218d) {
             _checkOnlyProxy();
             if (owner() != address(0)) return; // Prevent reinitialization if there's owner.
             address newOwner;
