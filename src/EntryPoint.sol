@@ -707,7 +707,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             LibStorage.Ref storage s =
                 _getEntryPointStorage().nonceSeqs[u.eoa][uint192(nonce >> 64)];
             uint256 seq = s.value;
-            if (seq != uint64(nonce)) revert InvalidNonce();
+            if (!LibBit.and(seq < type(uint64).max, seq == uint64(nonce))) revert InvalidNonce();
 
             // If `_initializePREP` or `_verify` is invalid, just revert the payment.
             // There's a chicken and egg problem:
