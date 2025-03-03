@@ -295,8 +295,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
                 // Heuristic: if the verification gas is > 60k, assume it is P256 verification
                 // without the precompile, which has quite a large variance in verification gas.
-                // Add 100k (emprically determined) to the `gUsed` to account for the variance.
-                for { gCombined := add(gUsed, mul(100000, gt(mload(0x04), 60000))) } 1 {} {
+                // Add 120k (emprically determined) to the `gUsed` to account for the variance.
+                for { gCombined := add(gUsed, mul(120000, gt(mload(0x04), 60000))) } 1 {} {
                     gCombined := add(gCombined, shr(4, gCombined)) // Heuristic: multiply by 1.0625.
                     // Now that we are trying to hone in onto a good estimate for `combinedGas`, we
                     // still want to skip the invalid signature revert and also the 63/64 rule revert.
@@ -400,46 +400,27 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         }
 
         assembly ("memory-safe") {
-            // To prevent griefing, we need to do two non-reverting gas-limited calls.
-            // Even if the verify and call fails, which the gas will be burned,
-            // the payment has already been made and can't be reverted.
-
-            // We'll use assembly for frequently used call related stuff to save massive memory gas.
-            // forgefmt: disable-next-item
+            // To prevent griefing, we need to do non-reverting gas-limited calls.
             for {} iszero(err) {} {
                 let m := mload(0x40) // Grab the free memory pointer.
                 // Copy the encoded user op to the memory to be ready to pass to the self call.
-                calldatacopy(add(m, 0x20), encodedUserOp.offset, encodedUserOp.length)
+                calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
+
+                // We'll use assembly for frequently used call related stuff to save massive memory gas.
+                mstore(m, 0xf427f8da) // `_payVerifyAndCall()`.
+                mstore(add(m, 0x20), shr(254, combinedGasOverride)) // Whether it's a gas simulation.
+                calldatacopy(0x00, calldatasize(), 0x40) // Zeroize the return slots.
+
                 let s := add(m, 0x1c) // Start of the calldata in memory to pass to the self call.
-                let n := add(encodedUserOp.length, 0x24) // Length of the calldata to the self call.
+                let n := add(encodedUserOp.length, 0x44) // Length of the calldata to the self call.
 
-                // 1. Pay.
-                mstore(m, 0x1a3de5c3) // `_pay()`.
-                mstore(0x00, 0) // Zeroize the return slot.
-                if iszero(call( // Gas-limited self call.
-                    xor(g, mul(xor(g, _PAYMENT_GAS_CAP), lt(_PAYMENT_GAS_CAP, g))), // `min`.
-                    address(), 0, s, n, 0x00, 0x20
-                )) {
-                    err := mload(0x00)
-                    if iszero(err) { err := shl(224, 0xabab8fc9) } // `PaymentError()`.
-                    break
-                }
-                // Since the payment is a success, load the returned `paymentAmount`.
-                paymentAmount := mload(0x00)
-
-                // 2. Verify and call.
-                let gUsedTemp := sub(gStart, gas())
-                mstore(m, 0xe235a92a) // `_verifyAndCall()`.    
-                // If the bit at `1 << 254` is set, replace with `_simulateVerifyAndCall()`.
-                mstore(mul(and(1, shr(254, combinedGasOverride)), m), 0x151f46c8)
-                mstore(0x00, 0) // Zeroize the return slot.
-                if iszero(call( // Gas-limited self call.
-                    mul(sub(g, gUsedTemp), gt(g, gUsedTemp)), // `saturatingSub`.
-                    address(), 0, s, n, 0x00, 0x20
-                )) {
+                if iszero(call(g, address(), 0, s, n, 0x00, 0x40)) {
                     err := mload(0x00)
                     if iszero(err) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
+                    break
                 }
+                err := mload(0x00)
+                paymentAmount := mload(0x20)
                 break
             }
         }
@@ -451,21 +432,24 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // `paymentAmountForGas = paymentPerGas * totalAmountOfGasToPayFor`.
         // If we have overpaid, then refund `paymentAmount - paymentAmountForGas`.
 
-        gUsed = Math.rawSub(gStart, gasleft());
-        uint256 paymentPerGas = Math.coalesce(u.paymentPerGas, type(uint256).max);
-        uint256 finalPaymentAmount = Math.min(
-            paymentAmount, Math.saturatingMul(paymentPerGas, Math.saturatingAdd(gUsed, _REFUND_GAS))
-        );
-        address paymentRecipient = Math.coalesce(u.paymentRecipient, address(this));
-        if (LibBit.and(finalPaymentAmount != 0, paymentRecipient != address(this))) {
-            TokenTransferLib.safeTransfer(u.paymentToken, paymentRecipient, finalPaymentAmount);
-        }
-        if (paymentAmount > finalPaymentAmount) {
-            TokenTransferLib.safeTransfer(
-                u.paymentToken,
-                Math.coalesce(u.payer, u.eoa),
-                Math.rawSub(paymentAmount, finalPaymentAmount)
+        if (paymentAmount != 0) {
+            gUsed = Math.rawSub(gStart, gasleft());
+            uint256 paymentPerGas = Math.coalesce(u.paymentPerGas, type(uint256).max);
+            uint256 finalPaymentAmount = Math.min(
+                paymentAmount,
+                Math.saturatingMul(paymentPerGas, Math.saturatingAdd(gUsed, _REFUND_GAS))
             );
+            address paymentRecipient = Math.coalesce(u.paymentRecipient, address(this));
+            if (LibBit.and(finalPaymentAmount != 0, paymentRecipient != address(this))) {
+                TokenTransferLib.safeTransfer(u.paymentToken, paymentRecipient, finalPaymentAmount);
+            }
+            if (paymentAmount > finalPaymentAmount) {
+                TokenTransferLib.safeTransfer(
+                    u.paymentToken,
+                    Math.coalesce(u.payer, u.eoa),
+                    Math.rawSub(paymentAmount, finalPaymentAmount)
+                );
+            }
         }
 
         // If there is an error, store it.
@@ -598,7 +582,12 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev Calls `unwrapAndValidateSignature` on the `eoa`.
-    function _verify(UserOp calldata u) internal virtual returns (bool isValid, bytes32 keyHash) {
+    function _verify(UserOp calldata u)
+        internal
+        view
+        virtual
+        returns (bool isValid, bytes32 keyHash)
+    {
         bytes calldata sig = u.signature;
         address eoa = u.eoa;
         bytes32 digest = _computeDigest(u);
@@ -714,34 +703,44 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// Helps avoid unnecessary calldata decoding.
     fallback() external payable virtual {
         UserOp calldata u;
+        bytes32 w;
         assembly ("memory-safe") {
-            u := add(0x04, calldataload(0x04))
+            u := add(0x24, calldataload(0x24))
+            w := calldataload(0x04)
         }
         uint256 s = uint32(bytes4(msg.sig));
-        // `_pay()`.
-        if (s == 0x1a3de5c3) {
+        // `_payVerifyAndCall()`.
+        if (s == 0xf427f8da) {
             require(msg.sender == address(this));
             uint256 paymentAmount = _pay(u);
-            assembly ("memory-safe") {
-                mstore(0x00, paymentAmount)
-                return(0x00, 0x20)
-            }
-        }
-        // `_verifyAndCall()`.
-        if (s == 0xe235a92a) {
-            require(msg.sender == address(this));
+
+            // If `_initializePREP` or `_verify` is invalid, just revert the payment.
+            // There's a chicken and egg problem:
+            // Validation of the UserOp is needed to ensure that `_pay` deducts correctly,
+            // but `_verify` costs variable amount of gas.
+            // Suggestion: the UserOp is simulated off-chain to ensure that it passes.
+            // Minimize surface area and chance of griefing.
+            // If somehow `_verify` is griefed, up to relayer to ban the user.
             _initializePREP(u);
             (bool isValid, bytes32 keyHash) = _verify(u);
-            if (!isValid) revert VerificationError();
-            _execute(u, keyHash, false);
-            return;
+            if (!isValid) if (w == 0) revert VerificationError();
+
+            assembly ("memory-safe") {
+                let m := mload(0x40)
+                calldatacopy(add(m, 0x1c), 0x00, calldatasize())
+                mstore(m, 0x420aadb8) // `_execute()`.
+                mstore(add(m, 0x20), keyHash)
+                mstore(0x00, 0) // Zeroize the return slot.
+
+                pop(call(gas(), address(), 0, add(m, 0x1c), calldatasize(), 0x00, 0x20))
+                mstore(0x20, paymentAmount)
+                return(0x00, 0x40)
+            }
         }
-        // `_simulateVerifyAndCall()`.
-        if (s == 0x151f46c8) {
+        // `_execute()`.
+        if (s == 0x420aadb8) {
             require(msg.sender == address(this));
-            _initializePREP(u);
-            (, bytes32 keyHash) = _verify(u);
-            _execute(u, keyHash, false);
+            _execute(u, w, false);
             return;
         }
         // `_initializeOwner()`.
