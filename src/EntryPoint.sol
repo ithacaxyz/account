@@ -139,7 +139,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// - `err` denotes the resultant error selector.
     /// If `incremented` is true and `err` is non-zero,
     /// `err` will be stored for retrieval with `nonceStatus`.
-    event UserOpExecuted(address indexed eoa, uint256 nonce, bool incremented, bytes4 err);
+    event UserOpExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
@@ -403,7 +403,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // We'll use assembly for frequently used call related stuff to save massive memory gas.
             mstore(m, 0xf427f8da) // `_payVerifyAndCall()`.
             mstore(add(m, 0x20), shr(254, combinedGasOverride)) // Whether it's a gas simulation.
-            calldatacopy(0x00, calldatasize(), 0x40) // Zeroize the return slots.
+            mstore(0x00, 0) // Zeroize the return slot.
 
             let s := add(m, 0x1c) // Start of the calldata in memory to pass to the self call.
             let n := add(encodedUserOp.length, 0x44) // Length of the calldata to the self call.
@@ -411,7 +411,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // To prevent griefing, we need to do a non-reverting gas-limited self call.
             selfCallSuccess := call(g, address(), 0, s, n, 0x00, 0x40)
             err := mload(0x00) // The self call will do another self call to execute.
-            paymentAmount := mload(0x20)
+            paymentAmount := mload(0x20) // Only used when `selfCallSuccess` is true.
             if iszero(selfCallSuccess) { if iszero(err) { err := shl(224, 0xad4db224) } } // `VerifiedCallError()`.
         }
 
