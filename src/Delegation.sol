@@ -455,7 +455,7 @@ contract Delegation is EIP712, GuardedExecutor {
     ) public virtual {
         if (msg.sender != ENTRY_POINT) revert Unauthorized();
         if (eoa != address(this)) revert Unauthorized();
-        TokenTransferLib.safeTransfer(paymentToken, paymentRecipient, paymentAmount);
+        TokenTransferLib.safeTransfer(paymentToken, recipient, paymentAmount);
     }
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.

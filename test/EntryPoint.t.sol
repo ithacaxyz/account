@@ -97,7 +97,7 @@ contract EntryPointTest is SoladyTest {
             t.encodedUserOps[i] = abi.encode(u);
         }
 
-        bytes4[] memory errors = ep.execute(t.encodedUserOps);
+        bytes4[] memory errors = ep.execute(t.userOps);
         assertEq(errors.length, t.userOps.length);
         for (uint256 i; i != errors.length; ++i) {
             assertEq(errors[i], 0);
