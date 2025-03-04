@@ -478,7 +478,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         LibStorage.Ref storage s =
             _getEntryPointStorage().nonceSeqs[msg.sender][uint192(nonce >> 64)];
         if (uint64(nonce) <= s.value) revert NewSequenceMustBeLarger();
-        s.value = uint64(nonce) + 1;
+        s.value = Math.rawAdd(Math.min(uint64(nonce), 2 ** 64 - 2), 1);
         emit NonceInvalidated(msg.sender, nonce);
     }
 

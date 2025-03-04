@@ -953,13 +953,19 @@ contract EntryPointTest is SoladyTest {
         vm.etch(u.eoa, delegation.code);
 
         vm.startPrank(u.eoa);
-        if (seq == type(uint64).max || seq == 0) {
+        if (seq == 0) {
             vm.expectRevert();
             ep.invalidateNonce(nonce);
             return;
         }
+        if (seq == type(uint64).max) {
+            ep.invalidateNonce(nonce);
+            assertEq(ep.getNonce(u.eoa, seqKey), nonce);
+            return;
+        }
 
         ep.invalidateNonce(nonce);
+        assertEq(ep.getNonce(u.eoa, seqKey), nonce + 1);
 
         vm.deal(u.eoa, 2 ** 128 - 1);
         u.executionData = _getExecutionDataForThisTargetFunction(

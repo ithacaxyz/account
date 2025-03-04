@@ -13,6 +13,7 @@ import {P256} from "solady/utils/P256.sol";
 import {WebAuthn} from "solady/utils/WebAuthn.sol";
 import {LibStorage} from "solady/utils/LibStorage.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
+import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
@@ -297,7 +298,7 @@ contract Delegation is EIP712, GuardedExecutor {
     function invalidateNonce(uint256 nonce) public virtual onlyThis {
         LibStorage.Ref storage s = _getDelegationStorage().nonceSeqs[uint192(nonce >> 64)];
         if (uint64(nonce) <= s.value) revert NewSequenceMustBeLarger();
-        s.value = uint64(nonce) + 1;
+        s.value = Math.rawAdd(Math.min(uint64(nonce), 2 ** 64 - 2), 1);
         emit NonceInvalidated(nonce);
     }
 
