@@ -36,6 +36,9 @@ contract BaseTest is SoladyTest {
     bytes32 internal constant _ERC7821_BATCH_EXECUTION_MODE =
         0x0100000000007821000100000000000000000000000000000000000000000000;
 
+    bytes32 internal constant _ERC7579_DELEGATE_CALL_MODE =
+        0xff00000000000000000000000000000000000000000000000000000000000000;
+
     struct PassKey {
         Delegation.Key k;
         uint256 privateKey;
