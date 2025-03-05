@@ -455,8 +455,7 @@ contract Delegation is EIP712, GuardedExecutor {
         uint256 paymentAmount,
         address eoa
     ) public virtual {
-        if (msg.sender != ENTRY_POINT) revert Unauthorized();
-        if (eoa != address(this)) revert Unauthorized();
+        if (!LibBit.and(msg.sender == ENTRY_POINT, eoa == address(this))) revert Unauthorized();
         TokenTransferLib.safeTransfer(paymentToken, paymentRecipient, paymentAmount);
     }
 
