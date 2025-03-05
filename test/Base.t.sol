@@ -11,16 +11,29 @@ import {GasBurnerLib} from "solady/utils/GasBurnerLib.sol";
 import {P256} from "solady/utils/P256.sol";
 import {LibSort} from "solady/utils/LibSort.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
-import {Delegation} from "../src/Delegation.sol";
+import {Delegation, MockDelegation} from "./utils/mocks/MockDelegation.sol";
 import {EntryPoint, MockEntryPoint} from "./utils/mocks/MockEntryPoint.sol";
 import {ERC20, MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
 
 contract BaseTest is SoladyTest {
     MockEntryPoint ep;
     MockPaymentToken paymentToken;
-    MockPaymentToken spendPermissionToken;
-    Delegation delegation;
+    MockDelegation delegation;
     EIP7702Proxy eip7702Proxy;
+
+    bytes32 internal constant _ANY_KEYHASH =
+        0x3232323232323232323232323232323232323232323232323232323232323232;
+
+    address internal constant _ANY_TARGET = 0x3232323232323232323232323232323232323232;
+
+    bytes4 internal constant _ANY_FN_SEL = 0x32323232;
+
+    bytes4 internal constant _EMPTY_CALLDATA_FN_SEL = 0xe0e0e0e0;
+
+    address internal constant _PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+
+    bytes32 internal constant _ERC7821_BATCH_EXECUTION_MODE =
+        0x0100000000007821000100000000000000000000000000000000000000000000;
 
     struct PassKey {
         Delegation.Key k;
@@ -28,19 +41,30 @@ contract BaseTest is SoladyTest {
         bytes32 keyHash;
     }
 
+    struct DelegatedEOA {
+        address eoa;
+        uint256 privateKey;
+        MockDelegation d;
+    }
+
     function setUp() public virtual {
         Delegation tempDelegation = new Delegation();
         ep = MockEntryPoint(payable(tempDelegation.ENTRY_POINT()));
         MockEntryPoint tempMockEntryPoint = new MockEntryPoint();
         vm.etch(tempDelegation.ENTRY_POINT(), address(tempMockEntryPoint).code);
-        delegation = new Delegation();
+        delegation = new MockDelegation();
         paymentToken = new MockPaymentToken();
-        spendPermissionToken = new MockPaymentToken();
         _etchP256Verifier();
     }
 
-    function _setDelegation(address eoa) internal {
+    function _setEIP7702Delegation(address eoa) internal {
         vm.etch(eoa, abi.encodePacked(hex"ef0100", address(delegation)));
+    }
+
+    function _randomEIP7702DelegatedEOA() internal returns (DelegatedEOA memory d) {
+        (d.eoa, d.privateKey) = _randomUniqueSigner();
+        _setEIP7702Delegation(d.eoa);
+        d.d = MockDelegation(payable(d.eoa));
     }
 
     function _hash(Delegation.Key memory k) internal pure returns (bytes32) {
@@ -204,7 +228,7 @@ contract BaseTest is SoladyTest {
 
     function _transferCall(address token, address to, uint256 amount)
         internal
-        view
+        pure
         returns (ERC7821.Call memory c)
     {
         if (token == address(0)) {
