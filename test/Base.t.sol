@@ -2,6 +2,9 @@
 pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
+import {EIP7702Proxy} from "solady/accounts/EIP7702Proxy.sol";
+import {ERC7821} from "solady/accounts/ERC7821.sol";
+import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {LibClone} from "solady/utils/LibClone.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {GasBurnerLib} from "solady/utils/GasBurnerLib.sol";
@@ -15,18 +18,51 @@ import {ERC20, MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
 contract BaseTest is SoladyTest {
     MockEntryPoint ep;
     MockPaymentToken paymentToken;
+    MockPaymentToken spendPermissionToken;
     Delegation delegation;
+    EIP7702Proxy eip7702Proxy;
 
-    function setUp() public {
+    struct PassKey {
+        Delegation.Key k;
+        uint256 privateKey;
+        bytes32 keyHash;
+    }
+
+    function setUp() public virtual {
         Delegation tempDelegation = new Delegation();
         ep = MockEntryPoint(payable(tempDelegation.ENTRY_POINT()));
         MockEntryPoint tempMockEntryPoint = new MockEntryPoint();
         vm.etch(tempDelegation.ENTRY_POINT(), address(tempMockEntryPoint).code);
         delegation = new Delegation();
         paymentToken = new MockPaymentToken();
+        spendPermissionToken = new MockPaymentToken();
         _etchP256Verifier();
     }
-    
+
+    function _setDelegation(address eoa) internal {
+        vm.etch(eoa, abi.encodePacked(hex"ef0100", address(delegation)));
+    }
+
+    function _hash(Delegation.Key memory k) internal pure returns (bytes32) {
+        return keccak256(abi.encode(uint8(k.keyType), keccak256(k.publicKey)));
+    }
+
+    function _randomSecp256r1PassKey() internal returns (PassKey memory k) {
+        k.k.keyType = Delegation.KeyType.P256;
+        k.privateKey = _randomUniform() & type(uint192).max;
+        (uint256 x, uint256 y) = vm.publicKeyP256(k.privateKey);
+        k.k.publicKey = abi.encode(x, y);
+        k.keyHash = _hash(k.k);
+    }
+
+    function _randomSecp256k1PassKey() internal returns (PassKey memory k) {
+        k.k.keyType = Delegation.KeyType.Secp256k1;
+        address addr;
+        (addr, k.privateKey) = _randomUniqueSigner();
+        k.k.publicKey = abi.encode(addr);
+        k.keyHash = _hash(k.k);
+    }
+
     function _eoaSig(uint256 privateKey, EntryPoint.UserOp memory u)
         internal
         view
@@ -36,33 +72,149 @@ contract BaseTest is SoladyTest {
         return abi.encodePacked(r, s, v);
     }
 
-    function _secp256r1Sig(uint256 privateKey, bytes32 keyHash, EntryPoint.UserOp memory u) internal view returns (bytes memory) {
-        return _secp256r1Sig(privateKey, keyHash, false, u);
-    }
-
-    function _secp256r1Sig(uint256 privateKey, bytes32 keyHash, bool prehash, EntryPoint.UserOp memory u)
+    function _sig(PassKey memory k, EntryPoint.UserOp memory u)
         internal
         view
         returns (bytes memory)
     {
+        return _sig(k, false, u);
+    }
+
+    function _sig(PassKey memory k, bool prehash, EntryPoint.UserOp memory u)
+        internal
+        view
+        returns (bytes memory)
+    {
+        if (k.k.keyType == Delegation.KeyType.P256) {
+            return _secp256r1Sig(k.privateKey, k.keyHash, prehash, u);
+        }
+        if (k.k.keyType == Delegation.KeyType.Secp256k1) {
+            return _secp256k1Sig(k.privateKey, k.keyHash, prehash, u);
+        }
+        revert("Unsupported");
+    }
+
+    function _secp256r1Sig(uint256 privateKey, bytes32 keyHash, EntryPoint.UserOp memory u)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return _secp256r1Sig(privateKey, keyHash, false, u);
+    }
+
+    function _secp256r1Sig(
+        uint256 privateKey,
+        bytes32 keyHash,
+        bool prehash,
+        EntryPoint.UserOp memory u
+    ) internal view returns (bytes memory) {
         (bytes32 r, bytes32 s) = vm.signP256(privateKey, ep.computeDigest(u));
         s = P256.normalized(s);
         return abi.encodePacked(abi.encode(r, s), keyHash, uint8(prehash ? 1 : 0));
     }
 
-    function _secp256k1Sig(uint256 privateKey, bytes32 keyHash, EntryPoint.UserOp memory u) internal view returns (bytes memory) {
-        return _secp256k1Sig(privateKey, keyHash, false, u);
-    }
-
-    function _secp256k1Sig(uint256 privateKey, bytes32 keyHash, bool prehash, EntryPoint.UserOp memory u)
+    function _secp256k1Sig(uint256 privateKey, bytes32 keyHash, EntryPoint.UserOp memory u)
         internal
         view
         returns (bytes memory)
     {
+        return _secp256k1Sig(privateKey, keyHash, false, u);
+    }
+
+    function _secp256k1Sig(
+        uint256 privateKey,
+        bytes32 keyHash,
+        bool prehash,
+        EntryPoint.UserOp memory u
+    ) internal view returns (bytes memory) {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, ep.computeDigest(u));
         return abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(prehash ? 1 : 0));
     }
 
+    function _estimateGasForEOAKey(EntryPoint.UserOp memory u)
+        internal
+        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+    {
+        (uint8 v, bytes32 r, bytes32 s) =
+            vm.sign(uint128(_randomUniform()), bytes32(_randomUniform()));
+        u.signature = abi.encodePacked(r, s, v);
+        return _estimateGas(u);
+    }
+
+    function _estimateGas(PassKey memory k, EntryPoint.UserOp memory u)
+        internal
+        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+    {
+        if (k.k.keyType == Delegation.KeyType.P256) {
+            return _estimateGasForSecp256r1Key(k.keyHash, u);
+        }
+        if (k.k.keyType == Delegation.KeyType.Secp256k1) {
+            return _estimateGasForSecp256k1Key(k.keyHash, u);
+        }
+        revert("Unsupported");
+    }
+
+    function _estimateGasForSecp256k1Key(bytes32 keyHash, EntryPoint.UserOp memory u)
+        internal
+        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+    {
+        (uint8 v, bytes32 r, bytes32 s) =
+            vm.sign(uint128(_randomUniform()), bytes32(_randomUniform()));
+        u.signature = abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(0));
+        return _estimateGas(u);
+    }
+
+    function _estimateGasForSecp256r1Key(bytes32 keyHash, EntryPoint.UserOp memory u)
+        internal
+        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+    {
+        u.signature = abi.encodePacked(keccak256("a"), keccak256("b"), keyHash, uint8(0));
+        return _estimateGas(u);
+    }
+
+    function _estimateGas(EntryPoint.UserOp memory u)
+        internal
+        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+    {
+        bytes memory data =
+            abi.encodeWithSelector(EntryPoint.simulateExecute2.selector, abi.encode(u));
+        (bool success, bytes memory result) = address(ep).call(data);
+        assertFalse(success);
+
+        gExecute = uint256(LibBytes.load(result, 0x04));
+        gCombined = uint256(LibBytes.load(result, 0x24));
+        gUsed = uint256(LibBytes.load(result, 0x44));
+    }
+
+    function _mint(address token, address to, uint256 amount) internal {
+        if (token == address(0)) {
+            vm.deal(to, amount);
+        } else {
+            MockPaymentToken(token).mint(to, amount);
+        }
+    }
+
+    function _balanceOf(address token, address owner) internal view returns (uint256) {
+        if (token == address(0)) {
+            return address(owner).balance;
+        } else {
+            return MockPaymentToken(token).balanceOf(owner);
+        }
+    }
+
+    function _transferCall(address token, address to, uint256 amount)
+        internal
+        view
+        returns (ERC7821.Call memory c)
+    {
+        if (token == address(0)) {
+            c.target = to;
+            c.value = amount;
+        } else {
+            c.target = token;
+            c.data = abi.encodeWithSignature("transfer(address,uint256)", to, amount);
+        }
+    }
 
     function _etchP256Verifier() internal {
         bytes memory verifierBytecode =
