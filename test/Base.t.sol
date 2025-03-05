@@ -5,6 +5,7 @@ import "./utils/SoladyTest.sol";
 import {EIP7702Proxy} from "solady/accounts/EIP7702Proxy.sol";
 import {ERC7821} from "solady/accounts/ERC7821.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {LibClone} from "solady/utils/LibClone.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {GasBurnerLib} from "solady/utils/GasBurnerLib.sol";

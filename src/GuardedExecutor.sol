@@ -411,7 +411,7 @@ contract GuardedExecutor is ERC7821 {
                 info.lastUpdated = tokenPeriodSpend.lastUpdated;
                 info.spent = tokenPeriodSpend.spent;
                 info.current = startOfSpendPeriod(block.timestamp, SpendPeriod(period));
-                info.currentSpent = info.lastUpdated < info.current ? 0 : info.spent;
+                info.currentSpent = Math.ternary(info.lastUpdated < info.current, 0, info.spent);
                 uint256 pointer;
                 assembly ("memory-safe") {
                     pointer := info
