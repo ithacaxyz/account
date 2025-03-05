@@ -281,7 +281,9 @@ contract GuardedExecutor is ERC7821 {
         onlyThis
         checkKeyHashIsNonZero(keyHash)
     {
-        if (_isSuperAdmin(keyHash)) revert SuperAdminCanExecuteEverything();
+        if (keyHash != ANY_KEYHASH) {
+            if (_isSuperAdmin(keyHash)) revert SuperAdminCanExecuteEverything();
+        }
 
         // All calls not from the EOA itself has to go through the single `execute` function.
         // For security, only EOA key and super admin keys can call into `execute`.

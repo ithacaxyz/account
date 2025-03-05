@@ -28,18 +28,18 @@ contract GuardedExecutorTest is BaseTest {
         assertEq(d.d.canExecutePackedInfos(k.keyHash).length, 0);
 
         d.d.authorize(k.k);
-        d.d.setCanExecute(k.keyHash, target, fnSel, true);
+        bytes32 keyHashToSet = _randomChance(2) ? k.keyHash : _ANY_KEYHASH;
+        d.d.setCanExecute(keyHashToSet, target, fnSel, true);
 
-        bytes32 packed = d.d.canExecutePackedInfos(k.keyHash)[0];
-        assertEq(d.d.canExecutePackedInfos(k.keyHash).length, 1);
+        bytes32 packed = d.d.canExecutePackedInfos(keyHashToSet)[0];
+        assertEq(d.d.canExecutePackedInfos(keyHashToSet).length, 1);
         assertEq(bytes4(uint32(uint256(packed))), fnSel);
         assertEq(address(bytes20(packed)), target);
 
         assertTrue(d.d.canExecute(k.keyHash, target, abi.encodePacked(fnSel)));
 
-        if (fnSel == _EMPTY_CALLDATA_FN_SEL) {
-            assertTrue(d.d.canExecute(k.keyHash, target, ""));
-        }
+        assertEq(d.d.canExecute(k.keyHash, target, ""), fnSel == _EMPTY_CALLDATA_FN_SEL);
+
         if (fnSel == _ANY_FN_SEL) {
             assertTrue(d.d.canExecute(k.keyHash, target, abi.encodePacked(_randomFnSel())));
         }
@@ -50,10 +50,25 @@ contract GuardedExecutorTest is BaseTest {
             assertTrue(d.d.canExecute(k.keyHash, _randomTarget(), abi.encodePacked(_randomFnSel())));
         }
 
-        d.d.setCanExecute(k.keyHash, target, fnSel, false);
-        assertEq(d.d.canExecutePackedInfos(k.keyHash).length, 0);
+        if (_randomChance(8)) {
+            bytes4 fnSel2 = _randomFnSel();
+            address target2 = _randomTarget();
+            if (fnSel2 == fnSel) return;
+            if (target2 == target) return;
+            d.d.setCanExecute(keyHashToSet, target2, fnSel2, true);
+            assertEq(d.d.canExecutePackedInfos(keyHashToSet).length, 2);
+            packed = d.d.canExecutePackedInfos(keyHashToSet)[1];
+            assertEq(bytes4(uint32(uint256(packed))), fnSel2);
+            assertEq(address(bytes20(packed)), target2);
+            return;
+        }
 
-        assertFalse(d.d.canExecute(k.keyHash, target, abi.encodePacked(fnSel)));
+        if (_randomChance(8)) {
+            d.d.setCanExecute(keyHashToSet, target, fnSel, false);
+            assertEq(d.d.canExecutePackedInfos(keyHashToSet).length, 0);
+            assertFalse(d.d.canExecute(k.keyHash, target, abi.encodePacked(fnSel)));
+            return;
+        }
     }
 
     function testOnlySuperAdminAndEOACanSelfExecute() public {
