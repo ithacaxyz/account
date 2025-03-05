@@ -339,7 +339,7 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev Returns the key corresponding to the `keyHash`. Reverts if the key does not exist.
     function getKey(bytes32 keyHash) public view virtual returns (Key memory key) {
         bytes memory data = _getDelegationStorage().keyStorage[keyHash].get();
-        if (data.length == 0) revert KeyDoesNotExist();
+        if (data.length == uint256(0)) revert KeyDoesNotExist();
         unchecked {
             uint256 n = data.length - 7; // 5 + 1 + 1 bytes of fixed length fields.
             uint256 packed = uint56(bytes7(LibBytes.load(data, n)));
