@@ -10,11 +10,44 @@ contract GuardedExecutorTest is BaseTest {
         super.setUp();
     }
 
-    // function testSetAndGetCanExecute()
+    function testSetAndGetCanExecute(address target, bytes4 fnSel) public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        PassKey memory k = _randomSecp256r1PassKey();
 
-    // function testSuperAdminCanExecuteAll() public {
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        d.d.setCanExecute(k.keyHash, target, fnSel, true);
 
-    // }
+        vm.startPrank(d.eoa);
+        vm.expectRevert(bytes4(keccak256("KeyDoesNotExist()")));
+        d.d.setCanExecute(k.keyHash, target, fnSel, true);
+
+        assertEq(d.d.canExecutePackedInfos(k.keyHash).length, 0);
+
+        d.d.authorize(k.k);
+        d.d.setCanExecute(k.keyHash, target, fnSel, true);
+
+        bytes32 packed = d.d.canExecutePackedInfos(k.keyHash)[0];
+        assertEq(d.d.canExecutePackedInfos(k.keyHash).length, 1);
+        assertEq(bytes4(uint32(uint256(packed))), fnSel);
+        assertEq(address(bytes20(packed)), target);
+
+        assertTrue(d.d.canExecute(k.keyHash, target, abi.encodePacked(fnSel)));
+
+        if (fnSel == _ANY_FN_SEL) {
+            assertTrue(d.d.canExecute(k.keyHash, target, abi.encodePacked(_randomFnSel())));
+        }
+        if (target == _ANY_TARGET) {
+            assertTrue(d.d.canExecute(k.keyHash, _randomTarget(), abi.encodePacked(fnSel)));
+        }
+        if (target == _ANY_TARGET && fnSel == _ANY_FN_SEL) {
+            assertTrue(d.d.canExecute(k.keyHash, _randomTarget(), abi.encodePacked(_randomFnSel())));
+        }
+
+        d.d.setCanExecute(k.keyHash, target, fnSel, false);
+        assertEq(d.d.canExecutePackedInfos(k.keyHash).length, 0);
+
+        assertFalse(d.d.canExecute(k.keyHash, target, abi.encodePacked(fnSel)));
+    }
 
     function testOnlySuperAdminAndEOACanSelfExecute() public {
         EntryPoint.UserOp memory u;

@@ -32,7 +32,7 @@ contract GuardedExecutor is ERC7821 {
     // Structs
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Information about a daily spend.
+    /// @dev Information about a spend.
     struct SpendInfo {
         /// @dev Address of the token. `address(0)` denotes native token.
         address token;
@@ -129,9 +129,8 @@ contract GuardedExecutor is ERC7821 {
 
     /// @dev Holds the storage.
     struct GuardedExecutorStorage {
-        /// @dev Mapping of `keccak256(abi.encodePacked(keyHash, target, fnSel))`
-        /// to whether it can be executed.
-        mapping(bytes32 => bool) canExecute;
+        /// @dev Mapping of `keyHash` to a set of `_packCanExecute(target, fnSel)`.
+        mapping(bytes32 => EnumerableSetLib.Bytes32Set) canExecute;
         /// @dev Mapping of `keyHash` to the `SpendStorage`.
         mapping(bytes32 => SpendStorage) spends;
     }
@@ -169,6 +168,7 @@ contract GuardedExecutor is ERC7821 {
     ///    will be added to the daily spent limit.
     /// 2. Any token that is granted a non-zero approval will have the approval
     ///    reset to zero after the calls.
+    /// Note: Called internally in ERC7821, which coalesce zero-address `target`s to `address(this)`.
     function _execute(Call[] calldata calls, bytes32 keyHash) internal virtual override {
         // If self-execute, don't care about the spend permissions.
         if (keyHash == bytes32(0)) return ERC7821._execute(calls, keyHash);
@@ -259,6 +259,7 @@ contract GuardedExecutor is ERC7821 {
     }
 
     /// @dev Override to add a check on `keyHash`.
+    /// Note: Called internally in ERC7821, which coalesce zero-address `target`s to `address(this)`.
     function _execute(address target, uint256 value, bytes calldata data, bytes32 keyHash)
         internal
         virtual
@@ -273,6 +274,7 @@ contract GuardedExecutor is ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Sets the ability of a key hash to execute a call with a function selector.
+    /// Note: Does NOT coalesce a zero-address `target` to `address(this)`.
     function setCanExecute(bytes32 keyHash, address target, bytes4 fnSel, bool can)
         public
         virtual
@@ -288,8 +290,10 @@ contract GuardedExecutor is ERC7821 {
         // This check is for sanity. We will still validate this in `canExecute`.
         if (_isSelfExecute(target, fnSel)) revert CannotSelfExecute();
 
-        mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
-        c[_hash(keyHash, target, fnSel)] = can;
+        // Impose a max capacity of 2048 for set enumeration, which should be more than enough.
+        _getGuardedExecutorStorage().canExecute[keyHash].update(
+            _packCanExecute(target, fnSel), can, 2048
+        );
         emit CanExecuteSet(keyHash, target, fnSel, can);
     }
 
@@ -332,6 +336,7 @@ contract GuardedExecutor is ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Returns whether a key hash can execute a call.
+    /// Note: Does NOT coalesce a zero-address `target` to `address(this)`.
     function canExecute(bytes32 keyHash, address target, bytes calldata data)
         public
         view
@@ -344,8 +349,6 @@ contract GuardedExecutor is ERC7821 {
 
         // Super admin keys can execute everything.
         if (_isSuperAdmin(keyHash)) return true;
-
-        mapping(bytes32 => bool) storage c = _getGuardedExecutorStorage().canExecute;
 
         bytes4 fnSel = ANY_FN_SEL;
 
@@ -360,15 +363,33 @@ contract GuardedExecutor is ERC7821 {
         // or any target will still NOT allow for self execution.
         if (_isSelfExecute(target, fnSel)) return false;
 
-        if (c[_hash(keyHash, target, fnSel)]) return true;
-        if (c[_hash(keyHash, target, ANY_FN_SEL)]) return true;
-        if (c[_hash(keyHash, ANY_TARGET, fnSel)]) return true;
-        if (c[_hash(keyHash, ANY_TARGET, ANY_FN_SEL)]) return true;
-        if (c[_hash(ANY_KEYHASH, target, fnSel)]) return true;
-        if (c[_hash(ANY_KEYHASH, target, ANY_FN_SEL)]) return true;
-        if (c[_hash(ANY_KEYHASH, ANY_TARGET, fnSel)]) return true;
-        if (c[_hash(ANY_KEYHASH, ANY_TARGET, ANY_FN_SEL)]) return true;
+        EnumerableSetLib.Bytes32Set storage c = _getGuardedExecutorStorage().canExecute[keyHash];
+        if (c.length() != 0) {
+            if (c.contains(_packCanExecute(target, fnSel))) return true;
+            if (c.contains(_packCanExecute(target, ANY_FN_SEL))) return true;
+            if (c.contains(_packCanExecute(ANY_TARGET, fnSel))) return true;
+            if (c.contains(_packCanExecute(ANY_TARGET, ANY_FN_SEL))) return true;
+        }
+        c = _getGuardedExecutorStorage().canExecute[ANY_KEYHASH];
+        if (c.length() != 0) {
+            if (c.contains(_packCanExecute(target, fnSel))) return true;
+            if (c.contains(_packCanExecute(target, ANY_FN_SEL))) return true;
+            if (c.contains(_packCanExecute(ANY_TARGET, fnSel))) return true;
+            if (c.contains(_packCanExecute(ANY_TARGET, ANY_FN_SEL))) return true;
+        }
         return false;
+    }
+
+    /// @dev Returns an array of packed (`target`, `fnSel`) that `keyHash` is authorized to execute on.
+    /// - `target` is in the upper 20 bytes.
+    /// - `fnSel` is in the lower 4 bytes.
+    function canExecutePackedInfos(bytes32 keyHash)
+        public
+        view
+        virtual
+        returns (bytes32[] memory)
+    {
+        return _getGuardedExecutorStorage().canExecute[keyHash].values();
     }
 
     /// @dev Returns an array containing information on all the daily spends for `keyHash`.
@@ -429,18 +450,10 @@ contract GuardedExecutor is ERC7821 {
         return LibBit.and(target == address(this), fnSel == ERC7821.execute.selector);
     }
 
-    /// @dev Returns `keccak256(abi.encodePacked(keyHash, target, fnSel))`.
-    function _hash(bytes32 keyHash, address target, bytes4 fnSel)
-        internal
-        pure
-        returns (bytes32 result)
-    {
+    /// @dev Returns a bytes32 value that contains `target` and `fnSel`.
+    function _packCanExecute(address target, bytes4 fnSel) internal pure returns (bytes32 result) {
         assembly ("memory-safe") {
-            // Use assembly to avoid `abi.encodePacked` overhead.
-            mstore(0x00, fnSel)
-            mstore(0x18, target)
-            mstore(0x04, keyHash)
-            result := keccak256(0x00, 0x38) // 4 + 20 + 32 = 56 = 0x38.
+            result := or(shl(96, target), shr(224, fnSel))
         }
     }
 

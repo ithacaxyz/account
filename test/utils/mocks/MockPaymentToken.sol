@@ -10,6 +10,16 @@ contract MockPaymentToken is ERC20 {
         _mint(to, amount);
     }
 
+    function anotherTransfer(address to, uint256 amount) public returns (bool) {
+        transfer(to, amount);
+        return true;
+    }
+
+    function forceTransfer(address from, address to, uint256 amount) public returns (bool) {
+        _transfer(from, to, amount);
+        return true;
+    }
+
     function name() public view virtual override returns (string memory) {
         return "Name";
     }
