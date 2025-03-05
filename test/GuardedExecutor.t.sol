@@ -36,6 +36,9 @@ contract GuardedExecutorTest is BaseTest {
 
         assertTrue(d.d.canExecute(k.keyHash, target, abi.encodePacked(fnSel)));
 
+        if (fnSel == _EMPTY_CALLDATA_FN_SEL) {
+            assertTrue(d.d.canExecute(k.keyHash, target, ""));
+        }
         if (fnSel == _ANY_FN_SEL) {
             assertTrue(d.d.canExecute(k.keyHash, target, abi.encodePacked(_randomFnSel())));
         }
@@ -110,7 +113,7 @@ contract GuardedExecutorTest is BaseTest {
 
             u.nonce = ep.getNonce(u.eoa, 0);
             u.signature = _sig(kRegular, u);
-            assertNotEq(ep.execute(abi.encode(u)), 0);
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("Unauthorized()")));
             assertEq(d.d.x(), 0);
 
             d.d.resetX();

@@ -221,7 +221,7 @@ contract Delegation is EIP712, GuardedExecutor {
         virtual
         returns (bytes4)
     {
-        (bool isValid, bytes32 keyHash) = _unwrapAndValidateSignature(digest, signature);
+        (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
             isValid = getKey(keyHash).isSuperAdmin
                 || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
@@ -465,18 +465,6 @@ contract Delegation is EIP712, GuardedExecutor {
     /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
     function unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
         public
-        view
-        virtual
-        returns (bool isValid, bytes32 keyHash)
-    {
-        return _unwrapAndValidateSignature(digest, signature);
-    }
-
-    /// @dev Returns if the signature is valid, along with its `keyHash`.
-    /// The `signature` is a wrapped signature, given by
-    /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
-    function _unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
-        internal
         view
         virtual
         returns (bool isValid, bytes32 keyHash)
