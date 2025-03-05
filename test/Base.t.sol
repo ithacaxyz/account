@@ -53,8 +53,9 @@ contract BaseTest is SoladyTest {
         ep = MockEntryPoint(payable(tempDelegation.ENTRY_POINT()));
         MockEntryPoint tempMockEntryPoint = new MockEntryPoint();
         vm.etch(tempDelegation.ENTRY_POINT(), address(tempMockEntryPoint).code);
-        delegation = new MockDelegation();
         paymentToken = new MockPaymentToken();
+        eip7702Proxy = new EIP7702Proxy(address(new MockDelegation()), address(this));
+        delegation = MockDelegation(payable(eip7702Proxy));
         _etchP256Verifier();
     }
 
@@ -93,7 +94,11 @@ contract BaseTest is SoladyTest {
         view
         returns (bytes memory)
     {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, ep.computeDigest(u));
+        return _eoaSig(privateKey, ep.computeDigest(u));
+    }
+
+    function _eoaSig(uint256 privateKey, bytes32 digest) internal pure returns (bytes memory) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(r, s, v);
     }
 
@@ -102,57 +107,59 @@ contract BaseTest is SoladyTest {
         view
         returns (bytes memory)
     {
-        return _sig(k, false, u);
+        return _sig(k, false, ep.computeDigest(u));
     }
 
-    function _sig(PassKey memory k, bool prehash, EntryPoint.UserOp memory u)
+    function _sig(PassKey memory k, bytes32 digest) internal pure returns (bytes memory) {
+        return _sig(k, false, digest);
+    }
+
+    function _sig(PassKey memory k, bool prehash, bytes32 digest)
         internal
-        view
+        pure
         returns (bytes memory)
     {
         if (k.k.keyType == Delegation.KeyType.P256) {
-            return _secp256r1Sig(k.privateKey, k.keyHash, prehash, u);
+            return _secp256r1Sig(k.privateKey, k.keyHash, prehash, digest);
         }
         if (k.k.keyType == Delegation.KeyType.Secp256k1) {
-            return _secp256k1Sig(k.privateKey, k.keyHash, prehash, u);
+            return _secp256k1Sig(k.privateKey, k.keyHash, prehash, digest);
         }
         revert("Unsupported");
     }
 
-    function _secp256r1Sig(uint256 privateKey, bytes32 keyHash, EntryPoint.UserOp memory u)
+    function _secp256r1Sig(uint256 privateKey, bytes32 keyHash, bytes32 digest)
         internal
-        view
+        pure
         returns (bytes memory)
     {
-        return _secp256r1Sig(privateKey, keyHash, false, u);
+        return _secp256r1Sig(privateKey, keyHash, false, digest);
     }
 
-    function _secp256r1Sig(
-        uint256 privateKey,
-        bytes32 keyHash,
-        bool prehash,
-        EntryPoint.UserOp memory u
-    ) internal view returns (bytes memory) {
-        (bytes32 r, bytes32 s) = vm.signP256(privateKey, ep.computeDigest(u));
+    function _secp256r1Sig(uint256 privateKey, bytes32 keyHash, bool prehash, bytes32 digest)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        (bytes32 r, bytes32 s) = vm.signP256(privateKey, digest);
         s = P256.normalized(s);
         return abi.encodePacked(abi.encode(r, s), keyHash, uint8(prehash ? 1 : 0));
     }
 
-    function _secp256k1Sig(uint256 privateKey, bytes32 keyHash, EntryPoint.UserOp memory u)
+    function _secp256k1Sig(uint256 privateKey, bytes32 keyHash, bytes32 digest)
         internal
-        view
+        pure
         returns (bytes memory)
     {
-        return _secp256k1Sig(privateKey, keyHash, false, u);
+        return _secp256k1Sig(privateKey, keyHash, false, digest);
     }
 
-    function _secp256k1Sig(
-        uint256 privateKey,
-        bytes32 keyHash,
-        bool prehash,
-        EntryPoint.UserOp memory u
-    ) internal view returns (bytes memory) {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, ep.computeDigest(u));
+    function _secp256k1Sig(uint256 privateKey, bytes32 keyHash, bool prehash, bytes32 digest)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(prehash ? 1 : 0));
     }
 

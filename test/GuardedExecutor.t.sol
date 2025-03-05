@@ -14,11 +14,6 @@ contract GuardedExecutorTest is BaseTest {
         super.setUp();
     }
 
-    function _randomCalldata(bytes4 fnSel) internal returns (bytes memory) {
-        if (fnSel == _EMPTY_CALLDATA_FN_SEL && _randomChance(8)) return "";
-        return abi.encodePacked(fnSel);
-    }
-
     function testSetAndGetCanExecute(address target, bytes4 fnSel, bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256r1PassKey();
@@ -72,6 +67,11 @@ contract GuardedExecutorTest is BaseTest {
             assertFalse(d.d.canExecute(k.keyHash, target, _randomCalldata(fnSel)));
             return;
         }
+    }
+
+    function _randomCalldata(bytes4 fnSel) internal returns (bytes memory) {
+        if (fnSel == _EMPTY_CALLDATA_FN_SEL && _randomChance(8)) return "";
+        return abi.encodePacked(fnSel);
     }
 
     function testOnlySuperAdminAndEOACanSelfExecute() public {
