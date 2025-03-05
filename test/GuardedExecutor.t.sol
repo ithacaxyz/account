@@ -14,7 +14,12 @@ contract GuardedExecutorTest is BaseTest {
         super.setUp();
     }
 
-    function testSetAndGetCanExecute(address target, bytes4 fnSel) public {
+    function _randomCalldata(bytes4 fnSel) internal returns (bytes memory) {
+        if (fnSel == _EMPTY_CALLDATA_FN_SEL && _randomChance(8)) return "";
+        return abi.encodePacked(fnSel);
+    }
+
+    function testSetAndGetCanExecute(address target, bytes4 fnSel, bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256r1PassKey();
 
@@ -36,18 +41,16 @@ contract GuardedExecutorTest is BaseTest {
         assertEq(bytes4(uint32(uint256(packed))), fnSel);
         assertEq(address(bytes20(packed)), target);
 
-        assertTrue(d.d.canExecute(k.keyHash, target, abi.encodePacked(fnSel)));
-
-        assertEq(d.d.canExecute(k.keyHash, target, ""), fnSel == _EMPTY_CALLDATA_FN_SEL);
+        assertTrue(d.d.canExecute(k.keyHash, target, _randomCalldata(fnSel)));
 
         if (fnSel == _ANY_FN_SEL) {
-            assertTrue(d.d.canExecute(k.keyHash, target, abi.encodePacked(_randomFnSel())));
+            assertTrue(d.d.canExecute(k.keyHash, target, _randomCalldata(_randomFnSel())));
         }
         if (target == _ANY_TARGET) {
-            assertTrue(d.d.canExecute(k.keyHash, _randomTarget(), abi.encodePacked(fnSel)));
+            assertTrue(d.d.canExecute(k.keyHash, _randomTarget(), _randomCalldata(fnSel)));
         }
         if (target == _ANY_TARGET && fnSel == _ANY_FN_SEL) {
-            assertTrue(d.d.canExecute(k.keyHash, _randomTarget(), abi.encodePacked(_randomFnSel())));
+            assertTrue(d.d.canExecute(k.keyHash, _randomTarget(), _randomCalldata(_randomFnSel())));
         }
 
         if (_randomChance(8)) {
@@ -66,7 +69,7 @@ contract GuardedExecutorTest is BaseTest {
         if (_randomChance(8)) {
             d.d.setCanExecute(keyHashToSet, target, fnSel, false);
             assertEq(d.d.canExecutePackedInfos(keyHashToSet).length, 0);
-            assertFalse(d.d.canExecute(k.keyHash, target, abi.encodePacked(fnSel)));
+            assertFalse(d.d.canExecute(k.keyHash, target, _randomCalldata(fnSel)));
             return;
         }
     }
@@ -136,6 +139,88 @@ contract GuardedExecutorTest is BaseTest {
         }
     }
 
+    function testSetSpendLimitWithTwoPeriods() public {
+        EntryPoint.UserOp memory u;
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+
+        u.eoa = d.eoa;
+        u.combinedGas = 1000000;
+        u.nonce = ep.getNonce(u.eoa, 0);
+
+        PassKey memory k = _randomSecp256k1PassKey();
+
+        address token0 = LibClone.clone(address(paymentToken));
+        address token1 = LibClone.clone(address(paymentToken));
+        _mint(token0, u.eoa, type(uint192).max);
+        _mint(token1, u.eoa, type(uint192).max);
+
+        ERC7821.Call[] memory calls;
+        // Authorize.
+        {
+            calls = new ERC7821.Call[](6);
+            // Authorize the key.
+            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, k.k);
+            // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
+            calls[1].data = abi.encodeWithSelector(
+                GuardedExecutor.setCanExecute.selector, k.keyHash, _ANY_TARGET, _ANY_FN_SEL, true
+            );
+            // Set some spend limits.
+            calls[2].data = abi.encodeWithSelector(
+                GuardedExecutor.setSpendLimit.selector,
+                k.keyHash,
+                token0,
+                GuardedExecutor.SpendPeriod.Hour,
+                1 ether
+            );
+            calls[3].data = abi.encodeWithSelector(
+                GuardedExecutor.setSpendLimit.selector,
+                k.keyHash,
+                token0,
+                GuardedExecutor.SpendPeriod.Day,
+                1 ether
+            );
+            calls[4].data = abi.encodeWithSelector(
+                GuardedExecutor.setSpendLimit.selector,
+                k.keyHash,
+                token1,
+                GuardedExecutor.SpendPeriod.Week,
+                1 ether
+            );
+            calls[5].data = abi.encodeWithSelector(
+                GuardedExecutor.setSpendLimit.selector,
+                k.keyHash,
+                token1,
+                GuardedExecutor.SpendPeriod.Month,
+                1 ether
+            );
+
+            u.executionData = abi.encode(calls);
+            u.nonce = 0xc1d0 << 240;
+
+            u.signature = _eoaSig(d.privateKey, u);
+
+            assertEq(ep.execute(abi.encode(u)), 0);
+            assertEq(d.d.spendInfos(k.keyHash).length, 4);
+        }
+
+        uint256 amount0 = _bound(_randomUniform(), 0, 0.1 ether);
+        uint256 amount1 = _bound(_randomUniform(), 0, 0.1 ether);
+        calls = new ERC7821.Call[](2);
+        calls[0] = _transferCall2(token0, address(0xb0b), amount0);
+        calls[1] = _transferCall2(token1, address(0xb0b), amount1);
+
+        u.nonce = 0;
+        u.executionData = abi.encode(calls);
+        u.signature = _sig(k, u);
+
+        assertEq(ep.execute(abi.encode(u)), 0);
+        GuardedExecutor.SpendInfo[] memory infos = d.d.spendInfos(k.keyHash);
+        for (uint256 i; i < infos.length; ++i) {
+            if (infos[i].token == token0) assertEq(infos[i].spent, amount0);
+            if (infos[i].token == token1) assertEq(infos[i].spent, amount1);
+        }
+    }
+
     function testSpends(bytes32) public {
         EntryPoint.UserOp memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
@@ -171,7 +256,9 @@ contract GuardedExecutorTest is BaseTest {
                     GuardedExecutor.setSpendLimit.selector,
                     k.keyHash,
                     tokens[i],
-                    GuardedExecutor.SpendPeriod.Day,
+                    _randomChance(2)
+                        ? GuardedExecutor.SpendPeriod.Day
+                        : GuardedExecutor.SpendPeriod.Hour,
                     1 ether
                 );
             }
