@@ -161,13 +161,13 @@ contract EntryPointTest is BaseTest {
         assertEq(gasBurner.randomness(), t.randomness);
     }
 
-    function testSimulateExecute2WithSecp256r1PassKey(bytes32) public {
+    function testSimulateExecute2WithPassKey(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         vm.deal(d.eoa, 10 ether);
         paymentToken.mint(d.eoa, 50 ether);
 
-        PassKey memory k = _randomSecp256r1PassKey();
+        PassKey memory k = _randomPassKey(); // Can be r1 or k1.
         k.k.isSuperAdmin = true;
 
         vm.prank(d.eoa);
@@ -240,15 +240,10 @@ contract EntryPointTest is BaseTest {
         vm.prank(d.eoa);
         d.d.authorize(k.k);
 
-        bytes memory executionData = _executionData(
-            address(paymentToken),
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xabcd), 1 ether)
-        );
-
         EntryPoint.UserOp memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
-        u.executionData = executionData;
+        u.executionData = _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
         u.payer = address(0x00);
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(0x00);
