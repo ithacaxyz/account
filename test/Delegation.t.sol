@@ -45,6 +45,21 @@ contract DelegationTest is BaseTest {
         }
 
         d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
+
+        if (_randomChance(32)) {
+            vm.expectRevert(bytes4(keccak256("InvalidNonce()")));
+            d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
+        }
+
+        if (_randomChance(32)) {
+            t.nonce = d.d.getNonce(0);
+            signature = _sig(d, d.d.computeDigest(t.calls, t.nonce));
+            t.opData = abi.encodePacked(t.nonce, signature);
+            t.executionData = abi.encode(t.calls, t.opData);
+            d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
+            return;
+        }
+
         for (uint256 i; i < t.n; ++i) {
             assertEq(targetFunctionPayloads[i].by, d.eoa);
             assertEq(targetFunctionPayloads[i].value, t.targetFunctionPayloads[i].value);
