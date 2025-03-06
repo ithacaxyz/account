@@ -14,17 +14,11 @@ import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 import {LibPREP} from "./LibPREP.sol";
-import {NonceManager} from "./NonceManager.sol";
+import {LibNonce} from "./LibNonce.sol";
 
 /// @title EntryPoint
 /// @notice Contract for ERC7702 delegations.
-contract EntryPoint is
-    EIP712,
-    NonceManager,
-    Ownable,
-    CallContextChecker,
-    ReentrancyGuardTransient
-{
+contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTransient {
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
@@ -455,7 +449,7 @@ contract EntryPoint is
 
     /// @dev Return current nonce with sequence key.
     function getNonce(address eoa, uint192 seqKey) public view virtual returns (uint256) {
-        return _getNonce(_getEntryPointStorage().nonceSeqs[eoa], seqKey);
+        return LibNonce.get(_getEntryPointStorage().nonceSeqs[eoa], seqKey);
     }
 
     /// @dev Returns the current sequence for the `seqKey` in nonce (i.e. upper 192 bits).
@@ -475,7 +469,7 @@ contract EntryPoint is
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
     /// This invalidates the nonces for the `seqKey`, up to (inclusive) `uint64(nonce)`.
     function invalidateNonce(uint256 nonce) public virtual {
-        _invalidateNonce(_getEntryPointStorage().nonceSeqs[msg.sender], nonce);
+        LibNonce.invalidate(_getEntryPointStorage().nonceSeqs[msg.sender], nonce);
         emit NonceInvalidated(msg.sender, nonce);
     }
 
@@ -701,7 +695,7 @@ contract EntryPoint is
             require(msg.sender == address(this));
             // Verify the nonce, early reverting to save gas.
             (LibStorage.Ref storage s, uint256 seq) =
-                _checkNonce(_getEntryPointStorage().nonceSeqs[u.eoa], u.nonce);
+                LibNonce.check(_getEntryPointStorage().nonceSeqs[u.eoa], u.nonce);
 
             // If `_initializePREP` or `_verify` is invalid, just revert the payment.
             // There's a chicken and egg problem:

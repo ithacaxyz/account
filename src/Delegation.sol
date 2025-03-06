@@ -19,11 +19,11 @@ import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 import {LibPREP} from "./LibPREP.sol";
-import {NonceManager} from "./NonceManager.sol";
+import {LibNonce} from "./LibNonce.sol";
 
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
-contract Delegation is EIP712, GuardedExecutor, NonceManager {
+contract Delegation is EIP712, GuardedExecutor {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for *;
     using LibBytes for LibBytes.BytesStorage;
@@ -291,7 +291,7 @@ contract Delegation is EIP712, GuardedExecutor, NonceManager {
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
     /// This invalidates the nonces for the `seqKey`, up to (inclusive) `uint64(nonce)`.
     function invalidateNonce(uint256 nonce) public virtual onlyThis {
-        _invalidateNonce(_getDelegationStorage().nonceSeqs, nonce);
+        LibNonce.invalidate(_getDelegationStorage().nonceSeqs, nonce);
         emit NonceInvalidated(nonce);
     }
 
@@ -311,7 +311,7 @@ contract Delegation is EIP712, GuardedExecutor, NonceManager {
 
     /// @dev Return current nonce with sequence key.
     function getNonce(uint192 seqKey) public view virtual returns (uint256) {
-        return _getNonce(_getDelegationStorage().nonceSeqs, seqKey);
+        return LibNonce.get(_getDelegationStorage().nonceSeqs, seqKey);
     }
 
     /// @dev Returns the label.
@@ -612,7 +612,7 @@ contract Delegation is EIP712, GuardedExecutor, NonceManager {
         // Simple workflow with `opData`.
         if (opData.length < 0x20) revert OpDataTooShort();
         uint256 nonce = uint256(LibBytes.loadCalldata(opData, 0x00));
-        _checkAndIncrementNonce(_getDelegationStorage().nonceSeqs, nonce);
+        LibNonce.checkAndIncrement(_getDelegationStorage().nonceSeqs, nonce);
         emit NonceInvalidated(nonce);
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(

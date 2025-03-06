@@ -5,9 +5,9 @@ import {LibBit} from "solady/utils/LibBit.sol";
 import {LibStorage} from "solady/utils/LibStorage.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 
-/// @title NonceManager
-/// @notice Mixin for ERC4337 style 2D nonces.
-contract NonceManager {
+/// @title LibNonce
+/// @notice Helper library for ERC4337 style 2D nonces.
+library LibNonce {
     ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
@@ -23,10 +23,9 @@ contract NonceManager {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Return current nonce with sequence key.
-    function _getNonce(mapping(uint192 => LibStorage.Ref) storage map, uint192 seqKey)
+    function get(mapping(uint192 => LibStorage.Ref) storage map, uint192 seqKey)
         internal
         view
-        virtual
         returns (uint256)
     {
         return map[seqKey].value | (uint256(seqKey) << 64);
@@ -34,20 +33,16 @@ contract NonceManager {
 
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
     /// This invalidates the nonces for the `seqKey`, up to (inclusive) `uint64(nonce)`.
-    function _invalidateNonce(mapping(uint192 => LibStorage.Ref) storage map, uint256 nonce)
-        internal
-        virtual
-    {
+    function invalidate(mapping(uint192 => LibStorage.Ref) storage map, uint256 nonce) internal {
         LibStorage.Ref storage $ = map[uint192(nonce >> 64)];
         if (uint64(nonce) < $.value) revert NewSequenceMustBeLarger();
         $.value = Math.rawAdd(Math.min(uint64(nonce), 2 ** 64 - 2), 1);
     }
 
     /// @dev Checks that the nonce matches the current sequence.
-    function _checkNonce(mapping(uint192 => LibStorage.Ref) storage map, uint256 nonce)
+    function check(mapping(uint192 => LibStorage.Ref) storage map, uint256 nonce)
         internal
         view
-        virtual
         returns (LibStorage.Ref storage $, uint256 seq)
     {
         $ = map[uint192(nonce >> 64)];
@@ -56,10 +51,10 @@ contract NonceManager {
     }
 
     /// @dev Checks and increment the nonce.
-    function _checkAndIncrementNonce(mapping(uint192 => LibStorage.Ref) storage map, uint256 nonce)
+    function checkAndIncrement(mapping(uint192 => LibStorage.Ref) storage map, uint256 nonce)
         internal
     {
-        (LibStorage.Ref storage $, uint256 seq) = _checkNonce(map, nonce);
+        (LibStorage.Ref storage $, uint256 seq) = check(map, nonce);
         unchecked {
             $.value = seq + 1;
         }
