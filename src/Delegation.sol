@@ -19,10 +19,11 @@ import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 import {LibPREP} from "./LibPREP.sol";
+import {NonceManager} from "./NonceManager.sol";
 
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
-contract Delegation is EIP712, GuardedExecutor {
+contract Delegation is EIP712, GuardedExecutor, NonceManager {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for *;
     using LibBytes for LibBytes.BytesStorage;
@@ -131,14 +132,8 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev The key does not exist.
     error KeyDoesNotExist();
 
-    /// @dev The nonce is invalid.
-    error InvalidNonce();
-
     /// @dev The `opData` is too short.
     error OpDataTooShort();
-
-    /// @dev When invalidating a nonce sequence, the new sequence must be larger than the current.
-    error NewSequenceMustBeLarger();
 
     /// @dev The PREP has already been initialized.
     error PREPAlreadyInitialized();
@@ -296,9 +291,7 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
     /// This invalidates the nonces for the `seqKey`, up to (inclusive) `uint64(nonce)`.
     function invalidateNonce(uint256 nonce) public virtual onlyThis {
-        LibStorage.Ref storage s = _getDelegationStorage().nonceSeqs[uint192(nonce >> 64)];
-        if (uint64(nonce) < s.value) revert NewSequenceMustBeLarger();
-        s.value = Math.rawAdd(Math.min(uint64(nonce), 2 ** 64 - 2), 1);
+        _invalidateNonce(_getDelegationStorage().nonceSeqs, nonce);
         emit NonceInvalidated(nonce);
     }
 
@@ -318,7 +311,7 @@ contract Delegation is EIP712, GuardedExecutor {
 
     /// @dev Return current nonce with sequence key.
     function getNonce(uint192 seqKey) public view virtual returns (uint256) {
-        return _getDelegationStorage().nonceSeqs[seqKey].value | (uint256(seqKey) << 64);
+        return _getNonce(_getDelegationStorage().nonceSeqs, seqKey);
     }
 
     /// @dev Returns the label.
@@ -619,13 +612,8 @@ contract Delegation is EIP712, GuardedExecutor {
         // Simple workflow with `opData`.
         if (opData.length < 0x20) revert OpDataTooShort();
         uint256 nonce = uint256(LibBytes.loadCalldata(opData, 0x00));
-        unchecked {
-            LibStorage.Ref storage s = _getDelegationStorage().nonceSeqs[uint192(nonce >> 64)];
-            uint256 seq = s.value;
-            if (!LibBit.and(seq < type(uint64).max, seq == uint64(nonce))) revert InvalidNonce();
-            s.value = seq + 1;
-            emit NonceInvalidated(nonce);
-        }
+        _checkAndIncrementNonce(_getDelegationStorage().nonceSeqs, nonce);
+        emit NonceInvalidated(nonce);
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)

@@ -14,10 +14,17 @@ import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 import {LibPREP} from "./LibPREP.sol";
+import {NonceManager} from "./NonceManager.sol";
 
 /// @title EntryPoint
 /// @notice Contract for ERC7702 delegations.
-contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTransient {
+contract EntryPoint is
+    EIP712,
+    NonceManager,
+    Ownable,
+    CallContextChecker,
+    ReentrancyGuardTransient
+{
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
@@ -118,12 +125,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
     /// @dev No revert has been encountered.
     error NoRevertEncoutered();
-
-    /// @dev EOA nonce is not valid.
-    error InvalidNonce();
-
-    /// @dev When invalidating a nonce sequence, the new sequence must be larger than the current.
-    error NewSequenceMustBeLarger();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -454,7 +455,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
     /// @dev Return current nonce with sequence key.
     function getNonce(address eoa, uint192 seqKey) public view virtual returns (uint256) {
-        return _getEntryPointStorage().nonceSeqs[eoa][seqKey].value | (uint256(seqKey) << 64);
+        return _getNonce(_getEntryPointStorage().nonceSeqs[eoa], seqKey);
     }
 
     /// @dev Returns the current sequence for the `seqKey` in nonce (i.e. upper 192 bits).
@@ -467,18 +468,14 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         virtual
         returns (uint64 seq, bytes4 err)
     {
-        LibStorage.Ref storage s = _getEntryPointStorage().nonceSeqs[eoa][uint192(nonce >> 64)];
-        seq = uint64(s.value);
+        seq = uint64(getNonce(eoa, uint192(nonce >> 64)));
         err = _getEntryPointStorage().errs[eoa][nonce];
     }
 
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
     /// This invalidates the nonces for the `seqKey`, up to (inclusive) `uint64(nonce)`.
     function invalidateNonce(uint256 nonce) public virtual {
-        LibStorage.Ref storage s =
-            _getEntryPointStorage().nonceSeqs[msg.sender][uint192(nonce >> 64)];
-        if (uint64(nonce) < s.value) revert NewSequenceMustBeLarger();
-        s.value = Math.rawAdd(Math.min(uint64(nonce), 2 ** 64 - 2), 1);
+        _invalidateNonce(_getEntryPointStorage().nonceSeqs[msg.sender], nonce);
         emit NonceInvalidated(msg.sender, nonce);
     }
 
@@ -703,11 +700,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         if (fnSel == 0xf427f8da) {
             require(msg.sender == address(this));
             // Verify the nonce, early reverting to save gas.
-            uint256 nonce = u.nonce;
-            LibStorage.Ref storage s =
-                _getEntryPointStorage().nonceSeqs[u.eoa][uint192(nonce >> 64)];
-            uint256 seq = s.value;
-            if (!LibBit.and(seq < type(uint64).max, seq == uint64(nonce))) revert InvalidNonce();
+            (LibStorage.Ref storage s, uint256 seq) =
+                _checkNonce(_getEntryPointStorage().nonceSeqs[u.eoa], u.nonce);
 
             // If `_initializePREP` or `_verify` is invalid, just revert the payment.
             // There's a chicken and egg problem:

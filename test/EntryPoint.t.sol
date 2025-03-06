@@ -966,7 +966,7 @@ contract EntryPointTest is SoladyTest {
         if (_randomChance(2)) {
             uint256 nonce2 = (uint256(seqKey) << 64) | uint256(seq2);
             if (seq2 < uint64(ep.getNonce(u.eoa, seqKey))) {
-                vm.expectRevert(EntryPoint.NewSequenceMustBeLarger.selector);
+                vm.expectRevert(bytes4(keccak256("NewSequenceMustBeLarger()")));
                 ep.invalidateNonce(nonce2);
             } else {
                 ep.invalidateNonce(nonce2);
@@ -993,7 +993,7 @@ contract EntryPointTest is SoladyTest {
         bytes4 err = ep.execute(abi.encode(u));
 
         if (seq > type(uint64).max - 2) {
-            assertEq(err, EntryPoint.InvalidNonce.selector);
+            assertEq(err, bytes4(keccak256("InvalidNonce()")));
         } else {
             assertEq(err, 0);
         }
