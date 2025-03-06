@@ -6,6 +6,52 @@ import "./Base.t.sol";
 import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCallTarget.sol";
 
 contract DelegationTest is BaseTest {
+    struct _TestExecuteWithSignatureTemps {
+        TargetFunctionPayload[] targetFunctionPayloads;
+        ERC7821.Call[] calls;
+        uint256 n;
+        uint256 nonce;
+        bytes opData;
+        bytes executionData;
+    }
+
+    function testExecuteWithSignature(bytes32) public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+
+        _TestExecuteWithSignatureTemps memory t;
+        t.n = _bound(_randomUniform(), 1, 5);
+        t.targetFunctionPayloads = new TargetFunctionPayload[](t.n);
+        t.calls = new ERC7821.Call[](t.n);
+        for (uint256 i; i < t.n; ++i) {
+            uint256 value = _random() % 0.1 ether;
+            bytes memory data = _truncateBytes(_randomBytes(), 0xff);
+            t.calls[i] = _thisTargetFunctionCall(value, data);
+            t.targetFunctionPayloads[i].value = value;
+            t.targetFunctionPayloads[i].data = data;
+        }
+        t.nonce = d.d.getNonce(0);
+        bytes memory signature = _sig(d, d.d.computeDigest(t.calls, t.nonce));
+        t.opData = abi.encodePacked(t.nonce, signature);
+        t.executionData = abi.encode(t.calls, t.opData);
+
+        if (_randomChance(32)) {
+            signature = _sig(_randomEIP7702DelegatedEOA(), d.d.computeDigest(t.calls, t.nonce));
+            t.opData = abi.encodePacked(t.nonce, signature);
+            t.executionData = abi.encode(t.calls, t.opData);
+            vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+            d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
+            return;
+        }
+
+        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
+        for (uint256 i; i < t.n; ++i) {
+            assertEq(targetFunctionPayloads[i].by, d.eoa);
+            assertEq(targetFunctionPayloads[i].value, t.targetFunctionPayloads[i].value);
+            assertEq(targetFunctionPayloads[i].data, t.targetFunctionPayloads[i].data);
+        }
+    }
+
     function testSignatureCheckerApproval(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256k1PassKey();
