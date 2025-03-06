@@ -21,6 +21,13 @@ contract BaseTest is SoladyTest {
     MockPaymentToken paymentToken;
     MockDelegation delegation;
     EIP7702Proxy eip7702Proxy;
+    TargetFunctionPayload[] targetFunctionPayloads;
+
+    struct TargetFunctionPayload {
+        address by;
+        uint256 value;
+        bytes data;
+    }
 
     bytes32 internal constant _ANY_KEYHASH =
         0x3232323232323232323232323232323232323232323232323232323232323232;
@@ -62,6 +69,10 @@ contract BaseTest is SoladyTest {
         _etchP256Verifier();
     }
 
+    function targetFunction(bytes memory data) public payable {
+        targetFunctionPayloads.push(TargetFunctionPayload(msg.sender, msg.value, data));
+    }
+
     function _setEIP7702Delegation(address eoa) internal {
         vm.etch(eoa, abi.encodePacked(hex"ef0100", address(delegation)));
     }
@@ -74,6 +85,11 @@ contract BaseTest is SoladyTest {
 
     function _hash(Delegation.Key memory k) internal pure returns (bytes32) {
         return keccak256(abi.encode(uint8(k.keyType), keccak256(k.publicKey)));
+    }
+
+    function _randomPassKey() internal returns (PassKey memory) {
+        if (_randomChance(2)) return _randomSecp256r1PassKey();
+        return _randomSecp256k1PassKey();
     }
 
     function _randomSecp256r1PassKey() internal returns (PassKey memory k) {
@@ -90,6 +106,18 @@ contract BaseTest is SoladyTest {
         (addr, k.privateKey) = _randomUniqueSigner();
         k.k.publicKey = abi.encode(addr);
         k.keyHash = _hash(k.k);
+    }
+
+    function _sig(DelegatedEOA memory d, EntryPoint.UserOp memory u)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return _eoaSig(d.privateKey, u);
+    }
+
+    function _sig(DelegatedEOA memory d, bytes32 digest) internal pure returns (bytes memory) {
+        return _eoaSig(d.privateKey, digest);
     }
 
     function _eoaSig(uint256 privateKey, EntryPoint.UserOp memory u)
@@ -249,6 +277,58 @@ contract BaseTest is SoladyTest {
             c.target = token;
             c.data = abi.encodeWithSignature("transfer(address,uint256)", to, amount);
         }
+    }
+
+    function _transferExecutionData(address token, address to, uint256 amount)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return _encode(_transferCall(token, to, amount));
+    }
+
+    function _thisTargetFunctionCall(uint256 value, bytes memory data)
+        internal
+        view
+        returns (ERC7821.Call memory c)
+    {
+        c.target = address(this);
+        c.value = value;
+        c.data = abi.encodeWithSignature("targetFunction(bytes)", data);
+    }
+
+    function _thisTargetFunctionExecutionData(uint256 value, bytes memory data)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return _encode(_thisTargetFunctionCall(value, data));
+    }
+
+    function _encode(ERC7821.Call memory c) internal pure returns (bytes memory) {
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0] = c;
+        return abi.encode(calls);
+    }
+
+    function _executionData(address target, uint256 value, bytes memory data)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        ERC7821.Call memory c;
+        c.target = target;
+        c.value = value;
+        c.data = data;
+        return _encode(c);
+    }
+
+    function _executionData(address target, bytes memory data)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return _executionData(target, 0, data);
     }
 
     function _randomTarget() internal returns (address) {

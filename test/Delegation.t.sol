@@ -3,14 +3,7 @@ pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
-
-contract SampleDelegateCallTarget {
-    function setStorage(bytes32 sslot, bytes32 value) public {
-        assembly ("memory-safe") {
-            sstore(sslot, value)
-        }
-    }
-}
+import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCallTarget.sol";
 
 contract DelegationTest is BaseTest {
     function testSignatureCheckerApproval(bytes32) public {
@@ -60,7 +53,7 @@ contract DelegationTest is BaseTest {
     function testExecuteDelegateCall(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
-        address implementation = address(new SampleDelegateCallTarget());
+        address implementation = address(new MockSampleDelegateCallTarget(0));
         address[] memory callers = new address[](_bound(_random(), 1, 3));
 
         vm.startPrank(d.eoa);
@@ -93,8 +86,8 @@ contract DelegationTest is BaseTest {
         bytes32 specialStorageValue = bytes32(_randomUniform());
         bytes memory executionData = abi.encodePacked(
             implementation,
-            abi.encodeWithSelector(
-                SampleDelegateCallTarget.setStorage.selector, keccak256("hehe"), specialStorageValue
+            abi.encodeWithSignature(
+                "setStorage(bytes32,bytes32)", keccak256("hehe"), specialStorageValue
             )
         );
 

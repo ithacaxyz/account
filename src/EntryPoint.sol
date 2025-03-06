@@ -293,8 +293,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
                 // Heuristic: if the verification gas is > 60k, assume it is P256 verification
                 // without the precompile, which has quite a large variance in verification gas.
-                // Add 105k (empirically determined) to the `gUsed` to account for the variance.
-                for { gCombined := add(gUsed, mul(105000, gt(mload(0x04), 60000))) } 1 {} {
+                // Add 110k (empirically determined) to the `gUsed` to account for the variance.
+                for { gCombined := add(gUsed, mul(110000, gt(mload(0x04), 60000))) } 1 {} {
                     gCombined := add(gCombined, shr(4, gCombined)) // Heuristic: multiply by 1.0625.
                     // Now that we are trying to hone in onto a good estimate for `combinedGas`, we
                     // still want to skip the invalid signature revert and also the 63/64 rule revert.
