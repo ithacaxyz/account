@@ -6,6 +6,10 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 /// @title TokenTransferLib
 /// @notice A library to handle token transfers.
 library TokenTransferLib {
+    ////////////////////////////////////////////////////////////////////////
+    // Operations
+    ////////////////////////////////////////////////////////////////////////
+
     /// @dev ERC20 or native token balance query.
     /// If `token` is `address(0)`, it is treated as a native token balance query.
     function balanceOf(address token, address owner) internal view returns (uint256) {
