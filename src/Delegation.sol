@@ -19,6 +19,7 @@ import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {TokenTransferLib} from "./TokenTransferLib.sol";
 import {LibPREP} from "./LibPREP.sol";
+import {LibNonce} from "./LibNonce.sol";
 
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
@@ -131,14 +132,8 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev The key does not exist.
     error KeyDoesNotExist();
 
-    /// @dev The nonce is invalid.
-    error InvalidNonce();
-
     /// @dev The `opData` is too short.
     error OpDataTooShort();
-
-    /// @dev When invalidating a nonce sequence, the new sequence must be larger than the current.
-    error NewSequenceMustBeLarger();
 
     /// @dev The PREP has already been initialized.
     error PREPAlreadyInitialized();
@@ -221,7 +216,7 @@ contract Delegation is EIP712, GuardedExecutor {
         virtual
         returns (bytes4)
     {
-        (bool isValid, bytes32 keyHash) = _unwrapAndValidateSignature(digest, signature);
+        (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
             isValid = getKey(keyHash).isSuperAdmin
                 || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
@@ -296,9 +291,7 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
     /// This invalidates the nonces for the `seqKey`, up to (inclusive) `uint64(nonce)`.
     function invalidateNonce(uint256 nonce) public virtual onlyThis {
-        LibStorage.Ref storage s = _getDelegationStorage().nonceSeqs[uint192(nonce >> 64)];
-        if (uint64(nonce) < s.value) revert NewSequenceMustBeLarger();
-        s.value = Math.rawAdd(Math.min(uint64(nonce), 2 ** 64 - 2), 1);
+        LibNonce.invalidate(_getDelegationStorage().nonceSeqs, nonce);
         emit NonceInvalidated(nonce);
     }
 
@@ -318,7 +311,7 @@ contract Delegation is EIP712, GuardedExecutor {
 
     /// @dev Return current nonce with sequence key.
     function getNonce(uint192 seqKey) public view virtual returns (uint256) {
-        return _getDelegationStorage().nonceSeqs[seqKey].value | (uint256(seqKey) << 64);
+        return LibNonce.get(_getDelegationStorage().nonceSeqs, seqKey);
     }
 
     /// @dev Returns the label.
@@ -339,7 +332,7 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev Returns the key corresponding to the `keyHash`. Reverts if the key does not exist.
     function getKey(bytes32 keyHash) public view virtual returns (Key memory key) {
         bytes memory data = _getDelegationStorage().keyStorage[keyHash].get();
-        if (data.length == 0) revert KeyDoesNotExist();
+        if (data.length == uint256(0)) revert KeyDoesNotExist();
         unchecked {
             uint256 n = data.length - 7; // 5 + 1 + 1 bytes of fixed length fields.
             uint256 packed = uint56(bytes7(LibBytes.load(data, n)));
@@ -455,8 +448,7 @@ contract Delegation is EIP712, GuardedExecutor {
         uint256 paymentAmount,
         address eoa
     ) public virtual {
-        if (msg.sender != ENTRY_POINT) revert Unauthorized();
-        if (eoa != address(this)) revert Unauthorized();
+        if (!LibBit.and(msg.sender == ENTRY_POINT, eoa == address(this))) revert Unauthorized();
         TokenTransferLib.safeTransfer(paymentToken, paymentRecipient, paymentAmount);
     }
 
@@ -465,18 +457,6 @@ contract Delegation is EIP712, GuardedExecutor {
     /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
     function unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
         public
-        view
-        virtual
-        returns (bool isValid, bytes32 keyHash)
-    {
-        return _unwrapAndValidateSignature(digest, signature);
-    }
-
-    /// @dev Returns if the signature is valid, along with its `keyHash`.
-    /// The `signature` is a wrapped signature, given by
-    /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
-    function _unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
-        internal
         view
         virtual
         returns (bool isValid, bytes32 keyHash)
@@ -632,13 +612,8 @@ contract Delegation is EIP712, GuardedExecutor {
         // Simple workflow with `opData`.
         if (opData.length < 0x20) revert OpDataTooShort();
         uint256 nonce = uint256(LibBytes.loadCalldata(opData, 0x00));
-        unchecked {
-            LibStorage.Ref storage s = _getDelegationStorage().nonceSeqs[uint192(nonce >> 64)];
-            uint256 seq = s.value;
-            if (!LibBit.and(seq < type(uint64).max, seq == uint64(nonce))) revert InvalidNonce();
-            s.value = seq + 1;
-            emit NonceInvalidated(nonce);
-        }
+        LibNonce.checkAndIncrement(_getDelegationStorage().nonceSeqs, nonce);
+        emit NonceInvalidated(nonce);
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)

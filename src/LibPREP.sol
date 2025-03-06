@@ -11,6 +11,10 @@ import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 /// @notice A library to encapsulate the PREP (Provably Rootless EIP-7702 Proxy) workflow.
 /// See: https://blog.biconomy.io/prep-deep-dive/
 library LibPREP {
+    ////////////////////////////////////////////////////////////////////////
+    // Operations
+    ////////////////////////////////////////////////////////////////////////
+
     /// @dev Validates if `digest` and `saltAndDelegation` results in `target`.
     /// `saltAndDelegation` is `bytes32((uint256(salt) << 160) | uint160(delegation))`.
     /// Returns a non-zero `r` for the PREP signature, if valid.
