@@ -179,8 +179,7 @@ contract GuardedExecutorTest is BaseTest {
             calls[2].data = _setSpendLimitCall(k, token0, GuardedExecutor.SpendPeriod.Hour, 1 ether);
             calls[3].data = _setSpendLimitCall(k, token0, GuardedExecutor.SpendPeriod.Day, 1 ether);
             calls[4].data = _setSpendLimitCall(k, token1, GuardedExecutor.SpendPeriod.Week, 1 ether);
-            calls[5].data =
-                _setSpendLimitCall(k, token1, GuardedExecutor.SpendPeriod.Month, 1 ether);
+            calls[5].data = _setSpendLimitCall(k, token1, GuardedExecutor.SpendPeriod.Year, 1 ether);
 
             u.executionData = abi.encode(calls);
             u.nonce = 0xc1d0 << 240;
