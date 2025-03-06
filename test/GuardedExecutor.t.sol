@@ -140,13 +140,13 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function _setSpendLimitCall(
-        bytes32 keyHash,
+        PassKey memory k,
         address token,
         GuardedExecutor.SpendPeriod period,
         uint256 amount
     ) internal pure returns (bytes memory) {
         return abi.encodeWithSelector(
-            GuardedExecutor.setSpendLimit.selector, keyHash, token, period, amount
+            GuardedExecutor.setSpendLimit.selector, k.keyHash, token, period, amount
         );
     }
 
@@ -176,14 +176,11 @@ contract GuardedExecutorTest is BaseTest {
                 GuardedExecutor.setCanExecute.selector, k.keyHash, _ANY_TARGET, _ANY_FN_SEL, true
             );
             // Set some spend limits.
-            calls[2].data =
-                _setSpendLimitCall(k.keyHash, token0, GuardedExecutor.SpendPeriod.Hour, 1 ether);
-            calls[3].data =
-                _setSpendLimitCall(k.keyHash, token0, GuardedExecutor.SpendPeriod.Day, 1 ether);
-            calls[4].data =
-                _setSpendLimitCall(k.keyHash, token1, GuardedExecutor.SpendPeriod.Week, 1 ether);
+            calls[2].data = _setSpendLimitCall(k, token0, GuardedExecutor.SpendPeriod.Hour, 1 ether);
+            calls[3].data = _setSpendLimitCall(k, token0, GuardedExecutor.SpendPeriod.Day, 1 ether);
+            calls[4].data = _setSpendLimitCall(k, token1, GuardedExecutor.SpendPeriod.Week, 1 ether);
             calls[5].data =
-                _setSpendLimitCall(k.keyHash, token1, GuardedExecutor.SpendPeriod.Month, 1 ether);
+                _setSpendLimitCall(k, token1, GuardedExecutor.SpendPeriod.Month, 1 ether);
 
             u.executionData = abi.encode(calls);
             u.nonce = 0xc1d0 << 240;
@@ -243,9 +240,8 @@ contract GuardedExecutorTest is BaseTest {
             );
             for (uint256 i; i < tokens.length; ++i) {
                 // Set some spend limit.
-                calls[2 + i].data = _setSpendLimitCall(
-                    k.keyHash, tokens[i], GuardedExecutor.SpendPeriod.Day, 1 ether
-                );
+                calls[2 + i].data =
+                    _setSpendLimitCall(k, tokens[i], GuardedExecutor.SpendPeriod.Day, 1 ether);
             }
 
             u.executionData = abi.encode(calls);
@@ -387,9 +383,8 @@ contract GuardedExecutorTest is BaseTest {
                 GuardedExecutor.setCanExecute.selector, k.keyHash, _ANY_TARGET, _ANY_FN_SEL, true
             );
             // Set some spend limit.
-            calls[2].data = _setSpendLimitCall(
-                k.keyHash, tokenToSpend, GuardedExecutor.SpendPeriod.Day, 1 ether
-            );
+            calls[2].data =
+                _setSpendLimitCall(k, tokenToSpend, GuardedExecutor.SpendPeriod.Day, 1 ether);
 
             u.executionData = abi.encode(calls);
             u.nonce = 0xc1d0 << 240;
