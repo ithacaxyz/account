@@ -395,8 +395,9 @@ contract EntryPointTest is BaseTest {
         internal
         returns (uint256 gUsed, bytes4 err)
     {
-        (, bytes memory rD) =
-            address(ep).call(abi.encodeWithSignature("simulateExecute(bytes)", abi.encode(u)));
+        (, bytes memory rD) = address(ep).call(
+            abi.encodeWithSignature("selfCallSimulateExecute565348489(bytes)", abi.encode(u))
+        );
         gUsed = uint256(LibBytes.load(rD, 0x04));
         err = bytes4(LibBytes.load(rD, 0x24));
     }

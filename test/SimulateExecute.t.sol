@@ -71,10 +71,10 @@ contract SimulateExecuteTest is BaseTest {
         }
 
         (t.success, t.result) =
-            address(ep).call(abi.encodeWithSignature("simulateExecute2(bytes)", abi.encode(u)));
+            address(ep).call(abi.encodeWithSignature("simulateExecute(bytes)", abi.encode(u)));
 
         assertFalse(t.success);
-        assertEq(bytes4(LibBytes.load(t.result, 0x00)), EntryPoint.SimulationResult2.selector);
+        assertEq(bytes4(LibBytes.load(t.result, 0x00)), EntryPoint.SimulationResult.selector);
 
         t.gExecute = uint256(LibBytes.load(t.result, 0x04));
         t.gCombined = uint256(LibBytes.load(t.result, 0x24));
@@ -127,17 +127,17 @@ contract SimulateExecuteTest is BaseTest {
         u.paymentPerGas = 1e9;
 
         // Just fill with some non-zero junk P256 signature that contains the `keyHash`,
-        // so that the `simulateExecute2` knows that
+        // so that the `simulateExecute` knows that
         // it needs to add the variance for non-precompile P256 verification.
         // We need the `keyHash` in the signature so that the simulation is able
         // to hit all the gas for the GuardedExecutor stuff for the `keyHash`.
         u.signature = abi.encodePacked(keccak256("a"), keccak256("b"), k.keyHash, uint8(0));
 
         (t.success, t.result) =
-            address(ep).call(abi.encodeWithSignature("simulateExecute2(bytes)", abi.encode(u)));
+            address(ep).call(abi.encodeWithSignature("simulateExecute(bytes)", abi.encode(u)));
 
         assertFalse(t.success);
-        assertEq(bytes4(LibBytes.load(t.result, 0x00)), EntryPoint.SimulationResult2.selector);
+        assertEq(bytes4(LibBytes.load(t.result, 0x00)), EntryPoint.SimulationResult.selector);
 
         t.gExecute = uint256(LibBytes.load(t.result, 0x04));
         t.gCombined = uint256(LibBytes.load(t.result, 0x24));
