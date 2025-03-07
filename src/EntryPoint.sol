@@ -317,10 +317,16 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         revert SimulationResult(gExecute, gCombined, gUsed, err);
     }
 
-    /// @dev This function is only intended for self-call.
+    /// @dev This function is intended for self-call via `simulateExecute`.
     /// The name is mined to give a function selector of `0xffffffff`, which makes it
     /// least efficient to call by placing it at the rightmost part of the function dispatch tree.
     /// As this is only for simulation purposes, it does not need to be efficient.
+    ///
+    /// Simply calling this function to get `gUsed` is NOT enough in production.
+    /// Gas is burned at varying call depths, applying the 63/64 rule at different multiples
+    /// to different segments of the gas burned. The only generalized reliable way to predict
+    /// `gCombined` and `gExecute` is to try and error gas-limited self-calls
+    /// via `simulateExecute` to this function.
     ///
     /// This function does not actually execute.
     /// It simulates an execution and reverts with `SelfCallSimulationResult(gUsed, err)`.
