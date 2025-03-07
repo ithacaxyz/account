@@ -6,6 +6,8 @@ pragma solidity ^0.8.4;
 contract MockSampleDelegateCallTarget {
     uint256 public immutable version;
 
+    error ErrorWithData(bytes data);
+
     constructor(uint256 version_) {
         version = version_;
     }
@@ -14,5 +16,9 @@ contract MockSampleDelegateCallTarget {
         assembly ("memory-safe") {
             sstore(sslot, value)
         }
+    }
+
+    function revertWithData(bytes memory data) public pure {
+        revert ErrorWithData(data);
     }
 }

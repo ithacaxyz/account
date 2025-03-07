@@ -164,7 +164,21 @@ contract DelegationTest is BaseTest {
             assertEq(vm.load(d.eoa, keccak256("hehe")), specialStorageValue);
         } while (_randomChance(64));
 
-        if (_randomChance(2)) {
+        if (_randomChance(8)) {
+            bytes memory data = _truncateBytes(_randomBytes(), 0xff);
+            vm.prank(callers[_randomUniform() % callers.length]);
+            (bool success, bytes memory result) = d.eoa.call(
+                abi.encodeWithSignature(
+                    "execute(bytes32,bytes)",
+                    _ERC7579_DELEGATE_CALL_MODE,
+                    abi.encodePacked(
+                        implementation, abi.encodeWithSignature("revertWithData(bytes)", data)
+                    )
+                )
+            );
+            assertFalse(success);
+            assertEq(result, abi.encodeWithSignature("ErrorWithData(bytes)", data));
+        } else if (_randomChance(2)) {
             vm.prank(d.eoa);
             d.d.setImplementationApproval(implementation, false);
 
