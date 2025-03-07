@@ -326,11 +326,12 @@ contract GuardedExecutor is ERC7821 {
         SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
 
         TokenSpendStorage storage tokenSpends = spends.spends[token];
-        tokenSpends.periods.remove(uint8(period));
+        if (tokenSpends.periods.remove(uint8(period))) {
+            if (tokenSpends.periods.length() == uint256(0)) spends.tokens.remove(token);
+        }
 
         delete tokenSpends.spends[uint8(period)];
 
-        if (tokenSpends.periods.length() == uint256(0)) spends.tokens.remove(token);
         emit SpendLimitRemoved(keyHash, token, period);
     }
 

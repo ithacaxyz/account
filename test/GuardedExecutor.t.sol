@@ -315,6 +315,18 @@ contract GuardedExecutorTest is BaseTest {
             assertEq(d.d.spendInfos(k.keyHash).length, 0);
         }
 
+        // Test transfer without limits.
+        {
+            calls = new ERC7821.Call[](1);
+            calls[0] = _transferCall2(token, address(0xb0b), amount * 999);
+
+            u.nonce = ep.getNonce(u.eoa, 0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+            assertEq(ep.execute(abi.encode(u)), 0);
+            assertGt(_balanceOf(token, address(0xb0b)), amount * 999);
+        }
+
         // Test re-addition resets the spent and last updated.
         {
             calls = new ERC7821.Call[](2);
