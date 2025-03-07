@@ -460,14 +460,22 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// We perform a gas-limited self-call to this function via `_execute(bytes,uint256)`
     /// with assembly for the following reasons:
     /// - Allow recovery from out-of-gas errors.
+    ///   When a transaction is actually mined, an `executionData` payload that takes 100k gas
+    ///   to execute during simulation might require 1M gas to actually execute.
+    ///   If we do simply let this consume all gas, then the relayer's compensation
+    ///   which is determined to be sufficient during simulation might not be actually sufficient.
+    ///   We can only know how much gas a payload costs by actually executing it, but once it
+    ///   has been executed, the gas burned cannot be returned and will be debited from the relayer.
     /// - Avoid the overheads of `abi.encode`, `abi.decode`, and memory allocation.
     ///   Doing `(bool success, bytes memory result) = address(this).call(abi.encodeCall(...))`
     ///   incurs unnecessary ABI encoding, decoding, and memory allocation.
     ///   Quadratic memory expansion costs will make UserOps in later parts of a batch
     ///   unfairly punished, while making gas estimates unreliable.
+    /// - For even more efficiency, we directly rip the UserOp from the calldata instead
+    ///   of making it as an argument to this function.
     ///
-    /// For even more efficiency, we directly rip the UserOp from the calldata instead
-    /// of making it as an argument to this function.
+    /// This function reverts if the PREP initialization or the UserOp validation fails.
+    /// This is to prevent incorrect compensation (the UserOp's signature defines what is correct).
     function selfCallPayVerifyCall537021665() public payable {
         require(msg.sender == address(this));
 
@@ -518,16 +526,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev This function is only intended for self-call.
-    /// The name is mined to give a function selector of `0x00000001`, which makes it
-    /// more efficient to call by placing it near the leftmost part of the function dispatch tree.
-    ///
-    /// We perform a self-call to this function via `selfCallPayVerifyCall537021665()`
-    /// with assembly for the following reasons:
-    /// - Allow recovery from out-of-gas errors.
-    /// - Avoid the overheads of `abi.encode`, `abi.decode`, and memory allocation.
-    ///
-    /// For even more efficiency, we directly rip the UserOp from the calldata instead
-    /// of making it as an argument to this function.
+    /// The name is mined to give a function selector of `0x00000001`.
+    /// For the rationale of this design, see `selfCallPayVerifyCall537021665()`.
     function selfCallExecute328974934() public payable {
         require(msg.sender == address(this));
 
