@@ -164,10 +164,190 @@ contract GuardedExecutorTest is BaseTest {
         address token,
         GuardedExecutor.SpendPeriod period,
         uint256 amount
-    ) internal pure returns (bytes memory) {
-        return abi.encodeWithSelector(
+    ) internal pure returns (ERC7821.Call memory c) {
+        c.data = abi.encodeWithSelector(
             GuardedExecutor.setSpendLimit.selector, k.keyHash, token, period, amount
         );
+    }
+
+    function testSetAndRemoveSpendLimit() public {
+        vm.warp(86400 * 100);
+
+        EntryPoint.UserOp memory u;
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+
+        u.eoa = d.eoa;
+        u.combinedGas = 1000000;
+        u.nonce = ep.getNonce(u.eoa, 0);
+
+        PassKey memory k = _randomSecp256k1PassKey();
+
+        address token = LibClone.clone(address(paymentToken));
+        _mint(token, u.eoa, type(uint192).max);
+
+        uint256 amount = _bound(_randomUniform(), 0, 0.1 ether);
+
+        GuardedExecutor.SpendInfo[] memory infos;
+        ERC7821.Call[] memory calls;
+        // Authorize.
+        {
+            calls = new ERC7821.Call[](4);
+            // Authorize the key.
+            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, k.k);
+            // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
+            calls[1].data = abi.encodeWithSelector(
+                GuardedExecutor.setCanExecute.selector, k.keyHash, _ANY_TARGET, _ANY_FN_SEL, true
+            );
+            // Set some spend limits.
+            calls[2] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
+            calls[3] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Day, 1 ether);
+
+            u.executionData = abi.encode(calls);
+            u.nonce = 0xc1d0 << 240;
+
+            u.signature = _eoaSig(d.privateKey, u);
+
+            assertEq(ep.execute(abi.encode(u)), 0);
+            assertEq(d.d.spendInfos(k.keyHash).length, 2);
+        }
+
+        // Test transfer increases spent.
+        {
+            calls = new ERC7821.Call[](1);
+            calls[0] = _transferCall2(token, address(0xb0b), amount);
+
+            u.nonce = ep.getNonce(u.eoa, 0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+            assertEq(ep.execute(abi.encode(u)), 0);
+
+            infos = d.d.spendInfos(k.keyHash);
+            for (uint256 i; i < infos.length; ++i) {
+                assertEq(infos[i].spent, amount);
+            }
+        }
+
+        // Test removal reduces infos' length.
+        {
+            calls = new ERC7821.Call[](1);
+            calls[0].data = abi.encodeWithSelector(
+                GuardedExecutor.removeSpendLimit.selector,
+                k.keyHash,
+                token,
+                GuardedExecutor.SpendPeriod.Hour
+            );
+
+            u.nonce = ep.getNonce(u.eoa, 0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+            assertEq(ep.execute(abi.encode(u)), 0);
+
+            infos = d.d.spendInfos(k.keyHash);
+            assertEq(infos.length, 1);
+            assertEq(uint8(infos[0].period), uint8(GuardedExecutor.SpendPeriod.Day));
+            assertEq(infos[0].spent, amount);
+        }
+
+        // Test re-addition resets the spent and last updated.
+        {
+            calls = new ERC7821.Call[](1);
+            calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
+
+            u.nonce = ep.getNonce(u.eoa, 0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+            assertEq(ep.execute(abi.encode(u)), 0);
+
+            infos = d.d.spendInfos(k.keyHash);
+            for (uint256 i; i < infos.length; ++i) {
+                if (infos[i].period == GuardedExecutor.SpendPeriod.Hour) {
+                    assertEq(infos[i].spent, 0);
+                    assertEq(infos[i].lastUpdated, 0);
+                } else {
+                    assertEq(infos[i].spent, amount);
+                    assertNotEq(infos[i].lastUpdated, 0);
+                }
+            }
+        }
+
+        // Test transfer increments spent.
+        {
+            calls = new ERC7821.Call[](1);
+            calls[0] = _transferCall2(token, address(0xb0b), amount);
+
+            u.nonce = ep.getNonce(u.eoa, 0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+            assertEq(ep.execute(abi.encode(u)), 0);
+
+            infos = d.d.spendInfos(k.keyHash);
+            assertEq(infos.length, 2);
+            for (uint256 i; i < infos.length; ++i) {
+                if (infos[i].period == GuardedExecutor.SpendPeriod.Hour) {
+                    assertEq(infos[i].spent, amount);
+                } else {
+                    assertEq(infos[i].spent, amount * 2);
+                }
+            }
+        }
+
+        // Test removal.
+        {
+            calls = new ERC7821.Call[](2);
+            calls[0].data = abi.encodeWithSelector(
+                GuardedExecutor.removeSpendLimit.selector,
+                k.keyHash,
+                token,
+                GuardedExecutor.SpendPeriod.Hour
+            );
+            calls[1].data = abi.encodeWithSelector(
+                GuardedExecutor.removeSpendLimit.selector,
+                k.keyHash,
+                token,
+                GuardedExecutor.SpendPeriod.Day
+            );
+
+            u.nonce = ep.getNonce(u.eoa, 0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+            assertEq(ep.execute(abi.encode(u)), 0);
+
+            assertEq(d.d.spendInfos(k.keyHash).length, 0);
+        }
+
+        // Test re-addition resets the spent and last updated.
+        {
+            calls = new ERC7821.Call[](2);
+            calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
+            calls[1] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Day, 1 ether);
+
+            u.nonce = ep.getNonce(u.eoa, 0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+            assertEq(ep.execute(abi.encode(u)), 0);
+
+            infos = d.d.spendInfos(k.keyHash);
+            for (uint256 i; i < infos.length; ++i) {
+                assertEq(infos[i].spent, 0);
+                assertEq(infos[i].lastUpdated, 0);
+            }
+        }
+
+        // Test transfer increments spent.
+        {
+            calls = new ERC7821.Call[](1);
+            calls[0] = _transferCall2(token, address(0xb0b), amount);
+
+            u.nonce = ep.getNonce(u.eoa, 0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+            assertEq(ep.execute(abi.encode(u)), 0);
+
+            infos = d.d.spendInfos(k.keyHash);
+            for (uint256 i; i < infos.length; ++i) {
+                assertEq(infos[i].spent, amount);
+            }
+        }
     }
 
     function testSetSpendLimitWithTwoPeriods() public {
@@ -196,10 +376,10 @@ contract GuardedExecutorTest is BaseTest {
                 GuardedExecutor.setCanExecute.selector, k.keyHash, _ANY_TARGET, _ANY_FN_SEL, true
             );
             // Set some spend limits.
-            calls[2].data = _setSpendLimitCall(k, token0, GuardedExecutor.SpendPeriod.Hour, 1 ether);
-            calls[3].data = _setSpendLimitCall(k, token0, GuardedExecutor.SpendPeriod.Day, 1 ether);
-            calls[4].data = _setSpendLimitCall(k, token1, GuardedExecutor.SpendPeriod.Week, 1 ether);
-            calls[5].data = _setSpendLimitCall(k, token1, GuardedExecutor.SpendPeriod.Year, 1 ether);
+            calls[2] = _setSpendLimitCall(k, token0, GuardedExecutor.SpendPeriod.Hour, 1 ether);
+            calls[3] = _setSpendLimitCall(k, token0, GuardedExecutor.SpendPeriod.Day, 1 ether);
+            calls[4] = _setSpendLimitCall(k, token1, GuardedExecutor.SpendPeriod.Week, 1 ether);
+            calls[5] = _setSpendLimitCall(k, token1, GuardedExecutor.SpendPeriod.Year, 1 ether);
 
             u.executionData = abi.encode(calls);
             u.nonce = 0xc1d0 << 240;
@@ -259,7 +439,7 @@ contract GuardedExecutorTest is BaseTest {
             );
             for (uint256 i; i < tokens.length; ++i) {
                 // Set some spend limit.
-                calls[2 + i].data =
+                calls[2 + i] =
                     _setSpendLimitCall(k, tokens[i], GuardedExecutor.SpendPeriod.Day, 1 ether);
             }
 
@@ -402,8 +582,7 @@ contract GuardedExecutorTest is BaseTest {
                 GuardedExecutor.setCanExecute.selector, k.keyHash, _ANY_TARGET, _ANY_FN_SEL, true
             );
             // Set some spend limit.
-            calls[2].data =
-                _setSpendLimitCall(k, tokenToSpend, GuardedExecutor.SpendPeriod.Day, 1 ether);
+            calls[2] = _setSpendLimitCall(k, tokenToSpend, GuardedExecutor.SpendPeriod.Day, 1 ether);
 
             u.executionData = abi.encode(calls);
             u.nonce = 0xc1d0 << 240;
