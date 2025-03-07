@@ -111,6 +111,42 @@ contract DelegationTest is BaseTest {
         assertEq(d.d.approvedSignatureCheckers(k.keyHash).length, 0);
     }
 
+    struct _TestUpgradeDelegationWithPassKeyTemps {
+        uint256 randomVersion;
+        address implementation;
+        ERC7821.Call[] calls;
+        uint256 nonce;
+        bytes opData;
+        bytes executionData;
+    }
+
+    function testUpgradeDelegationWithPassKey(bytes32) public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        PassKey memory k = _randomSecp256k1PassKey();
+
+        k.k.isSuperAdmin = true;
+
+        vm.prank(d.eoa);
+        d.d.authorize(k.k);
+
+        _TestUpgradeDelegationWithPassKeyTemps memory t;
+        t.randomVersion = _randomUniform();
+        t.implementation = address(new MockSampleDelegateCallTarget(t.randomVersion));
+
+        t.calls = new ERC7821.Call[](1);
+        t.calls[0].data =
+            abi.encodeWithSignature("upgradeProxyDelegation(address)", t.implementation);
+
+        t.nonce = d.d.getNonce(0);
+        bytes memory signature = _sig(d, d.d.computeDigest(t.calls, t.nonce));
+        t.opData = abi.encodePacked(t.nonce, signature);
+        t.executionData = abi.encode(t.calls, t.opData);
+
+        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
+
+        assertEq(MockSampleDelegateCallTarget(d.eoa).version(), t.randomVersion);
+    }
+
     function testExecuteDelegateCall(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
