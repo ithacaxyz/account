@@ -323,10 +323,11 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// As this is only for simulation purposes, it does not need to be efficient.
     ///
     /// Simply calling this function to get `gUsed` is NOT enough in production.
+    /// It is NOT sufficient to simply estimate `gExecute` as `gUsed * a + b; a > 1 && b > 0`.
     /// Gas is burned at varying call depths, applying the 63/64 rule at different multiples
-    /// to different segments of the gas burned. The only generalized reliable way to predict
-    /// `gCombined` and `gExecute` is to try and error gas-limited self-calls
-    /// via `simulateExecute` to this function.
+    /// to different segments of the gas burned. `gExecute` is NOT a constant multiple of `gUsed`.
+    /// The only generalized reliable way to predict `gCombined` and `gExecute` is to
+    /// try and error gas-limited self-calls via `simulateExecute` to this function.
     ///
     /// This function does not actually execute.
     /// It simulates an execution and reverts with `SelfCallSimulationResult(gUsed, err)`.
