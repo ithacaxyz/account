@@ -48,6 +48,26 @@ contract GuardedExecutorTest is BaseTest {
             assertTrue(d.d.canExecute(k.keyHash, _randomTarget(), _randomCalldata(_randomFnSel())));
         }
 
+        if (keyHashToSet == _ANY_KEYHASH) {
+            PassKey memory kAnother = _randomSecp256r1PassKey();
+            d.d.authorize(kAnother.k);
+            bytes32 anotherKeyHash = kAnother.keyHash;
+
+            assertTrue(d.d.canExecute(anotherKeyHash, target, _randomCalldata(fnSel)));
+
+            if (fnSel == _ANY_FN_SEL) {
+                assertTrue(d.d.canExecute(anotherKeyHash, target, _randomCalldata(_randomFnSel())));
+            }
+            if (target == _ANY_TARGET) {
+                assertTrue(d.d.canExecute(anotherKeyHash, _randomTarget(), _randomCalldata(fnSel)));
+            }
+            if (target == _ANY_TARGET && fnSel == _ANY_FN_SEL) {
+                assertTrue(
+                    d.d.canExecute(anotherKeyHash, _randomTarget(), _randomCalldata(_randomFnSel()))
+                );
+            }
+        }
+
         if (_randomChance(8)) {
             bytes4 fnSel2 = _randomFnSel();
             address target2 = _randomTarget();
