@@ -403,7 +403,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
 
             // We'll use assembly for frequently used call related stuff to save massive memory gas.
-            mstore(m, 0) // `selfCallPayVerifyCall537021665()`.
+            mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
             mstore(add(m, 0x20), shr(254, combinedGasOverride)) // Whether it's a gas simulation.
             mstore(0x00, 0) // Zeroize the return slot.
 
