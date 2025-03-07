@@ -175,11 +175,15 @@ contract Delegation is EIP712, GuardedExecutor {
     event NonceInvalidated(uint256 nonce);
 
     ////////////////////////////////////////////////////////////////////////
-    // Constants
+    // Immutables
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev The entry point address.
-    address public constant ENTRY_POINT = 0x307AF7d28AfEE82092aA95D35644898311CA5360;
+    address public immutable ENTRY_POINT;
+
+    ////////////////////////////////////////////////////////////////////////
+    // Constants
+    ////////////////////////////////////////////////////////////////////////
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant EXECUTE_TYPEHASH = keccak256(
@@ -200,6 +204,14 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev General capacity for enumerable sets,
     /// to prevent off-chain full enumeration from running out-of-gas.
     uint256 internal constant _CAP = 512;
+
+    ////////////////////////////////////////////////////////////////////////
+    // Constructor
+    ////////////////////////////////////////////////////////////////////////
+
+    constructor(address entryPoint) payable {
+        ENTRY_POINT = entryPoint;
+    }
 
     ////////////////////////////////////////////////////////////////////////
     // ERC1271
@@ -555,7 +567,6 @@ contract Delegation is EIP712, GuardedExecutor {
         } else {
             super.execute(mode, executionData);
         }
-        LibEIP7702.requestProxyDelegationInitialization();
     }
 
     /// @dev Supported modes:

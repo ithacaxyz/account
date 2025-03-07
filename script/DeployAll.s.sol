@@ -2,13 +2,14 @@
 pragma solidity ^0.8.4;
 
 import {Script} from "forge-std/Script.sol";
-import "../src/EntryPoint.sol";
+import "../src/DeployAll.sol";
 
-contract DeployEntryPointImplementationScript is Script {
+contract DeployAllScript is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        address deployer = vm.createWallet(deployerPrivateKey).addr;
         vm.startBroadcast(deployerPrivateKey);
-        new EntryPoint{salt: bytes32(0)}();
+        new DeployAll(deployer);
         vm.stopBroadcast();
     }
 }

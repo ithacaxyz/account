@@ -59,12 +59,9 @@ contract BaseTest is SoladyTest {
     }
 
     function setUp() public virtual {
-        Delegation tempDelegation = new Delegation();
-        ep = MockEntryPoint(payable(tempDelegation.ENTRY_POINT()));
-        MockEntryPoint tempMockEntryPoint = new MockEntryPoint();
-        vm.etch(tempDelegation.ENTRY_POINT(), address(tempMockEntryPoint).code);
+        ep = new MockEntryPoint();
         paymentToken = new MockPaymentToken();
-        eip7702Proxy = new EIP7702Proxy(address(new MockDelegation()), address(this));
+        eip7702Proxy = new EIP7702Proxy(address(new MockDelegation(address(ep))), address(this));
         delegation = MockDelegation(payable(eip7702Proxy));
         _etchP256Verifier();
     }

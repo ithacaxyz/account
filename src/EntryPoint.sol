@@ -198,6 +198,14 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     ////////////////////////////////////////////////////////////////////////
+    // Constructor
+    ////////////////////////////////////////////////////////////////////////
+
+    constructor(address initialOwner) payable {
+        _initializeOwner(initialOwner);
+    }
+
+    ////////////////////////////////////////////////////////////////////////
     // Main
     ////////////////////////////////////////////////////////////////////////
 
@@ -395,13 +403,15 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
 
             // We'll use assembly for frequently used call related stuff to save massive memory gas.
-            mstore(m, 0xf427f8da) // `_payVerifyAndCall()`.
+            mstore(m, 0) // `selfCallPayVerifyCall537021665()`.
             mstore(add(m, 0x20), shr(254, combinedGasOverride)) // Whether it's a gas simulation.
             mstore(0x00, 0) // Zeroize the return slot.
 
             // To prevent griefing, we need to do a non-reverting gas-limited self call.
             // If the self call is successful, we know that the payment has been made,
             // and the sequence for `nonce` has been incremented.
+            // We do this in assembly to avoid unnecessary memory allocation and
+            // overheads of `abi.encode`, `abi.decode`.
             s := call(g, address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x40)
             err := mload(0x00) // The self call will do another self call to execute.
             paymentAmount := mload(0x20) // Only used when `s` is true.
@@ -441,6 +451,69 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // incentivizing relayers to submit UserOps when they are likely to succeed.
             if (err != 0) _getEntryPointStorage().errs[u.eoa][u.nonce] = err;
         }
+    }
+
+    /// @dev This function is only intended for self-call.
+    /// The name is mined to give a function selector of `0x00000000`, which makes it
+    /// more efficient to call by placing it at the leftmost part of the function dispatch tree.
+    function selfCallPayVerifyCall537021665() public payable {
+        require(msg.sender == address(this));
+
+        UserOp calldata u;
+        bytes32 isGasSimulation;
+        assembly ("memory-safe") {
+            u := add(0x24, calldataload(0x24))
+            isGasSimulation := calldataload(0x04)
+        }
+        // Verify the nonce, early reverting to save gas.
+        (LibStorage.Ref storage s, uint256 seq) =
+            LibNonce.check(_getEntryPointStorage().nonceSeqs[u.eoa], u.nonce);
+
+        // If `_initializePREP` or `_verify` is invalid, just revert the payment.
+        // There's a chicken and egg problem:
+        // Validation of the UserOp is needed to ensure that `_pay` deducts correctly,
+        // but `_verify` costs variable amount of gas.
+        // Suggestion: the UserOp is simulated off-chain to ensure that it passes.
+        // Minimize surface area and chance of griefing.
+        // If somehow `_verify` is griefed, up to relayer to ban the user.
+        _initializePREP(u);
+        (bool isValid, bytes32 keyHash) = _verify(u);
+        if (!isValid) if (isGasSimulation == 0) revert VerificationError();
+
+        uint256 paymentAmount = _pay(u);
+
+        // Once the payment has been made, the nonce must be invalidated.
+        // Otherwise, an attacker can keep replaying the UserOp to take payment and drain the user.
+        // EntryPoint UserOp nonce bookkeeping is stored on the EntryPoint itself
+        // to make implementing this nonce-invalidation pattern more performant.
+        s.value = Math.rawAdd(seq, 1);
+
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            calldatacopy(add(m, 0x1c), 0x00, calldatasize())
+            mstore(m, 0x00000001) // `selfCallExecute328974934()`.
+            mstore(add(m, 0x20), keyHash)
+            mstore(0x00, 0) // Zeroize the return slot.
+
+            pop(call(gas(), address(), 0, add(m, 0x1c), calldatasize(), 0x00, 0x20))
+            mstore(0x20, paymentAmount)
+            return(0x00, 0x40)
+        }
+    }
+
+    /// @dev This function is only intended for self-call.
+    /// The name is mined to give a function selector of `0x00000001`, which makes it
+    /// more efficient to call by placing it near the leftmost part of the function dispatch tree.
+    function selfCallExecute328974934() public payable {
+        require(msg.sender == address(this));
+
+        UserOp calldata u;
+        bytes32 keyHash;
+        assembly ("memory-safe") {
+            u := add(0x24, calldataload(0x24))
+            keyHash := calldataload(0x04)
+        }
+        _execute(u, keyHash, false);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -515,15 +588,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     ////////////////////////////////////////////////////////////////////////
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
-
-    // Self call functions
-    // -------------------
-    // For these self call functions, we shall use the `fallback`.
-    // This is so that they can be hidden from the public api,
-    // and for facilitating unit testing via a mock.
-    //
-    // All write self call functions must be guarded with a
-    // `require(msg.sender == address(this))` in the fallback.
 
     /// @dev Makes the `eoa` perform a payment to the `entryPoint`.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
@@ -674,79 +738,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         }
     }
 
-    ////////////////////////////////////////////////////////////////////////
-    // Fallback
-    ////////////////////////////////////////////////////////////////////////
-
     receive() external payable virtual {}
-
-    /// @dev Use the fallback function to implement gas limited verification and execution.
-    /// Helps avoid unnecessary calldata decoding.
-    fallback() external payable virtual {
-        UserOp calldata u;
-        bytes32 w;
-        assembly ("memory-safe") {
-            u := add(0x24, calldataload(0x24))
-            w := calldataload(0x04)
-        }
-        uint256 fnSel = uint32(bytes4(msg.sig));
-        // `_payVerifyAndCall()`.
-        if (fnSel == 0xf427f8da) {
-            require(msg.sender == address(this));
-            // Verify the nonce, early reverting to save gas.
-            (LibStorage.Ref storage s, uint256 seq) =
-                LibNonce.check(_getEntryPointStorage().nonceSeqs[u.eoa], u.nonce);
-
-            // If `_initializePREP` or `_verify` is invalid, just revert the payment.
-            // There's a chicken and egg problem:
-            // Validation of the UserOp is needed to ensure that `_pay` deducts correctly,
-            // but `_verify` costs variable amount of gas.
-            // Suggestion: the UserOp is simulated off-chain to ensure that it passes.
-            // Minimize surface area and chance of griefing.
-            // If somehow `_verify` is griefed, up to relayer to ban the user.
-            _initializePREP(u);
-            (bool isValid, bytes32 keyHash) = _verify(u);
-            if (!isValid) if (w == 0) revert VerificationError();
-
-            uint256 paymentAmount = _pay(u);
-
-            // Once the payment has been made, the nonce must be invalidated.
-            // Otherwise, an attacker can keep replaying the UserOp to take payment and drain the user.
-            // EntryPoint UserOp nonce bookkeeping is stored on the EntryPoint itself
-            // to make implementing this nonce-invalidation pattern more performant.
-            s.value = Math.rawAdd(seq, 1);
-
-            assembly ("memory-safe") {
-                let m := mload(0x40)
-                calldatacopy(add(m, 0x1c), 0x00, calldatasize())
-                mstore(m, 0x420aadb8) // `_execute()`.
-                mstore(add(m, 0x20), keyHash)
-                mstore(0x00, 0) // Zeroize the return slot.
-
-                pop(call(gas(), address(), 0, add(m, 0x1c), calldatasize(), 0x00, 0x20))
-                mstore(0x20, paymentAmount)
-                return(0x00, 0x40)
-            }
-        }
-        // `_execute()`.
-        if (fnSel == 0x420aadb8) {
-            require(msg.sender == address(this));
-            _execute(u, w, false);
-            return;
-        }
-        // `_initializeOwner()`.
-        if (fnSel == 0xfc90218d) {
-            _checkOnlyProxy();
-            if (owner() != address(0)) return; // Prevent reinitialization if there's owner.
-            address newOwner;
-            assembly ("memory-safe") {
-                newOwner := calldataload(0x04)
-            }
-            _initializeOwner(newOwner);
-            return;
-        }
-        revert FnSelectorNotRecognized();
-    }
 
     ////////////////////////////////////////////////////////////////////////
     // Only Owner Functions
