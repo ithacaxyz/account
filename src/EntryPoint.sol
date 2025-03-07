@@ -396,7 +396,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             if ((combinedGasOverride >> 255) & 1 != 0) return (0, 0);
         }
 
-        bool s; // Denotes whether the self call is successful.
+        bool selfCallSuccess;
         assembly ("memory-safe") {
             let m := mload(0x40) // Grab the free memory pointer.
             // Copy the encoded user op to the memory to be ready to pass to the self call.
@@ -410,17 +410,17 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             // To prevent griefing, we need to do a non-reverting gas-limited self call.
             // If the self call is successful, we know that the payment has been made,
             // and the sequence for `nonce` has been incremented.
-            // We do this in assembly to avoid unnecessary memory allocation and
-            // overheads of `abi.encode`, `abi.decode`.
-            s := call(g, address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x40)
+            // For more information, see `selfCallPayVerifyCall537021665()`.
+            selfCallSuccess :=
+                call(g, address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x40)
             err := mload(0x00) // The self call will do another self call to execute.
-            paymentAmount := mload(0x20) // Only used when `s` is true.
-            if iszero(s) { if iszero(err) { err := shl(224, 0xad4db224) } } // `VerifiedCallError()`.
+            paymentAmount := mload(0x20) // Only used when `selfCallSuccess` is true.
+            if iszero(selfCallSuccess) { if iszero(err) { err := shl(224, 0xad4db224) } } // `VerifiedCallError()`.
         }
 
-        emit UserOpExecuted(u.eoa, u.nonce, s, err);
+        emit UserOpExecuted(u.eoa, u.nonce, selfCallSuccess, err);
 
-        if (s) {
+        if (selfCallSuccess) {
             // Refund strategy:
             // `totalAmountOfGasToPayFor = gasUsedThusFar + _REFUND_GAS`.
             // `paymentAmountForGas = paymentPerGas * totalAmountOfGasToPayFor`.
@@ -456,6 +456,18 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev This function is only intended for self-call.
     /// The name is mined to give a function selector of `0x00000000`, which makes it
     /// more efficient to call by placing it at the leftmost part of the function dispatch tree.
+    ///
+    /// We perform a gas-limited self-call to this function via `_execute(bytes,uint256)`
+    /// with assembly for the following reasons:
+    /// - Allow recovery from out-of-gas errors.
+    /// - Avoid the overheads of `abi.encode`, `abi.decode`, and memory allocation.
+    ///   Doing `(bool success, bytes memory result) = address(this).call(abi.encodeCall(...))`
+    ///   incurs unnecessary ABI encoding, decoding, and memory allocation.
+    ///   Quadratic memory expansion costs will make UserOps in later parts of a batch
+    ///   unfairly punished, while making gas estimates unreliable.
+    ///
+    /// For even more efficiency, we directly rip the UserOp from the calldata instead
+    /// of making it as an argument to this function.
     function selfCallPayVerifyCall537021665() public payable {
         require(msg.sender == address(this));
 
@@ -494,8 +506,12 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             mstore(m, 0x00000001) // `selfCallExecute328974934()`.
             mstore(add(m, 0x20), keyHash)
             mstore(0x00, 0) // Zeroize the return slot.
-
-            pop(call(gas(), address(), 0, add(m, 0x1c), calldatasize(), 0x00, 0x20))
+            // `selfCallExecute328974934()` returns nothing on success.
+            // If it reverts, the error selector will be written to `0x00`.
+            if iszero(call(gas(), address(), 0, add(m, 0x1c), calldatasize(), 0x00, 0x20)) {
+                // Just in case the self-call fails and returns nothing.
+                if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x6c9d47e8)) } // `CallError()`.
+            }
             mstore(0x20, paymentAmount)
             return(0x00, 0x40)
         }
@@ -504,6 +520,14 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev This function is only intended for self-call.
     /// The name is mined to give a function selector of `0x00000001`, which makes it
     /// more efficient to call by placing it near the leftmost part of the function dispatch tree.
+    ///
+    /// We perform a self-call to this function via `selfCallPayVerifyCall537021665()`
+    /// with assembly for the following reasons:
+    /// - Allow recovery from out-of-gas errors.
+    /// - Avoid the overheads of `abi.encode`, `abi.decode`, and memory allocation.
+    ///
+    /// For even more efficiency, we directly rip the UserOp from the calldata instead
+    /// of making it as an argument to this function.
     function selfCallExecute328974934() public payable {
         require(msg.sender == address(this));
 
