@@ -3,6 +3,7 @@ pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
+import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCallTarget.sol";
 
 contract EntryPointTest is BaseTest {
     struct _TestFullFlowTemps {
@@ -115,6 +116,38 @@ contract EntryPointTest is BaseTest {
         uint256 actualAmount = (gUsed + 50000) * 1e9;
         assertEq(paymentToken.balanceOf(address(ep)), actualAmount);
         assertEq(paymentToken.balanceOf(d.eoa), 50 ether - actualAmount - 1 ether);
+    }
+
+    function testSimulateFailed() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+
+        vm.deal(d.eoa, 10 ether);
+
+        PassKey memory k = _randomSecp256k1PassKey();
+        k.k.isSuperAdmin = true;
+        vm.prank(d.eoa);
+        d.d.authorize(k.k);
+
+        address target = address(new MockSampleDelegateCallTarget(0));
+        bytes memory data = abi.encodePacked(target.code, "hehe");
+
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].target = target;
+        calls[0].data = abi.encodeWithSignature("revertWithData(bytes)", data);
+
+        EntryPoint.UserOp memory u;
+        u.eoa = d.eoa;
+        u.nonce = 0;
+        u.executionData = abi.encode(calls);
+        u.payer = address(0x00);
+        u.combinedGas = 1000000;
+        u.signature = _sig(k, u);
+
+        (bool success, bytes memory result) =
+            address(ep).call(abi.encodeWithSignature("simulateFailed(bytes)", abi.encode(u)));
+
+        assertFalse(success);
+        assertEq(result, abi.encodeWithSignature("ErrorWithData(bytes)", data));
     }
 
     function testExecuteWithPayingERC20TokensWithRefund(bytes32) public {

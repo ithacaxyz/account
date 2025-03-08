@@ -369,20 +369,18 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev This function is provided for debugging purposes.
-    function simulateFailedVerifyAndCall(bytes calldata encodedUserOp) public payable virtual {
-        UserOp calldata u = _extractUserOp(encodedUserOp);
-        (bool isValid, bytes32 keyHash) = _verify(u);
-        if (!isValid) revert VerificationError();
-
-        bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
-            hex"01000000000078210001", // ERC7821 batch execution mode.
-            u.executionData,
-            abi.encode(keyHash) // `opData`.
-        );
-        address eoa = u.eoa;
+    function simulateFailed(bytes calldata encodedUserOp) public payable virtual {
         assembly ("memory-safe") {
-            if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x00)) {
-                let m := mload(0x40)
+            let m := mload(0x40) // Grab the free memory pointer.
+            // Copy the encoded user op to the memory to be ready to pass to the self call.
+            calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
+
+            mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
+            mstore(add(m, 0x20), 2) // The flag to bubble up the whole returned data.
+
+            if iszero(
+                call(gas(), address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x00)
+            ) {
                 returndatacopy(m, 0x00, returndatasize())
                 revert(m, returndatasize())
             }
@@ -510,10 +508,10 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         require(msg.sender == address(this));
 
         UserOp calldata u;
-        bytes32 isGasSimulation;
+        uint256 simulationFlags;
         assembly ("memory-safe") {
             u := add(0x24, calldataload(0x24))
-            isGasSimulation := calldataload(0x04)
+            simulationFlags := calldataload(0x04)
         }
         address eoa = u.eoa;
         // Verify the nonce, early reverting to save gas.
@@ -542,7 +540,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         }
 
         (bool isValid, bytes32 keyHash) = _verify(u);
-        if (!isValid) if (isGasSimulation == 0) revert VerificationError();
+        if (!isValid) if (simulationFlags & 1 == 0) revert VerificationError();
 
         uint256 paymentAmount = _pay(u);
 
@@ -563,6 +561,11 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
             if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
+                // If this is a simulation via `simulateFailed`, bubble up the whole returned data.
+                if and(simulationFlags, 2) {
+                    returndatacopy(mload(0x40), 0x00, returndatasize())
+                    revert(mload(0x40), returndatasize())
+                }
                 if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x6c9d47e8)) } // `CallError()`.
             }
             mstore(0x20, paymentAmount)
