@@ -546,15 +546,15 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // Yet, we still need to minimally check that the UserOp has a valid signature to draw
         // compensation. If we draw compensation first and then realize that the signature is
         // invalid, we will need to refund the compensation, which is more inefficient than
-        // ensuring validity of the signature before drawing compensation.
+        // simply ensuring validity of the signature before drawing compensation.
         // The best we can do is to minimize the chance that an UserOp success in off-chain
         // simulation can somehow result in an uncompensated on-chain failure.
         // This is why ERC4337 has all those weird storage and opcode restrictions for
         // simulation, and suggests banning users that intentionally grief the simulation.
 
         // If `initializePREP` fails, just revert.
-        // Off-chain simulation can ensure that the `eoa` is indeed a PREP address.
-        // If the `eoa` is a PREP address, this means the delegation cannot be altered
+        // Off-chain simulation can ensure that the eoa is indeed a PREP address.
+        // If the eoa is a PREP address, this means the delegation cannot be altered
         // while the UserOp is in-flight, which means off-chain simulation success
         // guarantees on-chain execution success.
         if (u.initData.length != 0) {
@@ -727,6 +727,10 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     {
         bytes calldata sig = u.signature;
         address eoa = u.eoa;
+        // While it is technically safe for the digest to be computed on the delegation,
+        // we do it on the EntryPoint for efficiency and maintainability. Validating the
+        // a single bytes32 digest avoids having to pass in the entire UserOp. Additionally,
+        // the delegation does not need to know anything about the UserOp structure.
         bytes32 digest = _computeDigest(u);
         assembly ("memory-safe") {
             let m := mload(0x40)
