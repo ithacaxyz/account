@@ -480,13 +480,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                     Math.rawSub(paymentAmount, finalPaymentAmount)
                 );
             }
-
-            // If there is an error when the self call is successful, store it.
-            // We only do this here because to protect against vandalism of
-            // previously written errs and future errs.
-            // We exclude this from the gas recording, which gives a tiny side benefit of
-            // incentivizing relayers to submit UserOps when they are likely to succeed.
-            if (err != 0) _getEntryPointStorage().errs[u.eoa][u.nonce] = err;
         }
     }
 
@@ -584,20 +577,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev Return current nonce with sequence key.
     function getNonce(address eoa, uint192 seqKey) public view virtual returns (uint256) {
         return LibNonce.get(_getEntryPointStorage().nonceSeqs[eoa], seqKey);
-    }
-
-    /// @dev Returns the current sequence for the `seqKey` in nonce (i.e. upper 192 bits).
-    /// Also returns the err for that nonce.
-    /// If `seq > uint64(nonce)`, it means that `nonce` is invalidated.
-    /// Otherwise, it means `nonce` might still be able to be used.
-    function nonceStatus(address eoa, uint256 nonce)
-        public
-        view
-        virtual
-        returns (uint64 seq, bytes4 err)
-    {
-        seq = uint64(getNonce(eoa, uint192(nonce >> 64)));
-        err = _getEntryPointStorage().errs[eoa][nonce];
     }
 
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
