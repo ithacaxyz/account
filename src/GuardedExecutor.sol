@@ -11,6 +11,16 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {DateTimeLib} from "solady/utils/DateTimeLib.sol";
 
+/// @title GuardedExecutor
+/// @notice Mixin for spend limits and calldata execution guards.
+/// @dev
+/// Overview:
+/// - Execution guards are implemented on a whitelist basis.
+///   With the exception of the EOA itself and super admin keys,
+///   execution targets and function selectors has to be approved for each new key.
+/// - Spend limits are implemented on a blacklist basis.
+///   A key will have unlimited spend limits until one is added.
+/// - When a spend permission is removed and re-added, its spent amount will be reset.
 contract GuardedExecutor is ERC7821 {
     using DynamicArrayLib for *;
     using EnumerableSetLib for *;
@@ -437,7 +447,7 @@ contract GuardedExecutor is ERC7821 {
                 info.currentSpent = Math.ternary(info.lastUpdated < info.current, 0, info.spent);
                 uint256 pointer;
                 assembly ("memory-safe") {
-                    pointer := info
+                    pointer := info // Use assembly to reinterpret cast.
                 }
                 a.p(pointer);
             }
