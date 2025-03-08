@@ -579,10 +579,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         }
 
         // If `_verify` is invalid, just revert.
-        // While verification gas is a variable, it is constant with respect to the
-        // `executionData` and the eoa's delegation.
-        // Off-chain simulation of `_verify` should suffice,
-        // provided that the eoa's delegation is not changed, and the `keyHash` is not revoked
+        // The verification gas is determined by `executionData` and the delegation logic.
+        // Off-chain simulation of `_verify` should suffice, provided that the eoa's
+        // delegation is not changed, and the `keyHash` is not revoked
         // in the window between off-chain simulation and on-chain execution.
         (bool isValid, bytes32 keyHash) = _verify(u);
         if (!isValid) if (simulationFlags & 1 == 0) revert VerificationError();
