@@ -155,9 +155,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev For gas estimation.
     uint256 internal constant _INNER_GAS_OVERHEAD = 100000;
 
-    /// @dev Caps the gas stipend for the payment.
-    uint256 internal constant _PAYMENT_GAS_CAP = 100000;
-
     /// @dev The amount of expected gas for refunds.
     uint256 internal constant _REFUND_GAS = 50000;
 
