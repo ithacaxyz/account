@@ -491,7 +491,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// with assembly for the following reasons:
     /// - Allow recovery from out-of-gas errors.
     ///   When a transaction is actually mined, an `executionData` payload that takes 100k gas
-    ///   to execute during simulation might require 1M gas to actually execute.
+    ///   to execute during simulation might require 1M gas to actually execute
+    ///   (e.g. A sale contract that auto-distributes tokens at the very last sale).
     ///   If we do simply let this consume all gas, then the relayer's compensation
     ///   which is determined to be sufficient during simulation might not be actually sufficient.
     ///   We can only know how much gas a payload costs by actually executing it, but once it
