@@ -369,6 +369,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev This function is provided for debugging purposes.
+    /// This function bubbles up the full revert return data for the calls
+    /// to `initializePREP` (if any) and `execute` on the eoa.
     function simulateFailed(bytes calldata encodedUserOp) public payable virtual {
         assembly ("memory-safe") {
             let m := mload(0x40) // Grab the free memory pointer.
@@ -535,7 +537,14 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 calldatacopy(add(m, 0x60), initData.offset, initData.length)
                 let success :=
                     call(gas(), eoa, 0, add(m, 0x1c), add(0x64, initData.length), m, 0x20)
-                if iszero(and(eq(mload(m), 1), success)) { revert(0x00, 0x20) }
+                if iszero(and(eq(mload(m), 1), success)) {
+                    // If this is a simulation via `simulateFailed`, bubble up the whole returned data.
+                    if and(simulationFlags, 2) {
+                        returndatacopy(mload(0x40), 0x00, returndatasize())
+                        revert(mload(0x40), returndatasize())
+                    }
+                    revert(0x00, 0x20)
+                }
             }
         }
 
