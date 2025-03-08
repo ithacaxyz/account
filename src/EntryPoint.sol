@@ -373,7 +373,20 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         UserOp calldata u = _extractUserOp(encodedUserOp);
         (bool isValid, bytes32 keyHash) = _verify(u);
         if (!isValid) revert VerificationError();
-        _execute(u, keyHash, true);
+
+        bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
+            hex"01000000000078210001", // ERC7821 batch execution mode.
+            u.executionData,
+            abi.encode(keyHash) // `opData`.
+        );
+        address eoa = u.eoa;
+        assembly ("memory-safe") {
+            if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x00)) {
+                let m := mload(0x40)
+                returndatacopy(m, 0x00, returndatasize())
+                revert(m, returndatasize())
+            }
+        }
         revert NoRevertEncoutered();
     }
 
@@ -509,9 +522,10 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             u := add(0x24, calldataload(0x24))
             isGasSimulation := calldataload(0x04)
         }
+        address eoa = u.eoa;
         // Verify the nonce, early reverting to save gas.
-        (LibStorage.Ref storage s, uint256 seq) =
-            LibNonce.check(_getEntryPointStorage().nonceSeqs[u.eoa], u.nonce);
+        (LibStorage.Ref storage seqRef, uint256 seq) =
+            LibNonce.check(_getEntryPointStorage().nonceSeqs[eoa], u.nonce);
 
         // If `_initializePREP` or `_verify` is invalid, just revert the payment.
         // There's a chicken and egg problem:
@@ -520,7 +534,20 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // Suggestion: the UserOp is simulated off-chain to ensure that it passes.
         // Minimize surface area and chance of griefing.
         // If somehow `_verify` is griefed, up to relayer to ban the user.
-        _initializePREP(u);
+        if (u.initData.length != 0) {
+            bytes calldata initData = u.initData;
+            assembly ("memory-safe") {
+                let m := mload(0x40)
+                mstore(m, 0x36745d10) // `initializePREP(bytes)`.
+                mstore(add(m, 0x20), 0x20)
+                mstore(add(m, 0x40), initData.length)
+                calldatacopy(add(m, 0x60), initData.offset, initData.length)
+                let success :=
+                    call(gas(), eoa, 0, add(m, 0x1c), add(0x64, initData.length), m, 0x20)
+                if iszero(and(eq(mload(m), 1), success)) { revert(0x00, 0x20) }
+            }
+        }
+
         (bool isValid, bytes32 keyHash) = _verify(u);
         if (!isValid) if (isGasSimulation == 0) revert VerificationError();
 
@@ -530,38 +557,24 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // Otherwise, an attacker can keep replaying the UserOp to take payment and drain the user.
         // EntryPoint UserOp nonce bookkeeping is stored on the EntryPoint itself
         // to make implementing this nonce-invalidation pattern more performant.
-        s.value = Math.rawAdd(seq, 1);
+        seqRef.value = Math.rawAdd(seq, 1);
 
+        // This re-encodes the ERC7579 `executionData` with the optional `opData`.
+        // We expect that the delegation supports ERC7821
+        // (an extension of ERC7579 tailored for 7702 accounts).
+        bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
+            hex"01000000000078210001", // ERC7821 batch execution mode.
+            u.executionData,
+            abi.encode(keyHash) // `opData`.
+        );
         assembly ("memory-safe") {
-            let m := mload(0x40)
-            calldatacopy(add(m, 0x1c), 0x00, calldatasize())
-            mstore(m, 0x00000001) // `selfCallExecute328974934()`.
-            mstore(add(m, 0x20), keyHash)
             mstore(0x00, 0) // Zeroize the return slot.
-            // `selfCallExecute328974934()` returns nothing on success.
-            // If it reverts, the error selector will be written to `0x00`.
-            if iszero(call(gas(), address(), 0, add(m, 0x1c), calldatasize(), 0x00, 0x20)) {
-                // Just in case the self-call fails and returns nothing.
+            if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
                 if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x6c9d47e8)) } // `CallError()`.
             }
             mstore(0x20, paymentAmount)
             return(0x00, 0x40)
         }
-    }
-
-    /// @dev This function is only intended for self-call.
-    /// The name is mined to give a function selector of `0x00000001`.
-    /// For the rationale of this design, see `selfCallPayVerifyCall537021665()`.
-    function selfCallExecute328974934() public payable {
-        require(msg.sender == address(this));
-
-        UserOp calldata u;
-        bytes32 keyHash;
-        assembly ("memory-safe") {
-            u := add(0x24, calldataload(0x24))
-            keyHash := calldataload(0x04)
-        }
-        _execute(u, keyHash, false);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -697,41 +710,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         }
     }
 
-    /// @dev Sends the `executionData` to the `eoa`.
-    /// Returns nothing on success.
-    /// On failure, bubbles up the revert if required, or reverts with `CallError()`.
-    function _execute(UserOp calldata u, bytes32 keyHash, bool bubbleRevert) internal virtual {
-        // This re-encodes the ERC7579 `executionData` with the optional `opData`.
-        // We expect that the delegation supports ERC7821
-        // (an extension of ERC7579 tailored for 7702 accounts).
-        bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
-            0x0100000000007821000100000000000000000000000000000000000000000000, // ERC7821 batch execution mode.
-            u.executionData,
-            abi.encode(keyHash) // `opData`.
-        );
-        address eoa = u.eoa;
-        assembly ("memory-safe") {
-            if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x00)) {
-                let m := mload(0x40)
-                if iszero(bubbleRevert) {
-                    // If the reverted returndata fits within a single word.
-                    if iszero(gt(returndatasize(), 0x20)) {
-                        returndatacopy(m, 0x00, returndatasize())
-                        // And if it is not `bytes4(0)`, revert it with.
-                        if shr(224, mload(m)) { revert(m, returndatasize()) }
-                    }
-                    // Else, just revert with `CallError()
-                    mstore(0x00, 0x6c9d47e8) // `CallError()`.
-                    revert(0x1c, 0x04)
-                }
-                // Otherwise, if `bubbleRevert` is true, bubble up the entire revert,
-                // this is for `simulateFailedVerifyAndCall`.
-                returndatacopy(m, 0x00, returndatasize())
-                revert(m, returndatasize())
-            }
-        }
-    }
-
     /// @dev Computes the EIP712 digest for the UserOp.
     /// If the the nonce starts with `MULTICHAIN_NONCE_PREFIX`,
     /// the digest will be computed without the chain ID.
@@ -768,22 +746,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         f.set(9, u.combinedGas);
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
-    }
-
-    /// @dev Initializes the PREP.
-    function _initializePREP(UserOp calldata u) internal {
-        bytes calldata initData = u.initData;
-        if (initData.length == uint256(0)) return;
-        address eoa = u.eoa;
-        assembly ("memory-safe") {
-            let m := mload(0x40)
-            mstore(m, 0x36745d10) // `initializePREP(bytes)`.
-            mstore(add(m, 0x20), 0x20)
-            mstore(add(m, 0x40), initData.length)
-            calldatacopy(add(m, 0x60), initData.offset, initData.length)
-            let success := call(gas(), eoa, 0, add(m, 0x1c), add(0x64, initData.length), m, 0x20)
-            if iszero(and(eq(mload(m), 1), success)) { revert(0x00, 0x20) }
-        }
     }
 
     receive() external payable virtual {}
