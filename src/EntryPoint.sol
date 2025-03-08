@@ -44,7 +44,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         /// @dev The user's address.
         address eoa;
         /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
-        /// `abi.encode(calls)`, where `calls` is an array of type `Call[]`.
+        /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
         /// This allows for more efficient safe forwarding to the EOA.
         bytes executionData;
         /// @dev Per delegated EOA.
@@ -78,6 +78,11 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         /// `abi.encodePacked(innerSignature, keyHash, prehash)`.
         bytes signature;
         /// @dev Optional data for `initPREP` on the delegation.
+        /// This is encoded using ERC7821 style batch execution encoding.
+        /// (ERC7821 is a variant of ERC7579).
+        /// `abi.encode(calls, abi.encodePacked(bytes32(saltAndDelegation)))`,
+        /// where `calls` is of type `Call[]`,
+        /// and `saltAndDelegation` is `bytes32((uint256(salt) << 160) | uint160(delegation))`.
         bytes initData;
     }
 
