@@ -97,9 +97,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// @dev Unable to perform the verification and the call.
     error VerifiedCallError();
 
-    /// @dev The function selector is not recognized.
-    error FnSelectorNotRecognized();
-
     /// @dev Out of gas to perform the call operation.
     error InsufficientGas();
 
