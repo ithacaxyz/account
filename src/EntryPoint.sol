@@ -274,11 +274,11 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 mstore(0x00, 0x234e352e) // `SimulateExecuteFailed()`.
                 revert(0x1c, 0x04)
             }
-
+            // `abi.encodePacked(bytes4(0xffffffff), combinedGasOverride, encodedUserOp)`.
             let data := mload(0x40)
             mstore(add(data, 0x04), 0xffffffff) // `selfCallSimulateExecute565348489()`.
             calldatacopy(add(data, 0x44), encodedUserOp.offset, encodedUserOp.length)
-            mstore(data, add(0x24, encodedUserOp.length))
+            mstore(data, add(0x24, encodedUserOp.length)) // Store `data.length`.
 
             // Setting the bit at `1 << 254` tells `_execute` that we want the
             // simulation to skip the invalid signature revert and also the 63/64 rule revert.
