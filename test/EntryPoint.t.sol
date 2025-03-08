@@ -209,7 +209,7 @@ contract EntryPointTest is BaseTest {
         assertEq(ep.getNonce(d.eoa, 0), 1);
     }
 
-    function testExceuteRevertsIfPaymentIsInsufficient() public {
+    function testExecuteRevertsIfPaymentIsInsufficient() public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         paymentToken.mint(d.eoa, 500 ether);
@@ -279,7 +279,7 @@ contract EntryPointTest is BaseTest {
         vm.stopPrank();
     }
 
-    function testExceuteGasUsed() public {
+    function testExecuteGasUsed() public {
         uint256 n = 7;
         bytes[] memory encodeUserOps = new bytes[](n);
 
