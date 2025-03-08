@@ -369,7 +369,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     }
 
     /// @dev This function is provided for debugging purposes.
-    /// This function bubbles up the full revert return data for the calls
+    /// This function bubbles up the full revert for the calls
     /// to `initializePREP` (if any) and `execute` on the eoa.
     function simulateFailed(bytes calldata encodedUserOp) public payable virtual {
         assembly ("memory-safe") {
@@ -492,7 +492,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// - Allow recovery from out-of-gas errors.
     ///   When a transaction is actually mined, an `executionData` payload that takes 100k gas
     ///   to execute during simulation might require 1M gas to actually execute
-    ///   (e.g. A sale contract that auto-distributes tokens at the very last sale).
+    ///   (e.g. a sale contract that auto-distributes tokens at the very last sale).
     ///   If we do simply let this consume all gas, then the relayer's compensation
     ///   which is determined to be sufficient during simulation might not be actually sufficient.
     ///   We can only know how much gas a payload costs by actually executing it, but once it
