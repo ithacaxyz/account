@@ -152,10 +152,16 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// This constant is a pun for "chain ID 0".
     uint16 public constant MULTICHAIN_NONCE_PREFIX = 0xc1d0;
 
-    /// @dev For gas estimation.
+    /// @dev For ensuring that the remaining gas is sufficient for a self-call with
+    /// overhead for cleaning up after the self-call. This also has an added benefit
+    /// of preventing the censorship vector of calling `execute` in a very deep call-stack.
+    /// With the 63/64 rule, and an initial gas of 30M, we can approximately make
+    /// around 339 recursive calls before the amount of gas passed in drops below 100k.
+    /// The EVM has a maximum call depth of 1024.
     uint256 internal constant _INNER_GAS_OVERHEAD = 100000;
 
     /// @dev The amount of expected gas for refunds.
+    /// Should be enough for a cold zero to non-zero SSTORE + a warm SSTORE + a few SLOADs.
     uint256 internal constant _REFUND_GAS = 50000;
 
     ////////////////////////////////////////////////////////////////////////
