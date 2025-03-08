@@ -11,6 +11,16 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {DateTimeLib} from "solady/utils/DateTimeLib.sol";
 
+/// @title GuardedExecutor
+/// @notice Mixin for spend limits and calldata execution guards.
+/// @dev
+/// Overview:
+/// - Execution guards are implemented on a whitelist basis.
+///   With the exception of the EOA itself and super admin keys,
+///   execution targets and function selectors has to be approved for each new key.
+/// - Spend limits are implemented on a blacklist basis.
+///   A key will have unlimited spend limits until one is added.
+/// - When a spend permission is removed and re-added, its spent amount will be reset.
 contract GuardedExecutor is ERC7821 {
     using DynamicArrayLib for *;
     using EnumerableSetLib for *;
@@ -33,6 +43,7 @@ contract GuardedExecutor is ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Information about a spend.
+    /// All timestamp related values are Unix timestamps in seconds.
     struct SpendInfo {
         /// @dev Address of the token. `address(0)` denotes native token.
         address token;
@@ -42,7 +53,7 @@ contract GuardedExecutor is ERC7821 {
         uint256 limit;
         /// @dev The amount spent in the last updated period.
         uint256 spent;
-        /// @dev The last updated timestamp.
+        /// @dev The start of the last updated period.
         uint256 lastUpdated;
         /// @dev The amount spent in the current period.
         uint256 currentSpent;
@@ -109,21 +120,29 @@ contract GuardedExecutor is ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Holds the storage for the token period spend limits.
+    /// All timestamp related values are Unix timestamps in seconds.
     struct TokenPeriodSpendStorage {
+        /// @dev The maximum spend limit for the period.
         uint256 limit;
+        /// @dev The amount spent in the last updated period.
         uint256 spent;
+        /// @dev The start of the last updated period (unix timestamp).
         uint256 lastUpdated;
     }
 
     /// @dev Holds the storage for the token spend limits.
     struct TokenSpendStorage {
+        /// @dev An enumerable set of the periods.
         EnumerableSetLib.Uint8Set periods;
+        /// @dev Mapping of `uint8(period)` to `TokenPeriodSpendStorage`.
         mapping(uint256 => TokenPeriodSpendStorage) spends;
     }
 
     /// @dev Holds the storage for spend permissions and the current spend state.
     struct SpendStorage {
+        /// @dev An enumerable set of the tokens.
         EnumerableSetLib.AddressSet tokens;
+        /// @dev Mapping of `token` to `TokenSpendStorage`.
         mapping(address => TokenSpendStorage) spends;
     }
 
@@ -203,6 +222,8 @@ contract GuardedExecutor is ERC7821 {
                 t.transferAmounts.p(LibBytes.loadCalldata(data, 0x24)); // `amount`.
             }
             // `approve(address,uint256)`.
+            // We have to revoke any new approvals after the batch, else a bad app can
+            // leave an approval to let them drain unlimited tokens after the batch.
             if (fnSel == 0x095ea7b3) {
                 if (!spends.tokens.contains(target)) continue;
                 if (LibBytes.loadCalldata(data, 0x24) == 0) continue; // `amount == 0`.
@@ -211,6 +232,8 @@ contract GuardedExecutor is ERC7821 {
             }
             // The only Permit2 method that requires `msg.sender` to approve.
             // `approve(address,address,uint160,uint48)`.
+            // For ERC20 tokens giving Permit2 infinite approvals by default,
+            // the approve method on Permit2 acts like a approve method on the ERC20.
             if (fnSel == 0x87517c45) {
                 if (target != _PERMIT2) continue;
                 if (LibBytes.loadCalldata(data, 0x44) == 0) continue; // `amount == 0`.
@@ -239,6 +262,12 @@ contract GuardedExecutor is ERC7821 {
             uint256 balance = SafeTransferLib.balanceOf(token, address(this));
             _incrementSpent(
                 spends.spends[token],
+                // While we can actually just use the difference before and after,
+                // we also want to let the sum of the transfer amounts in the calldata to be capped.
+                // This prevents tokens to be used as flash loans, and also handles cases
+                // where the actual token transfers might not match the calldata amounts.
+                // There is no strict definition on what constitutes spending,
+                // and we want to be as conservative as possible.
                 Math.max(
                     t.transferAmounts.get(i), Math.saturatingSub(balancesBefore.get(i), balance)
                 )
@@ -418,7 +447,7 @@ contract GuardedExecutor is ERC7821 {
                 info.currentSpent = Math.ternary(info.lastUpdated < info.current, 0, info.spent);
                 uint256 pointer;
                 assembly ("memory-safe") {
-                    pointer := info
+                    pointer := info // Use assembly to reinterpret cast.
                 }
                 a.p(pointer);
             }

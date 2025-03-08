@@ -519,11 +519,17 @@ contract Delegation is EIP712, GuardedExecutor {
     }
 
     /// @dev Allows the entry point to initialize the PREP.
+    /// `initData` is encoded using ERC7821 style batch execution encoding.
+    /// (ERC7821 is a variant of ERC7579).
+    /// `abi.encode(calls, abi.encodePacked(bytes32(saltAndDelegation)))`,
+    /// where `calls` is of type `Call[]`,
+    /// and `saltAndDelegation` is `bytes32((uint256(salt) << 160) | uint160(delegation))`.
     function initializePREP(bytes calldata initData) public virtual returns (bool) {
         if (msg.sender != ENTRY_POINT) revert Unauthorized();
         DelegationStorage storage $ = _getDelegationStorage();
         if ($.rPREP != 0) revert PREPAlreadyInitialized();
 
+        // Compute the digest of the calls in `initData`.
         (bytes32[] calldata pointers, bytes calldata opData) =
             LibERC7579.decodeBatchAndOpData(initData);
         bytes32[] memory a = EfficientHashLib.malloc(pointers.length);
@@ -540,10 +546,14 @@ contract Delegation is EIP712, GuardedExecutor {
                 )
             );
         }
+        // Arguments are `(address target, bytes32 digest, bytes32 saltAndDelegation)`.
         bytes32 r = LibPREP.rPREP(address(this), a.hash(), LibBytes.loadCalldata(opData, 0x00));
+        // If `r == 0`, it means that `address(this)` is not a valid PREP address.
+        // Also, add in a bounds check just to be extra safe.
         if (LibBit.or(opData.length < 0x20, r == 0)) revert InvalidPREP();
         $.rPREP = r;
 
+        // Use assembly to reinterpret cast into `Call[]`.
         Call[] calldata calls;
         assembly ("memory-safe") {
             calls.length := pointers.length
