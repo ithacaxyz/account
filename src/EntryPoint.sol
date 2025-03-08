@@ -17,7 +17,24 @@ import {LibPREP} from "./LibPREP.sol";
 import {LibNonce} from "./LibNonce.sol";
 
 /// @title EntryPoint
-/// @notice Contract for ERC7702 delegations.
+/// @notice Enables atomic verification, gas compensation and execution across eoas.
+/// @dev
+/// The EntryPoint allows relayers to submit payloads on one or more eoas,
+/// and get compensated for the gas spent in an atomic transaction.
+/// It serves the following purposes:
+/// - Facilitate fair gas compensation to the relayer.
+///   This means capping the amount of gas consumed,
+///   such that it will not exceed the signed gas stipend,
+///   and ensuring the relayer gets compensated even if the call to the eoa reverts.
+///   This also means minimizing the risk of griefing the relayer, in areas where
+///   we cannot absolutely guarantee compensation for gas spent.
+/// - Ensures that the eoa can safely compensate the relayer.
+///   This means ensuring that the eoa cannot be drained.
+///   This means ensuring that the compensation is capped by the signed max amount.
+///   Tokens can only be deducted from an eoa once per signed nonce.
+/// - Minimize chance of censorship.
+///   This means once an UserOp is signed, it is infeasible to
+///   alter or rearrange it to force it to fail.
 contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTransient {
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
@@ -521,13 +538,25 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         (LibStorage.Ref storage seqRef, uint256 seq) =
             LibNonce.check(_getEntryPointStorage().nonceSeqs[eoa], u.nonce);
 
-        // If `_initializePREP` or `_verify` is invalid, just revert the payment.
-        // There's a chicken and egg problem:
-        // Validation of the UserOp is needed to ensure that `_pay` deducts correctly,
-        // but `_verify` costs variable amount of gas.
-        // Suggestion: the UserOp is simulated off-chain to ensure that it passes.
-        // Minimize surface area and chance of griefing.
-        // If somehow `_verify` is griefed, up to relayer to ban the user.
+        // The chicken and egg problem:
+        // A off-chain simulation of a successful UserOp may not guarantee on-chain success.
+        // The state may change in the window between simulation and actual on-chain execution.
+        // If on-chain execution fails, gas that has already been burned cannot be returned
+        // and will be debited from the relayer.
+        // Yet, we still need to minimally check that the UserOp has a valid signature to draw
+        // compensation. If we draw compensation first and then realize that the signature is
+        // invalid, we will need to refund the compensation, which is more inefficient than
+        // ensuring validity of the signature before drawing compensation.
+        // The best we can do is to minimize the chance that an UserOp success in off-chain
+        // simulation can somehow result in an uncompensated on-chain failure.
+        // This is why ERC4337 has all those weird storage and opcode restrictions for
+        // simulation, and suggests banning users that intentionally grief the simulation.
+
+        // If `initializePREP` fails, just revert.
+        // Off-chain simulation can ensure that the `eoa` is indeed a PREP address.
+        // If the `eoa` is a PREP address, this means the delegation cannot be altered
+        // while the UserOp is in-flight, which means off-chain simulation success
+        // guarantees on-chain execution success.
         if (u.initData.length != 0) {
             bytes calldata initData = u.initData;
             assembly ("memory-safe") {
@@ -549,9 +578,19 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             }
         }
 
+        // If `_verify` is invalid, just revert.
+        // While verification gas is a variable, it is constant with respect to the
+        // `executionData` and the eoa's delegation.
+        // Off-chain simulation of `_verify` should suffice,
+        // provided that the eoa's delegation is not changed, and the `keyHash` is not revoked
+        // in the window between off-chain simulation and on-chain execution.
         (bool isValid, bytes32 keyHash) = _verify(u);
         if (!isValid) if (simulationFlags & 1 == 0) revert VerificationError();
 
+        // If `_pay` fails, just revert.
+        // Off-chain simulation of `_pay` should suffice,
+        // provided that the token balance does not decrease in the window between
+        // off-chain simulation and on-chain execution.
         uint256 paymentAmount = _pay(u);
 
         // Once the payment has been made, the nonce must be invalidated.
