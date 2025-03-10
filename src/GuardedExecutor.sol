@@ -74,7 +74,7 @@ contract GuardedExecutor is ERC7821 {
     /// @dev Unauthorized to perform the action.
     error Unauthorized();
 
-    /// @dev Exceeded the daily spend limit.
+    /// @dev Exceeded the spend limit.
     error ExceededSpendLimit();
 
     /// @dev Super admin keys can execute everything.
@@ -87,10 +87,10 @@ contract GuardedExecutor is ERC7821 {
     /// @dev Emitted when the ability to execute a call with function selector is set.
     event CanExecuteSet(bytes32 keyHash, address target, bytes4 fnSel, bool can);
 
-    /// @dev Emitted when a daily spend limit is set.
+    /// @dev Emitted when a spend limit is set.
     event SpendLimitSet(bytes32 keyHash, address token, SpendPeriod period, uint256 limit);
 
-    /// @dev Emitted when a daily spend limit is removed.
+    /// @dev Emitted when a spend limit is removed.
     event SpendLimitRemoved(bytes32 keyHash, address token, SpendPeriod period);
 
     ////////////////////////////////////////////////////////////////////////
@@ -181,10 +181,10 @@ contract GuardedExecutor is ERC7821 {
         DynamicArrayLib.DynamicArray permit2Spenders;
     }
 
-    /// @dev The `_execute` function imposes daily spending limits with the following:
-    /// 1. For every token with a daily spending limit, the
+    /// @dev The `_execute` function imposes spending limits with the following:
+    /// 1. For every token with a spending limit, the
     ///    `max(sum(outgoingAmounts), balanceBefore - balanceAfter)`
-    ///    will be added to the daily spent limit.
+    ///    will be added to the spent limit.
     /// 2. Any token that is granted a non-zero approval will have the approval
     ///    reset to zero after the calls.
     /// Note: Called internally in ERC7821, which coalesce zero-address `target`s to `address(this)`.
@@ -328,7 +328,7 @@ contract GuardedExecutor is ERC7821 {
         emit CanExecuteSet(keyHash, target, fnSel, can);
     }
 
-    /// @dev Sets the daily spend limit of `token` for `keyHash` for `period`.
+    /// @dev Sets the spend limit of `token` for `keyHash` for `period`.
     function setSpendLimit(bytes32 keyHash, address token, SpendPeriod period, uint256 limit)
         public
         virtual
@@ -345,7 +345,7 @@ contract GuardedExecutor is ERC7821 {
         emit SpendLimitSet(keyHash, token, period, limit);
     }
 
-    /// @dev Removes the daily spend limit of `token` for `keyHash` for `period`.
+    /// @dev Removes the spend limit of `token` for `keyHash` for `period`.
     function removeSpendLimit(bytes32 keyHash, address token, SpendPeriod period)
         public
         virtual
@@ -425,7 +425,7 @@ contract GuardedExecutor is ERC7821 {
         return _getGuardedExecutorStorage().canExecute[keyHash].values();
     }
 
-    /// @dev Returns an array containing information on all the daily spends for `keyHash`.
+    /// @dev Returns an array containing information on all the spends for `keyHash`.
     function spendInfos(bytes32 keyHash) public view virtual returns (SpendInfo[] memory results) {
         SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
         DynamicArrayLib.DynamicArray memory a;
