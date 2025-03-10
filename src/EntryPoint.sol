@@ -447,7 +447,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             }
             // If the bit at `1 << 255` is set, this means `simulateExecute2` just wants
             // to check the 63/64 rule, so early return to skip the rest of the computations.
-            if ((combinedGasOverride >> 255) & 1 != 0) return (0, 0);
+            if (combinedGasOverride >> 255 != 0) return (0, 0);
         }
 
         address payer = Math.coalesce(u.payer, u.eoa);
