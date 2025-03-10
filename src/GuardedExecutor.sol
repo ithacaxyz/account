@@ -11,7 +11,7 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {DateTimeLib} from "solady/utils/DateTimeLib.sol";
 
-contract GuardedExecutor is ERC7821 {
+abstract contract GuardedExecutor is ERC7821 {
     using DynamicArrayLib for *;
     using EnumerableSetLib for *;
 
@@ -127,24 +127,28 @@ contract GuardedExecutor is ERC7821 {
         mapping(address => TokenSpendStorage) spends;
     }
 
-    /// @dev Holds the storage.
-    struct GuardedExecutorStorage {
-        /// @dev Mapping of `keyHash` to a set of `_packCanExecute(target, fnSel)`.
-        mapping(bytes32 => EnumerableSetLib.Bytes32Set) canExecute;
+    /// @dev Holds the storage for a single `keyHash`.
+    struct GuardedExecutorKeyStorage {
+        /// @dev A set of `_packCanExecute(target, fnSel)`.
+        EnumerableSetLib.Bytes32Set canExecute;
         /// @dev Mapping of `keyHash` to the `SpendStorage`.
-        mapping(bytes32 => SpendStorage) spends;
+        SpendStorage spends;
     }
 
     /// @dev Returns the storage pointer.
-    function _getGuardedExecutorStorage()
+    function _getGuardedExecutorKeyStorage(bytes32 keyHash)
         internal
-        pure
-        returns (GuardedExecutorStorage storage $)
+        view
+        returns (GuardedExecutorKeyStorage storage $)
     {
-        // Truncate to 9 bytes to reduce bytecode size.
-        uint256 s = uint72(bytes9(keccak256("PORTO_GUARDED_EXECUTOR_STORAGE")));
+        bytes32 seed =
+            keyHash == ANY_KEYHASH ? ANY_KEYHASH : _getGuardedExecutorKeyStorageSeed(keyHash);
+        uint256 namespaceHash = uint72(bytes9(keccak256("PORTO_GUARDED_EXECUTOR_KEY_STORAGE")));
         assembly ("memory-safe") {
-            $.slot := s
+            // Non-standard hashing scheme to reduce chance of conflict with regular Solidity.
+            mstore(0x09, namespaceHash)
+            mstore(0x00, seed)
+            $.slot := keccak256(0x00, 0x29)
         }
     }
 
@@ -173,7 +177,7 @@ contract GuardedExecutor is ERC7821 {
         // If self-execute, don't care about the spend permissions.
         if (keyHash == bytes32(0)) return ERC7821._execute(calls, keyHash);
 
-        SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
+        SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
         _ExecuteTemps memory t;
 
         // Collect all ERC20 tokens that need to be guarded,
@@ -293,7 +297,7 @@ contract GuardedExecutor is ERC7821 {
         if (_isSelfExecute(target, fnSel)) revert CannotSelfExecute();
 
         // Impose a max capacity of 2048 for set enumeration, which should be more than enough.
-        _getGuardedExecutorStorage().canExecute[keyHash].update(
+        _getGuardedExecutorKeyStorage(keyHash).canExecute.update(
             _packCanExecute(target, fnSel), can, 2048
         );
         emit CanExecuteSet(keyHash, target, fnSel, can);
@@ -306,7 +310,7 @@ contract GuardedExecutor is ERC7821 {
         onlyThis
         checkKeyHashIsNonZero(keyHash)
     {
-        SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
+        SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
         spends.tokens.add(token, 64); // Max capacity of 64.
 
         TokenSpendStorage storage tokenSpends = spends.spends[token];
@@ -323,7 +327,7 @@ contract GuardedExecutor is ERC7821 {
         onlyThis
         checkKeyHashIsNonZero(keyHash)
     {
-        SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
+        SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
 
         TokenSpendStorage storage tokenSpends = spends.spends[token];
         if (tokenSpends.periods.remove(uint8(period))) {
@@ -367,14 +371,14 @@ contract GuardedExecutor is ERC7821 {
         // or any target will still NOT allow for self execution.
         if (_isSelfExecute(target, fnSel)) return false;
 
-        EnumerableSetLib.Bytes32Set storage c = _getGuardedExecutorStorage().canExecute[keyHash];
+        EnumerableSetLib.Bytes32Set storage c = _getGuardedExecutorKeyStorage(keyHash).canExecute;
         if (c.length() != 0) {
             if (c.contains(_packCanExecute(target, fnSel))) return true;
             if (c.contains(_packCanExecute(target, ANY_FN_SEL))) return true;
             if (c.contains(_packCanExecute(ANY_TARGET, fnSel))) return true;
             if (c.contains(_packCanExecute(ANY_TARGET, ANY_FN_SEL))) return true;
         }
-        c = _getGuardedExecutorStorage().canExecute[ANY_KEYHASH];
+        c = _getGuardedExecutorKeyStorage(ANY_KEYHASH).canExecute;
         if (c.length() != 0) {
             if (c.contains(_packCanExecute(target, fnSel))) return true;
             if (c.contains(_packCanExecute(target, ANY_FN_SEL))) return true;
@@ -393,12 +397,12 @@ contract GuardedExecutor is ERC7821 {
         virtual
         returns (bytes32[] memory)
     {
-        return _getGuardedExecutorStorage().canExecute[keyHash].values();
+        return _getGuardedExecutorKeyStorage(keyHash).canExecute.values();
     }
 
     /// @dev Returns an array containing information on all the daily spends for `keyHash`.
     function spendInfos(bytes32 keyHash) public view virtual returns (SpendInfo[] memory results) {
-        SpendStorage storage spends = _getGuardedExecutorStorage().spends[keyHash];
+        SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
         DynamicArrayLib.DynamicArray memory a;
         uint256 n = spends.tokens.length();
         for (uint256 i; i < n; ++i) {
@@ -500,8 +504,12 @@ contract GuardedExecutor is ERC7821 {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev To be overriden to return if `keyHash` corresponds to a super admin key.
-    function _isSuperAdmin(bytes32 keyHash) internal view virtual returns (bool) {
-        keyHash = keyHash; // Silence unused variable warning.
-        return false;
-    }
+    function _isSuperAdmin(bytes32 keyHash) internal view virtual returns (bool);
+
+    /// @dev To be overriden to return the storage slot seed for a `keyHash`.
+    function _getGuardedExecutorKeyStorageSeed(bytes32 keyHash)
+        internal
+        view
+        virtual
+        returns (bytes32);
 }

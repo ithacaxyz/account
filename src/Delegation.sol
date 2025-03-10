@@ -642,6 +642,16 @@ contract Delegation is EIP712, GuardedExecutor {
         return getKey(keyHash).isSuperAdmin;
     }
 
+    /// @dev Returns the storage seed for a `keyHash`.
+    function _getGuardedExecutorKeyStorageSeed(bytes32 keyHash)
+        internal
+        view
+        override
+        returns (bytes32)
+    {
+        return _getDelegationStorage().keyExtraStorage[keyHash].slot();
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // EIP712
     ////////////////////////////////////////////////////////////////////////

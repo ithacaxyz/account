@@ -14,6 +14,21 @@ contract GuardedExecutorTest is BaseTest {
         super.setUp();
     }
 
+    function testCanExecuteGetsResetAfterKeyIsReadded(address target, bytes4 fnSel) public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        PassKey memory k = _randomSecp256r1PassKey();
+
+        vm.startPrank(d.eoa);
+
+        d.d.authorize(k.k);
+        d.d.setCanExecute(k.keyHash, target, fnSel, true);
+        assertEq(d.d.canExecutePackedInfos(k.keyHash).length, 1);
+
+        d.d.revoke(k.keyHash);
+        d.d.authorize(k.k);
+        assertEq(d.d.canExecutePackedInfos(k.keyHash).length, 0);
+    }
+
     function testSetAndGetCanExecute(address target, bytes4 fnSel, bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256r1PassKey();
