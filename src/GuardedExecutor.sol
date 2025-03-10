@@ -200,6 +200,8 @@ contract GuardedExecutor is ERC7821 {
 
         // Collect all ERC20 tokens that need to be guarded,
         // and initialize their transfer amounts as zero.
+        // Used for the check on their before and after balances, in case the batch calls
+        // some contract that is authorized to transfer out tokens on behalf of the eoa.
         uint256 n = spends.tokens.length();
         for (uint256 i; i < n; ++i) {
             address token = spends.tokens.at(i);
