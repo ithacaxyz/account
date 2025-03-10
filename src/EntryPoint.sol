@@ -450,26 +450,35 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             if ((combinedGasOverride >> 255) & 1 != 0) return (0, 0);
         }
 
+        address payer = Math.coalesce(u.payer, u.eoa);
+        // Early skip the entire pay-verify-call workflow if the payer lacks tokens,
+        // so that less gas is wasted when the UserOp fails.
+        if (TokenTransferLib.balanceOf(u.paymentToken, payer) < u.paymentAmount) {
+            err = PaymentError.selector;
+        }
+
         bool selfCallSuccess;
-        assembly ("memory-safe") {
-            let m := mload(0x40) // Grab the free memory pointer.
-            // Copy the encoded user op to the memory to be ready to pass to the self call.
-            calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
+        if (err == 0) {
+            assembly ("memory-safe") {
+                let m := mload(0x40) // Grab the free memory pointer.
+                // Copy the encoded user op to the memory to be ready to pass to the self call.
+                calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
 
-            // We'll use assembly for frequently used call related stuff to save massive memory gas.
-            mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
-            mstore(add(m, 0x20), shr(254, combinedGasOverride)) // Whether it's a gas simulation.
-            mstore(0x00, 0) // Zeroize the return slot.
+                // We'll use assembly for frequently used call related stuff to save massive memory gas.
+                mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
+                mstore(add(m, 0x20), shr(254, combinedGasOverride)) // Whether it's a gas simulation.
+                mstore(0x00, 0) // Zeroize the return slot.
 
-            // To prevent griefing, we need to do a non-reverting gas-limited self call.
-            // If the self call is successful, we know that the payment has been made,
-            // and the sequence for `nonce` has been incremented.
-            // For more information, see `selfCallPayVerifyCall537021665()`.
-            selfCallSuccess :=
-                call(g, address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x40)
-            err := mload(0x00) // The self call will do another self call to execute.
-            paymentAmount := mload(0x20) // Only used when `selfCallSuccess` is true.
-            if iszero(selfCallSuccess) { if iszero(err) { err := shl(224, 0xad4db224) } } // `VerifiedCallError()`.
+                // To prevent griefing, we need to do a non-reverting gas-limited self call.
+                // If the self call is successful, we know that the payment has been made,
+                // and the sequence for `nonce` has been incremented.
+                // For more information, see `selfCallPayVerifyCall537021665()`.
+                selfCallSuccess :=
+                    call(g, address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x40)
+                err := mload(0x00) // The self call will do another self call to execute.
+                paymentAmount := mload(0x20) // Only used when `selfCallSuccess` is true.
+                if iszero(selfCallSuccess) { if iszero(err) { err := shl(224, 0xad4db224) } } // `VerifiedCallError()`.
+            }
         }
 
         emit UserOpExecuted(u.eoa, u.nonce, selfCallSuccess, err);
@@ -492,9 +501,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             }
             if (paymentAmount > finalPaymentAmount) {
                 TokenTransferLib.safeTransfer(
-                    u.paymentToken,
-                    Math.coalesce(u.payer, u.eoa),
-                    Math.rawSub(paymentAmount, finalPaymentAmount)
+                    u.paymentToken, payer, Math.rawSub(paymentAmount, finalPaymentAmount)
                 );
             }
         }

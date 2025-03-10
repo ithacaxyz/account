@@ -313,6 +313,7 @@ contract EntryPointTest is BaseTest {
     }
 
     function testExceuteGasUsed() public {
+        vm.pauseGasMetering();
         uint256 n = 7;
         bytes[] memory encodeUserOps = new bytes[](n);
 
@@ -343,6 +344,8 @@ contract EntryPointTest is BaseTest {
         bytes memory data = abi.encodeWithSignature("execute(bytes[])", encodeUserOps);
         address _ep = address(ep);
         uint256 g;
+        vm.resumeGasMetering();
+
         assembly ("memory-safe") {
             g := gas()
             pop(call(gas(), _ep, 0, add(data, 0x20), mload(data), codesize(), 0x00))
