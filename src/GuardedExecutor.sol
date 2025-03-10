@@ -217,7 +217,7 @@ contract GuardedExecutor is ERC7821 {
             uint32 fnSel = uint32(bytes4(LibBytes.loadCalldata(data, 0x00)));
             // `transfer(address,uint256)`.
             if (fnSel == 0xa9059cbb) {
-                if (!spends.tokens.contains(target)) continue;
+                if (!t.erc20s.contains(target)) continue;
                 t.erc20s.p(target);
                 t.transferAmounts.p(LibBytes.loadCalldata(data, 0x24)); // `amount`.
             }
@@ -225,7 +225,7 @@ contract GuardedExecutor is ERC7821 {
             // We have to revoke any new approvals after the batch, else a bad app can
             // leave an approval to let them drain unlimited tokens after the batch.
             if (fnSel == 0x095ea7b3) {
-                if (!spends.tokens.contains(target)) continue;
+                if (!t.erc20s.contains(target)) continue;
                 if (LibBytes.loadCalldata(data, 0x24) == 0) continue; // `amount == 0`.
                 t.approvedERC20s.p(target);
                 t.approvalSpenders.p(LibBytes.loadCalldata(data, 0x04)); // `spender`.
@@ -237,11 +237,19 @@ contract GuardedExecutor is ERC7821 {
             if (fnSel == 0x87517c45) {
                 if (target != _PERMIT2) continue;
                 if (LibBytes.loadCalldata(data, 0x44) == 0) continue; // `amount == 0`.
-                t.permit2ERC20s.p(LibBytes.loadCalldata(data, 0x04)); // `token`.
+                address token = address(uint160(uint256(LibBytes.loadCalldata(data, 0x04))));
+                if (!t.erc20s.contains(token)) continue;
+                t.permit2ERC20s.p(token); // `token`.
                 t.permit2Spenders.p(LibBytes.loadCalldata(data, 0x24)); // `spender`.
             }
+            // `setSpendLimit(bytes32,address,uint8,uint256)`.
+            if (fnSel == 0x598daac4) {
+                if (target != address(this)) continue;
+                if (LibBytes.loadCalldata(data, 0x04) != keyHash) continue;
+                t.erc20s.p(LibBytes.loadCalldata(data, 0x24)); // `token`.
+                t.transferAmounts.p(uint256(0));
+            }
         }
-        _incrementSpent(spends.spends[address(0)], totalNativeSpend);
 
         // Sum transfer amounts, grouped by the ERC20s. In-place.
         LibSort.groupSum(t.erc20s.data, t.transferAmounts.data);
@@ -255,6 +263,8 @@ contract GuardedExecutor is ERC7821 {
 
         // Perform the batch execution.
         ERC7821._execute(calls, keyHash);
+
+        _incrementSpent(spends.spends[address(0)], totalNativeSpend);
 
         // Increments the spent amounts.
         for (uint256 i; i < t.erc20s.length(); ++i) {
