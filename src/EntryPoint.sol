@@ -124,7 +124,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// For the meaning of the returned variables, see `simulateExecute`.
     error SimulationResult(uint256 gExecute, uint256 gCombined, uint256 gUsed, bytes4 err);
 
-    /// @dev The simulate execute 2 run has failed. Try passing in more gas to the simulation.
+    /// @dev The simulate execute run has failed. Try passing in more gas to the simulation.
     error SimulateExecuteFailed();
 
     /// @dev No revert has been encountered.
