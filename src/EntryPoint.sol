@@ -393,10 +393,11 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             let m := mload(0x40) // Grab the free memory pointer.
             // Copy the encoded user op to the memory to be ready to pass to the self call.
             calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
-
             mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
-            mstore(add(m, 0x20), 2) // The flag to bubble up the whole returned data.
-
+            // The word after the function selector contains the simulation flags.
+            // If `flags & 2 != 0`, it means it's a simulation to get the full revert.
+            mstore(add(m, 0x20), 2)
+            // Make the self-call and bubble up the full revert on failure.
             if iszero(
                 call(gas(), address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x00)
             ) {
@@ -459,14 +460,15 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
         bool selfCallSuccess;
         if (err == 0) {
+            // We'll use assembly for frequently used call related stuff to save massive memory gas.
             assembly ("memory-safe") {
                 let m := mload(0x40) // Grab the free memory pointer.
                 // Copy the encoded user op to the memory to be ready to pass to the self call.
                 calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
-
-                // We'll use assembly for frequently used call related stuff to save massive memory gas.
                 mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
-                mstore(add(m, 0x20), shr(254, combinedGasOverride)) // Whether it's a gas simulation.
+                // The word after the function selector contains the simulation flags.
+                // If `flags & 1 != 0`, it means it's a gas simulation.
+                mstore(add(m, 0x20), shr(254, combinedGasOverride))
                 mstore(0x00, 0) // Zeroize the return slot.
 
                 // To prevent griefing, we need to do a non-reverting gas-limited self call.
