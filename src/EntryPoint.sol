@@ -377,10 +377,11 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         } else {
             (gUsed, err) = _execute(encodedUserOp, combinedGasOverride);
         }
+        // Revert with `abi.encodePacked(bytes4(0xffffffff), abi.encode(gUsed, err))`.
         assembly ("memory-safe") {
-            mstore(0x00, not(0))
+            mstore(0x00, not(0)) // `0xffffffff`.
             mstore(0x04, gUsed)
-            mstore(0x24, shl(224, shr(224, err)))
+            mstore(0x24, shl(224, shr(224, err))) // Clean the lower bytes of `err` word.
             revert(0x00, 0x44)
         }
     }
@@ -435,7 +436,6 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         UserOp calldata u = _extractUserOp(encodedUserOp);
         uint256 g = Math.coalesce(uint96(combinedGasOverride), u.combinedGas);
         uint256 gStart = gasleft();
-        uint256 paymentAmount;
 
         unchecked {
             // Check if there's sufficient gas left for the gas-limited self calls
@@ -452,16 +452,19 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         }
 
         address payer = Math.coalesce(u.payer, u.eoa);
+        uint256 paymentAmount = u.paymentAmount;
         // Early skip the entire pay-verify-call workflow if the payer lacks tokens,
         // so that less gas is wasted when the UserOp fails.
-        if (TokenTransferLib.balanceOf(u.paymentToken, payer) < u.paymentAmount) {
-            err = PaymentError.selector;
+        if (paymentAmount != 0) {
+            if (TokenTransferLib.balanceOf(u.paymentToken, payer) < paymentAmount) {
+                err = PaymentError.selector;
+            }
         }
 
         bool selfCallSuccess;
-        if (err == 0) {
-            // We'll use assembly for frequently used call related stuff to save massive memory gas.
-            assembly ("memory-safe") {
+        // We'll use assembly for frequently used call related stuff to save massive memory gas.
+        assembly ("memory-safe") {
+            if iszero(err) {
                 let m := mload(0x40) // Grab the free memory pointer.
                 // Copy the encoded user op to the memory to be ready to pass to the self call.
                 calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
@@ -476,16 +479,16 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 // and the sequence for `nonce` has been incremented.
                 // For more information, see `selfCallPayVerifyCall537021665()`.
                 selfCallSuccess :=
-                    call(g, address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x40)
+                    call(g, address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x20)
                 err := mload(0x00) // The self call will do another self call to execute.
-                paymentAmount := mload(0x20) // Only used when `selfCallSuccess` is true.
-                if iszero(selfCallSuccess) { if iszero(err) { err := shl(224, 0xad4db224) } } // `VerifiedCallError()`.
+                // Set `err` to `VerifiedCallError()` if `selfCallSuccess` is false and `err` is zero.
+                if iszero(selfCallSuccess) { if iszero(err) { err := shl(224, 0xad4db224) } }
             }
         }
 
         emit UserOpExecuted(u.eoa, u.nonce, selfCallSuccess, err);
 
-        if (selfCallSuccess) {
+        if (LibBit.and(selfCallSuccess, paymentAmount != 0)) {
             // Refund strategy:
             // `totalAmountOfGasToPayFor = gasUsedThusFar + _REFUND_GAS`.
             // `paymentAmountForGas = paymentPerGas * totalAmountOfGasToPayFor`.
@@ -577,7 +580,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 let success :=
                     call(gas(), eoa, 0, add(m, 0x1c), add(0x64, initData.length), m, 0x20)
                 if iszero(and(eq(mload(m), 1), success)) {
-                    // If this is a simulation via `simulateFailed`, bubble up the whole returned data.
+                    // If this is a simulation via `simulateFailed`, bubble up the whole revert.
                     if and(simulationFlags, 2) {
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
@@ -599,7 +602,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // Off-chain simulation of `_pay` should suffice,
         // provided that the token balance does not decrease in the window between
         // off-chain simulation and on-chain execution.
-        uint256 paymentAmount = _pay(u);
+        if (u.paymentAmount != 0) _pay(u);
 
         // Once the payment has been made, the nonce must be invalidated.
         // Otherwise, an attacker can keep replaying the UserOp to take payment and drain the user.
@@ -618,15 +621,15 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
             if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
-                // If this is a simulation via `simulateFailed`, bubble up the whole returned data.
+                // If this is a simulation via `simulateFailed`, bubble up the whole revert.
                 if and(simulationFlags, 2) {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
                 }
                 if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x6c9d47e8)) } // `CallError()`.
+                return(0x00, 0x20) // Return the `err`.
             }
-            mstore(0x20, paymentAmount)
-            return(0x00, 0x40)
+            return(0x60, 0x20) // If all success, returns with zero `err`.
         }
     }
 
@@ -691,9 +694,8 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
     /// @dev Makes the `eoa` perform a payment to the `entryPoint`.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
-    function _pay(UserOp calldata u) internal virtual returns (uint256 paymentAmount) {
-        paymentAmount = u.paymentAmount;
-        if (paymentAmount == uint256(0)) return paymentAmount;
+    function _pay(UserOp calldata u) internal virtual {
+        uint256 paymentAmount = u.paymentAmount;
         address paymentToken = u.paymentToken;
         uint256 requiredBalanceAfter = Math.saturatingAdd(
             TokenTransferLib.balanceOf(paymentToken, address(this)), paymentAmount
