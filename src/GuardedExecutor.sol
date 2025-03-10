@@ -240,16 +240,14 @@ contract GuardedExecutor is ERC7821 {
             if (fnSel == 0x87517c45) {
                 if (target != _PERMIT2) continue;
                 if (LibBytes.loadCalldata(data, 0x44) == 0) continue; // `amount == 0`.
-                address token = address(uint160(uint256(LibBytes.loadCalldata(data, 0x04))));
-                t.permit2ERC20s.p(token); // `token`.
+                t.permit2ERC20s.p(LibBytes.loadCalldata(data, 0x04)); // `token`.
                 t.permit2Spenders.p(LibBytes.loadCalldata(data, 0x24)); // `spender`.
             }
             // `setSpendLimit(bytes32,address,uint8,uint256)`.
             if (fnSel == 0x598daac4) {
                 if (target != address(this)) continue;
                 if (LibBytes.loadCalldata(data, 0x04) != keyHash) continue;
-                address token = address(uint160(uint256(LibBytes.loadCalldata(data, 0x24))));
-                t.erc20s.p(token); // `token`.
+                t.erc20s.p(LibBytes.loadCalldata(data, 0x24)); // `token`.
                 t.transferAmounts.p(uint256(0));
             }
         }
@@ -275,10 +273,10 @@ contract GuardedExecutor is ERC7821 {
         // Increments the spent amounts.
         for (uint256 i; i < t.erc20s.length(); ++i) {
             address token = t.erc20s.getAddress(i);
-            if (spends.spends[token].periods.length() == uint256(0)) continue;
-            uint256 balance = SafeTransferLib.balanceOf(token, address(this));
+            TokenSpendStorage storage tokenSpends = spends.spends[token];
+            if (tokenSpends.periods.length() == uint256(0)) continue;
             _incrementSpent(
-                spends.spends[token],
+                tokenSpends,
                 // While we can actually just use the difference before and after,
                 // we also want to let the sum of the transfer amounts in the calldata to be capped.
                 // This prevents tokens to be used as flash loans, and also handles cases
@@ -286,7 +284,10 @@ contract GuardedExecutor is ERC7821 {
                 // There is no strict definition on what constitutes spending,
                 // and we want to be as conservative as possible.
                 Math.max(
-                    t.transferAmounts.get(i), Math.saturatingSub(balancesBefore.get(i), balance)
+                    t.transferAmounts.get(i),
+                    Math.saturatingSub(
+                        balancesBefore.get(i), SafeTransferLib.balanceOf(token, address(this))
+                    )
                 )
             );
         }
