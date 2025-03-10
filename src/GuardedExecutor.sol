@@ -271,6 +271,7 @@ contract GuardedExecutor is ERC7821 {
         // Increments the spent amounts.
         for (uint256 i; i < t.erc20s.length(); ++i) {
             address token = t.erc20s.getAddress(i);
+            if (spends.spends[token].periods.length() == uint256(0)) continue;
             uint256 balance = SafeTransferLib.balanceOf(token, address(this));
             _incrementSpent(
                 spends.spends[token],
@@ -288,13 +289,13 @@ contract GuardedExecutor is ERC7821 {
         // Revoke all non-zero approvals that have been made, if there's a spend limit.
         for (uint256 i; i < t.approvedERC20s.length(); ++i) {
             address token = t.approvedERC20s.getAddress(i);
-            if (!spends.tokens.contains(token)) continue;
+            if (spends.spends[token].periods.length() == uint256(0)) continue;
             SafeTransferLib.safeApprove(token, t.approvalSpenders.getAddress(i), 0);
         }
         // Revoke all non-zero Permit2 direct approvals that have been made, if there's a spend limit.
         for (uint256 i; i < t.permit2ERC20s.length(); ++i) {
             address token = t.permit2ERC20s.getAddress(i);
-            if (!spends.tokens.contains(token)) continue;
+            if (spends.spends[token].periods.length() == uint256(0)) continue;
             SafeTransferLib.permit2Lockdown(token, t.permit2Spenders.getAddress(i));
         }
     }
@@ -505,9 +506,9 @@ contract GuardedExecutor is ERC7821 {
     /// @dev Increments the amount spent.
     function _incrementSpent(TokenSpendStorage storage s, uint256 amount) internal {
         if (amount == uint256(0)) return; // Early return.
-        uint256 n = s.periods.length();
-        for (uint256 i; i < n; ++i) {
-            uint8 period = s.periods.at(i);
+        uint8[] memory periods = s.periods.values();
+        for (uint256 i; i < periods.length; ++i) {
+            uint8 period = periods[i];
             TokenPeriodSpendStorage storage tokenPeriodSpend = s.spends[period];
             uint256 current = startOfSpendPeriod(block.timestamp, SpendPeriod(period));
             if (tokenPeriodSpend.lastUpdated < current) {
