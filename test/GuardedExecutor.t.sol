@@ -236,10 +236,11 @@ contract GuardedExecutorTest is BaseTest {
             assertEq(infos[0].token, token);
             assertEq(infos[0].spent, amount);
         }
-        // Remove spend limits and spend in a single batch.
+        // Remove spend limits and spend above the limit in a single batch.
         {
-            calls = new ERC7821.Call[](1);
-            calls[0] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour);
+            calls = new ERC7821.Call[](2);
+            calls[0] = _transferCall2(token, address(0xb0b), 10 ether);
+            calls[1] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour);
 
             u.nonce = ep.getNonce(d.eoa, 0);
             u.executionData = abi.encode(calls);
