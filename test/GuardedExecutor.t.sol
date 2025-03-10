@@ -217,6 +217,10 @@ contract GuardedExecutorTest is BaseTest {
             calls = new ERC7821.Call[](2);
             calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
             calls[1] = _transferCall2(token, address(0xb0b), amount);
+            // Check that the order doesn't matter.
+            if (_randomChance(2)) {
+                (calls[0], calls[1]) = (calls[1], calls[0]);
+            }
 
             u.nonce = ep.getNonce(d.eoa, 0);
             u.executionData = abi.encode(calls);
@@ -235,6 +239,10 @@ contract GuardedExecutorTest is BaseTest {
             calls = new ERC7821.Call[](2);
             calls[0] = _transferCall2(token, address(0xb0b), 10 ether);
             calls[1] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour);
+            // Check that the order doesn't matter.
+            if (_randomChance(2)) {
+                (calls[0], calls[1]) = (calls[1], calls[0]);
+            }
 
             u.nonce = ep.getNonce(d.eoa, 0);
             u.executionData = abi.encode(calls);
@@ -251,6 +259,14 @@ contract GuardedExecutorTest is BaseTest {
             calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
             calls[1] = _transferCall2(token, address(0xb0b), amount);
             calls[2] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour);
+            // Check that the order doesn't matter, as long as the remove call is after the set spend call.
+            if (_randomChance(2)) {
+                if (_randomChance(2)) {
+                    (calls[0], calls[1]) = (calls[1], calls[0]);
+                } else {
+                    (calls[1], calls[2]) = (calls[2], calls[1]);
+                }
+            }
 
             u.nonce = ep.getNonce(d.eoa, 0);
             u.executionData = abi.encode(calls);
@@ -266,6 +282,10 @@ contract GuardedExecutorTest is BaseTest {
             calls = new ERC7821.Call[](2);
             calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
             calls[1] = _transferCall2(token, address(0xb0b), amount);
+            // Check that the order doesn't matter.
+            if (_randomChance(2)) {
+                (calls[0], calls[1]) = (calls[1], calls[0]);
+            }
 
             u.nonce = ep.getNonce(d.eoa, 0);
             u.executionData = abi.encode(calls);
