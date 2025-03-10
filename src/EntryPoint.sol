@@ -128,7 +128,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     error SimulateExecuteFailed();
 
     /// @dev No revert has been encountered.
-    error NoRevertEncoutered();
+    error NoRevertEncountered();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -404,7 +404,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                 revert(m, returndatasize())
             }
         }
-        revert NoRevertEncoutered();
+        revert NoRevertEncountered();
     }
 
     /// @dev Extracts the UserOp from the calldata bytes, with minimal checks.
