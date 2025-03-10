@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {ERC7821} from "solady/accounts/ERC7821.sol";
+import {LibZip} from "solady/utils/LibZip.sol";
 import {LibSort} from "solady/utils/LibSort.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
@@ -22,6 +23,7 @@ import {DateTimeLib} from "solady/utils/DateTimeLib.sol";
 ///   A key will have unlimited spend limits until one is added.
 /// - When a spend permission is removed and re-added, its spent amount will be reset.
 contract GuardedExecutor is ERC7821 {
+    using LibBytes for LibBytes.BytesStorage;
     using DynamicArrayLib for *;
     using EnumerableSetLib for *;
 
@@ -134,8 +136,8 @@ contract GuardedExecutor is ERC7821 {
     struct TokenSpendStorage {
         /// @dev An enumerable set of the periods.
         EnumerableSetLib.Uint8Set periods;
-        /// @dev Mapping of `uint8(period)` to `TokenPeriodSpendStorage`.
-        mapping(uint256 => TokenPeriodSpendStorage) spends;
+        /// @dev Mapping of `uint8(period)` to an compressed `abi.encode(limit, spent, lastUpdated)`.
+        mapping(uint256 => LibBytes.BytesStorage) spends;
     }
 
     /// @dev Holds the storage for spend permissions and the current spend state.
@@ -341,7 +343,10 @@ contract GuardedExecutor is ERC7821 {
         TokenSpendStorage storage tokenSpends = spends.spends[token];
         tokenSpends.periods.add(uint8(period));
 
-        tokenSpends.spends[uint8(period)].limit = limit;
+        LibBytes.BytesStorage storage encodedRef = tokenSpends.spends[uint8(period)];
+        (, uint256 spent, uint256 lastUpdated) = _decodeTokenPeriodSpend(encodedRef.get());
+        encodedRef.set(_encodeTokenPeriodSpend(limit, spent, lastUpdated));
+
         emit SpendLimitSet(keyHash, token, period, limit);
     }
 
@@ -359,7 +364,7 @@ contract GuardedExecutor is ERC7821 {
             if (tokenSpends.periods.length() == uint256(0)) spends.tokens.remove(token);
         }
 
-        delete tokenSpends.spends[uint8(period)];
+        tokenSpends.spends[uint8(period)].clear();
 
         emit SpendLimitRemoved(keyHash, token, period);
     }
@@ -436,13 +441,11 @@ contract GuardedExecutor is ERC7821 {
             uint8[] memory periods = tokenSpends.periods.values();
             for (uint256 j; j < periods.length; ++j) {
                 uint8 period = periods[j];
-                TokenPeriodSpendStorage storage tokenPeriodSpend = tokenSpends.spends[period];
                 SpendInfo memory info;
                 info.period = SpendPeriod(period);
                 info.token = token;
-                info.limit = tokenPeriodSpend.limit;
-                info.lastUpdated = tokenPeriodSpend.lastUpdated;
-                info.spent = tokenPeriodSpend.spent;
+                (info.limit, info.spent, info.lastUpdated) =
+                    _decodeTokenPeriodSpend(tokenSpends.spends[period].get());
                 info.current = startOfSpendPeriod(block.timestamp, SpendPeriod(period));
                 info.currentSpent = Math.ternary(info.lastUpdated < info.current, 0, info.spent);
                 uint256 pointer;
@@ -496,14 +499,42 @@ contract GuardedExecutor is ERC7821 {
         uint256 n = s.periods.length();
         for (uint256 i; i < n; ++i) {
             uint8 period = s.periods.at(i);
-            TokenPeriodSpendStorage storage tokenPeriodSpend = s.spends[period];
+            LibBytes.BytesStorage storage encodedRef = s.spends[period];
+            (uint256 limit, uint256 spent, uint256 lastUpdated) =
+                _decodeTokenPeriodSpend(encodedRef.get());
             uint256 current = startOfSpendPeriod(block.timestamp, SpendPeriod(period));
-            if (tokenPeriodSpend.lastUpdated < current) {
-                tokenPeriodSpend.lastUpdated = current;
-                tokenPeriodSpend.spent = 0;
+            if (lastUpdated < current) {
+                lastUpdated = current;
+                spent = 0;
             }
-            if ((tokenPeriodSpend.spent += amount) > tokenPeriodSpend.limit) {
+            if ((spent += amount) > limit) {
                 revert ExceededSpendLimit();
+            }
+            encodedRef.set(_encodeTokenPeriodSpend(limit, spent, lastUpdated));
+        }
+    }
+
+    /// @dev Encodes the token period spend.
+    function _encodeTokenPeriodSpend(uint256 limit, uint256 spent, uint256 lastUpdated)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return LibZip.cdCompress(abi.encode(limit, spent, lastUpdated));
+    }
+
+    /// @dev Decodes the compressed token period spend into its constituents.
+    function _decodeTokenPeriodSpend(bytes memory encoded)
+        internal
+        pure
+        returns (uint256 limit, uint256 spent, uint256 lastUpdated)
+    {
+        if (encoded.length != 0) {
+            bytes memory decompressed = LibZip.cdDecompress(encoded);
+            if (decompressed.length == 0x60) {
+                limit = uint256(LibBytes.load(decompressed, 0x00));
+                spent = uint256(LibBytes.load(decompressed, 0x20));
+                lastUpdated = uint256(LibBytes.load(decompressed, 0x40));
             }
         }
     }
