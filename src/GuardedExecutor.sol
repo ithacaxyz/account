@@ -246,7 +246,8 @@ contract GuardedExecutor is ERC7821 {
             if (fnSel == 0x598daac4) {
                 if (target != address(this)) continue;
                 if (LibBytes.loadCalldata(data, 0x04) != keyHash) continue;
-                t.erc20s.p(LibBytes.loadCalldata(data, 0x24)); // `token`.
+                address token = address(uint160(uint256(LibBytes.loadCalldata(data, 0x24))));
+                t.erc20s.p(token); // `token`.
                 t.transferAmounts.p(uint256(0));
             }
         }
