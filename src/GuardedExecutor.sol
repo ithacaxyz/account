@@ -188,6 +188,8 @@ contract GuardedExecutor is ERC7821 {
     /// 2. Any token that is granted a non-zero approval will have the approval
     ///    reset to zero after the calls.
     /// 3. The spend limits are only incremented and checked against at the end of a batch.
+    /// 4. If there are calls to `setSpendLimit` or `removeSpendLimit`, the final spend limits at
+    ///    the end of the batch will be applied. Calls to `removeSpendLimit` will reset the spent.
     /// Note: Called internally in ERC7821, which coalesce zero-address `target`s to `address(this)`.
     function _execute(Call[] calldata calls, bytes32 keyHash) internal virtual override {
         // If self-execute, don't care about the spend permissions.

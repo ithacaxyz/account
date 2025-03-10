@@ -180,15 +180,9 @@ contract GuardedExecutorTest is BaseTest {
         );
     }
 
-    function testSetSpendLimitAndSpendInASingleBatchWithNative() public {
-        _testSetSpendLimitAndSpendInASingleBatch(address(0));
-    }
+    function testSetSpendLimitAndSpendInASingleBatch(bytes32) public {
+        address token = _randomChance(32) ? address(0) : LibClone.clone(address(paymentToken));
 
-    function testSetSpendLimitAndSpendInASingleBatchWithERC20() public {
-        _testSetSpendLimitAndSpendInASingleBatch(LibClone.clone(address(paymentToken)));
-    }
-
-    function _testSetSpendLimitAndSpendInASingleBatch(address token) public {
         EntryPoint.UserOp memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
