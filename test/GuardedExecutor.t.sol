@@ -185,6 +185,137 @@ contract GuardedExecutorTest is BaseTest {
         );
     }
 
+    function _removeSpendLimitCall(
+        PassKey memory k,
+        address token,
+        GuardedExecutor.SpendPeriod period
+    ) internal pure returns (ERC7821.Call memory c) {
+        c.data = abi.encodeWithSelector(
+            GuardedExecutor.removeSpendLimit.selector, k.keyHash, token, period
+        );
+    }
+
+    function testSetSpendLimitAndSpendInASingleBatch(bytes32) public {
+        address token = _randomChance(32) ? address(0) : LibClone.clone(address(paymentToken));
+
+        EntryPoint.UserOp memory u;
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+
+        u.eoa = d.eoa;
+        u.combinedGas = 1000000;
+        u.nonce = ep.getNonce(u.eoa, 0);
+
+        PassKey memory k = _randomSecp256k1PassKey();
+        k.k.isSuperAdmin = true;
+
+        _mint(token, u.eoa, type(uint192).max);
+
+        uint256 amount = _bound(_randomUniform(), 0, 0.0001 ether);
+
+        GuardedExecutor.SpendInfo[] memory infos;
+        ERC7821.Call[] memory calls;
+        // Authorize.
+        {
+            calls = new ERC7821.Call[](1);
+            // Authorize the key.
+            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, k.k);
+
+            u.executionData = abi.encode(calls);
+            u.nonce = 0xc1d0 << 240;
+
+            u.signature = _eoaSig(d.privateKey, u);
+
+            assertEq(ep.execute(abi.encode(u)), 0);
+        }
+        // Set spend limits and spend in a single batch.
+        {
+            calls = new ERC7821.Call[](2);
+            calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
+            calls[1] = _transferCall2(token, address(0xb0b), amount);
+            // Check that the order doesn't matter.
+            if (_randomChance(2)) {
+                (calls[0], calls[1]) = (calls[1], calls[0]);
+            }
+
+            u.nonce = ep.getNonce(d.eoa, 0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+
+            assertEq(ep.execute(abi.encode(u)), 0);
+
+            infos = d.d.spendInfos(k.keyHash);
+            assertEq(infos.length, 1);
+
+            assertEq(infos[0].token, token);
+            assertEq(infos[0].spent, amount);
+        }
+        // Remove spend limits and spend above the limit in a single batch.
+        {
+            calls = new ERC7821.Call[](2);
+            calls[0] = _transferCall2(token, address(0xb0b), 10 ether);
+            calls[1] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour);
+            // Check that the order doesn't matter.
+            if (_randomChance(2)) {
+                (calls[0], calls[1]) = (calls[1], calls[0]);
+            }
+
+            u.nonce = ep.getNonce(d.eoa, 0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+
+            assertEq(ep.execute(abi.encode(u)), 0);
+
+            infos = d.d.spendInfos(k.keyHash);
+            assertEq(infos.length, 0);
+        }
+        // Set spend limits and spend and remove spend limits in a single batch.
+        {
+            calls = new ERC7821.Call[](3);
+            calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
+            calls[1] = _transferCall2(token, address(0xb0b), amount);
+            calls[2] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour);
+            // Check that the order doesn't matter, as long as the remove call is after the set spend call.
+            if (_randomChance(2)) {
+                if (_randomChance(2)) {
+                    (calls[0], calls[1]) = (calls[1], calls[0]);
+                } else {
+                    (calls[1], calls[2]) = (calls[2], calls[1]);
+                }
+            }
+
+            u.nonce = ep.getNonce(d.eoa, 0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+
+            assertEq(ep.execute(abi.encode(u)), 0);
+
+            infos = d.d.spendInfos(k.keyHash);
+            assertEq(infos.length, 0);
+        }
+        // Set spend limits and spend in a single batch.
+        {
+            calls = new ERC7821.Call[](2);
+            calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
+            calls[1] = _transferCall2(token, address(0xb0b), amount);
+            // Check that the order doesn't matter.
+            if (_randomChance(2)) {
+                (calls[0], calls[1]) = (calls[1], calls[0]);
+            }
+
+            u.nonce = ep.getNonce(d.eoa, 0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+
+            assertEq(ep.execute(abi.encode(u)), 0);
+
+            infos = d.d.spendInfos(k.keyHash);
+            assertEq(infos.length, 1);
+
+            assertEq(infos[0].token, token);
+            assertEq(infos[0].spent, amount);
+        }
+    }
+
     function testSetAndRemoveSpendLimit() public {
         vm.warp(86400 * 100);
 
@@ -245,12 +376,7 @@ contract GuardedExecutorTest is BaseTest {
         // Test removal reduces infos' length.
         {
             calls = new ERC7821.Call[](1);
-            calls[0].data = abi.encodeWithSelector(
-                GuardedExecutor.removeSpendLimit.selector,
-                k.keyHash,
-                token,
-                GuardedExecutor.SpendPeriod.Hour
-            );
+            calls[0] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour);
 
             u.nonce = ep.getNonce(u.eoa, 0);
             u.executionData = abi.encode(calls);
@@ -309,18 +435,8 @@ contract GuardedExecutorTest is BaseTest {
         // Test removal.
         {
             calls = new ERC7821.Call[](2);
-            calls[0].data = abi.encodeWithSelector(
-                GuardedExecutor.removeSpendLimit.selector,
-                k.keyHash,
-                token,
-                GuardedExecutor.SpendPeriod.Hour
-            );
-            calls[1].data = abi.encodeWithSelector(
-                GuardedExecutor.removeSpendLimit.selector,
-                k.keyHash,
-                token,
-                GuardedExecutor.SpendPeriod.Day
-            );
+            calls[0] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour);
+            calls[1] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Day);
 
             u.nonce = ep.getNonce(u.eoa, 0);
             u.executionData = abi.encode(calls);
