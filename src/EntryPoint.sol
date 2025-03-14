@@ -147,8 +147,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
     /// This event is emitted in the `execute` function.
     /// - `incremented` denotes that `nonce`'s sequence has been incremented to invalidate `nonce`,
     /// - `err` denotes the resultant error selector.
-    /// If `incremented` is true and `err` is non-zero,
-    /// `err` will be stored for retrieval with `nonceStatus`.
+    /// If `incremented` is true and `err` is non-zero, the UserOp was successful.
     event UserOpExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
 
     ////////////////////////////////////////////////////////////////////////
