@@ -17,13 +17,28 @@ We believe that unstoppable crypto-powered accounts should be excellent througho
 
 # Features out of the box
 
-* [x] Secure Login: Using WebAuthN-compatible credentials like PassKeys.
-* [x] Call Batching: Send multiple calls in 1.
-* [x] Gas Sponsorship: Allow anyone to pay for your fees in any ERC20 or ETH.
-* [x] Access Control: Whitelist receivers, function selectors and arguments.
-* [x] Session Keys: Allow transactions without confirmations if they pass low-security access control policies.
-* [ ] Multi-factor Authentication: If a call is outside of a certain access control policy, require multiple signatures.
-* [ ] Optimized for L2: Using BLS signatures.
-* [ ] Chain Abstraction: Transaction on any chain invisibly. Powered by ERC7683. WIP
-* [ ] Privacy: Using stealth addresses and confidential transactions.
-* [ ] Account Recovery & Identity: Using ZK {Email, OAUth, Passport} and more.
+## Currently Implemented
+
+* [x] **Secure Login**: Using WebAuthN-compatible credentials like PassKeys. Implementation complete with support for multiple passkeys per account.
+* [x] **Call Batching**: Send multiple calls in 1. Fully optimized for gas efficiency.
+* [x] **Gas Sponsorship**: Allow anyone to pay for your fees in any ERC20 or ETH. Implementation includes fee abstraction and relayer compensation.
+* [x] **Access Control**: Whitelist receivers, function selectors and arguments. Comprehensive policy system already in place.
+* [x] **Session Keys**: Allow transactions without confirmations if they pass low-security access control policies. Implementation includes time-based expiry.
+
+## Coming Soon (Q3 2023)
+
+* [ ] **Multi-factor Authentication**: If a call is outside of a certain access control policy, require multiple signatures. Implementation will support hardware security keys, mobile authenticators, and biometric verification.
+* [ ] **Optimized for L2**: Using BLS signatures to reduce verification costs and improve transaction throughput on Layer 2 networks.
+
+## In Development (Q4 2023)
+
+* [ ] **Chain Abstraction**: Transaction on any chain invisibly. Powered by ERC7683. Development is in progress with initial testnet deployments planned for early Q4.
+* [ ] **Privacy**: Using stealth addresses and confidential transactions. Technical research phase completed, implementation beginning soon.
+* [ ] **Account Recovery & Identity**: Using ZK {Email, OAUth, Passport} and more. Integration with multiple identity providers is in progress.
+
+## Additional Planned Features
+
+* [ ] **Delegation Limits**: Set spending limits for different keys and delegates.
+* [ ] **Social Recovery**: Support for guardian-based account recovery methods.
+* [ ] **Subscription Management**: Built-in support for managing recurring payments and subscriptions.
+* [ ] **Cross-chain Messaging**: Native support for cross-chain asset transfers and message passing.
