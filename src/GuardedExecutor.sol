@@ -484,15 +484,15 @@ abstract contract GuardedExecutor is ERC7821 {
         public
         view
         virtual
-        returns (SpendInfo[][] memory spend, bytes32[][] memory canExecute)
+        returns (SpendInfo[][] memory spends, bytes32[][] memory executes)
     {
         uint256 count = keyHashes.length;
-        spend = new SpendInfo[][](count);
-        canExecute = new bytes32[][](count);
+        spends = new SpendInfo[][](count);
+        executes = new bytes32[][](count);
 
         for (uint256 i = 0; i < count; i++) {
-            spend[i] = spendInfos(keyHashes[i]);
-            canExecute[i] = canExecutePackedInfos(keyHashes[i]);
+            spends[i] = spendInfos(keyHashes[i]);
+            executes[i] = canExecutePackedInfos(keyHashes[i]);
         }
     }
 
