@@ -19,10 +19,11 @@ jobs:
       - name: Deploy
         env:
           PRIVATE_KEY: ${{ secrets.deployer }}
+        # TODO: remove the --evm-version argument once https://github.com/blockscout/blockscout/pull/12115 is released.
         run: | 
           forge script DeployAllScript \
             --rpc-url "https://odyssey.ithaca.xyz" \
             --broadcast -q --verify --verifier blockscout \
             --verifier-url "https://odyssey-explorer.ithaca.xyz/api" \
-            --evm-version cancun && \ # TODO: remove once https://github.com/blockscout/blockscout/pull/12115 is released.
+            --evm-version cancun && \
           jq -r '.transactions[].additionalContracts | "EntryPoint: " + .[0].address, "Delegation: "  + .[1].address, "EIP7702Proxy: " + .[2].address'  broadcast/DeployAll.s.sol/911867/run-latest.json
