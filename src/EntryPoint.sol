@@ -117,7 +117,8 @@ contract EntryPoint is
         /// the overall UserOp will revert before validation, and execute will return a non-zero error.
         /// A PreOp can contain PreOps, forming a tree structure.
         /// The `executionData` tree will be executed in post-order (i.e. left -> right -> current).
-        /// The `encodedPreOps` are included in the EIP-712 signature.
+        /// The `encodedPreOps` are included in the EIP-712 signature, which enables execution order
+        /// to be enforced on-the-fly even if the nonces from different sequences.
         bytes[] encodedPreOps;
     }
 
