@@ -702,7 +702,8 @@ contract EntryPoint is
                 u.executionData,
                 abi.encode(keyHash) // `opData`.
             );
-            // This part is slightly different from `selfCallPayVerifyCall537021665`, as it reverts on failure.
+            // This part is slightly different from `selfCallPayVerifyCall537021665`.
+            // It always reverts on failure.
             assembly ("memory-safe") {
                 mstore(0x00, 0) // Zeroize the return slot.
                 if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
@@ -715,6 +716,8 @@ contract EntryPoint is
                     revert(0x00, 0x20) // Revert the `err` (NOT return).
                 }
             }
+            // Event so that indexers can know that the nonce is used.
+            // Reaching here means there's no error in the PreOp.
             emit UserOpExecuted(eoa, u.nonce, true, 0); // `incremented = true`, `err = 0`.
         }
     }
