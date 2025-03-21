@@ -626,9 +626,7 @@ contract EntryPoint is
             }
         }
         // Handle the sub UserOps after the PREP (if any), and before the `_verify`.
-        if (u.encodedPreOps.length != 0) {
-            _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
-        }
+        if (u.encodedPreOps.length != 0) _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
 
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the delegation logic.
@@ -689,20 +687,22 @@ contract EntryPoint is
             UserOp calldata u = _extractUserOp(encodedPreOps[i]);
             if (eoa != u.eoa) revert InvalidPreOpEOA();
 
-            if (u.encodedPreOps.length != 0) {
-                _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
-            }
+            // The order is exactly the same as `selfCallPayVerifyCall537021665`:
+            // Recurse -> Verify -> Increment nonce -> Call eoa.
+            if (u.encodedPreOps.length != 0) _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
 
             (bool isValid, bytes32 keyHash) = _verify(u);
             if (!isValid) if (simulationFlags & 1 == 0) revert PreOpVerificationError();
 
             LibNonce.checkAndIncrement(_getEntryPointStorage().nonceSeqs[eoa], u.nonce);
 
+            // This part is same as `selfCallPayVerifyCall537021665`. We simply inline to save gas.
             bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
                 hex"01000000000078210001", // ERC7821 batch execution mode.
                 u.executionData,
                 abi.encode(keyHash) // `opData`.
             );
+            // This part is slightly different from `selfCallPayVerifyCall537021665`, as it reverts on failure.
             assembly ("memory-safe") {
                 mstore(0x00, 0) // Zeroize the return slot.
                 if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
