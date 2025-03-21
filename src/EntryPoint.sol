@@ -626,7 +626,9 @@ contract EntryPoint is
             }
         }
         // Handle the sub UserOps after the PREP (if any), and before the `_verify`.
-        _handleEncodedSubUserOps(eoa, simulationFlags, u.encodedSubUserOps);
+        if (u.encodedSubUserOps.length != 0) {
+            _handleEncodedSubUserOps(eoa, simulationFlags, u.encodedSubUserOps);
+        }
 
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the delegation logic.
