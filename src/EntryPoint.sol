@@ -110,15 +110,15 @@ contract EntryPoint is
         bytes initData;
         /// @dev Optional array of encoded UserOps that will be verified and executed
         /// after PREP (if any) and before the validation of the overall UserOp.
-        /// A sub UserOp will NOT have its gas limit or payment applied.
-        /// The overall UserOp's gas limit and payment will be applied, encompassing all its sub UserOps.
-        /// The execution of a sub UserOp will check and increment the nonce in the sub UserOp.
-        /// If at any point, any sub UserOp cannot be verified to be correct, or fails in execution,
+        /// A PreOp will NOT have its gas limit or payment applied.
+        /// The overall UserOp's gas limit and payment will be applied, encompassing all its PreOps.
+        /// The execution of a PreOp will check and increment the nonce in the PreOp.
+        /// If at any point, any PreOp cannot be verified to be correct, or fails in execution,
         /// the overall UserOp will revert before validation, and execute will return a non-zero error.
-        /// A sub UserOp can contain sub UserOps.
+        /// A PreOp can contain sub UserOps.
         /// The `executionData` tree will be executed in post-order (i.e. left -> right -> current).
-        /// The `encodedSubUserOps` are included in the EIP-712 signature.
-        bytes[] encodedSubUserOps;
+        /// The `encodedPreOps` are included in the EIP-712 signature.
+        bytes[] encodedPreOps;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -154,13 +154,13 @@ contract EntryPoint is
     error NoRevertEncountered();
 
     /// @dev A sub UserOp's EOA must be the same as its parent UserOp's eoa.
-    error InvalidSubUserOpEOA();
+    error InvalidPreOpEOA();
 
     /// @dev The sub UserOp cannot be verified to be correct.
-    error SubUserOpVerificationError();
+    error PreOpVerificationError();
 
     /// @dev Error calling the sub UserOp's `executionData`.
-    error SubUserOpCallError();
+    error PreOpCallError();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -183,7 +183,7 @@ contract EntryPoint is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant USER_OP_TYPEHASH = keccak256(
-        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas,bytes[] encodedSubUserOps)Call(address target,uint256 value,bytes data)"
+        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas,bytes[] encodedPreOps)Call(address target,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
@@ -626,8 +626,8 @@ contract EntryPoint is
             }
         }
         // Handle the sub UserOps after the PREP (if any), and before the `_verify`.
-        if (u.encodedSubUserOps.length != 0) {
-            _handleEncodedSubUserOps(eoa, simulationFlags, u.encodedSubUserOps);
+        if (u.encodedPreOps.length != 0) {
+            _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
         }
 
         // If `_verify` is invalid, just revert.
@@ -673,7 +673,7 @@ contract EntryPoint is
         }
     }
 
-    /// @dev Loops over the `encodedSubUserOps` and does the following for each sub UserOp:
+    /// @dev Loops over the `encodedPreOps` and does the following for each sub UserOp:
     /// - Check that the eoa is indeed the eoa of the parent UserOp.
     /// - If there are any sub UserOp in a sub UserOp, recurse.
     /// - Validate the sub UserOp.
@@ -681,21 +681,20 @@ contract EntryPoint is
     /// - Call the Delegation with `executionData` in the sub UserOp, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
     /// - Emit an {UserOpExecuted} event.
-    function _handleEncodedSubUserOps(
-        address eoa,
-        uint256 simulationFlags,
-        bytes[] calldata encodedSubUserOps
-    ) internal virtual {
-        for (uint256 i; i < encodedSubUserOps.length; ++i) {
-            UserOp calldata u = _extractUserOp(encodedSubUserOps[i]);
-            if (eoa != u.eoa) revert InvalidSubUserOpEOA();
+    function _handlePreOps(address eoa, uint256 simulationFlags, bytes[] calldata encodedPreOps)
+        internal
+        virtual
+    {
+        for (uint256 i; i < encodedPreOps.length; ++i) {
+            UserOp calldata u = _extractUserOp(encodedPreOps[i]);
+            if (eoa != u.eoa) revert InvalidPreOpEOA();
 
-            if (u.encodedSubUserOps.length != 0) {
-                _handleEncodedSubUserOps(eoa, simulationFlags, u.encodedSubUserOps);
+            if (u.encodedPreOps.length != 0) {
+                _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
             }
 
             (bool isValid, bytes32 keyHash) = _verify(u);
-            if (!isValid) if (simulationFlags & 1 == 0) revert SubUserOpVerificationError();
+            if (!isValid) if (simulationFlags & 1 == 0) revert PreOpVerificationError();
 
             LibNonce.checkAndIncrement(_getEntryPointStorage().nonceSeqs[eoa], u.nonce);
 
@@ -712,7 +711,7 @@ contract EntryPoint is
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
-                    if iszero(mload(0x00)) { mstore(0x00, shl(224, 0xda637df3)) } // `SubUserOpCallError()`.
+                    if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x253e076a)) } // `PreOpCallError()`.
                     revert(0x00, 0x20) // Revert the `err` (NOT return).
                 }
             }
@@ -876,21 +875,21 @@ contract EntryPoint is
         f.set(7, u.paymentMaxAmount);
         f.set(8, u.paymentPerGas);
         f.set(9, u.combinedGas);
-        f.set(10, _encodedSubUserOpsHash(u.encodedSubUserOps));
+        f.set(10, _encodedPreOpsHash(u.encodedPreOps));
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
 
-    /// @dev Helper function to return the hash of the `encodedSubUserOps`.
-    function _encodedSubUserOpsHash(bytes[] calldata encodedSubUserOps)
+    /// @dev Helper function to return the hash of the `encodedPreOps`.
+    function _encodedPreOpsHash(bytes[] calldata encodedPreOps)
         internal
         view
         virtual
         returns (bytes32)
     {
-        bytes32[] memory a = EfficientHashLib.malloc(encodedSubUserOps.length);
-        for (uint256 i; i < encodedSubUserOps.length; ++i) {
-            a.set(i, EfficientHashLib.hashCalldata(encodedSubUserOps[i]));
+        bytes32[] memory a = EfficientHashLib.malloc(encodedPreOps.length);
+        for (uint256 i; i < encodedPreOps.length; ++i) {
+            a.set(i, EfficientHashLib.hashCalldata(encodedPreOps[i]));
         }
         return a.hash();
     }

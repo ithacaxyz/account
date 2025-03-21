@@ -437,23 +437,23 @@ contract EntryPointTest is BaseTest {
         err = bytes4(LibBytes.load(rD, 0x24));
     }
 
-    struct _TestAuthorizeWithSubUserOpsAndTransferTemps {
+    struct _TestAuthorizeWithPreOpsAndTransferTemps {
         uint256 gExecute;
         uint256 gCombined;
         uint256 gUsed;
         bool success;
         bytes result;
-        bool testInvalidSubUserOpEOA;
-        bool testSubUserOpVerificationError;
-        bool testSubUserOpCallError;
+        bool testInvalidPreOpEOA;
+        bool testPreOpVerificationError;
+        bool testPreOpCallError;
         bool testPREP;
         PassKey kPREP;
         DelegatedEOA d;
         address eoa;
     }
 
-    function testAuthorizeWithSubUserOpsAndTransfer(bytes32) public {
-        _TestAuthorizeWithSubUserOpsAndTransferTemps memory t;
+    function testAuthorizeWithPreOpsAndTransfer(bytes32) public {
+        _TestAuthorizeWithPreOpsAndTransferTemps memory t;
         EntryPoint.UserOp memory u;
 
         if (_randomChance(2)) {
@@ -496,10 +496,10 @@ contract EntryPointTest is BaseTest {
 
         if (_randomChance(64)) {
             uSession.eoa = address(0);
-            t.testInvalidSubUserOpEOA = true;
+            t.testInvalidPreOpEOA = true;
         }
 
-        u.encodedSubUserOps = new bytes[](2);
+        u.encodedPreOps = new bytes[](2);
         // Prepare super admin passkey authorization UserOp.
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
@@ -535,7 +535,7 @@ contract EntryPointTest is BaseTest {
 
             if (_randomChance(64)) {
                 calls[0].value = 1 ether;
-                t.testSubUserOpCallError = true;
+                t.testPreOpCallError = true;
             }
 
             uSession.executionData = abi.encode(calls);
@@ -546,8 +546,8 @@ contract EntryPointTest is BaseTest {
 
             if (_randomChance(64)) {
                 uSession.signature = _sig(_randomSecp256r1PassKey(), uSession);
-                u.encodedSubUserOps[1] = abi.encode(uSession);
-                t.testSubUserOpVerificationError = true;
+                u.encodedPreOps[1] = abi.encode(uSession);
+                t.testPreOpVerificationError = true;
             }
         }
 
@@ -559,39 +559,39 @@ contract EntryPointTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.nonce = 0;
 
-            u.encodedSubUserOps[0] = abi.encode(uSuperAdmin);
-            u.encodedSubUserOps[1] = abi.encode(uSession);
+            u.encodedPreOps[0] = abi.encode(uSuperAdmin);
+            u.encodedPreOps[1] = abi.encode(uSession);
         }
 
-        if (t.testInvalidSubUserOpEOA) {
+        if (t.testInvalidPreOpEOA) {
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("InvalidSubUserOpEOA()")));
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("InvalidPreOpEOA()")));
             return; // Skip the rest.
         }
 
-        if (t.testSubUserOpVerificationError) {
+        if (t.testPreOpVerificationError) {
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("SubUserOpVerificationError()")));
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("PreOpVerificationError()")));
             return; // Skip the rest.
         }
 
-        if (t.testSubUserOpCallError) {
+        if (t.testPreOpCallError) {
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("SubUserOpCallError()")));
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("PreOpCallError()")));
             return; // Skip the rest.
         }
 
         // Test recursive style.
         if (_randomChance(8)) {
-            uSession.encodedSubUserOps = new bytes[](1);
-            uSession.encodedSubUserOps[0] = abi.encode(uSuperAdmin);
+            uSession.encodedPreOps = new bytes[](1);
+            uSession.encodedPreOps[0] = abi.encode(uSuperAdmin);
             uSession.signature = _sig(kSuperAdmin, uSession);
 
-            u.encodedSubUserOps = new bytes[](1);
-            u.encodedSubUserOps[0] = abi.encode(uSession);
+            u.encodedPreOps = new bytes[](1);
+            u.encodedPreOps[0] = abi.encode(uSession);
         }
 
         // Test gas estimation.
