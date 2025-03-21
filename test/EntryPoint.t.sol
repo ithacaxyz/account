@@ -4,7 +4,6 @@ pragma solidity ^0.8.4;
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
 import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCallTarget.sol";
-import {GuardedExecutor} from "../src/Delegation.sol";
 
 contract EntryPointTest is BaseTest {
     struct _TestFullFlowTemps {
@@ -447,14 +446,37 @@ contract EntryPointTest is BaseTest {
         bool testInvalidSubUserOpEOA;
         bool testSubUserOpVerificationError;
         bool testSubUserOpCallError;
+        bool testPREP;
+        PassKey kPREP;
+        DelegatedEOA d;
+        address eoa;
     }
 
     function testAuthorizeWithSubUserOpsAndTransfer(bytes32) public {
         _TestAuthorizeWithSubUserOpsAndTransferTemps memory t;
 
         EntryPoint.UserOp memory u;
-        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        u.eoa = d.eoa;
+
+        if (_randomChance(2)) {
+            t.d = _randomEIP7702DelegatedEOA();
+            t.eoa = t.d.eoa;
+        } else {
+            t.kPREP = _randomSecp256r1PassKey();
+            t.kPREP.k.isSuperAdmin = true;
+
+            ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
+            initCalls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, t.kPREP.k);
+
+            bytes32 saltAndDelegation;
+            (saltAndDelegation, t.eoa) = _minePREP(_computePREPDigest(initCalls));
+            u.initData = abi.encode(initCalls, abi.encodePacked(saltAndDelegation));
+
+            vm.etch(t.eoa, abi.encodePacked(hex"ef0100", delegation));
+
+            t.testPREP = true;
+        }
+
+        u.eoa = t.eoa;
 
         paymentToken.mint(u.eoa, 2 ** 128 - 1);
         u.paymentToken = address(paymentToken);
@@ -471,8 +493,8 @@ contract EntryPointTest is BaseTest {
         EntryPoint.UserOp memory uSuperAdmin;
         EntryPoint.UserOp memory uSession;
 
-        uSuperAdmin.eoa = d.eoa;
-        uSession.eoa = d.eoa;
+        uSuperAdmin.eoa = t.eoa;
+        uSession.eoa = t.eoa;
 
         if (_randomChance(64)) {
             uSession.eoa = address(0);
@@ -488,7 +510,11 @@ contract EntryPointTest is BaseTest {
             // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
             uSuperAdmin.nonce = (0xc1d0 << 240) | (1 << 96);
 
-            uSuperAdmin.signature = _eoaSig(d.privateKey, uSuperAdmin);
+            if (t.testPREP) {
+                uSuperAdmin.signature = _sig(t.kPREP, uSuperAdmin);
+            } else {
+                uSuperAdmin.signature = _eoaSig(t.d.privateKey, uSuperAdmin);
+            }
         }
 
         // Prepare session passkey authorization UserOp.
@@ -592,16 +618,5 @@ contract EntryPointTest is BaseTest {
         u.signature = _sig(kSession, u);
         assertEq(ep.execute(abi.encode(u)), 0);
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
-    }
-
-    function _setSpendLimitCall(
-        PassKey memory k,
-        address token,
-        GuardedExecutor.SpendPeriod period,
-        uint256 amount
-    ) internal pure returns (ERC7821.Call memory c) {
-        c.data = abi.encodeWithSelector(
-            GuardedExecutor.setSpendLimit.selector, k.keyHash, token, period, amount
-        );
     }
 }

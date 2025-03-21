@@ -3,7 +3,6 @@ pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
-import {GuardedExecutor} from "../src/Delegation.sol";
 
 contract GuardedExecutorTest is BaseTest {
     mapping(uint256 => mapping(address => uint256)) expectedSpents;
@@ -172,27 +171,6 @@ contract GuardedExecutorTest is BaseTest {
 
             d.d.resetX();
         }
-    }
-
-    function _setSpendLimitCall(
-        PassKey memory k,
-        address token,
-        GuardedExecutor.SpendPeriod period,
-        uint256 amount
-    ) internal pure returns (ERC7821.Call memory c) {
-        c.data = abi.encodeWithSelector(
-            GuardedExecutor.setSpendLimit.selector, k.keyHash, token, period, amount
-        );
-    }
-
-    function _removeSpendLimitCall(
-        PassKey memory k,
-        address token,
-        GuardedExecutor.SpendPeriod period
-    ) internal pure returns (ERC7821.Call memory c) {
-        c.data = abi.encodeWithSelector(
-            GuardedExecutor.removeSpendLimit.selector, k.keyHash, token, period
-        );
     }
 
     function testSetSpendLimitAndSpendInASingleBatch(bytes32) public {
