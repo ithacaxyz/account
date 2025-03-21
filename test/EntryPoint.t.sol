@@ -454,7 +454,6 @@ contract EntryPointTest is BaseTest {
 
     function testAuthorizeWithSubUserOpsAndTransfer(bytes32) public {
         _TestAuthorizeWithSubUserOpsAndTransferTemps memory t;
-
         EntryPoint.UserOp memory u;
 
         if (_randomChance(2)) {
@@ -483,7 +482,6 @@ contract EntryPointTest is BaseTest {
         u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
         u.paymentMaxAmount = u.paymentAmount;
         u.nonce = 0xc1d0 << 240;
-        u.encodedSubUserOps = new bytes[](2);
 
         PassKey memory kSuperAdmin = _randomSecp256r1PassKey();
         PassKey memory kSession = _randomSecp256r1PassKey();
@@ -501,6 +499,7 @@ contract EntryPointTest is BaseTest {
             t.testInvalidSubUserOpEOA = true;
         }
 
+        u.encodedSubUserOps = new bytes[](2);
         // Prepare super admin passkey authorization UserOp.
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
@@ -583,6 +582,16 @@ contract EntryPointTest is BaseTest {
             u.signature = _sig(kSession, u);
             assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("SubUserOpCallError()")));
             return; // Skip the rest.
+        }
+
+        // Test recursive style.
+        if (_randomChance(8)) {
+            uSession.encodedSubUserOps = new bytes[](1);
+            uSession.encodedSubUserOps[0] = abi.encode(uSuperAdmin);
+            uSession.signature = _sig(kSuperAdmin, uSession);
+
+            u.encodedSubUserOps = new bytes[](1);
+            u.encodedSubUserOps[0] = abi.encode(uSession);
         }
 
         // Test gas estimation.
