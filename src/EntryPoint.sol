@@ -115,7 +115,7 @@ contract EntryPoint is
         /// The execution of a PreOp will check and increment the nonce in the PreOp.
         /// If at any point, any PreOp cannot be verified to be correct, or fails in execution,
         /// the overall UserOp will revert before validation, and execute will return a non-zero error.
-        /// A PreOp can contain sub UserOps.
+        /// A PreOp can contain PreOps, forming a tree structure.
         /// The `executionData` tree will be executed in post-order (i.e. left -> right -> current).
         /// The `encodedPreOps` are included in the EIP-712 signature.
         bytes[] encodedPreOps;
