@@ -108,6 +108,14 @@ contract EntryPoint is
         /// where `calls` is of type `Call[]`,
         /// and `saltAndDelegation` is `bytes32((uint256(salt) << 160) | uint160(delegation))`.
         bytes initData;
+        /// @dev Optional array of encoded UserOps that will be verified and executed
+        /// after PREP (if any) and before the validation of the enveloping UserOp.
+        /// A sub UserOp will NOT have its gas limit or payment applied.
+        /// Only the enveloping UserOp's gas limit and payment will be applied.
+        /// The execution of a sub UserOp will check and increment the nonce in the sub UserOp.
+        /// If at any point, any sub UserOp cannot be verified to be correct, or fails in execution,
+        /// the enveloping UserOp will revert completely.
+        bytes[] encodedSubUserOps;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -142,6 +150,15 @@ contract EntryPoint is
     /// @dev No revert has been encountered.
     error NoRevertEncountered();
 
+    /// @dev A sub UserOp's EOA must be the same as its enveloping UserOp's eoa.
+    error InvalidSubUserOpEOA();
+
+    /// @dev The sub UserOp cannot be verified to be correct.
+    error SubUserOpVerificationError();
+
+    /// @dev Error calling the sub UserOp's `executionData`.
+    error SubUserOpCallError();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -163,7 +180,7 @@ contract EntryPoint is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant USER_OP_TYPEHASH = keccak256(
-        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas)Call(address target,uint256 value,bytes data)"
+        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas,bytes[] encodedSubUserOps)Call(address target,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
@@ -605,6 +622,8 @@ contract EntryPoint is
                 }
             }
         }
+        // Handle the sub UserOps after the PREP (if any), and before the `_verify`.
+        _handleEncodedSubUserOps(eoa, simulationFlags, u.encodedSubUserOps);
 
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the delegation logic.
@@ -646,6 +665,53 @@ contract EntryPoint is
                 return(0x00, 0x20) // Return the `err`.
             }
             return(0x60, 0x20) // If all success, returns with zero `err`.
+        }
+    }
+
+    /// @dev Loops over the `encodedSubUserOps` and does the following for each sub UserOp:
+    /// - Check that the eoa is indeed the eoa of the enveloping UserOp.
+    /// - If there are any sub UserOp in a sub UserOp, recurse.
+    /// - Validate the sub UserOp.
+    /// - Check and increment the nonce of the sub UserOp.
+    /// - Call the Delegation with `executionData` in the sub UserOp, using the ERC7821 batch-execution mode.
+    ///   If the call fails, revert.
+    /// - Emit an {UserOpExecuted} event.
+    function _handleEncodedSubUserOps(
+        address eoa,
+        uint256 simulationFlags,
+        bytes[] calldata encodedSubUserOps
+    ) internal virtual {
+        for (uint256 i; i < encodedSubUserOps.length; ++i) {
+            UserOp calldata u = _extractUserOp(encodedSubUserOps[i]);
+            if (eoa != u.eoa) revert InvalidSubUserOpEOA();
+
+            if (u.encodedSubUserOps.length != 0) {
+                _handleEncodedSubUserOps(eoa, simulationFlags, u.encodedSubUserOps);
+            }
+
+            (bool isValid, bytes32 keyHash) = _verify(u);
+            if (!isValid) if (simulationFlags & 1 == 0) revert SubUserOpVerificationError();
+
+            LibNonce.checkAndIncrement(_getEntryPointStorage().nonceSeqs[eoa], u.nonce);
+
+            bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
+                hex"01000000000078210001", // ERC7821 batch execution mode.
+                u.executionData,
+                abi.encode(keyHash) // `opData`.
+            );
+            assembly ("memory-safe") {
+                mstore(0x00, 0) // Zeroize the return slot.
+                if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
+                    // If this is a simulation via `simulateFailed`, bubble up the whole revert.
+                    if and(simulationFlags, 2) {
+                        returndatacopy(mload(0x40), 0x00, returndatasize())
+                        revert(mload(0x40), returndatasize())
+                    }
+                    if iszero(mload(0x00)) { mstore(0x00, shl(224, 0xda637df3)) } // `SubUserOpCallError()`.
+                    revert(0x00, 0x20) // Revert the `err` (NOT return).
+                }
+            }
+            emit UserOpExecuted(eoa, u.nonce, true, 0); // `incremented = true`, `err = 0`.
         }
     }
 
@@ -794,7 +860,7 @@ contract EntryPoint is
         }
         bool isMultichain = u.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(10);
+        bytes32[] memory f = EfficientHashLib.malloc(11);
         f.set(0, USER_OP_TYPEHASH);
         f.set(1, LibBit.toUint(isMultichain));
         f.set(2, uint160(u.eoa));
@@ -805,8 +871,23 @@ contract EntryPoint is
         f.set(7, u.paymentMaxAmount);
         f.set(8, u.paymentPerGas);
         f.set(9, u.combinedGas);
+        f.set(10, _encodedSubUserOpsHash(u.encodedSubUserOps));
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
+    }
+
+    /// @dev Helper function to return the hash of the `encodedSubUserOps`.
+    function _encodedSubUserOpsHash(bytes[] calldata encodedSubUserOps)
+        internal
+        view
+        virtual
+        returns (bytes32)
+    {
+        bytes32[] memory a = EfficientHashLib.malloc(encodedSubUserOps.length);
+        for (uint256 i; i < encodedSubUserOps.length; ++i) {
+            a.set(i, EfficientHashLib.hashCalldata(encodedSubUserOps[i]));
+        }
+        return a.hash();
     }
 
     receive() external payable virtual {}
