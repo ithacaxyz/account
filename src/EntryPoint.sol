@@ -109,14 +109,14 @@ contract EntryPoint is
         /// and `saltAndDelegation` is `bytes32((uint256(salt) << 160) | uint160(delegation))`.
         bytes initData;
         /// @dev Optional array of encoded UserOps that will be verified and executed
-        /// after PREP (if any) and before the validation of the envelop UserOp.
+        /// after PREP (if any) and before the validation of the overall UserOp.
         /// A sub UserOp will NOT have its gas limit or payment applied.
-        /// The root envelop UserOp's gas limit and payment will be applied, encompassing all its sub UserOps.
+        /// The overall UserOp's gas limit and payment will be applied, encompassing all its sub UserOps.
         /// The execution of a sub UserOp will check and increment the nonce in the sub UserOp.
         /// If at any point, any sub UserOp cannot be verified to be correct, or fails in execution,
-        /// the envelop UserOp will revert completely, and execute will return a non-zero error.
+        /// the overall UserOp will revert before validation, and execute will return a non-zero error.
         /// A sub UserOp can contain sub UserOps.
-        /// The `executionData` tree will be executed in post-order (i.e. left -> right -> root).
+        /// The `executionData` tree will be executed in post-order (i.e. left -> right -> current).
         /// The `encodedSubUserOps` are included in the EIP-712 signature.
         bytes[] encodedSubUserOps;
     }
@@ -153,7 +153,7 @@ contract EntryPoint is
     /// @dev No revert has been encountered.
     error NoRevertEncountered();
 
-    /// @dev A sub UserOp's EOA must be the same as its envelop UserOp's eoa.
+    /// @dev A sub UserOp's EOA must be the same as its parent UserOp's eoa.
     error InvalidSubUserOpEOA();
 
     /// @dev The sub UserOp cannot be verified to be correct.
@@ -672,7 +672,7 @@ contract EntryPoint is
     }
 
     /// @dev Loops over the `encodedSubUserOps` and does the following for each sub UserOp:
-    /// - Check that the eoa is indeed the eoa of the envelop UserOp.
+    /// - Check that the eoa is indeed the eoa of the parent UserOp.
     /// - If there are any sub UserOp in a sub UserOp, recurse.
     /// - Validate the sub UserOp.
     /// - Check and increment the nonce of the sub UserOp.
