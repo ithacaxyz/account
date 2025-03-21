@@ -507,7 +507,7 @@ contract EntryPointTest is BaseTest {
 
             uSuperAdmin.executionData = abi.encode(calls);
             // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
-            uSuperAdmin.nonce = (0xc1d0 << 240) | (1 << 96);
+            uSuperAdmin.nonce = (0xc1d0 << 240) | (1 << 64);
 
             if (t.testPREP) {
                 uSuperAdmin.signature = _sig(t.kPREP, uSuperAdmin);
@@ -540,7 +540,7 @@ contract EntryPointTest is BaseTest {
 
             uSession.executionData = abi.encode(calls);
             // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
-            uSession.nonce = (0xc1d0 << 240) | (2 << 96);
+            uSession.nonce = (0xc1d0 << 240) | (2 << 64);
 
             uSession.signature = _sig(kSuperAdmin, uSession);
 
@@ -618,14 +618,15 @@ contract EntryPointTest is BaseTest {
             u.signature = _sig(kSession, u);
 
             assertEq(ep.execute{gas: t.gExecute}(abi.encode(u)), 0);
-            assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
-
-            return; // Skip the rest.
+        } else {
+            // Otherwise, test without gas estimation.
+            u.combinedGas = 10000000;
+            u.signature = _sig(kSession, u);
+            assertEq(ep.execute(abi.encode(u)), 0);
         }
 
-        u.combinedGas = 10000000;
-        u.signature = _sig(kSession, u);
-        assertEq(ep.execute(abi.encode(u)), 0);
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
+        assertEq(ep.getNonce(t.eoa, uint192(uSession.nonce >> 64)), uSession.nonce | 1);
+        assertEq(ep.getNonce(t.eoa, uint192(uSuperAdmin.nonce >> 64)), uSuperAdmin.nonce | 1);
     }
 }
