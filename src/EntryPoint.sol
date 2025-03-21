@@ -109,12 +109,14 @@ contract EntryPoint is
         /// and `saltAndDelegation` is `bytes32((uint256(salt) << 160) | uint160(delegation))`.
         bytes initData;
         /// @dev Optional array of encoded UserOps that will be verified and executed
-        /// after PREP (if any) and before the validation of the enveloping UserOp.
+        /// after PREP (if any) and before the validation of the envelop UserOp.
         /// A sub UserOp will NOT have its gas limit or payment applied.
-        /// Only the enveloping UserOp's gas limit and payment will be applied.
+        /// The root envelop UserOp's gas limit and payment will be applied, encompassing all its sub UserOps.
         /// The execution of a sub UserOp will check and increment the nonce in the sub UserOp.
         /// If at any point, any sub UserOp cannot be verified to be correct, or fails in execution,
-        /// the enveloping UserOp will revert completely.
+        /// the envelop UserOp will revert completely, and execute will return a non-zero error.
+        /// A sub UserOp can contain sub UserOps.
+        /// The `executionData` tree will be executed in post-order (i.e. left -> right -> root).
         bytes[] encodedSubUserOps;
     }
 
@@ -150,7 +152,7 @@ contract EntryPoint is
     /// @dev No revert has been encountered.
     error NoRevertEncountered();
 
-    /// @dev A sub UserOp's EOA must be the same as its enveloping UserOp's eoa.
+    /// @dev A sub UserOp's EOA must be the same as its envelop UserOp's eoa.
     error InvalidSubUserOpEOA();
 
     /// @dev The sub UserOp cannot be verified to be correct.
@@ -669,7 +671,7 @@ contract EntryPoint is
     }
 
     /// @dev Loops over the `encodedSubUserOps` and does the following for each sub UserOp:
-    /// - Check that the eoa is indeed the eoa of the enveloping UserOp.
+    /// - Check that the eoa is indeed the eoa of the envelop UserOp.
     /// - If there are any sub UserOp in a sub UserOp, recurse.
     /// - Validate the sub UserOp.
     /// - Check and increment the nonce of the sub UserOp.
