@@ -117,6 +117,7 @@ contract EntryPoint is
         /// the envelop UserOp will revert completely, and execute will return a non-zero error.
         /// A sub UserOp can contain sub UserOps.
         /// The `executionData` tree will be executed in post-order (i.e. left -> right -> root).
+        /// The `encodedSubUserOps` are included in the EIP-712 signature.
         bytes[] encodedSubUserOps;
     }
 
