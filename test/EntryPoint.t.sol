@@ -436,4 +436,197 @@ contract EntryPointTest is BaseTest {
         gUsed = uint256(LibBytes.load(rD, 0x04));
         err = bytes4(LibBytes.load(rD, 0x24));
     }
+
+    struct _TestAuthorizeWithPreOpsAndTransferTemps {
+        uint256 gExecute;
+        uint256 gCombined;
+        uint256 gUsed;
+        bool success;
+        bytes result;
+        bool testInvalidPreOpEOA;
+        bool testPreOpVerificationError;
+        bool testPreOpCallError;
+        bool testPREP;
+        PassKey kPREP;
+        DelegatedEOA d;
+        address eoa;
+    }
+
+    function testAuthorizeWithPreOpsAndTransfer(bytes32) public {
+        _TestAuthorizeWithPreOpsAndTransferTemps memory t;
+        EntryPoint.UserOp memory u;
+
+        if (_randomChance(2)) {
+            t.d = _randomEIP7702DelegatedEOA();
+            t.eoa = t.d.eoa;
+        } else {
+            t.kPREP = _randomSecp256r1PassKey();
+            t.kPREP.k.isSuperAdmin = true;
+
+            ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
+            initCalls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, t.kPREP.k);
+
+            bytes32 saltAndDelegation;
+            (saltAndDelegation, t.eoa) = _minePREP(_computePREPDigest(initCalls));
+            u.initData = abi.encode(initCalls, abi.encodePacked(saltAndDelegation));
+
+            vm.etch(t.eoa, abi.encodePacked(hex"ef0100", delegation));
+
+            t.testPREP = true;
+        }
+
+        u.eoa = t.eoa;
+
+        paymentToken.mint(u.eoa, 2 ** 128 - 1);
+        u.paymentToken = address(paymentToken);
+        u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
+        u.paymentMaxAmount = u.paymentAmount;
+        u.nonce = 0xc1d0 << 240;
+
+        PassKey memory kSuperAdmin = _randomSecp256r1PassKey();
+        PassKey memory kSession = _randomSecp256r1PassKey();
+
+        kSuperAdmin.k.isSuperAdmin = true;
+
+        EntryPoint.UserOp memory uSuperAdmin;
+        EntryPoint.UserOp memory uSession;
+
+        uSuperAdmin.eoa = t.eoa;
+        uSession.eoa = t.eoa;
+
+        if (_randomChance(64)) {
+            uSession.eoa = address(0);
+            t.testInvalidPreOpEOA = true;
+        }
+
+        u.encodedPreOps = new bytes[](2);
+        // Prepare super admin passkey authorization UserOp.
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, kSuperAdmin.k);
+
+            uSuperAdmin.executionData = abi.encode(calls);
+            // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
+            uSuperAdmin.nonce = (0xc1d0 << 240) | (1 << 64);
+
+            if (t.testPREP) {
+                uSuperAdmin.signature = _sig(t.kPREP, uSuperAdmin);
+            } else {
+                uSuperAdmin.signature = _eoaSig(t.d.privateKey, uSuperAdmin);
+            }
+        }
+
+        // Prepare session passkey authorization UserOp.
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](3);
+            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, kSession.k);
+            // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
+            calls[1].data = abi.encodeWithSelector(
+                GuardedExecutor.setCanExecute.selector,
+                kSession.keyHash,
+                _ANY_TARGET,
+                _ANY_FN_SEL,
+                true
+            );
+            // Set some spend limits.
+            calls[2] = _setSpendLimitCall(
+                kSession, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
+            );
+
+            if (_randomChance(64)) {
+                calls[0].value = 1 ether;
+                t.testPreOpCallError = true;
+            }
+
+            uSession.executionData = abi.encode(calls);
+            // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
+            uSession.nonce = (0xc1d0 << 240) | (2 << 64);
+
+            uSession.signature = _sig(kSuperAdmin, uSession);
+
+            if (_randomChance(64)) {
+                uSession.signature = _sig(_randomSecp256r1PassKey(), uSession);
+                u.encodedPreOps[1] = abi.encode(uSession);
+                t.testPreOpVerificationError = true;
+            }
+        }
+
+        // Prepare the enveloping UserOp.
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            calls[0] = _transferCall(address(paymentToken), address(0xabcd), 0.5 ether);
+
+            u.executionData = abi.encode(calls);
+            u.nonce = 0;
+
+            u.encodedPreOps[0] = abi.encode(uSuperAdmin);
+            u.encodedPreOps[1] = abi.encode(uSession);
+        }
+
+        if (t.testInvalidPreOpEOA) {
+            u.combinedGas = 10000000;
+            u.signature = _sig(kSession, u);
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("InvalidPreOpEOA()")));
+            return; // Skip the rest.
+        }
+
+        if (t.testPreOpVerificationError) {
+            u.combinedGas = 10000000;
+            u.signature = _sig(kSession, u);
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("PreOpVerificationError()")));
+            return; // Skip the rest.
+        }
+
+        if (t.testPreOpCallError) {
+            u.combinedGas = 10000000;
+            u.signature = _sig(kSession, u);
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("PreOpCallError()")));
+            return; // Skip the rest.
+        }
+
+        // Test recursive style.
+        if (_randomChance(8)) {
+            uSession.encodedPreOps = new bytes[](1);
+            uSession.encodedPreOps[0] = abi.encode(uSuperAdmin);
+            uSession.signature = _sig(kSuperAdmin, uSession);
+
+            u.encodedPreOps = new bytes[](1);
+            u.encodedPreOps[0] = abi.encode(uSession);
+        }
+
+        // Test gas estimation.
+        if (_randomChance(16)) {
+            // Fill with some junk signature, but with the session `keyHash`.
+            u.signature =
+                abi.encodePacked(keccak256("a"), keccak256("b"), kSession.keyHash, uint8(0));
+
+            (t.success, t.result) =
+                address(ep).call(abi.encodeWithSignature("simulateExecute(bytes)", abi.encode(u)));
+
+            assertFalse(t.success);
+            assertEq(bytes4(LibBytes.load(t.result, 0x00)), EntryPoint.SimulationResult.selector);
+
+            t.gExecute = uint256(LibBytes.load(t.result, 0x04));
+            t.gCombined = uint256(LibBytes.load(t.result, 0x24));
+            t.gUsed = uint256(LibBytes.load(t.result, 0x44));
+            emit LogUint("gExecute", t.gExecute);
+            emit LogUint("gCombined", t.gCombined);
+            emit LogUint("gUsed", t.gUsed);
+            assertEq(bytes4(LibBytes.load(t.result, 0x64)), 0);
+
+            u.combinedGas = t.gCombined;
+            u.signature = _sig(kSession, u);
+
+            assertEq(ep.execute{gas: t.gExecute}(abi.encode(u)), 0);
+        } else {
+            // Otherwise, test without gas estimation.
+            u.combinedGas = 10000000;
+            u.signature = _sig(kSession, u);
+            assertEq(ep.execute(abi.encode(u)), 0);
+        }
+
+        assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
+        assertEq(ep.getNonce(t.eoa, uint192(uSession.nonce >> 64)), uSession.nonce | 1);
+        assertEq(ep.getNonce(t.eoa, uint192(uSuperAdmin.nonce >> 64)), uSuperAdmin.nonce | 1);
+    }
 }

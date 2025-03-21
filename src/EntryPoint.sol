@@ -108,6 +108,18 @@ contract EntryPoint is
         /// where `calls` is of type `Call[]`,
         /// and `saltAndDelegation` is `bytes32((uint256(salt) << 160) | uint160(delegation))`.
         bytes initData;
+        /// @dev Optional array of encoded UserOps that will be verified and executed
+        /// after PREP (if any) and before the validation of the overall UserOp.
+        /// A PreOp will NOT have its gas limit or payment applied.
+        /// The overall UserOp's gas limit and payment will be applied, encompassing all its PreOps.
+        /// The execution of a PreOp will check and increment the nonce in the PreOp.
+        /// If at any point, any PreOp cannot be verified to be correct, or fails in execution,
+        /// the overall UserOp will revert before validation, and execute will return a non-zero error.
+        /// A PreOp can contain PreOps, forming a tree structure.
+        /// The `executionData` tree will be executed in post-order (i.e. left -> right -> current).
+        /// The `encodedPreOps` are included in the EIP-712 signature, which enables execution order
+        /// to be enforced on-the-fly even if the nonces are from different sequences.
+        bytes[] encodedPreOps;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -142,6 +154,15 @@ contract EntryPoint is
     /// @dev No revert has been encountered.
     error NoRevertEncountered();
 
+    /// @dev A sub UserOp's EOA must be the same as its parent UserOp's eoa.
+    error InvalidPreOpEOA();
+
+    /// @dev The sub UserOp cannot be verified to be correct.
+    error PreOpVerificationError();
+
+    /// @dev Error calling the sub UserOp's `executionData`.
+    error PreOpCallError();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -163,7 +184,7 @@ contract EntryPoint is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant USER_OP_TYPEHASH = keccak256(
-        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas)Call(address target,uint256 value,bytes data)"
+        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas,bytes[] encodedPreOps)Call(address target,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
@@ -605,6 +626,8 @@ contract EntryPoint is
                 }
             }
         }
+        // Handle the sub UserOps after the PREP (if any), and before the `_verify`.
+        if (u.encodedPreOps.length != 0) _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
 
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the delegation logic.
@@ -646,6 +669,57 @@ contract EntryPoint is
                 return(0x00, 0x20) // Return the `err`.
             }
             return(0x60, 0x20) // If all success, returns with zero `err`.
+        }
+    }
+
+    /// @dev Loops over the `encodedPreOps` and does the following for each sub UserOp:
+    /// - Check that the eoa is indeed the eoa of the parent UserOp.
+    /// - If there are any sub UserOp in a sub UserOp, recurse.
+    /// - Validate the sub UserOp.
+    /// - Check and increment the nonce of the sub UserOp.
+    /// - Call the Delegation with `executionData` in the sub UserOp, using the ERC7821 batch-execution mode.
+    ///   If the call fails, revert.
+    /// - Emit an {UserOpExecuted} event.
+    function _handlePreOps(address eoa, uint256 simulationFlags, bytes[] calldata encodedPreOps)
+        internal
+        virtual
+    {
+        for (uint256 i; i < encodedPreOps.length; ++i) {
+            UserOp calldata u = _extractUserOp(encodedPreOps[i]);
+            if (eoa != u.eoa) revert InvalidPreOpEOA();
+
+            // The order is exactly the same as `selfCallPayVerifyCall537021665`:
+            // Recurse -> Verify -> Increment nonce -> Call eoa.
+            if (u.encodedPreOps.length != 0) _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
+
+            (bool isValid, bytes32 keyHash) = _verify(u);
+            if (!isValid) if (simulationFlags & 1 == 0) revert PreOpVerificationError();
+
+            LibNonce.checkAndIncrement(_getEntryPointStorage().nonceSeqs[eoa], u.nonce);
+
+            // This part is same as `selfCallPayVerifyCall537021665`. We simply inline to save gas.
+            bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
+                hex"01000000000078210001", // ERC7821 batch execution mode.
+                u.executionData,
+                abi.encode(keyHash) // `opData`.
+            );
+            // This part is slightly different from `selfCallPayVerifyCall537021665`.
+            // It always reverts on failure.
+            assembly ("memory-safe") {
+                mstore(0x00, 0) // Zeroize the return slot.
+                if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
+                    // If this is a simulation via `simulateFailed`, bubble up the whole revert.
+                    if and(simulationFlags, 2) {
+                        returndatacopy(mload(0x40), 0x00, returndatasize())
+                        revert(mload(0x40), returndatasize())
+                    }
+                    if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x253e076a)) } // `PreOpCallError()`.
+                    revert(0x00, 0x20) // Revert the `err` (NOT return).
+                }
+            }
+            // Event so that indexers can know that the nonce is used.
+            // Reaching here means there's no error in the PreOp.
+            emit UserOpExecuted(eoa, u.nonce, true, 0); // `incremented = true`, `err = 0`.
         }
     }
 
@@ -794,7 +868,7 @@ contract EntryPoint is
         }
         bool isMultichain = u.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(10);
+        bytes32[] memory f = EfficientHashLib.malloc(11);
         f.set(0, USER_OP_TYPEHASH);
         f.set(1, LibBit.toUint(isMultichain));
         f.set(2, uint160(u.eoa));
@@ -805,8 +879,23 @@ contract EntryPoint is
         f.set(7, u.paymentMaxAmount);
         f.set(8, u.paymentPerGas);
         f.set(9, u.combinedGas);
+        f.set(10, _encodedPreOpsHash(u.encodedPreOps));
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
+    }
+
+    /// @dev Helper function to return the hash of the `encodedPreOps`.
+    function _encodedPreOpsHash(bytes[] calldata encodedPreOps)
+        internal
+        view
+        virtual
+        returns (bytes32)
+    {
+        bytes32[] memory a = EfficientHashLib.malloc(encodedPreOps.length);
+        for (uint256 i; i < encodedPreOps.length; ++i) {
+            a.set(i, EfficientHashLib.hashCalldata(encodedPreOps[i]));
+        }
+        return a.hash();
     }
 
     receive() external payable virtual {}
