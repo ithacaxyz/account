@@ -118,7 +118,7 @@ contract EntryPoint is
         /// A PreOp can contain PreOps, forming a tree structure.
         /// The `executionData` tree will be executed in post-order (i.e. left -> right -> current).
         /// The `encodedPreOps` are included in the EIP-712 signature, which enables execution order
-        /// to be enforced on-the-fly even if the nonces from different sequences.
+        /// to be enforced on-the-fly even if the nonces are from different sequences.
         bytes[] encodedPreOps;
     }
 
