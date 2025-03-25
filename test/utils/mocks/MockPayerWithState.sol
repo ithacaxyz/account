@@ -6,20 +6,35 @@ import {Ownable} from "solady/auth/Ownable.sol";
 
 /// @dev WARNING! This mock is strictly intended for testing purposes only.
 /// Do NOT copy anything here into production code unless you really know what you are doing.
-contract MockPayer is Ownable {
+contract MockPayerWithState is Ownable {
     // `token` => `eoa` => `amount`.
     mapping(address => mapping(address => uint256)) public funds;
 
     mapping(address => bool) public isApprovedEntryPoint;
 
+    event FundsIncreased(address token, address eoa, uint256 amount);
+
+    event Compensated(
+        address paymentToken,
+        address paymentRecipient,
+        uint256 paymentAmount,
+        address eoa,
+        bytes32 userOpDigest,
+        bytes paymentSignature
+    );
+
     constructor() {
         _initializeOwner(msg.sender);
     }
 
+    /// @dev `address(0)` denotes native token (i.e. Ether).
+    /// This function assumes that tokens have already been deposited prior.
     function increaseFunds(address token, address eoa, uint256 amount) public onlyOwner {
         funds[token][eoa] += amount;
+        emit FundsIncreased(token, eoa, amount);
     }
 
+    /// @dev `address(0)` denotes native token (i.e. Ether).
     function withdrawTokens(address token, address recipient, uint256 amount)
         public
         virtual
@@ -32,7 +47,6 @@ contract MockPayer is Ownable {
         isApprovedEntryPoint[entryPoint] = approved;
     }
 
-    /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
     function compensate(
         address paymentToken,
         address paymentRecipient,
@@ -42,10 +56,15 @@ contract MockPayer is Ownable {
         bytes calldata paymentSignature
     ) public virtual {
         if (!isApprovedEntryPoint[msg.sender]) revert Unauthorized();
-        TokenTransferLib.safeTransfer(paymentToken, paymentRecipient, paymentAmount);
+        // We shall rely on arithmetic underflow error to revert if there's insufficient funds.
         funds[paymentToken][eoa] -= paymentAmount;
-        // Silence unused variables warning.
-        paymentSignature = paymentSignature; // Unused, since we depend on the `funds` mapping.
-        userOpDigest = userOpDigest; // Unused, since we depend on the `funds` mapping.
+        TokenTransferLib.safeTransfer(paymentToken, paymentRecipient, paymentAmount);
+        // Emit the event for debugging.
+        // The `userOpDigest` and `paymentSignature` are not used.
+        emit Compensated(
+            paymentToken, paymentRecipient, paymentAmount, eoa, userOpDigest, paymentSignature
+        );
     }
+
+    receive() external payable {}
 }

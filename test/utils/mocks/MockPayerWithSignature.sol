@@ -7,12 +7,21 @@ import {ECDSA} from "solady/utils/ECDSA.sol";
 
 /// @dev WARNING! This mock is strictly intended for testing purposes only.
 /// Do NOT copy anything here into production code unless you really know what you are doing.
-contract MockSignaturePayer is Ownable {
+contract MockPayerWithSignature is Ownable {
     error InvalidSignature();
 
     address public signer;
 
     mapping(address => bool) public isApprovedEntryPoint;
+
+    event Compensated(
+        address paymentToken,
+        address paymentRecipient,
+        uint256 paymentAmount,
+        address eoa,
+        bytes32 userOpDigest,
+        bytes paymentSignature
+    );
 
     constructor() {
         _initializeOwner(msg.sender);
@@ -26,6 +35,7 @@ contract MockSignaturePayer is Ownable {
         isApprovedEntryPoint[entryPoint] = approved;
     }
 
+    /// @dev `address(0)` denote native token (i.e. Ether).
     function withdrawTokens(address token, address recipient, uint256 amount)
         public
         virtual
@@ -45,18 +55,21 @@ contract MockSignaturePayer is Ownable {
     ) public virtual {
         if (!isApprovedEntryPoint[msg.sender]) revert Unauthorized();
         TokenTransferLib.safeTransfer(paymentToken, paymentRecipient, paymentAmount);
-        if (ECDSA.recoverCalldata(computeSignatureDigest(userOpDigest), paymentSignature) != signer)
-        {
+        bytes32 digest = computeSignatureDigest(userOpDigest);
+        if (ECDSA.recoverCalldata(digest, paymentSignature) != signer) {
             revert InvalidSignature();
         }
-        // Silence unused variables warning.
-        eoa = eoa; // The EOA is already hashed into `userOpDigest`.
-            // Note that paymentSignature already includes a nonce which is
-            // guaranteed to be invalidated the the payment is not reverted.
+        // Emit the event for debugging.
+        // The `eoa` is not used.
+        emit Compensated(
+            paymentToken, paymentRecipient, paymentAmount, eoa, userOpDigest, paymentSignature
+        );
     }
 
     function computeSignatureDigest(bytes32 userOpDigest) public view returns (bytes32) {
         // We shall just use this simplified hash instead of EIP712.
         return keccak256(abi.encode(userOpDigest, block.chainid, address(this)));
     }
+
+    receive() external payable {}
 }
