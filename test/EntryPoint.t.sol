@@ -706,10 +706,12 @@ contract EntryPointTest is BaseTest {
             assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("PaymentError()")));
             assertEq(ep.getNonce(u.eoa, 0), u.nonce);
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
+            assertEq(_balanceOf(address(0), address(0xabcd)), 0);
         } else {
             assertEq(ep.execute(abi.encode(u)), 0);
             assertEq(ep.getNonce(u.eoa, 0), u.nonce + 1);
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.paymentAmount);
+            assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
         }
     }
 }
