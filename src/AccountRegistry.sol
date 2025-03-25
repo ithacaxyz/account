@@ -52,16 +52,20 @@ contract AccountRegistry {
         }
     }
 
-    /// @dev Returns the state of a given ID, including the data and accounts.
-    /// @param id ID to lookup.
-    function idInfo(address id)
+    /// @dev Returns the state of given IDs, including the data and accounts.
+    /// @param ids Array of IDs to lookup.
+    function idInfos(address[] calldata ids)
         public
         view
-        returns (bytes memory data, address[] memory accounts)
+        returns (bytes[] memory datas, address[][] memory accounts)
     {
-        StoredAccounts storage storedAccounts = _getAccountRegistryStorage().accounts[id];
-        data = storedAccounts.data;
-        accounts = storedAccounts.accounts.values();
+        datas = new bytes[](ids.length);
+        accounts = new address[][](ids.length);
+        for (uint256 i = 0; i < ids.length; i++) {
+            StoredAccounts storage storedAccounts = _getAccountRegistryStorage().accounts[ids[i]];
+            datas[i] = storedAccounts.data;
+            accounts[i] = storedAccounts.accounts.values();
+        }
     }
 
     /// @dev Registers a new ID with the given `data` and `account`.
