@@ -714,5 +714,4 @@ contract EntryPointTest is BaseTest {
             assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
         }
     }
-
 }
