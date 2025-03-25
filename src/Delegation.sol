@@ -493,10 +493,15 @@ contract Delegation is EIP712, GuardedExecutor {
         address paymentToken,
         address paymentRecipient,
         uint256 paymentAmount,
-        address eoa
+        address eoa,
+        bytes32 userOpDigest,
+        bytes calldata paymentSignature
     ) public virtual {
         if (!LibBit.and(msg.sender == ENTRY_POINT, eoa == address(this))) revert Unauthorized();
         TokenTransferLib.safeTransfer(paymentToken, paymentRecipient, paymentAmount);
+        // Silence unused variables warning.
+        userOpDigest = userOpDigest;
+        paymentSignature = paymentSignature;
     }
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.

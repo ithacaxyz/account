@@ -75,7 +75,7 @@ contract EntryPoint is
         /// This nonce is a 4337-style 2D nonce with some specializations:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
         ///   The upper 16 bits of the `seqKey` is `MULTICHAIN_NONCE_PREFIX`,
-        ///   then the UserOp EIP-712 hash will exclude the chain ID.
+        ///   then the UserOp EIP712 hash will exclude the chain ID.
         /// - Lower 64 bits are used for the sequential nonce corresponding to the `seqKey`.
         uint256 nonce;
         /// @dev The account paying the payment token.
@@ -117,9 +117,12 @@ contract EntryPoint is
         /// the overall UserOp will revert before validation, and execute will return a non-zero error.
         /// A PreOp can contain PreOps, forming a tree structure.
         /// The `executionData` tree will be executed in post-order (i.e. left -> right -> current).
-        /// The `encodedPreOps` are included in the EIP-712 signature, which enables execution order
+        /// The `encodedPreOps` are included in the EIP712 signature, which enables execution order
         /// to be enforced on-the-fly even if the nonces are from different sequences.
         bytes[] encodedPreOps;
+        /// @dev Optional payment signature to be passed into the `compensate` function
+        /// on the `payer`. This signature is NOT included in the EIP712 signature.
+        bytes paymentSignature;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -194,7 +197,7 @@ contract EntryPoint is
     /// @dev For EIP712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
 
-    /// @dev Nonce prefix to signal that the payload is to be signed with EIP-712 without the chain ID.
+    /// @dev Nonce prefix to signal that the payload is to be signed with EIP712 without the chain ID.
     /// This constant is a pun for "chain ID 0".
     uint16 public constant MULTICHAIN_NONCE_PREFIX = 0xc1d0;
 
@@ -634,14 +637,14 @@ contract EntryPoint is
         // Off-chain simulation of `_verify` should suffice, provided that the eoa's
         // delegation is not changed, and the `keyHash` is not revoked
         // in the window between off-chain simulation and on-chain execution.
-        (bool isValid, bytes32 keyHash) = _verify(u);
+        (bool isValid, bytes32 keyHash, bytes32 digest) = _verify(u);
         if (!isValid) if (simulationFlags & 1 == 0) revert VerificationError();
 
         // If `_pay` fails, just revert.
         // Off-chain simulation of `_pay` should suffice,
         // provided that the token balance does not decrease in the window between
         // off-chain simulation and on-chain execution.
-        if (u.paymentAmount != 0) _pay(u);
+        if (u.paymentAmount != 0) _pay(u, digest);
 
         // Once the payment has been made, the nonce must be invalidated.
         // Otherwise, an attacker can keep replaying the UserOp to take payment and drain the user.
@@ -692,7 +695,7 @@ contract EntryPoint is
             // Recurse -> Verify -> Increment nonce -> Call eoa.
             if (u.encodedPreOps.length != 0) _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
 
-            (bool isValid, bytes32 keyHash) = _verify(u);
+            (bool isValid, bytes32 keyHash,) = _verify(u);
             if (!isValid) if (simulationFlags & 1 == 0) revert PreOpVerificationError();
 
             LibNonce.checkAndIncrement(_getEntryPointStorage().nonceSeqs[eoa], u.nonce);
@@ -784,7 +787,7 @@ contract EntryPoint is
 
     /// @dev Makes the `eoa` perform a payment to the `entryPoint`.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
-    function _pay(UserOp calldata u) internal virtual {
+    function _pay(UserOp calldata u, bytes32 digest) internal virtual {
         uint256 paymentAmount = u.paymentAmount;
         address paymentToken = u.paymentToken;
         uint256 requiredBalanceAfter = Math.saturatingAdd(
@@ -795,23 +798,19 @@ contract EntryPoint is
         if (paymentAmount > u.paymentMaxAmount) {
             revert PaymentError();
         }
+        bytes calldata paymentSignature = u.paymentSignature;
         assembly ("memory-safe") {
             let m := mload(0x40) // Cache the free memory pointer.
-            mstore(m, 0x56298c98) // `compensate(address,address,uint256,address)`.
+            mstore(m, 0xf5f996bd) // `compensate(address,address,uint256,address,bytes32,bytes)`.
             mstore(add(m, 0x20), shr(96, shl(96, paymentToken)))
             mstore(add(m, 0x40), address())
             mstore(add(m, 0x60), paymentAmount)
             mstore(add(m, 0x80), shr(96, shl(96, eoa)))
-            // Copy the entire `encodedUserOp` to the end of the calldata, in case `payer` needs
-            // bespoke logic to validate the payment.
-            // The UserOp can be retrieved via assembly: `userOp := add(0x84, calldataload(0x84))`.
-            // This pattern is extremely efficient, as it avoids unnecessary decoding of UserOp args.
-            // It is also extremely flexible, allowing multiple variants of UserOps to be supported.
-            // Additionally, `encodedUserOp` can be abused to add additional data, e.g.:
-            // `encodedUserOp = abi.encode(userOp, someCustomStructForThePayer)`.
-            let n := sub(calldatasize(), 0x04)
-            calldatacopy(add(m, 0xa0), 0x04, n)
-            pop(call(gas(), payer, 0, add(m, 0x1c), add(0x84, n), 0x00, 0x00))
+            mstore(add(m, 0xa0), digest)
+            mstore(add(m, 0xc0), 0xc0)
+            mstore(add(m, 0xe0), paymentSignature.length)
+            calldatacopy(add(m, 0x100), paymentSignature.offset, paymentSignature.length)
+            pop(call(gas(), payer, 0, add(m, 0x1c), add(0xe4, paymentSignature.length), 0x00, 0x00))
         }
         if (TokenTransferLib.balanceOf(paymentToken, address(this)) < requiredBalanceAfter) {
             revert PaymentError();
@@ -823,7 +822,7 @@ contract EntryPoint is
         internal
         view
         virtual
-        returns (bool isValid, bytes32 keyHash)
+        returns (bool isValid, bytes32 keyHash, bytes32 digest)
     {
         bytes calldata sig = u.signature;
         address eoa = u.eoa;
@@ -831,7 +830,7 @@ contract EntryPoint is
         // we do it on the EntryPoint for efficiency and maintainability. Validating the
         // a single bytes32 digest avoids having to pass in the entire UserOp. Additionally,
         // the delegation does not need to know anything about the UserOp structure.
-        bytes32 digest = _computeDigest(u);
+        digest = _computeDigest(u);
         assembly ("memory-safe") {
             let m := mload(0x40)
             mstore(m, 0x0cef73b4) // `unwrapAndValidateSignature(bytes32,bytes)`.
