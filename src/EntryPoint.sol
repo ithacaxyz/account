@@ -496,16 +496,10 @@ contract EntryPoint is
             if (combinedGasOverride >> 255 != 0) return (0, 0);
         }
 
-        // If it's a gas simulation, just perform the check to include the gas required for the check.
-        if (LibBit.or(u.supportedDelegationImplementation != address(0), isGasSimulation != 0)) {
-            (, address implementation) = LibEIP7702.delegationAndImplementationOf(u.eoa);
-            // Don't revert if it is a gas simulation.
-            if (
-                LibBit.and(
-                    implementation != u.supportedDelegationImplementation, isGasSimulation == 0
-                )
-            ) {
-                err = UnsupportedDelegationImplementation.selector;
+        if (u.supportedDelegationImplementation != address(0)) {
+            if (delegationImplementationOf(u.eoa) != u.supportedDelegationImplementation) {
+                // Don't revert if it is a gas simulation.
+                if (isGasSimulation == 0) err = UnsupportedDelegationImplementation.selector;
             }
         }
 
@@ -747,6 +741,17 @@ contract EntryPoint is
             // Reaching here means there's no error in the PreOp.
             emit UserOpExecuted(eoa, u.nonce, true, 0); // `incremented = true`, `err = 0`.
         }
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // Delegation Implementation
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Returns the implementation of the EOA.
+    /// If the EOA's delegation's is not valid EIP7702Proxy (via bytecode check), returns `address(0)`.
+    /// This function is provided as a public helper for easier integration.
+    function delegationImplementationOf(address eoa) public view virtual returns (address result) {
+        (, result) = LibEIP7702.delegationAndImplementationOf(eoa);
     }
 
     ////////////////////////////////////////////////////////////////////////
