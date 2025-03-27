@@ -54,7 +54,7 @@ contract EntryPoint is
     /// @dev This has the same layout as the ERC7579's execution struct.
     struct Call {
         /// @dev The call target.
-        address target;
+        address to;
         /// @dev Amount of native value to send to the target.
         uint256 value;
         /// @dev The calldata bytes.
@@ -187,7 +187,7 @@ contract EntryPoint is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant USER_OP_TYPEHASH = keccak256(
-        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas,bytes[] encodedPreOps)Call(address target,uint256 value,bytes data)"
+        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas,bytes[] encodedPreOps)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
