@@ -44,7 +44,7 @@ library LibPREP {
 
     /// @dev Returns if `target` is a PREP.
     function isPREP(address target, bytes32 r) internal view returns (bool) {
-        address delegation = LibEIP7702.delegation(target);
+        address delegation = LibEIP7702.delegationOf(target);
         return !LibBit.or(delegation == address(0), r == 0) && isValid(target, r, delegation);
     }
 }
