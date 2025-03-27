@@ -4,6 +4,7 @@ pragma solidity ^0.8.23;
 import {AccountRegistry} from "./AccountRegistry.sol";
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
+import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
 import {ReentrancyGuardTransient} from "solady/utils/ReentrancyGuardTransient.sol";
@@ -123,6 +124,10 @@ contract EntryPoint is
         /// @dev Optional payment signature to be passed into the `compensate` function
         /// on the `payer`. This signature is NOT included in the EIP712 signature.
         bytes paymentSignature;
+        /// @dev Optional. If non-zero, the EOA must use `supportedDelegationImplementation`.
+        /// Otherwise, if left as `address(0)`, any EOA implementation will be supported.
+        /// This field is NOT included in the EIP712 signature.
+        address supportedDelegationImplementation;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -165,6 +170,9 @@ contract EntryPoint is
 
     /// @dev Error calling the sub UserOp's `executionData`.
     error PreOpCallError();
+
+    /// @dev The EOA's delegation implementation is not supported.
+    error UnsupportedDelegationImplementation();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -472,18 +480,33 @@ contract EntryPoint is
         uint256 g = Math.coalesce(uint96(combinedGasOverride), u.combinedGas);
         uint256 gStart = gasleft();
 
+        // The bit at `1 << 254` denotes if this is a gas simulation.
+        uint256 isGasSimulation = (combinedGasOverride >> 254) & 1;
         unchecked {
             // Check if there's sufficient gas left for the gas-limited self calls
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
             if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
-                // Don't revert if the bit at `1 << 254` is set. For `simulateExecute2` to be able to
+                // Don't revert if it is a gas simulation. For `simulateExecute2` to be able to
                 // get a simulation before knowing how much gas is needed without reverting.
-                if ((combinedGasOverride >> 254) & 1 == 0) revert InsufficientGas();
+                if (isGasSimulation == 0) revert InsufficientGas();
             }
             // If the bit at `1 << 255` is set, this means `simulateExecute2` just wants
             // to check the 63/64 rule, so early return to skip the rest of the computations.
             if (combinedGasOverride >> 255 != 0) return (0, 0);
+        }
+
+        // If it's a gas simulation, just perform the check to include the gas required for the check.
+        if (LibBit.or(u.supportedDelegationImplementation != address(0), isGasSimulation != 0)) {
+            (, address implementation) = LibEIP7702.delegationAndImplementationOf(u.eoa);
+            // Don't revert if it is a gas simulation.
+            if (
+                LibBit.and(
+                    implementation != u.supportedDelegationImplementation, isGasSimulation == 0
+                )
+            ) {
+                err = UnsupportedDelegationImplementation.selector;
+            }
         }
 
         address payer = Math.coalesce(u.payer, u.eoa);
@@ -506,7 +529,7 @@ contract EntryPoint is
                 mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
                 // The word after the function selector contains the simulation flags.
                 // If `flags & 1 != 0`, it means it's a gas simulation.
-                mstore(add(m, 0x20), shr(254, combinedGasOverride))
+                mstore(add(m, 0x20), isGasSimulation)
                 mstore(0x00, 0) // Zeroize the return slot.
 
                 // To prevent griefing, we need to do a non-reverting gas-limited self call.
