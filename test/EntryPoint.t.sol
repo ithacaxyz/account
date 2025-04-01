@@ -714,4 +714,48 @@ contract EntryPointTest is BaseTest {
             assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
         }
     }
+
+    struct _TestDelegationImplementationVerificationTemps {
+        bool testImplementationCheck;
+        bool requireWrongImplementation;
+        DelegatedEOA d;
+    }
+
+    function testDelegationImplementationVerification(bytes32) public {
+        _TestDelegationImplementationVerificationTemps memory t;
+        t.d = _randomEIP7702DelegatedEOA();
+        t.testImplementationCheck = _randomChance(2);
+        t.requireWrongImplementation = _randomChance(2);
+
+        EntryPoint.UserOp memory u;
+        vm.deal(t.d.eoa, type(uint192).max);
+
+        u.eoa = t.d.eoa;
+        u.nonce = ep.getNonce(u.eoa, 0);
+        u.combinedGas = 1000000;
+        u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
+        u.signature = _eoaSig(t.d.privateKey, u);
+
+        if (t.testImplementationCheck) {
+            if (t.requireWrongImplementation) {
+                u.supportedDelegationImplementation = _randomUniqueHashedAddress();
+            } else {
+                u.supportedDelegationImplementation = ep.delegationImplementationOf(u.eoa);
+                assertEq(u.supportedDelegationImplementation, delegationImplementation);
+            }
+        }
+
+        if (t.testImplementationCheck && t.requireWrongImplementation) {
+            assertEq(
+                ep.execute(abi.encode(u)),
+                bytes4(keccak256("UnsupportedDelegationImplementation()"))
+            );
+            assertEq(ep.getNonce(u.eoa, 0), u.nonce);
+            assertEq(_balanceOf(address(0), address(0xabcd)), 0);
+        } else {
+            assertEq(ep.execute(abi.encode(u)), 0);
+            assertEq(ep.getNonce(u.eoa, 0), u.nonce + 1);
+            assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
+        }
+    }
 }
