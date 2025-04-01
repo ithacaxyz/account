@@ -44,7 +44,7 @@ contract LibPREPTest is BaseTest {
 
         t.x = _randomUniform();
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
-        calls[0].target = address(sampleTarget);
+        calls[0].to = address(sampleTarget);
         calls[0].data = abi.encodeWithSelector(SampleTarget.setX.selector, t.x);
 
         u.nonce = 0xc1d0 << 240;

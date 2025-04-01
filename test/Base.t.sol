@@ -273,10 +273,10 @@ contract BaseTest is SoladyTest {
         returns (ERC7821.Call memory c)
     {
         if (token == address(0)) {
-            c.target = to;
+            c.to = to;
             c.value = amount;
         } else {
-            c.target = token;
+            c.to = token;
             c.data = abi.encodeWithSignature("transfer(address,uint256)", to, amount);
         }
     }
@@ -315,7 +315,7 @@ contract BaseTest is SoladyTest {
         view
         returns (ERC7821.Call memory c)
     {
-        c.target = address(this);
+        c.to = address(this);
         c.value = value;
         c.data = abi.encodeWithSignature("targetFunction(bytes)", data);
     }
@@ -340,7 +340,7 @@ contract BaseTest is SoladyTest {
         returns (bytes memory)
     {
         ERC7821.Call memory c;
-        c.target = target;
+        c.to = target;
         c.value = value;
         c.data = data;
         return _encode(c);
@@ -391,7 +391,7 @@ contract BaseTest is SoladyTest {
             a[i] = keccak256(
                 abi.encode(
                     keccak256("Call(address to,uint256 value,bytes data)"),
-                    bytes32(uint256(uint160(calls[i].target))),
+                    bytes32(uint256(uint160(calls[i].to))),
                     bytes32(calls[i].value),
                     keccak256(calls[i].data)
                 )
