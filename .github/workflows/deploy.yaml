@@ -24,41 +24,49 @@ jobs:
           PRIVATE_KEY: ${{ secrets.deployer }}
         # TODO: remove the --evm-version argument once https://github.com/blockscout/blockscout/pull/12115 is released.
         run: |
+          echo "Deploying all contracts" && \
+          forge clean && \
+          forge build && \
           forge script DeployAllScript \
             --rpc-url "https://odyssey.ithaca.xyz" \
             --broadcast -q --verify --verifier blockscout \
             --verifier-url "https://odyssey-explorer.ithaca.xyz/api" \
-            --evm-version cancun
-
-          # Print addresses.
-          jq -r '.transactions[].additionalContracts | 
-            "EntryPoint: " + .[0].address, 
-            "Delegation: "  + .[1].address, 
-            "EIP7702Proxy: " + .[2].address' \
-            broadcast/DeployAll.s.sol/911867/run-latest.json
-
-          # Build the EIP7702Proxy with exact bytecode for verification.
-          cp lib/solady/src/accounts/EIP7702Proxy.sol src/EIP7702Proxy.sol
-          forge clean
-          forge build --use=0.8.28 --optimizer-runs=200 --evm-version=cancun
-
-          # Prepare constructor args for EIP7702Proxy verification.
-          DELEGATION_ADDRESS=$(jq -r '.transactions[].additionalContracts[1].address' broadcast/DeployAll.s.sol/911867/run-latest.json | sed 's/^0x//')
-          CONSTRUCTOR_ARGS="0x000000000000000000000000${DELEGATION_ADDRESS}0000000000000000000000000000000000000000000000000000000000000000"
-
-          # Verify the EIP7702Proxy.
-          EIP7702PROXY_ADDRESS=$(jq -r '.transactions[].additionalContracts[2].address' broadcast/DeployAll.s.sol/911867/run-latest.json)
-
-          forge verify-contract "$EIP7702PROXY_ADDRESS" \
+            --evm-version cancun && \
+          jq -r '.transactions[].additionalContracts | "EntryPoint: " + .[0].address, "Delegation: "  + .[1].address, "EIP7702Proxy: " + .[2].address'  broadcast/DeployAll.s.sol/911867/run-latest.json && \
+          \
+          echo "Verifying EntryPoint" && \
+          forge verify-contract $(jq -r '.transactions[].additionalContracts | .[0].address' broadcast/DeployAll.s.sol/911867/run-latest.json) \
+            DeployAllScript \
+            --chain odyssey \
+            --skip-is-verified-check \
+            --verifier blockscout \
+            --verifier-url "https://odyssey-explorer.ithaca.xyz/api" && \
+          \
+          echo "Verifying Delegation" && \
+          forge verify-contract $(jq -r '.transactions[].additionalContracts | .[1].address' broadcast/DeployAll.s.sol/911867/run-latest.json) \
+            DeployAllScript \
+            --chain odyssey \
+            --skip-is-verified-check \
+            --verifier blockscout \
+            --verifier-url "https://odyssey-explorer.ithaca.xyz/api" && \
+          \
+          echo "Compiling EIP7702Proxy fixed bytecode" && \
+          forge clean && \
+          forge build && \
+          cp lib/solady/src/accounts/EIP7702Proxy.sol src/EIP7702Proxy.sol && \
+          forge build --use=0.8.28 --optimizer-runs=200 --evm-version=cancun && \
+          \
+          echo "Verifying EIP7702Proxy" && \
+          forge verify-contract $(jq -r '.transactions[].additionalContracts | .[2].address' broadcast/DeployAll.s.sol/911867/run-latest.json)  \
             "src/EIP7702Proxy.sol:EIP7702Proxy" \
             --compiler-version=0.8.28 \
             --optimizer-runs=200 \
             --evm-version=cancun \
-            --constructor-args "$CONSTRUCTOR_ARGS" \
+            --constructor-args $(jq -r '.transactions[].additionalContracts | .[1].address' broadcast/DeployAll.s.sol/911867/run-latest.json | sed 's/^0x//' | xargs -I{} printf '0x000000000000000000000000%s0000000000000000000000000000000000000000000000000000000000000000' {}) \
             --chain odyssey \
             --skip-is-verified-check \
             --verifier blockscout \
-            --verifier-url "https://odyssey-explorer.ithaca.xyz/api"
-
-          # EIP7702Proxy verification cleanup.
+            --verifier-url "https://odyssey-explorer.ithaca.xyz/api" && \
+          \
+          echo "Cleaning up EIP7702Proxy verification" && \
           rm src/EIP7702Proxy.sol
