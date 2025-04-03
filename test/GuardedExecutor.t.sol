@@ -166,7 +166,10 @@ contract GuardedExecutorTest is BaseTest {
 
             u.nonce = ep.getNonce(u.eoa, 0);
             u.signature = _sig(kRegular, u);
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("Unauthorized()")));
+            assertEq(
+                ep.execute(abi.encode(u)),
+                bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)"))
+            );
             assertEq(d.d.x(), 0);
 
             d.d.resetX();

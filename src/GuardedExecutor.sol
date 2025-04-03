@@ -74,6 +74,9 @@ abstract contract GuardedExecutor is ERC7821 {
     /// @dev Unauthorized to perform the action.
     error Unauthorized();
 
+    /// @dev Not authorized to perform the call.
+    error UnauthorizedCall(bytes32 keyHash, address target, bytes data);
+
     /// @dev Exceeded the spend limit.
     error ExceededSpendLimit();
 
@@ -316,7 +319,7 @@ abstract contract GuardedExecutor is ERC7821 {
         virtual
         override
     {
-        if (!canExecute(keyHash, target, data)) revert Unauthorized();
+        if (!canExecute(keyHash, target, data)) revert UnauthorizedCall(keyHash, target, data);
         ERC7821._execute(target, value, data, keyHash);
     }
 
