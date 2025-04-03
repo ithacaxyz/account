@@ -1,9 +1,7 @@
 ## Deployments
 
-EntryPoint (proxy):
+EntryPoint: https://odyssey-explorer.ithaca.xyz/address/0xc5685fc47d3a4a16dc27d74a2cbdb7c3efad0e7b
 
-https://odyssey-explorer.ithaca.xyz/address/0x307AF7d28AfEE82092aA95D35644898311CA5360
+Delegation: https://odyssey-explorer.ithaca.xyz/address/0x75858070a540369d2e40281c0841576aef04725e
 
-Delegation (proxy):
-
-https://odyssey-explorer.ithaca.xyz/address/0x839569e0ab2a9CCd648f350Cde00958D81d1F729
+EIP7702Proxy: https://odyssey-explorer.ithaca.xyz/address/0xcd2ee3b97cbb5a03e1662021ce7ae4d81f370b91
