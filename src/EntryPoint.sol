@@ -852,7 +852,7 @@ contract EntryPoint is
         bytes32[] memory a = EfficientHashLib.malloc(pointers.length);
         unchecked {
             for (uint256 i; i != pointers.length; ++i) {
-                (address target, uint256 value, bytes calldata data) = pointers.getExecution(i);
+                (address to, uint256 value, bytes calldata data) = pointers.getExecution(i);
                 a.set(
                     i,
                     EfficientHashLib.hash(
