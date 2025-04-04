@@ -13,7 +13,7 @@ contract SimulateExecuteTest is BaseTest {
         gasBurner = new MockGasBurner();
     }
 
-    struct _SimulateExecute2Temps {
+    struct _SimulateExecuteTemps {
         uint256 gasToBurn;
         uint256 randomness;
         uint256 gExecute;
@@ -32,12 +32,69 @@ contract SimulateExecuteTest is BaseTest {
         return _bound(_random(), 0, 10000);
     }
 
-    function testSimulateExecute2WithEOAKey(bytes32) public {
+    function testSimulateExecuteNoRevert() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+
+        paymentToken.mint(d.eoa, type(uint128).max);
+
+        _SimulateExecuteTemps memory t;
+
+        gasBurner.setRandomness(1); // Warm the storage first.
+
+        t.gasToBurn = _gasToBurn();
+        do {
+            t.randomness = _randomUniform();
+        } while (t.randomness == 0);
+        emit LogUint("gasToBurn", t.gasToBurn);
+
+        t.executionData = _executionData(
+            address(gasBurner),
+            abi.encodeWithSignature("burnGas(uint256,uint256)", t.gasToBurn, t.randomness)
+        );
+
+        EntryPoint.UserOp memory u;
+        u.eoa = d.eoa;
+        u.nonce = 0;
+        u.executionData = t.executionData;
+        u.payer = address(0x00);
+        u.paymentToken = address(paymentToken);
+        u.paymentRecipient = address(0x00);
+        u.paymentAmount = 0x112233112233112233112233;
+        u.paymentMaxAmount = 0x445566445566445566445566;
+        u.paymentPerGas = 1;
+
+        {
+            // Just pass in a junk secp256k1 signature.
+            (uint8 v, bytes32 r, bytes32 s) =
+                vm.sign(uint128(_randomUniform()), bytes32(_randomUniform()));
+            u.signature = abi.encodePacked(r, s, v);
+        }
+
+        address maxBalanceCaller = _randomUniqueHashedAddress();
+        vm.deal(maxBalanceCaller, type(uint256).max);
+        vm.prank(maxBalanceCaller);
+        (t.success, t.result) =
+            address(ep).call(abi.encodeWithSignature("simulateExecute(bytes)", abi.encode(u)));
+
+        assertTrue(t.success);
+
+        t.gExecute = uint256(LibBytes.load(t.result, 0x00));
+        t.gCombined = uint256(LibBytes.load(t.result, 0x20));
+        t.gUsed = uint256(LibBytes.load(t.result, 0x40));
+        emit LogUint("gExecute", t.gExecute);
+        emit LogUint("gCombined", t.gCombined);
+        emit LogUint("gUsed", t.gUsed);
+        assertEq(bytes4(LibBytes.load(t.result, 0x60)), 0);
+
+        assertEq(gasBurner.randomness(), t.randomness);
+    }
+
+    function testSimulateExecuteWithEOAKey(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         paymentToken.mint(d.eoa, 500 ether);
 
-        _SimulateExecute2Temps memory t;
+        _SimulateExecuteTemps memory t;
 
         gasBurner.setRandomness(1); // Warm the storage first.
 
@@ -91,7 +148,7 @@ contract SimulateExecuteTest is BaseTest {
         assertEq(gasBurner.randomness(), t.randomness);
     }
 
-    function testSimulateExecute2WithPassKey(bytes32) public {
+    function testSimulateExecuteWithPassKey(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         vm.deal(d.eoa, 10 ether);
@@ -103,7 +160,7 @@ contract SimulateExecuteTest is BaseTest {
         vm.prank(d.eoa);
         d.d.authorize(k.k);
 
-        _SimulateExecute2Temps memory t;
+        _SimulateExecuteTemps memory t;
 
         t.gasToBurn = _gasToBurn();
         do {

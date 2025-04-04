@@ -433,8 +433,9 @@ contract EntryPointTest is BaseTest {
         internal
         returns (uint256 gUsed, bytes4 err)
     {
-        (, bytes memory rD) =
-            address(ep).call(abi.encodePacked(bytes4(0xffffffff), uint256(0), abi.encode(u)));
+        (, bytes memory rD) = address(ep).call(
+            abi.encodePacked(bytes4(0xffffffff), uint256(0), uint256(0), abi.encode(u))
+        );
         gUsed = uint256(LibBytes.load(rD, 0x04));
         err = bytes4(LibBytes.load(rD, 0x24));
     }
