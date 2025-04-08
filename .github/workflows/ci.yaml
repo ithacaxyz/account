@@ -30,3 +30,7 @@ jobs:
       - name: Run tests
         run: |
           forge test -vvv
+
+      - name: Run tests (odyssey)
+        run: |
+          forge test -vvv --odyssey

@@ -55,7 +55,7 @@ contract EntryPoint is
     /// @dev This has the same layout as the ERC7579's execution struct.
     struct Call {
         /// @dev The call target.
-        address target;
+        address to;
         /// @dev Amount of native value to send to the target.
         uint256 value;
         /// @dev The calldata bytes.
@@ -131,6 +131,19 @@ contract EntryPoint is
     }
 
     ////////////////////////////////////////////////////////////////////////
+    // UserOp Offets
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Offset of `paymentAmount` in the UserOp struct.
+    uint256 internal constant _USER_OP_PAYMENT_AMOUNT_OFFSET = 6 * 0x20;
+
+    /// @dev Offset of `paymentMaxAmount` in the UserOp struct.
+    uint256 internal constant _USER_OP_PAYMENT_MAX_AMOUNT_OFFSET = 7 * 0x20;
+
+    /// @dev Offset of `paymentPerGas` in the UserOp struct.
+    uint256 internal constant _USER_OP_PAYMENT_PER_GAS_OFFSET = 8 * 0x20;
+
+    ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
 
@@ -195,12 +208,11 @@ contract EntryPoint is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant USER_OP_TYPEHASH = keccak256(
-        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas,bytes[] encodedPreOps)Call(address target,uint256 value,bytes data)"
+        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 paymentPerGas,uint256 combinedGas,bytes[] encodedPreOps)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
-    bytes32 public constant CALL_TYPEHASH =
-        keccak256("Call(address target,uint256 value,bytes data)");
+    bytes32 public constant CALL_TYPEHASH = keccak256("Call(address to,uint256 value,bytes data)");
 
     /// @dev For EIP712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
@@ -316,14 +328,20 @@ contract EntryPoint is
     ///     `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
     ///     The `keyHash` is required for triggering to validation and GuardedExecutor
     ///     code paths for that particular `keyHash`.
-    ///   For most accurate metering, the signatures should be actual signatures,
-    ///   but signed by a different private key of the same key type.
-    ///   For simulations, we want to avoid early returns for trivially invalid signatures.
-    function simulateExecute(bytes calldata encodedUserOp) public payable virtual {
-        uint256 gExecute = gasleft();
-        uint256 gCombined;
-        uint256 gUsed;
-        bytes4 err;
+    /// - For most accurate metering:
+    ///   - UserOp should have a payment amount greater than 0.
+    ///   - The signatures should be actual signatures,
+    ///     but signed by a different private key of the same key type.
+    ///     For simulations, we want to avoid early returns for trivially invalid signatures.
+    /// - To enable this function to return instead of reverting, for `eth_simulateV1`,
+    ///   use a state override to set `msg.sender.balance` to `type(uint256).max`.
+    function simulateExecute(bytes calldata encodedUserOp)
+        public
+        payable
+        virtual
+        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed, bytes4 err)
+    {
+        gExecute = gasleft();
         assembly ("memory-safe") {
             function callSimulateExecute(g_, data_) -> _success {
                 calldatacopy(0x00, calldatasize(), 0x40) // Zeroize the memory for the return data.
@@ -334,11 +352,15 @@ contract EntryPoint is
                 mstore(0x00, 0x234e352e) // `SimulateExecuteFailed()`.
                 revert(0x1c, 0x04)
             }
+            function saturatingMul(x_, y_) -> _z {
+                _z := or(sub(or(iszero(x_), eq(div(mul(x_, y_), x_), y_)), 1), mul(x_, y_))
+            }
             // `abi.encodePacked(bytes4(0xffffffff), combinedGasOverride, encodedUserOp)`.
             let data := mload(0x40)
             mstore(add(data, 0x04), 0xffffffff) // `selfCallSimulateExecute565348489()`.
-            calldatacopy(add(data, 0x44), encodedUserOp.offset, encodedUserOp.length)
-            mstore(data, add(0x24, encodedUserOp.length)) // Store `data.length`.
+            mstore(add(data, 0x44), 0) // `noRevertCaller`.
+            calldatacopy(add(data, 0x64), encodedUserOp.offset, encodedUserOp.length)
+            mstore(data, add(0x44, encodedUserOp.length)) // Store `data.length`.
 
             // Setting the bit at `1 << 254` tells `_execute` that we want the
             // simulation to skip the invalid signature revert and also the 63/64 rule revert.
@@ -378,8 +400,35 @@ contract EntryPoint is
                 // function dispatch between `execute` and `simulateExecute`.
                 gExecute := add(gExecute, 500)
             }
+            // If `msg.sender.balance < type(uint256).max`, revert.
+            if add(balance(caller()), 1) {
+                mstore(data, 0xe33c2c73) // `SimulationResult(uint256,uint256,uint256,bytes4)`.
+                mstore(add(data, 0x20), gExecute)
+                mstore(add(data, 0x40), gCombined)
+                mstore(add(data, 0x60), gUsed)
+                mstore(add(data, 0x80), err)
+                revert(add(data, 0x1c), 0x84)
+            }
+
+            // Execute one final time without reverting.
+            // This allows `eth_simulateV1` to collect all logs from the execution.
+            mstore(add(data, 0x24), or(shl(254, 1), 0xffffffffffffffffffffffff))
+            mstore(add(data, 0x44), caller()) // `noRevertCaller`.
+
+            // Because `encodedUserOp` is in the calldata, we have to do a self call to
+            // `selfCallSimulateExecute565348489` to replace the `paymentAmount` and `paymentMaxAmount`.
+            // While it is technically possible to modify `_pay` and `_execute` to support a
+            // payment override, it incurs runtime gas costs.
+            let o := add(data, 0x64)
+            let u := add(o, mload(o)) // Start of the UserOp in memory.
+            let paymentPerGas := mload(add(u, _USER_OP_PAYMENT_PER_GAS_OFFSET))
+            let paymentOverride := saturatingMul(paymentPerGas, gCombined)
+            mstore(add(u, _USER_OP_PAYMENT_AMOUNT_OFFSET), paymentOverride)
+            mstore(add(u, _USER_OP_PAYMENT_MAX_AMOUNT_OFFSET), paymentOverride)
+            if iszero(call(gas(), address(), 0, add(data, 0x20), mload(data), 0x00, 0x00)) {
+                revertSimulateExecuteFailed()
+            }
         }
-        revert SimulationResult(gExecute, gCombined, gUsed, err);
     }
 
     /// @dev This function is intended for self-call via `simulateExecute`.
@@ -408,8 +457,8 @@ contract EntryPoint is
         uint256 combinedGasOverride;
         assembly ("memory-safe") {
             combinedGasOverride := calldataload(0x04)
-            encodedUserOp.offset := 0x24
-            encodedUserOp.length := sub(calldatasize(), 0x24)
+            encodedUserOp.offset := 0x44
+            encodedUserOp.length := sub(calldatasize(), 0x44)
         }
         uint256 gUsed;
         bytes4 err;
@@ -420,8 +469,14 @@ contract EntryPoint is
         } else {
             (gUsed, err) = _execute(encodedUserOp, combinedGasOverride);
         }
-        // Revert with `abi.encodePacked(bytes4(0xffffffff), abi.encode(gUsed, err))`.
         assembly ("memory-safe") {
+            let noRevertCaller := calldataload(0x24)
+            if noRevertCaller {
+                // Revert if not via self-call, or `noRevertCaller.balance != type(uint256).max`.
+                if or(xor(caller(), address()), add(balance(noRevertCaller), 1)) { invalid() }
+                stop() // Return with zero data.
+            }
+            // Revert with `abi.encodePacked(bytes4(0xffffffff), abi.encode(gUsed, err))`.
             mstore(0x00, not(0)) // `0xffffffff`.
             mstore(0x04, gUsed)
             mstore(0x24, shl(224, shr(224, err))) // Clean the lower bytes of `err` word.
@@ -954,7 +1009,7 @@ contract EntryPoint is
         returns (string memory name, string memory version)
     {
         name = "EntryPoint";
-        version = "0.0.1";
+        version = "0.0.2";
     }
 
     ////////////////////////////////////////////////////////////////////////

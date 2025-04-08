@@ -13,3 +13,9 @@ broadcast/
 # Create2 build files
 .tmp
 create2
+
+# NodeJS files
+node_modules/
+coverage
+coverage.json
+typechain

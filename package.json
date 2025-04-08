@@ -1,0 +1,9 @@
+{
+  "name": "porto-account",
+  "version": "0.0.2",
+  "description": "EIP-7702 account for Ithaca Porto",
+  "license": "MIT",
+  "devDependencies": {
+    "@changesets/cli": "^2.28.1"
+  }
+}

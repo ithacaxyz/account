@@ -129,11 +129,11 @@ contract GuardedExecutorTest is BaseTest {
             uint256 x = _randomUniform() | 1;
 
             ERC7821.Call[] memory innerCalls = new ERC7821.Call[](1);
-            innerCalls[0].target = address(0);
+            innerCalls[0].to = address(0);
             innerCalls[0].data = abi.encodeWithSelector(MockDelegation.setX.selector, x);
 
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
-            calls[0].target = i == 0 ? address(d.eoa) : address(0);
+            calls[0].to = i == 0 ? address(d.eoa) : address(0);
             calls[0].data = abi.encodeWithSelector(
                 Delegation.execute.selector, _ERC7821_BATCH_EXECUTION_MODE, abi.encode(innerCalls)
             );
@@ -166,7 +166,10 @@ contract GuardedExecutorTest is BaseTest {
 
             u.nonce = ep.getNonce(u.eoa, 0);
             u.signature = _sig(kRegular, u);
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("Unauthorized()")));
+            assertEq(
+                ep.execute(abi.encode(u)),
+                bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)"))
+            );
             assertEq(d.d.x(), 0);
 
             d.d.resetX();
@@ -602,7 +605,7 @@ contract GuardedExecutorTest is BaseTest {
                 address token = tokens[_randomUniform() % tokens.length];
                 uint256 amount = _bound(_randomUniform(), 0, 0.000001 ether);
                 if (token != address(0) && _randomChance(4)) {
-                    calls[i].target = token;
+                    calls[i].to = token;
                     calls[i].data = abi.encodeWithSignature(
                         "approve(address,uint256)", address(0xb0b), _random()
                     );
@@ -610,7 +613,7 @@ contract GuardedExecutorTest is BaseTest {
                     continue;
                 }
                 if (token != address(0) && _randomChance(4)) {
-                    calls[i].target = _PERMIT2;
+                    calls[i].to = _PERMIT2;
                     calls[i].data = abi.encodeWithSignature(
                         "approve(address,address,uint160,uint48)",
                         token,
