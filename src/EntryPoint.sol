@@ -482,7 +482,7 @@ contract EntryPoint is
             if noRevertCaller {
                 // Revert if not via self-call, or `noRevertCaller.balance != type(uint256).max`.
                 if or(xor(caller(), address()), add(balance(noRevertCaller), 1)) { invalid() }
-                stop()
+                stop() // Return with zero data.
             }
             // Revert with `abi.encodePacked(bytes4(0xffffffff), abi.encode(gUsed, err))`.
             mstore(0x00, not(0)) // `0xffffffff`.
