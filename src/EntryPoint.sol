@@ -190,12 +190,12 @@ contract EntryPoint is
     /// The new available nonce will be `nonce + 1`.
     event NonceInvalidated(address indexed eoa, uint256 nonce);
 
-    /// @dev Emitted when a UserOp is executed.
+    /// @dev Emitted when a UserOp (including PreOp) is executed.
     /// This event is emitted in the `execute` function.
     /// - `incremented` denotes that `nonce`'s sequence has been incremented to invalidate `nonce`,
     /// - `err` denotes the resultant error selector.
     /// If `incremented` is true and `err` is non-zero, the UserOp was successful.
-    /// For PreOps where the nonce is skipped, this event will NOT be emitted..
+    /// For PreOps where the nonce is skipped, this event will NOT be emitted.
     event UserOpExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
 
     ////////////////////////////////////////////////////////////////////////
