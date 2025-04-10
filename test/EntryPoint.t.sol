@@ -494,7 +494,6 @@ contract EntryPointTest is BaseTest {
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](5);
             calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, kSession.k);
-            // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
             calls[1].data = abi.encodeWithSelector(
                 GuardedExecutor.setCanExecute.selector,
                 kSession.keyHash,
@@ -504,7 +503,6 @@ contract EntryPointTest is BaseTest {
                     : _ANY_FN_SEL,
                 true
             );
-            // Set some spend limits.
             calls[2] = _setSpendLimitCall(
                 kSession, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
             );
