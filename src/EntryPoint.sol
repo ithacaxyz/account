@@ -13,9 +13,11 @@ import {LibBytes} from "solady/utils/LibBytes.sol";
 import {LibStorage} from "solady/utils/LibStorage.sol";
 import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
-import {TokenTransferLib} from "./TokenTransferLib.sol";
-import {LibPREP} from "./LibPREP.sol";
-import {LibNonce} from "./LibNonce.sol";
+import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
+import {LibNonce} from "./libraries/LibNonce.sol";
+import {LibPREP} from "./libraries/LibPREP.sol";
+import {UserOp} from "./structs/Common.sol";
+import {IDelegation} from "./interfaces/IDelegation.sol";
 
 /// @title EntryPoint
 /// @notice Enables atomic verification, gas compensation and execution across eoas.
@@ -46,84 +48,6 @@ contract EntryPoint is
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
-
-    ////////////////////////////////////////////////////////////////////////
-    // Data Structures
-    ////////////////////////////////////////////////////////////////////////
-
-    /// @dev This has the same layout as the ERC7579's execution struct.
-    struct Call {
-        /// @dev The call target.
-        address to;
-        /// @dev Amount of native value to send to the target.
-        uint256 value;
-        /// @dev The calldata bytes.
-        bytes data;
-    }
-
-    /// @dev A struct to hold the user operation fields.
-    /// Since L2s already include calldata compression with savings forwarded to users,
-    /// we don't need to be too concerned about calldata overhead.
-    struct UserOp {
-        /// @dev The user's address.
-        address eoa;
-        /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
-        /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
-        /// This allows for more efficient safe forwarding to the EOA.
-        bytes executionData;
-        /// @dev Per delegated EOA.
-        /// This nonce is a 4337-style 2D nonce with some specializations:
-        /// - Upper 192 bits are used for the `seqKey` (sequence key).
-        ///   The upper 16 bits of the `seqKey` is `MULTICHAIN_NONCE_PREFIX`,
-        ///   then the UserOp EIP712 hash will exclude the chain ID.
-        /// - Lower 64 bits are used for the sequential nonce corresponding to the `seqKey`.
-        uint256 nonce;
-        /// @dev The account paying the payment token.
-        /// If this is `address(0)`, it defaults to the `eoa`.
-        address payer;
-        /// @dev The ERC20 or native token used to pay for gas.
-        address paymentToken;
-        /// @dev The payment recipient for the ERC20 token.
-        /// Excluded from signature. The filler can replace this with their own address.
-        /// This enables multiple fillers, allowing for competitive filling, better uptime.
-        /// If `address(0)`, the payment will be accrued by the entry point.
-        address paymentRecipient;
-        /// @dev The amount of the token to pay.
-        /// Excluded from signature. This will be required to be less than `paymentMaxAmount`.
-        uint256 paymentAmount;
-        /// @dev The maximum amount of the token to pay.
-        uint256 paymentMaxAmount;
-        /// @dev The amount of ERC20 to pay per gas spent. For calculation of refunds.
-        /// If this is left at zero, it will be treated as infinity (i.e. no refunds).
-        uint256 paymentPerGas;
-        /// @dev The combined gas limit for payment, verification, and calling the EOA.
-        uint256 combinedGas;
-        /// @dev The wrapped signature.
-        /// `abi.encodePacked(innerSignature, keyHash, prehash)`.
-        bytes signature;
-        /// @dev Optional data for `initPREP` on the delegation.
-        /// This is encoded using ERC7821 style batch execution encoding.
-        /// (ERC7821 is a variant of ERC7579).
-        /// `abi.encode(calls, abi.encodePacked(bytes32(saltAndDelegation)))`,
-        /// where `calls` is of type `Call[]`,
-        /// and `saltAndDelegation` is `bytes32((uint256(salt) << 160) | uint160(delegation))`.
-        bytes initData;
-        /// @dev Optional array of encoded UserOps that will be verified and executed
-        /// after PREP (if any) and before the validation of the overall UserOp.
-        /// A PreOp will NOT have its gas limit or payment applied.
-        /// The overall UserOp's gas limit and payment will be applied, encompassing all its PreOps.
-        /// The execution of a PreOp will check and increment the nonce in the PreOp.
-        /// If at any point, any PreOp cannot be verified to be correct, or fails in execution,
-        /// the overall UserOp will revert before validation, and execute will return a non-zero error.
-        /// A PreOp can contain PreOps, forming a tree structure.
-        /// The `executionData` tree will be executed in post-order (i.e. left -> right -> current).
-        /// The `encodedPreOps` are included in the EIP712 signature, which enables execution order
-        /// to be enforced on-the-fly even if the nonces are from different sequences.
-        bytes[] encodedPreOps;
-        /// @dev Optional payment signature to be passed into the `compensate` function
-        /// on the `payer`. This signature is NOT included in the EIP712 signature.
-        bytes paymentSignature;
-    }
 
     ////////////////////////////////////////////////////////////////////////
     // Errors
@@ -819,34 +743,20 @@ contract EntryPoint is
     /// @dev Makes the `eoa` perform a payment to the `entryPoint`.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
     function _pay(UserOp calldata u, bytes32 keyHash, bytes32 digest) internal virtual {
-        uint256 paymentAmount = u.paymentAmount;
-        address paymentToken = u.paymentToken;
         uint256 requiredBalanceAfter = Math.saturatingAdd(
-            TokenTransferLib.balanceOf(paymentToken, address(this)), paymentAmount
+            TokenTransferLib.balanceOf(u.paymentToken, address(this)), u.paymentAmount
         );
-        address eoa = u.eoa;
-        address payer = Math.coalesce(u.payer, eoa);
-        if (paymentAmount > u.paymentMaxAmount) {
+
+        address payer = Math.coalesce(u.payer, u.eoa);
+        if (u.paymentAmount > u.paymentMaxAmount) {
             revert PaymentError();
         }
-        bytes calldata paymentSignature = u.paymentSignature;
-        assembly ("memory-safe") {
-            let m := mload(0x40) // Cache the free memory pointer.
-            mstore(m, 0xce835432) // `compensate(address,address,uint256,address,bytes32,bytes32,bytes)`.
-            mstore(add(m, 0x20), shr(96, shl(96, paymentToken)))
-            mstore(add(m, 0x40), address())
-            mstore(add(m, 0x60), paymentAmount)
-            mstore(add(m, 0x80), shr(96, shl(96, eoa)))
-            mstore(add(m, 0xa0), keyHash)
-            mstore(add(m, 0xc0), digest)
-            mstore(add(m, 0xe0), 0xe0)
-            mstore(add(m, 0x100), paymentSignature.length)
-            calldatacopy(add(m, 0x120), paymentSignature.offset, paymentSignature.length)
-            pop(
-                call(gas(), payer, 0, add(m, 0x1c), add(0x104, paymentSignature.length), 0x00, 0x00)
-            )
-        }
-        if (TokenTransferLib.balanceOf(paymentToken, address(this)) < requiredBalanceAfter) {
+
+        // TODO: Optimize
+        // Call the pay function on the delegation contract
+        IDelegation(payer).pay(false, keyHash, u);
+
+        if (TokenTransferLib.balanceOf(u.paymentToken, address(this)) < requiredBalanceAfter) {
             revert PaymentError();
         }
     }

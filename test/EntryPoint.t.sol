@@ -10,7 +10,7 @@ import {MockPayerWithSignature} from "./utils/mocks/MockPayerWithSignature.sol";
 
 contract EntryPointTest is BaseTest {
     struct _TestFullFlowTemps {
-        EntryPoint.UserOp[] userOps;
+        UserOp[] userOps;
         TargetFunctionPayload[] targetFunctionPayloads;
         DelegatedEOA[] delegatedEOAs;
         bytes[] encodedUserOps;
@@ -19,7 +19,7 @@ contract EntryPointTest is BaseTest {
     function testFullFlow(uint256) public {
         _TestFullFlowTemps memory t;
 
-        t.userOps = new EntryPoint.UserOp[](_random() & 3);
+        t.userOps = new UserOp[](_random() & 3);
         t.targetFunctionPayloads = new TargetFunctionPayload[](t.userOps.length);
         t.delegatedEOAs = new DelegatedEOA[](t.userOps.length);
         t.encodedUserOps = new bytes[](t.userOps.length);
@@ -28,7 +28,7 @@ contract EntryPointTest is BaseTest {
             DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
             t.delegatedEOAs[i] = d;
 
-            EntryPoint.UserOp memory u = t.userOps[i];
+            UserOp memory u = t.userOps[i];
             u.eoa = d.eoa;
 
             vm.deal(u.eoa, 2 ** 128 - 1);
@@ -68,7 +68,7 @@ contract EntryPointTest is BaseTest {
         bytes memory executionData =
             _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
 
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
         u.eoa = alice.eoa;
         u.nonce = 0;
         u.executionData = executionData;
@@ -99,7 +99,7 @@ contract EntryPointTest is BaseTest {
         vm.prank(d.eoa);
         d.d.authorize(k.k);
 
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
@@ -138,7 +138,7 @@ contract EntryPointTest is BaseTest {
         calls[0].to = target;
         calls[0].data = abi.encodeWithSignature("revertWithData(bytes)", data);
 
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = abi.encode(calls);
@@ -158,7 +158,7 @@ contract EntryPointTest is BaseTest {
 
         paymentToken.mint(d.eoa, 500 ether);
 
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
@@ -189,7 +189,7 @@ contract EntryPointTest is BaseTest {
             ds[i] = _randomEIP7702DelegatedEOA();
             paymentToken.mint(ds[i].eoa, 1 ether);
 
-            EntryPoint.UserOp memory u;
+            UserOp memory u;
             u.eoa = ds[i].eoa;
             u.nonce = 0;
             u.executionData =
@@ -225,7 +225,7 @@ contract EntryPointTest is BaseTest {
             calls[i] = _transferCall(address(paymentToken), address(0xabcd), 0.5 ether);
         }
 
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = abi.encode(calls);
@@ -250,7 +250,7 @@ contract EntryPointTest is BaseTest {
 
         paymentToken.mint(d.eoa, 500 ether);
 
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
@@ -269,7 +269,7 @@ contract EntryPointTest is BaseTest {
     }
 
     struct _TestFillTemps {
-        EntryPoint.UserOp userOp;
+        UserOp userOp;
         bytes32 orderId;
         TargetFunctionPayload targetFunctionPayload;
         uint256 privateKey;
@@ -283,7 +283,7 @@ contract EntryPointTest is BaseTest {
         t.orderId = bytes32(_random());
         {
             DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-            EntryPoint.UserOp memory u = t.userOp;
+            UserOp memory u = t.userOp;
             u.eoa = d.eoa;
             vm.deal(u.eoa, 2 ** 128 - 1);
             u.executionData = _thisTargetFunctionExecutionData(
@@ -327,7 +327,7 @@ contract EntryPointTest is BaseTest {
             paymentToken.mint(ds[i].eoa, 1 ether);
             vm.deal(ds[i].eoa, 1 ether);
 
-            EntryPoint.UserOp memory u;
+            UserOp memory u;
             u.eoa = ds[i].eoa;
             u.nonce = 0;
             u.executionData =
@@ -367,7 +367,7 @@ contract EntryPointTest is BaseTest {
         vm.prank(d.eoa);
         d.d.authorize(k.k);
 
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
         u.eoa = d.eoa;
         u.executionData = _executionData(address(0), 0, bytes(""));
         u.nonce = 0x2;
@@ -382,7 +382,7 @@ contract EntryPointTest is BaseTest {
 
     function testInvalidateNonce(uint96 seqKey, uint64 seq, uint64 seq2) public {
         uint256 nonce = (uint256(seqKey) << 64) | uint256(seq);
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         u.eoa = d.eoa;
 
@@ -430,10 +430,7 @@ contract EntryPointTest is BaseTest {
         }
     }
 
-    function _simulateExecute(EntryPoint.UserOp memory u)
-        internal
-        returns (uint256 gUsed, bytes4 err)
-    {
+    function _simulateExecute(UserOp memory u) internal returns (uint256 gUsed, bytes4 err) {
         (, bytes memory rD) = address(ep).call(
             abi.encodePacked(bytes4(0xffffffff), uint256(0), uint256(0), abi.encode(u))
         );
@@ -545,7 +542,7 @@ contract EntryPointTest is BaseTest {
 
     function testAuthorizeWithPreOpsAndTransfer(bytes32) public {
         _TestAuthorizeWithPreOpsAndTransferTemps memory t;
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
 
         if (_randomChance(2)) {
             t.d = _randomEIP7702DelegatedEOA();
@@ -579,8 +576,8 @@ contract EntryPointTest is BaseTest {
 
         kSuperAdmin.k.isSuperAdmin = true;
 
-        EntryPoint.UserOp memory uSuperAdmin;
-        EntryPoint.UserOp memory uSession;
+        UserOp memory uSuperAdmin;
+        UserOp memory uSession;
 
         uSuperAdmin.eoa = t.eoa;
         uSession.eoa = t.eoa;
@@ -752,7 +749,7 @@ contract EntryPointTest is BaseTest {
         t.token = _randomChance(2) ? address(0) : address(paymentToken);
         t.isWithState = _randomChance(2);
 
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
         t.d = _randomEIP7702DelegatedEOA();
         vm.deal(t.d.eoa, type(uint192).max);
 

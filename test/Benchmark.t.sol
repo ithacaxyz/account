@@ -221,7 +221,7 @@ contract BenchmarkTest is BaseTest {
 
         _giveAccountSomeTokens(d.eoa);
 
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.combinedGas = 1000000;
@@ -258,7 +258,7 @@ contract BenchmarkTest is BaseTest {
         d.d.setSpendLimit(k.keyHash, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether);
         vm.stopPrank();
 
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.combinedGas = 1000000;
