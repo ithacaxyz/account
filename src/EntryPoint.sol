@@ -199,7 +199,7 @@ contract EntryPoint is
     /// - `incremented` denotes that `nonce`'s sequence has been incremented to invalidate `nonce`,
     /// - `err` denotes the resultant error selector.
     /// If `incremented` is true and `err` is non-zero, the UserOp was successful.
-    /// For PreOps where the nonce is skipped, `nonce` will be set to `type(uint256).max`.
+    /// For PreOps where the nonce is skipped, this event will NOT be emitted..
     event UserOpExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
 
     ////////////////////////////////////////////////////////////////////////
@@ -747,7 +747,7 @@ contract EntryPoint is
     /// - Check and increment the nonce, if it is not `type(uint256).max`.
     /// - Call the Delegation with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
-    /// - Emit an {UserOpExecuted} event.
+    /// - Emit an {UserOpExecuted} event, if `nonce` is not `type(uint256).max`.
     function _handlePreOps(
         address parentEOA,
         uint256 simulationFlags,
@@ -771,7 +771,6 @@ contract EntryPoint is
             (bool isValid, bytes32 keyHash,) = _verify(u);
             if (!isValid) if (simulationFlags & 1 == 0) revert PreOpVerificationError();
 
-            // Only check and increment the nonce if it is not `type(uint256).max`.
             if (nonce != type(uint256).max) {
                 LibNonce.checkAndIncrement(_getEntryPointStorage().nonceSeqs[eoa], nonce);
             }
@@ -796,9 +795,12 @@ contract EntryPoint is
                     revert(0x00, 0x20) // Revert the `err` (NOT return).
                 }
             }
-            // Event so that indexers can know that the nonce is used.
-            // Reaching here means there's no error in the PreOp.
-            emit UserOpExecuted(eoa, nonce, true, 0); // `incremented = true`, `err = 0`.
+
+            if (nonce != type(uint256).max) {
+                // Event so that indexers can know that the nonce is used.
+                // Reaching here means there's no error in the PreOp.
+                emit UserOpExecuted(eoa, nonce, true, 0); // `incremented = true`, `err = 0`.
+            }
         }
     }
 
