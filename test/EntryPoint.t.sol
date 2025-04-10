@@ -450,6 +450,7 @@ contract EntryPointTest is BaseTest {
         bool testPreOpVerificationError;
         bool testPreOpCallError;
         bool testPREP;
+        bool testPurePreOps;
         PassKey kPREP;
         DelegatedEOA d;
         address eoa;
@@ -494,10 +495,14 @@ contract EntryPointTest is BaseTest {
         EntryPoint.UserOp memory uSuperAdmin;
         EntryPoint.UserOp memory uSession;
 
-        uSuperAdmin.eoa = t.eoa;
-        uSession.eoa = t.eoa;
+        if (_randomChance(2)) {
+            t.testPurePreOps = true;
+        } else {
+            uSuperAdmin.eoa = t.eoa;
+            uSession.eoa = t.eoa;
+        }
 
-        if (_randomChance(64)) {
+        if (_randomChance(64) && !t.testPurePreOps) {
             uSession.eoa = _randomUniqueHashedAddress();
             t.testInvalidPreOpEOA = true;
         }
@@ -629,8 +634,13 @@ contract EntryPointTest is BaseTest {
         }
 
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
-        assertEq(ep.getNonce(t.eoa, uint192(uSession.nonce >> 64)), uSession.nonce | 1);
-        assertEq(ep.getNonce(t.eoa, uint192(uSuperAdmin.nonce >> 64)), uSuperAdmin.nonce | 1);
+        if (t.testPurePreOps) {
+            assertEq(ep.getNonce(t.eoa, uint192(uSession.nonce >> 64)), uSession.nonce);
+            assertEq(ep.getNonce(t.eoa, uint192(uSuperAdmin.nonce >> 64)), uSuperAdmin.nonce);
+        } else {
+            assertEq(ep.getNonce(t.eoa, uint192(uSession.nonce >> 64)), uSession.nonce | 1);
+            assertEq(ep.getNonce(t.eoa, uint192(uSuperAdmin.nonce >> 64)), uSuperAdmin.nonce | 1);
+        }
     }
 
     struct _TestPayViaAnotherPayerTemps {

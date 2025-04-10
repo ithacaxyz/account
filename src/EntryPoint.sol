@@ -464,7 +464,8 @@ contract EntryPoint is
         bytes4 err;
         if (bytes32(combinedGasOverride) == bytes32("gVerify")) {
             uint256 gVerifyStart = gasleft();
-            _verify(_extractUserOp(encodedUserOp));
+            UserOp calldata u = _extractUserOp(encodedUserOp);
+            _verify(_computeDigest(u), u.eoa, u.signature);
             gUsed = Math.rawSub(gVerifyStart, gasleft());
         } else {
             (gUsed, err) = _execute(encodedUserOp, combinedGasOverride);
@@ -700,7 +701,8 @@ contract EntryPoint is
         // Off-chain simulation of `_verify` should suffice, provided that the eoa's
         // delegation is not changed, and the `keyHash` is not revoked
         // in the window between off-chain simulation and on-chain execution.
-        (bool isValid, bytes32 keyHash, bytes32 digest) = _verify(u);
+        bytes32 digest = _computeDigest(u);
+        (bool isValid, bytes32 keyHash) = _verify(digest, eoa, u.signature);
         if (!isValid) if (simulationFlags & 1 == 0) revert VerificationError();
 
         // If `_pay` fails, just revert.
@@ -768,7 +770,7 @@ contract EntryPoint is
             // Recurse -> Verify -> Increment nonce -> Call eoa.
             if (u.encodedPreOps.length != 0) _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
 
-            (bool isValid, bytes32 keyHash,) = _verify(u);
+            (bool isValid, bytes32 keyHash) = _verify(_computeDigest(u), eoa, u.signature);
             if (!isValid) if (simulationFlags & 1 == 0) revert PreOpVerificationError();
 
             if (nonce != type(uint256).max) {
@@ -896,19 +898,16 @@ contract EntryPoint is
     }
 
     /// @dev Calls `unwrapAndValidateSignature` on the `eoa`.
-    function _verify(UserOp calldata u)
+    function _verify(bytes32 digest, address eoa, bytes calldata sig)
         internal
         view
         virtual
-        returns (bool isValid, bytes32 keyHash, bytes32 digest)
+        returns (bool isValid, bytes32 keyHash)
     {
-        bytes calldata sig = u.signature;
-        address eoa = u.eoa;
         // While it is technically safe for the digest to be computed on the delegation,
         // we do it on the EntryPoint for efficiency and maintainability. Validating the
         // a single bytes32 digest avoids having to pass in the entire UserOp. Additionally,
         // the delegation does not need to know anything about the UserOp structure.
-        digest = _computeDigest(u);
         assembly ("memory-safe") {
             let m := mload(0x40)
             mstore(m, 0x0cef73b4) // `unwrapAndValidateSignature(bytes32,bytes)`.
