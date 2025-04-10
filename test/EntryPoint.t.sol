@@ -459,7 +459,7 @@ contract EntryPointTest is BaseTest {
         _TestAuthorizeWithPreOpsAndTransferTemps memory t;
         EntryPoint.UserOp memory u;
 
-        t.kPREP = _randomSecp256r1PassKey();
+        t.kPREP = _randomSecp256r1PassKey(); // This would be WebAuthn in practice.
         t.kPREP.k.isSuperAdmin = true;
 
         ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
