@@ -450,8 +450,8 @@ contract EntryPointTest is BaseTest {
         bool testPreOpVerificationError;
         bool testPreOpCallError;
         bool testPREP;
-        bool testPurePreOps;
-        bool testDirectSkipNonce;
+        bool testEOACoalesce;
+        bool testSkipNonce;
         uint192 superAdminNonceSeqKey;
         uint192 sessionNonceSeqKey;
         uint256 retrievedSuperAdminNonce;
@@ -501,18 +501,18 @@ contract EntryPointTest is BaseTest {
         EntryPoint.UserOp memory uSession;
 
         if (_randomChance(2)) {
-            t.testPurePreOps = true;
+            t.testEOACoalesce = true;
         } else {
             uSuperAdmin.eoa = t.eoa;
             uSession.eoa = t.eoa;
         }
 
-        if (_randomChance(64) && !t.testPurePreOps) {
+        if (_randomChance(64) && !t.testEOACoalesce) {
             uSession.eoa = _randomUniqueHashedAddress();
             t.testInvalidPreOpEOA = true;
         }
 
-        t.testDirectSkipNonce = _randomChance(2);
+        t.testSkipNonce = _randomChance(2);
 
         u.encodedPreOps = new bytes[](2);
         // Prepare super admin passkey authorization UserOp.
@@ -524,9 +524,8 @@ contract EntryPointTest is BaseTest {
             // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
             uSuperAdmin.nonce = (0xc1d0 << 240) | (1 << 64);
             t.superAdminNonceSeqKey = uint192(uSuperAdmin.nonce >> 64);
-            if (t.testPurePreOps && t.testDirectSkipNonce) {
+            if (t.testSkipNonce) {
                 uSuperAdmin.nonce = type(uint256).max;
-                if (_randomChance(2)) uSuperAdmin.eoa = t.eoa;
             }
 
             if (t.testPREP) {
@@ -562,9 +561,8 @@ contract EntryPointTest is BaseTest {
             // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
             uSession.nonce = (0xc1d0 << 240) | (2 << 64);
             t.sessionNonceSeqKey = uint192(uSession.nonce >> 64);
-            if (t.testPurePreOps && t.testDirectSkipNonce) {
+            if (t.testSkipNonce) {
                 uSession.nonce = type(uint256).max;
-                if (_randomChance(2)) uSession.eoa = t.eoa;
             }
 
             uSession.signature = _sig(kSuperAdmin, uSession);
@@ -653,14 +651,9 @@ contract EntryPointTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
         t.retrievedSessionNonce = ep.getNonce(t.eoa, t.sessionNonceSeqKey);
         t.retrievedSuperAdminNonce = ep.getNonce(t.eoa, t.superAdminNonceSeqKey);
-        if (t.testPurePreOps) {
-            if (t.testDirectSkipNonce) {
-                assertEq(t.retrievedSessionNonce, uint256(t.sessionNonceSeqKey) << 64);
-                assertEq(t.retrievedSuperAdminNonce, uint256(t.superAdminNonceSeqKey) << 64);
-            } else {
-                assertEq(t.retrievedSessionNonce, uSession.nonce);
-                assertEq(t.retrievedSuperAdminNonce, uSuperAdmin.nonce);
-            }
+        if (t.testSkipNonce) {
+            assertEq(t.retrievedSessionNonce, uint256(t.sessionNonceSeqKey) << 64);
+            assertEq(t.retrievedSuperAdminNonce, uint256(t.superAdminNonceSeqKey) << 64);
         } else {
             assertEq(t.retrievedSessionNonce, uSession.nonce | 1);
             assertEq(t.retrievedSuperAdminNonce, uSuperAdmin.nonce | 1);

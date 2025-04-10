@@ -66,9 +66,8 @@ contract EntryPoint is
     /// we don't need to be too concerned about calldata overhead.
     struct UserOp {
         /// @dev The user's address.
-        /// If this is a PreOp, this can be set to `address(0)`.
-        /// Setting to `address(0)` will allow it to be replaced with the parent's EOA,
-        /// and signal `nonce` to be replaced with `type(uint256).max`.
+        /// If this is a PreOp, this can be set to `address(0)`, which allows it to be
+        /// coalesced to the parent UserOp's EOA.
         address eoa;
         /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
         /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
@@ -81,9 +80,6 @@ contract EntryPoint is
         ///   then the UserOp EIP712 hash will exclude the chain ID.
         /// - Lower 64 bits are used for the sequential nonce corresponding to the `seqKey`.
         /// - If this is a PreOp, a nonce of `type(uint256).max` skips the check and incrementing.
-        ///   To save calldata, pass in a `eoa = address(0)`, to signal the nonce to be internally
-        ///   replaced with `type(uint256).max` before the check and {UserOpExecuted} event.
-        ///   The nonce in the EIP712 hash will still be the original nonce that is passed in.
         uint256 nonce;
         /// @dev The account paying the payment token.
         /// If this is `address(0)`, it defaults to the `eoa`.
@@ -741,8 +737,7 @@ contract EntryPoint is
     }
 
     /// @dev Loops over the `encodedPreOps` and does the following for each:
-    /// - If the `eoa == address(0)`, it will be replaced with the `parentEOA`,
-    ///   and will replace the nonce with `type(uint256).max`.
+    /// - If the `eoa == address(0)`, it will be coalesced to `parentEOA`.
     /// - Check if `eoa == parentEOA`.
     /// - If there are any PreOps in a PreOp, recurse.
     /// - Validate the signature. This uses the original `nonce` that is passed in.
@@ -757,14 +752,10 @@ contract EntryPoint is
     ) internal virtual {
         for (uint256 i; i < encodedPreOps.length; ++i) {
             UserOp calldata u = _extractUserOp(encodedPreOps[i]);
-            address eoa = u.eoa;
+            address eoa = Math.coalesce(u.eoa, parentEOA);
             uint256 nonce = u.nonce;
-            if (eoa == address(0)) {
-                eoa = parentEOA;
-                nonce = type(uint256).max;
-            } else {
-                if (eoa != parentEOA) revert InvalidPreOpEOA();
-            }
+
+            if (eoa != parentEOA) revert InvalidPreOpEOA();
 
             // The order is exactly the same as `selfCallPayVerifyCall537021665`:
             // Recurse -> Verify -> Increment nonce -> Call eoa.
