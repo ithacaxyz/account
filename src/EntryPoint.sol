@@ -121,6 +121,7 @@ contract EntryPoint is
     }
 
     /// @dev A struct to hold the fields for a PreOp.
+    /// Like a UserOp with a subset of fields.
     struct PreOp {
         /// @dev The user's address.
         /// This can be set to `address(0)`, which allows it to be
