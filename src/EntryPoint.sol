@@ -122,10 +122,17 @@ contract EntryPoint is
 
     /// @dev A struct to hold the fields for a PreOp.
     struct PreOp {
+        /// @dev The user's address.
+        /// This can be set to `address(0)`, which allows it to be
+        /// coalesced to the parent UserOp's EOA.
+        address eoa;
         /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
         /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
         /// This allows for more efficient safe forwarding to the EOA.
         bytes executionData;
+        /// @dev Per delegated EOA. Same logic as the `nonce` in UserOp.
+        /// - A nonce of `type(uint256).max` skips the check and incrementing.
+        uint256 nonce;
         /// @dev The wrapped signature.
         /// `abi.encodePacked(innerSignature, keyHash, prehash)`.
         bytes signature;
@@ -211,8 +218,9 @@ contract EntryPoint is
     );
 
     /// @dev For EIP712 signature digest calculation for PreOps in the `execute` functions.
-    bytes32 public constant PRE_OP_TYPEHASH =
-        keccak256("PreOp(Call[] calls)Call(address to,uint256 value,bytes data)");
+    bytes32 public constant PRE_OP_TYPEHASH = keccak256(
+        "PreOp(bool multichain,address eoa,Call[] calls,uint256 nonce)Call(address to,uint256 value,bytes data)"
+    );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant CALL_TYPEHASH = keccak256("Call(address to,uint256 value,bytes data)");
@@ -756,24 +764,31 @@ contract EntryPoint is
     }
 
     /// @dev Loops over the `encodedPreOps` and does the following for each:
-    /// - If the `eoa == address(0)`, it will be replaced with the `parentEOA`,
-    ///   and will replace the nonce with `type(uint256).max`.
+    /// - If the `eoa == address(0)`, it will be coalesced to `parentEOA`.
     /// - Check if `eoa == parentEOA`.
-    /// - If there are any PreOps in a PreOp, recurse.
-    /// - Validate the signature. This uses the original `nonce` that is passed in.
+    /// - Validate the signature.
     /// - Check and increment the nonce, if it is not `type(uint256).max`.
     /// - Call the Delegation with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
     /// - Emit an {UserOpExecuted} event, if `nonce` is not `type(uint256).max`.
-    function _handlePreOps(address eoa, uint256 simulationFlags, bytes[] calldata encodedPreOps)
-        internal
-        virtual
-    {
+    function _handlePreOps(
+        address parentEOA,
+        uint256 simulationFlags,
+        bytes[] calldata encodedPreOps
+    ) internal virtual {
         for (uint256 i; i < encodedPreOps.length; ++i) {
             PreOp calldata p = _extractPreOp(encodedPreOps[i]);
+            address eoa = Math.coalesce(p.eoa, parentEOA);
+            uint256 nonce = p.nonce;
+
+            if (eoa != parentEOA) revert InvalidPreOpEOA();
 
             (bool isValid, bytes32 keyHash) = _verify(_computeDigest(p), eoa, p.signature);
             if (!isValid) if (simulationFlags & 1 == 0) revert PreOpVerificationError();
+
+            if (nonce != type(uint256).max) {
+                LibNonce.checkAndIncrement(_getEntryPointStorage().nonceSeqs[eoa], nonce);
+            }
 
             // This part is same as `selfCallPayVerifyCall537021665`. We simply inline to save gas.
             bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
@@ -794,6 +809,12 @@ contract EntryPoint is
                     if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x253e076a)) } // `PreOpCallError()`.
                     revert(0x00, 0x20) // Revert the `err` (NOT return).
                 }
+            }
+
+            if (nonce != type(uint256).max) {
+                // Event so that indexers can know that the nonce is used.
+                // Reaching here means there's no error in the PreOp.
+                emit UserOpExecuted(eoa, nonce, true, 0); // `incremented = true`, `err = 0`.
             }
         }
     }
@@ -915,9 +936,16 @@ contract EntryPoint is
 
     /// @dev Computes the EIP712 digest for the PreOp.
     function _computeDigest(PreOp calldata p) internal view virtual returns (bytes32) {
-        return _hashTypedDataSansChainId(
-            EfficientHashLib.hash(PRE_OP_TYPEHASH, _executionDataHash(p.executionData))
-        );
+        bool isMultichain = p.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
+        // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
+        bytes32[] memory f = EfficientHashLib.malloc(5);
+        f.set(0, PRE_OP_TYPEHASH);
+        f.set(1, LibBit.toUint(isMultichain));
+        f.set(2, uint160(p.eoa));
+        f.set(3, _executionDataHash(p.executionData));
+        f.set(4, p.nonce);
+
+        return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
 
     /// @dev Computes the EIP712 digest for the UserOp.

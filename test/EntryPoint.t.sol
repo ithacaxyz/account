@@ -446,9 +446,16 @@ contract EntryPointTest is BaseTest {
         uint256 gUsed;
         bool success;
         bytes result;
+        bool testInvalidPreOpEOA;
         bool testPreOpVerificationError;
         bool testPreOpCallError;
         bool testPREP;
+        bool testEOACoalesce;
+        bool testSkipNonce;
+        uint192 superAdminNonceSeqKey;
+        uint192 sessionNonceSeqKey;
+        uint256 retrievedSuperAdminNonce;
+        uint256 retrievedSessionNonce;
         PassKey kPREP;
         DelegatedEOA d;
         address eoa;
@@ -493,6 +500,18 @@ contract EntryPointTest is BaseTest {
         EntryPoint.PreOp memory pSuperAdmin;
         EntryPoint.PreOp memory pSession;
 
+        if (_randomChance(2)) {
+            t.testEOACoalesce = true;
+        } else {
+            pSuperAdmin.eoa = t.eoa;
+            pSession.eoa = t.eoa;
+        }
+
+        if (_randomChance(64) && !t.testEOACoalesce) {
+            pSession.eoa = _randomUniqueHashedAddress();
+            t.testInvalidPreOpEOA = true;
+        }
+
         u.encodedPreOps = new bytes[](2);
         // Prepare super admin passkey authorization UserOp.
         {
@@ -500,6 +519,12 @@ contract EntryPointTest is BaseTest {
             calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, kSuperAdmin.k);
 
             pSuperAdmin.executionData = abi.encode(calls);
+            // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
+            pSuperAdmin.nonce = (0xc1d0 << 240) | (1 << 64);
+            t.superAdminNonceSeqKey = uint192(pSuperAdmin.nonce >> 64);
+            if (t.testSkipNonce) {
+                pSuperAdmin.nonce = type(uint256).max;
+            }
 
             if (t.testPREP) {
                 pSuperAdmin.signature = _sig(t.kPREP, ep.computeDigest(pSuperAdmin));
@@ -531,6 +556,13 @@ contract EntryPointTest is BaseTest {
             }
 
             pSession.executionData = abi.encode(calls);
+            // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
+            pSession.nonce = (0xc1d0 << 240) | (2 << 64);
+            t.sessionNonceSeqKey = uint192(pSession.nonce >> 64);
+            if (t.testSkipNonce) {
+                pSession.nonce = type(uint256).max;
+            }
+
             pSession.signature = _sig(kSuperAdmin, ep.computeDigest(pSession));
 
             if (_randomChance(64)) {
@@ -550,6 +582,13 @@ contract EntryPointTest is BaseTest {
 
             u.encodedPreOps[0] = abi.encode(pSuperAdmin);
             u.encodedPreOps[1] = abi.encode(pSession);
+        }
+
+        if (t.testInvalidPreOpEOA) {
+            u.combinedGas = 10000000;
+            u.signature = _sig(kSession, u);
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("InvalidPreOpEOA()")));
+            return; // Skip the rest.
         }
 
         if (t.testPreOpVerificationError) {
@@ -598,6 +637,15 @@ contract EntryPointTest is BaseTest {
         }
 
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
+        t.retrievedSessionNonce = ep.getNonce(t.eoa, t.sessionNonceSeqKey);
+        t.retrievedSuperAdminNonce = ep.getNonce(t.eoa, t.superAdminNonceSeqKey);
+        if (t.testSkipNonce) {
+            assertEq(t.retrievedSessionNonce, uint256(t.sessionNonceSeqKey) << 64);
+            assertEq(t.retrievedSuperAdminNonce, uint256(t.superAdminNonceSeqKey) << 64);
+        } else {
+            assertEq(t.retrievedSessionNonce, pSession.nonce | 1);
+            assertEq(t.retrievedSuperAdminNonce, pSuperAdmin.nonce | 1);
+        }
     }
 
     struct _TestPayViaAnotherPayerTemps {
