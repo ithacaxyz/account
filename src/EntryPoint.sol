@@ -233,7 +233,7 @@ contract EntryPoint is
 
     /// @dev Bit in `combinedGasOverride` that denotes if the reverts should be a full revert.
     /// If this flag is set, `_execute` will also revert instead of returning `err`.
-    uint256 private constant _FLAG_FULL_REVERT = 1 << 253;
+    uint256 private constant _FLAG_BUBBLE_FULL_REVERT = 1 << 253;
 
     /// @dev Bit in `combinedGasOverride` that denotes if it is just for the verification gas.
     uint256 private constant _FLAG_VERIFICATION_GAS_ONLY = 1 << 252;
@@ -418,7 +418,7 @@ contract EntryPoint is
 
             // Execute one final time without reverting.
             // This allows `eth_simulateV1` to collect all logs from the execution.
-            let flags := or(_FLAG_FULL_REVERT, _FLAG_IS_SIMULATION)
+            let flags := or(_FLAG_BUBBLE_FULL_REVERT, _FLAG_IS_SIMULATION)
             mstore(add(data, 0x24), or(flags, 0xffffffffffffffffffffffff))
             mstore(add(data, 0x44), caller()) // `noRevertCaller`.
 
@@ -496,7 +496,7 @@ contract EntryPoint is
     /// This function bubbles up the full revert for the calls
     /// to `initializePREP` (if any) and `execute` on the eoa.
     function simulateFailed(bytes calldata encodedUserOp) public payable virtual {
-        _execute(encodedUserOp, _FLAG_FULL_REVERT);
+        _execute(encodedUserOp, _FLAG_BUBBLE_FULL_REVERT);
         revert NoRevertEncountered();
     }
 
@@ -581,7 +581,7 @@ contract EntryPoint is
             }
             // If `err` is non-zero and the simulation requires a full revert.
             if err {
-                if and(combinedGasOverride, _FLAG_FULL_REVERT) {
+                if and(combinedGasOverride, _FLAG_BUBBLE_FULL_REVERT) {
                     if bubbleSelfCallRevert {
                         returndatacopy(m, 0x00, returndatasize())
                         revert(m, returndatasize())
@@ -691,7 +691,7 @@ contract EntryPoint is
                 let success :=
                     call(gas(), eoa, 0, add(m, 0x1c), add(0x64, initData.length), m, 0x20)
                 if iszero(and(eq(mload(m), 1), success)) {
-                    if and(flags, _FLAG_FULL_REVERT) {
+                    if and(flags, _FLAG_BUBBLE_FULL_REVERT) {
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
@@ -733,7 +733,7 @@ contract EntryPoint is
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
             if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
-                if and(flags, _FLAG_FULL_REVERT) {
+                if and(flags, _FLAG_BUBBLE_FULL_REVERT) {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
                 }
