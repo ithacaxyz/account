@@ -3,6 +3,7 @@ pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
+import {LibClone} from "solady/utils/LibClone.sol";
 import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCallTarget.sol";
 import {MockPayerWithState} from "./utils/mocks/MockPayerWithState.sol";
 import {MockPayerWithSignature} from "./utils/mocks/MockPayerWithSignature.sol";
@@ -473,9 +474,13 @@ contract EntryPointTest is BaseTest {
 
         u.eoa = t.eoa;
 
+        address tokenToTransfer =
+            _randomChance(2) ? address(0) : LibClone.clone(address(paymentToken));
+        _mint(tokenToTransfer, u.eoa, 2 ** 128 - 1);
+
         paymentToken.mint(u.eoa, 2 ** 128 - 1);
         u.paymentToken = address(paymentToken);
-        u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
+        u.paymentAmount = _bound(_random(), 0, 0.5 ether);
         u.paymentMaxAmount = u.paymentAmount;
         u.nonce = 0xc1d0 << 240;
 
@@ -487,19 +492,26 @@ contract EntryPointTest is BaseTest {
 
         // Prepare session passkey authorization UserOp.
         {
-            ERC7821.Call[] memory calls = new ERC7821.Call[](3);
+            ERC7821.Call[] memory calls = new ERC7821.Call[](5);
             calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, kSession.k);
             // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
             calls[1].data = abi.encodeWithSelector(
                 GuardedExecutor.setCanExecute.selector,
                 kSession.keyHash,
-                _randomChance(2) ? address(paymentToken) : _ANY_TARGET,
-                _randomChance(2) ? bytes4(keccak256("transfer(address,uint256)")) : _ANY_FN_SEL,
+                _randomChance(2) && tokenToTransfer != address(0) ? tokenToTransfer : _ANY_TARGET,
+                _randomChance(2) && tokenToTransfer != address(0)
+                    ? bytes4(keccak256("transfer(address,uint256)"))
+                    : _ANY_FN_SEL,
                 true
             );
             // Set some spend limits.
             calls[2] = _setSpendLimitCall(
                 kSession, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
+            );
+            calls[3] =
+                _setSpendLimitCall(kSession, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether);
+            calls[4] = _setSpendLimitCall(
+                kSession, tokenToTransfer, GuardedExecutor.SpendPeriod.Hour, 1 ether
             );
             if (_randomChance(2)) {
                 (calls[1], calls[2]) = (calls[2], calls[1]);
@@ -517,7 +529,7 @@ contract EntryPointTest is BaseTest {
         // Prepare the enveloping UserOp.
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
-            calls[0] = _transferCall(address(paymentToken), address(0xabcd), 0.5 ether);
+            calls[0] = _transferCall(address(tokenToTransfer), address(0xabcd), 0.5 ether);
 
             u.executionData = abi.encode(calls);
             u.nonce = 0;
@@ -530,7 +542,7 @@ contract EntryPointTest is BaseTest {
         u.signature = _sig(kSession, u);
         assertEq(ep.execute(abi.encode(u)), 0);
 
-        assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
+        assertEq(_balanceOf(tokenToTransfer, address(0xabcd)), 0.5 ether);
     }
 
     function testAuthorizeWithPreOpsAndTransfer(bytes32) public {
