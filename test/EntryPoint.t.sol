@@ -455,6 +455,84 @@ contract EntryPointTest is BaseTest {
         address eoa;
     }
 
+    function testPREPAndTransferInOneShot(bytes32) public {
+        _TestAuthorizeWithPreOpsAndTransferTemps memory t;
+        EntryPoint.UserOp memory u;
+
+        t.kPREP = _randomSecp256r1PassKey();
+        t.kPREP.k.isSuperAdmin = true;
+
+        ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
+        initCalls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, t.kPREP.k);
+
+        bytes32 saltAndDelegation;
+        (saltAndDelegation, t.eoa) = _minePREP(_computePREPDigest(initCalls));
+        u.initData = abi.encode(initCalls, abi.encodePacked(saltAndDelegation));
+
+        vm.etch(t.eoa, abi.encodePacked(hex"ef0100", delegation));
+
+        u.eoa = t.eoa;
+
+        paymentToken.mint(u.eoa, 2 ** 128 - 1);
+        u.paymentToken = address(paymentToken);
+        u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
+        u.paymentMaxAmount = u.paymentAmount;
+        u.nonce = 0xc1d0 << 240;
+
+        PassKey memory kSession = _randomSecp256r1PassKey();
+
+        EntryPoint.UserOp memory uSession;
+
+        uSession.eoa = t.eoa;
+
+        // Prepare session passkey authorization UserOp.
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](3);
+            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, kSession.k);
+            // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
+            calls[1].data = abi.encodeWithSelector(
+                GuardedExecutor.setCanExecute.selector,
+                kSession.keyHash,
+                _randomChance(2) ? address(paymentToken) : _ANY_TARGET,
+                _randomChance(2) ? bytes4(keccak256("transfer(address,uint256)")) : _ANY_FN_SEL,
+                true
+            );
+            // Set some spend limits.
+            calls[2] = _setSpendLimitCall(
+                kSession, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
+            );
+            if (_randomChance(2)) {
+                (calls[1], calls[2]) = (calls[2], calls[1]);
+            }
+
+            uSession.executionData = abi.encode(calls);
+            // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
+            uSession.nonce = (0xc1d0 << 240) | (2 << 64);
+
+            uSession.signature = _sig(t.kPREP, uSession);
+        }
+
+        u.encodedPreOps = new bytes[](1);
+
+        // Prepare the enveloping UserOp.
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            calls[0] = _transferCall(address(paymentToken), address(0xabcd), 0.5 ether);
+
+            u.executionData = abi.encode(calls);
+            u.nonce = 0;
+
+            u.encodedPreOps[0] = abi.encode(uSession);
+        }
+
+        // Test without gas estimation.
+        u.combinedGas = 10000000;
+        u.signature = _sig(kSession, u);
+        assertEq(ep.execute(abi.encode(u)), 0);
+
+        assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
+    }
+
     function testAuthorizeWithPreOpsAndTransfer(bytes32) public {
         _TestAuthorizeWithPreOpsAndTransferTemps memory t;
         EntryPoint.UserOp memory u;
