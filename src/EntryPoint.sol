@@ -538,7 +538,7 @@ contract EntryPoint is
                 // how much gas is needed without reverting.
                 if (combinedGasOverride & _FLAG_IS_SIMULATION == 0) revert InsufficientGas();
             }
-            // If the `_FLAG_63_OVER_64_TEST` bit is set, this means `simulateExecute` just wants
+            // If `_FLAG_63_OVER_64_TEST` is set, this means `simulateExecute` just wants
             // to check the 63/64 rule, so early return to skip the rest of the computations.
             if (combinedGasOverride & _FLAG_63_OVER_64_TEST != 0) return (0, 0);
         }
