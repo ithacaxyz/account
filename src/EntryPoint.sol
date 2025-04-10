@@ -573,10 +573,9 @@ contract EntryPoint is
                 selfCallSuccess :=
                     call(g, address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x20)
                 err := mload(0x00) // The self call will do another self call to execute.
-                // Set `err` to `VerifiedCallError()` if `selfCallSuccess` is false and `err` is zero.
                 if iszero(selfCallSuccess) {
                     bubbleSelfCallRevert := err // This will only be used in simulation.
-                    if iszero(err) { err := shl(224, 0xad4db224) }
+                    if iszero(err) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
                 }
             }
             // If `err` is non-zero and the simulation requires a full revert.
