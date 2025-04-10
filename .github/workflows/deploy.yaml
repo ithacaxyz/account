@@ -24,34 +24,35 @@ jobs:
           PRIVATE_KEY: ${{ secrets.deployer }}
         # TODO: remove the --evm-version argument once https://github.com/blockscout/blockscout/pull/12115 is released.
         run: |
+          echo "Deploying";
           forge script DeployAllScript \
             --rpc-url "https://odyssey-devnet.ithaca.xyz" \
             --broadcast -q \
-            --evm-version cancun && \
-          \
-          echo "Verifying EntryPoint" && \
+            --evm-version cancun;
+
+          echo "Verifying EntryPoint";
           forge verify-contract $(jq -r '.transactions[].additionalContracts | .[0].address' broadcast/DeployAll.s.sol/911867/run-latest.json) \
             DeployAllScript \
             --chain odyssey \
             --skip-is-verified-check \
             --verifier blockscout \
-            --verifier-url "https://odyssey-devnet.ithaca.xyz/api" && \
-          \
-          echo "Verifying Delegation" && \
+            --verifier-url "https://odyssey-devnet.ithaca.xyz/api" || true;
+
+          echo "Verifying Delegation";
           forge verify-contract $(jq -r '.transactions[].additionalContracts | .[1].address' broadcast/DeployAll.s.sol/911867/run-latest.json) \
             DeployAllScript \
             --chain odyssey \
             --skip-is-verified-check \
             --verifier blockscout \
-            --verifier-url "https://odyssey-devnet.ithaca.xyz/api" && \
-          \
-          echo "Compiling EIP7702Proxy fixed bytecode" && \
-          forge clean && \
-          forge build && \
-          cp lib/solady/src/accounts/EIP7702Proxy.sol src/EIP7702Proxy.sol && \
-          forge build --use=0.8.28 --optimizer-runs=200 --evm-version=cancun && \
-          \
-          echo "Verifying EIP7702Proxy" && \
+            --verifier-url "https://odyssey-devnet.ithaca.xyz/api" || true;
+
+          echo "Compiling EIP7702Proxy fixed bytecode";
+          forge clean;
+          forge build;
+          cp lib/solady/src/accounts/EIP7702Proxy.sol src/EIP7702Proxy.sol;
+          forge build --use=0.8.28 --optimizer-runs=200 --evm-version=cancun || true;
+
+          echo "Verifying EIP7702Proxy";
           forge verify-contract $(jq -r '.transactions[].additionalContracts | .[2].address' broadcast/DeployAll.s.sol/911867/run-latest.json)  \
             "src/EIP7702Proxy.sol:EIP7702Proxy" \
             --compiler-version=0.8.28 \
@@ -61,7 +62,7 @@ jobs:
             --chain odyssey \
             --skip-is-verified-check \
             --verifier blockscout \
-            --verifier-url "https://odyssey-devnet.ithaca.xyz/api" && \
-          \
-          echo "Cleaning up EIP7702Proxy verification" && \
-          rm src/EIP7702Proxy.sol
+            --verifier-url "https://odyssey-devnet.ithaca.xyz/api" || true;
+
+          echo "Cleaning up EIP7702Proxy verification";
+          rm src/EIP7702Proxy.sol;
