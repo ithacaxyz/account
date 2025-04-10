@@ -18,6 +18,7 @@ import {Delegation, MockDelegation} from "./utils/mocks/MockDelegation.sol";
 import {EntryPoint, MockEntryPoint} from "./utils/mocks/MockEntryPoint.sol";
 import {ERC20, MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
 import {GuardedExecutor} from "../src/Delegation.sol";
+import {UserOp} from "../src/structs/Common.sol";
 
 contract BaseTest is SoladyTest {
     using LibRLP for LibRLP.List;
@@ -110,11 +111,7 @@ contract BaseTest is SoladyTest {
         k.keyHash = _hash(k.k);
     }
 
-    function _sig(DelegatedEOA memory d, EntryPoint.UserOp memory u)
-        internal
-        view
-        returns (bytes memory)
-    {
+    function _sig(DelegatedEOA memory d, UserOp memory u) internal view returns (bytes memory) {
         return _eoaSig(d.privateKey, u);
     }
 
@@ -122,11 +119,7 @@ contract BaseTest is SoladyTest {
         return _eoaSig(d.privateKey, digest);
     }
 
-    function _eoaSig(uint256 privateKey, EntryPoint.UserOp memory u)
-        internal
-        view
-        returns (bytes memory)
-    {
+    function _eoaSig(uint256 privateKey, UserOp memory u) internal view returns (bytes memory) {
         return _eoaSig(privateKey, ep.computeDigest(u));
     }
 
@@ -135,11 +128,7 @@ contract BaseTest is SoladyTest {
         return abi.encodePacked(r, s, v);
     }
 
-    function _sig(PassKey memory k, EntryPoint.UserOp memory u)
-        internal
-        view
-        returns (bytes memory)
-    {
+    function _sig(PassKey memory k, UserOp memory u) internal view returns (bytes memory) {
         return _sig(k, false, ep.computeDigest(u));
     }
 
@@ -196,7 +185,7 @@ contract BaseTest is SoladyTest {
         return abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(prehash ? 1 : 0));
     }
 
-    function _estimateGasForEOAKey(EntryPoint.UserOp memory u)
+    function _estimateGasForEOAKey(UserOp memory u)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
@@ -206,7 +195,7 @@ contract BaseTest is SoladyTest {
         return _estimateGas(u);
     }
 
-    function _estimateGas(PassKey memory k, EntryPoint.UserOp memory u)
+    function _estimateGas(PassKey memory k, UserOp memory u)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
@@ -219,7 +208,7 @@ contract BaseTest is SoladyTest {
         revert("Unsupported");
     }
 
-    function _estimateGasForSecp256k1Key(bytes32 keyHash, EntryPoint.UserOp memory u)
+    function _estimateGasForSecp256k1Key(bytes32 keyHash, UserOp memory u)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
@@ -229,7 +218,7 @@ contract BaseTest is SoladyTest {
         return _estimateGas(u);
     }
 
-    function _estimateGasForSecp256r1Key(bytes32 keyHash, EntryPoint.UserOp memory u)
+    function _estimateGasForSecp256r1Key(bytes32 keyHash, UserOp memory u)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
@@ -237,7 +226,7 @@ contract BaseTest is SoladyTest {
         return _estimateGas(u);
     }
 
-    function _estimateGas(EntryPoint.UserOp memory u)
+    function _estimateGas(UserOp memory u)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {

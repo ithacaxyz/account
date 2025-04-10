@@ -3,7 +3,7 @@ pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
-import {LibPREP} from "../src/LibPREP.sol";
+import {LibPREP} from "../src/libraries/LibPREP.sol";
 
 contract SampleTarget {
     uint256 public x;
@@ -31,7 +31,7 @@ contract LibPREPTest is BaseTest {
 
     function testPREP() public {
         _TestTemps memory t;
-        EntryPoint.UserOp memory u;
+        UserOp memory u;
 
         PassKey memory k = _randomSecp256r1PassKey();
         k.k.isSuperAdmin = true;
