@@ -167,9 +167,6 @@ contract EntryPoint is
     /// @dev The simulate execute run has failed. Try passing in more gas to the simulation.
     error SimulateExecuteFailed();
 
-    /// @dev No revert has been encountered.
-    error NoRevertEncountered();
-
     /// @dev A sub UserOp's EOA must be the same as its parent UserOp's eoa.
     error InvalidPreOpEOA();
 
@@ -226,17 +223,17 @@ contract EntryPoint is
     uint256 internal constant _REFUND_GAS = 50000;
 
     /// @dev Bit in `combinedGasOverride` that denotes if it is just for the 63/64 test.
-    uint256 private constant _FLAG_63_OVER_64_TEST = 1 << 255;
+    uint256 internal constant _FLAG_63_OVER_64_TEST = 1 << 255;
 
     /// @dev Bit in `combinedGasOverride` that denotes if it is for a simulation.
-    uint256 private constant _FLAG_IS_SIMULATION = 1 << 254;
+    uint256 internal constant _FLAG_IS_SIMULATION = 1 << 254;
 
     /// @dev Bit in `combinedGasOverride` that denotes if the reverts should be a full revert.
     /// If this flag is set, `_execute` will also revert instead of returning `err`.
-    uint256 private constant _FLAG_BUBBLE_FULL_REVERT = 1 << 253;
+    uint256 internal constant _FLAG_BUBBLE_FULL_REVERT = 1 << 253;
 
     /// @dev Bit in `combinedGasOverride` that denotes if it is just for the verification gas.
-    uint256 private constant _FLAG_VERIFICATION_GAS_ONLY = 1 << 252;
+    uint256 internal constant _FLAG_VERIFICATION_GAS_ONLY = 1 << 252;
 
     ////////////////////////////////////////////////////////////////////////
     // Storage
@@ -490,14 +487,6 @@ contract EntryPoint is
             mstore(0x24, shl(224, shr(224, err))) // Clean the lower bytes of `err` word.
             revert(0x00, 0x44)
         }
-    }
-
-    /// @dev This function is provided for debugging purposes.
-    /// This function bubbles up the full revert for the calls
-    /// to `initializePREP` (if any) and `execute` on the eoa.
-    function simulateFailed(bytes calldata encodedUserOp) public payable virtual {
-        _execute(encodedUserOp, _FLAG_BUBBLE_FULL_REVERT);
-        revert NoRevertEncountered();
     }
 
     /// @dev Extracts the UserOp from the calldata bytes, with minimal checks.
