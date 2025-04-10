@@ -498,7 +498,7 @@ contract EntryPointTest is BaseTest {
         uSession.eoa = t.eoa;
 
         if (_randomChance(64)) {
-            uSession.eoa = address(0);
+            uSession.eoa = _randomUniqueHashedAddress();
             t.testInvalidPreOpEOA = true;
         }
 

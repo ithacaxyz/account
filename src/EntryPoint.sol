@@ -66,6 +66,8 @@ contract EntryPoint is
     /// we don't need to be too concerned about calldata overhead.
     struct UserOp {
         /// @dev The user's address.
+        /// If this is a PreOp, this can be set to `address(0)`, which will be
+        /// coalesced to the parent's eoa, and sets the `nonce` to `type(uint256).max`.
         address eoa;
         /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
         /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
@@ -77,6 +79,10 @@ contract EntryPoint is
         ///   The upper 16 bits of the `seqKey` is `MULTICHAIN_NONCE_PREFIX`,
         ///   then the UserOp EIP712 hash will exclude the chain ID.
         /// - Lower 64 bits are used for the sequential nonce corresponding to the `seqKey`.
+        /// - If this is a PreOp, a nonce of `type(uint256).max` skips the check and incrementing.
+        ///   To save calldata, pass in a `eoa = address(0)`, to signal the nonce to be internally
+        ///   replaced with `type(uint256).max` before the check and {UserOpExecuted} event.
+        ///   The nonce in the EIP712 hash will still be the original nonce that is passed in.
         uint256 nonce;
         /// @dev The account paying the payment token.
         /// If this is `address(0)`, it defaults to the `eoa`.
@@ -192,6 +198,7 @@ contract EntryPoint is
     /// - `incremented` denotes that `nonce`'s sequence has been incremented to invalidate `nonce`,
     /// - `err` denotes the resultant error selector.
     /// If `incremented` is true and `err` is non-zero, the UserOp was successful.
+    /// For PreOps where the nonce is skipped, `nonce` will be set to `type(uint256).max`.
     event UserOpExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
 
     ////////////////////////////////////////////////////////////////////////
@@ -730,21 +737,30 @@ contract EntryPoint is
         }
     }
 
-    /// @dev Loops over the `encodedPreOps` and does the following for each sub UserOp:
-    /// - Check that the eoa is indeed the eoa of the parent UserOp.
+    /// @dev Loops over the `encodedPreOps` and does the following for each:
+    /// - If the eoa is zero, coalesce it to the parent's eoa.
+    ///   Then check if it matches the parent's eoa.
     /// - If there are any sub UserOp in a sub UserOp, recurse.
-    /// - Validate the sub UserOp.
-    /// - Check and increment the nonce of the sub UserOp.
-    /// - Call the Delegation with `executionData` in the sub UserOp, using the ERC7821 batch-execution mode.
+    /// - Validate the signature.
+    /// - Check and increment the nonce.
+    /// - Call the Delegation with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
     /// - Emit an {UserOpExecuted} event.
-    function _handlePreOps(address eoa, uint256 simulationFlags, bytes[] calldata encodedPreOps)
-        internal
-        virtual
-    {
+    function _handlePreOps(
+        address parentEOA,
+        uint256 simulationFlags,
+        bytes[] calldata encodedPreOps
+    ) internal virtual {
         for (uint256 i; i < encodedPreOps.length; ++i) {
             UserOp calldata u = _extractUserOp(encodedPreOps[i]);
-            if (eoa != u.eoa) revert InvalidPreOpEOA();
+            address eoa = u.eoa;
+            uint256 nonce = u.nonce;
+            if (eoa == address(0)) {
+                eoa = parentEOA;
+                nonce = type(uint256).max;
+            } else {
+                if (eoa != parentEOA) revert InvalidPreOpEOA();
+            }
 
             // The order is exactly the same as `selfCallPayVerifyCall537021665`:
             // Recurse -> Verify -> Increment nonce -> Call eoa.
@@ -753,7 +769,10 @@ contract EntryPoint is
             (bool isValid, bytes32 keyHash,) = _verify(u);
             if (!isValid) if (simulationFlags & 1 == 0) revert PreOpVerificationError();
 
-            LibNonce.checkAndIncrement(_getEntryPointStorage().nonceSeqs[eoa], u.nonce);
+            // Only check and increment the nonce if it is not `type(uint256).max`.
+            if (nonce != type(uint256).max) {
+                LibNonce.checkAndIncrement(_getEntryPointStorage().nonceSeqs[eoa], nonce);
+            }
 
             // This part is same as `selfCallPayVerifyCall537021665`. We simply inline to save gas.
             bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
@@ -777,7 +796,7 @@ contract EntryPoint is
             }
             // Event so that indexers can know that the nonce is used.
             // Reaching here means there's no error in the PreOp.
-            emit UserOpExecuted(eoa, u.nonce, true, 0); // `incremented = true`, `err = 0`.
+            emit UserOpExecuted(eoa, nonce, true, 0); // `incremented = true`, `err = 0`.
         }
     }
 
