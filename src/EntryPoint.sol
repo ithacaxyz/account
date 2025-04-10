@@ -740,7 +740,7 @@ contract EntryPoint is
     /// - If the `eoa == address(0)`, it will be coalesced to `parentEOA`.
     /// - Check if `eoa == parentEOA`.
     /// - If there are any PreOps in a PreOp, recurse.
-    /// - Validate the signature. This uses the original `nonce` that is passed in.
+    /// - Validate the signature.
     /// - Check and increment the nonce, if it is not `type(uint256).max`.
     /// - Call the Delegation with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
