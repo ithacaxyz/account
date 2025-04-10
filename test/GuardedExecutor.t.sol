@@ -176,9 +176,7 @@ contract GuardedExecutorTest is BaseTest {
         }
     }
 
-    function testSetSpendLimitAndSpendInASingleBatch(bytes32) public {
-        address token = _randomChance(32) ? address(0) : LibClone.clone(address(paymentToken));
-
+    function testSetAndRemoveSpendLimitRevertsForSuperAdmin() public {
         EntryPoint.UserOp memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
@@ -189,11 +187,6 @@ contract GuardedExecutorTest is BaseTest {
         PassKey memory k = _randomSecp256k1PassKey();
         k.k.isSuperAdmin = true;
 
-        _mint(token, u.eoa, type(uint192).max);
-
-        uint256 amount = _bound(_randomUniform(), 0, 0.0001 ether);
-
-        GuardedExecutor.SpendInfo[] memory infos;
         ERC7821.Call[] memory calls;
         // Authorize.
         {
@@ -204,96 +197,31 @@ contract GuardedExecutorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.nonce = 0xc1d0 << 240;
 
-            u.signature = _eoaSig(d.privateKey, u);
+            u.signature = _sig(d, u);
 
             assertEq(ep.execute(abi.encode(u)), 0);
         }
-        // Set spend limits and spend in a single batch.
+        // Set spend limits.
         {
-            calls = new ERC7821.Call[](2);
-            calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
-            calls[1] = _transferCall2(token, address(0xb0b), amount);
-            // Check that the order doesn't matter.
-            if (_randomChance(2)) {
-                (calls[0], calls[1]) = (calls[1], calls[0]);
-            }
+            calls = new ERC7821.Call[](1);
+            calls[0] = _setSpendLimitCall(k, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether);
 
             u.nonce = ep.getNonce(d.eoa, 0);
             u.executionData = abi.encode(calls);
-            u.signature = _sig(k, u);
+            u.signature = _sig(d, u);
 
-            assertEq(ep.execute(abi.encode(u)), 0);
-
-            infos = d.d.spendInfos(k.keyHash);
-            assertEq(infos.length, 1);
-
-            assertEq(infos[0].token, token);
-            assertEq(infos[0].spent, amount);
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("SuperAdminCanSpendAnything()")));
         }
-        // Remove spend limits and spend above the limit in a single batch.
+        // Remove spend limits.
         {
-            calls = new ERC7821.Call[](2);
-            calls[0] = _transferCall2(token, address(0xb0b), 10 ether);
-            calls[1] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour);
-            // Check that the order doesn't matter.
-            if (_randomChance(2)) {
-                (calls[0], calls[1]) = (calls[1], calls[0]);
-            }
+            calls = new ERC7821.Call[](1);
+            calls[0] = _removeSpendLimitCall(k, address(0), GuardedExecutor.SpendPeriod.Hour);
 
             u.nonce = ep.getNonce(d.eoa, 0);
             u.executionData = abi.encode(calls);
-            u.signature = _sig(k, u);
+            u.signature = _sig(d, u);
 
-            assertEq(ep.execute(abi.encode(u)), 0);
-
-            infos = d.d.spendInfos(k.keyHash);
-            assertEq(infos.length, 0);
-        }
-        // Set spend limits and spend and remove spend limits in a single batch.
-        {
-            calls = new ERC7821.Call[](3);
-            calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
-            calls[1] = _transferCall2(token, address(0xb0b), amount);
-            calls[2] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour);
-            // Check that the order doesn't matter, as long as the remove call is after the set spend call.
-            if (_randomChance(2)) {
-                if (_randomChance(2)) {
-                    (calls[0], calls[1]) = (calls[1], calls[0]);
-                } else {
-                    (calls[1], calls[2]) = (calls[2], calls[1]);
-                }
-            }
-
-            u.nonce = ep.getNonce(d.eoa, 0);
-            u.executionData = abi.encode(calls);
-            u.signature = _sig(k, u);
-
-            assertEq(ep.execute(abi.encode(u)), 0);
-
-            infos = d.d.spendInfos(k.keyHash);
-            assertEq(infos.length, 0);
-        }
-        // Set spend limits and spend in a single batch.
-        {
-            calls = new ERC7821.Call[](2);
-            calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
-            calls[1] = _transferCall2(token, address(0xb0b), amount);
-            // Check that the order doesn't matter.
-            if (_randomChance(2)) {
-                (calls[0], calls[1]) = (calls[1], calls[0]);
-            }
-
-            u.nonce = ep.getNonce(d.eoa, 0);
-            u.executionData = abi.encode(calls);
-            u.signature = _sig(k, u);
-
-            assertEq(ep.execute(abi.encode(u)), 0);
-
-            infos = d.d.spendInfos(k.keyHash);
-            assertEq(infos.length, 1);
-
-            assertEq(infos[0].token, token);
-            assertEq(infos[0].spent, amount);
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("SuperAdminCanSpendAnything()")));
         }
     }
 
@@ -435,8 +363,7 @@ contract GuardedExecutorTest is BaseTest {
             u.nonce = ep.getNonce(u.eoa, 0);
             u.executionData = abi.encode(calls);
             u.signature = _sig(k, u);
-            assertEq(ep.execute(abi.encode(u)), 0);
-            assertGt(_balanceOf(token, address(0xb0b)), amount * 999);
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("NoSpendPermissions()")));
         }
 
         // Test re-addition resets the spent and last updated.

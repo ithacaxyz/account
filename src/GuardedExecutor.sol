@@ -18,8 +18,9 @@ import {DateTimeLib} from "solady/utils/DateTimeLib.sol";
 /// - Execution guards are implemented on a whitelist basis.
 ///   With the exception of the EOA itself and super admin keys,
 ///   execution targets and function selectors has to be approved for each new key.
-/// - Spend limits are implemented on a blacklist basis.
-///   A key will have unlimited spend limits until one is added.
+/// - Spend limits are implemented on a whitelist basis.
+///   With the exception of the EOA itself and super admin keys,
+///   a key cannot spend tokens (ERC20s and native) until spend permissions have been added.
 /// - When a spend permission is removed and re-added, its spent amount will be reset.
 abstract contract GuardedExecutor is ERC7821 {
     using DynamicArrayLib for *;
@@ -80,8 +81,14 @@ abstract contract GuardedExecutor is ERC7821 {
     /// @dev Exceeded the spend limit.
     error ExceededSpendLimit();
 
+    /// @dev In order to spend a token, it must have spend permissions set.
+    error NoSpendPermissions();
+
     /// @dev Super admin keys can execute everything.
     error SuperAdminCanExecuteEverything();
+
+    /// @dev Super admin keys can spend anything.
+    error SuperAdminCanSpendAnything();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -194,13 +201,14 @@ abstract contract GuardedExecutor is ERC7821 {
     ///    will be added to the spent limit.
     /// 2. Any token that is granted a non-zero approval will have the approval
     ///    reset to zero after the calls.
-    /// 3. The spend limits are only incremented and checked against at the end of a batch.
-    ///    If there are calls to `setSpendLimit` or `removeSpendLimit`, the final spend limits at
-    ///    the end of the batch will be applied. Calls to `removeSpendLimit` will reset the spent.
+    /// 3. Except for the EOA and super admins, a spend limit has to be set for the
+    ///    `keyHash` in order for it to spend tokens.
     /// Note: Called internally in ERC7821, which coalesce zero-address `target`s to `address(this)`.
     function _execute(Call[] calldata calls, bytes32 keyHash) internal virtual override {
-        // If self-execute, don't care about the spend permissions.
-        if (keyHash == bytes32(0)) return ERC7821._execute(calls, keyHash);
+        // If self-execute or super admin, don't care about the spend permissions.
+        if (keyHash == bytes32(0) || _isSuperAdmin(keyHash)) {
+            return ERC7821._execute(calls, keyHash);
+        }
 
         SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
         _ExecuteTemps memory t;
@@ -274,14 +282,12 @@ abstract contract GuardedExecutor is ERC7821 {
 
         // Perform after the `_execute`, so that in the case where `calls`
         // contain a `setSpendLimit`, it will affect the `_incrementSpent`.
-        // `_incrementSpent` is an no-op if the token does not have an active spend limit.
         _incrementSpent(spends.spends[address(0)], totalNativeSpend);
 
         // Increments the spent amounts.
         for (uint256 i; i < t.erc20s.length(); ++i) {
             address token = t.erc20s.getAddress(i);
             TokenSpendStorage storage tokenSpends = spends.spends[token];
-            if (tokenSpends.periods.length() == uint256(0)) continue;
             _incrementSpent(
                 tokenSpends,
                 // While we can actually just use the difference before and after,
@@ -301,13 +307,11 @@ abstract contract GuardedExecutor is ERC7821 {
         // Revoke all non-zero approvals that have been made, if there's a spend limit.
         for (uint256 i; i < t.approvedERC20s.length(); ++i) {
             address token = t.approvedERC20s.getAddress(i);
-            if (spends.spends[token].periods.length() == uint256(0)) continue;
             SafeTransferLib.safeApprove(token, t.approvalSpenders.getAddress(i), 0);
         }
         // Revoke all non-zero Permit2 direct approvals that have been made, if there's a spend limit.
         for (uint256 i; i < t.permit2ERC20s.length(); ++i) {
             address token = t.permit2ERC20s.getAddress(i);
-            if (spends.spends[token].periods.length() == uint256(0)) continue;
             SafeTransferLib.permit2Lockdown(token, t.permit2Spenders.getAddress(i));
         }
     }
@@ -360,6 +364,8 @@ abstract contract GuardedExecutor is ERC7821 {
         onlyThis
         checkKeyHashIsNonZero(keyHash)
     {
+        if (_isSuperAdmin(keyHash)) revert SuperAdminCanSpendAnything();
+
         SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
         spends.tokens.add(token, 64); // Max capacity of 64.
 
@@ -377,6 +383,8 @@ abstract contract GuardedExecutor is ERC7821 {
         onlyThis
         checkKeyHashIsNonZero(keyHash)
     {
+        if (_isSuperAdmin(keyHash)) revert SuperAdminCanSpendAnything();
+
         SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
 
         TokenSpendStorage storage tokenSpends = spends.spends[token];
@@ -536,6 +544,7 @@ abstract contract GuardedExecutor is ERC7821 {
     function _incrementSpent(TokenSpendStorage storage s, uint256 amount) internal {
         if (amount == uint256(0)) return; // Early return.
         uint8[] memory periods = s.periods.values();
+        if (periods.length == 0) revert NoSpendPermissions();
         for (uint256 i; i < periods.length; ++i) {
             uint8 period = periods[i];
             TokenPeriodSpendStorage storage tokenPeriodSpend = s.spends[period];

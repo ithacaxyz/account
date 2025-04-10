@@ -11,6 +11,10 @@ contract MockDelegation is Delegation, Brutalizer {
 
     constructor(address entryPoint) payable Delegation(entryPoint) {}
 
+    function _keyTypeCanBeSuperAdmin(KeyType) internal pure override returns (bool) {
+        return true;
+    }
+
     function setX(uint256 newX) public onlyThis {
         x = newX;
     }

@@ -116,8 +116,8 @@ contract SimulateExecuteTest is BaseTest {
         u.payer = address(0x00);
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(0x00);
-        u.paymentAmount = 0.1 ether;
-        u.paymentMaxAmount = 0.5 ether;
+        u.paymentAmount = _randomChance(2) ? 0 : 0.1 ether;
+        u.paymentMaxAmount = _bound(_random(), u.paymentAmount, 0.5 ether);
         u.paymentPerGas = 1e9;
 
         {
@@ -179,8 +179,8 @@ contract SimulateExecuteTest is BaseTest {
         u.payer = address(0x00);
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(0x00);
-        u.paymentAmount = 0.1 ether;
-        u.paymentMaxAmount = 0.5 ether;
+        u.paymentAmount = _randomChance(2) ? 0 : 0.1 ether;
+        u.paymentMaxAmount = _bound(_random(), u.paymentAmount, 0.5 ether);
         u.paymentPerGas = 1e9;
 
         // Just fill with some non-zero junk P256 signature that contains the `keyHash`,

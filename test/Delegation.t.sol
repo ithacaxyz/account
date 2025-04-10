@@ -304,4 +304,27 @@ contract DelegationTest is BaseTest {
         assert(keys[0].expiry == 0);
         assert(keys[1].expiry == 5);
     }
+
+    function testAddDisallowedSuperAdminKeyTypeReverts() public {
+        address entryPoint = address(new EntryPoint(address(this)));
+        address delegationImplementation = address(new Delegation(address(entryPoint)));
+        address delegationProxy = address(new EIP7702Proxy(delegationImplementation, address(0)));
+        delegation = MockDelegation(payable(delegationProxy));
+
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+
+        PassKey memory k = _randomSecp256k1PassKey();
+        k.k.isSuperAdmin = true;
+
+        vm.startPrank(d.eoa);
+
+        d.d.authorize(k.k);
+
+        k = _randomSecp256r1PassKey();
+        k.k.isSuperAdmin = true;
+        vm.expectRevert(bytes4(keccak256("KeyTypeCannotBeSuperAdmin()")));
+        d.d.authorize(k.k);
+
+        vm.stopPrank();
+    }
 }
