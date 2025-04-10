@@ -446,7 +446,6 @@ contract EntryPointTest is BaseTest {
         uint256 gUsed;
         bool success;
         bytes result;
-        bool testInvalidPreOpEOA;
         bool testPreOpVerificationError;
         bool testPreOpCallError;
         bool testPREP;
@@ -491,16 +490,8 @@ contract EntryPointTest is BaseTest {
 
         kSuperAdmin.k.isSuperAdmin = true;
 
-        EntryPoint.UserOp memory uSuperAdmin;
-        EntryPoint.UserOp memory uSession;
-
-        uSuperAdmin.eoa = t.eoa;
-        uSession.eoa = t.eoa;
-
-        if (_randomChance(64)) {
-            uSession.eoa = _randomUniqueHashedAddress();
-            t.testInvalidPreOpEOA = true;
-        }
+        EntryPoint.PreOp memory pSuperAdmin;
+        EntryPoint.PreOp memory pSession;
 
         u.encodedPreOps = new bytes[](2);
         // Prepare super admin passkey authorization UserOp.
@@ -508,14 +499,12 @@ contract EntryPointTest is BaseTest {
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
             calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, kSuperAdmin.k);
 
-            uSuperAdmin.executionData = abi.encode(calls);
-            // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
-            uSuperAdmin.nonce = (0xc1d0 << 240) | (1 << 64);
+            pSuperAdmin.executionData = abi.encode(calls);
 
             if (t.testPREP) {
-                uSuperAdmin.signature = _sig(t.kPREP, uSuperAdmin);
+                pSuperAdmin.signature = _sig(t.kPREP, ep.computeDigest(pSuperAdmin));
             } else {
-                uSuperAdmin.signature = _eoaSig(t.d.privateKey, uSuperAdmin);
+                pSuperAdmin.signature = _eoaSig(t.d.privateKey, ep.computeDigest(pSuperAdmin));
             }
         }
 
@@ -541,15 +530,12 @@ contract EntryPointTest is BaseTest {
                 t.testPreOpCallError = true;
             }
 
-            uSession.executionData = abi.encode(calls);
-            // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
-            uSession.nonce = (0xc1d0 << 240) | (2 << 64);
-
-            uSession.signature = _sig(kSuperAdmin, uSession);
+            pSession.executionData = abi.encode(calls);
+            pSession.signature = _sig(kSuperAdmin, ep.computeDigest(pSession));
 
             if (_randomChance(64)) {
-                uSession.signature = _sig(_randomSecp256r1PassKey(), uSession);
-                u.encodedPreOps[1] = abi.encode(uSession);
+                pSession.signature = _sig(_randomSecp256r1PassKey(), ep.computeDigest(pSession));
+                u.encodedPreOps[1] = abi.encode(pSession);
                 t.testPreOpVerificationError = true;
             }
         }
@@ -562,15 +548,8 @@ contract EntryPointTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.nonce = 0;
 
-            u.encodedPreOps[0] = abi.encode(uSuperAdmin);
-            u.encodedPreOps[1] = abi.encode(uSession);
-        }
-
-        if (t.testInvalidPreOpEOA) {
-            u.combinedGas = 10000000;
-            u.signature = _sig(kSession, u);
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("InvalidPreOpEOA()")));
-            return; // Skip the rest.
+            u.encodedPreOps[0] = abi.encode(pSuperAdmin);
+            u.encodedPreOps[1] = abi.encode(pSession);
         }
 
         if (t.testPreOpVerificationError) {
@@ -585,16 +564,6 @@ contract EntryPointTest is BaseTest {
             u.signature = _sig(kSession, u);
             assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("PreOpCallError()")));
             return; // Skip the rest.
-        }
-
-        // Test recursive style.
-        if (_randomChance(8)) {
-            uSession.encodedPreOps = new bytes[](1);
-            uSession.encodedPreOps[0] = abi.encode(uSuperAdmin);
-            uSession.signature = _sig(kSuperAdmin, uSession);
-
-            u.encodedPreOps = new bytes[](1);
-            u.encodedPreOps[0] = abi.encode(uSession);
         }
 
         // Test gas estimation.
@@ -629,8 +598,6 @@ contract EntryPointTest is BaseTest {
         }
 
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
-        assertEq(ep.getNonce(t.eoa, uint192(uSession.nonce >> 64)), uSession.nonce | 1);
-        assertEq(ep.getNonce(t.eoa, uint192(uSuperAdmin.nonce >> 64)), uSuperAdmin.nonce | 1);
     }
 
     struct _TestPayViaAnotherPayerTemps {
