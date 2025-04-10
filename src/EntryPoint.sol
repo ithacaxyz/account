@@ -371,7 +371,8 @@ contract EntryPoint is
             // Setting `_FLAG_IS_SIMULATION` tells `_execute` that we want the
             // simulation to skip the invalid signature revert and also the 63/64 rule revert.
             // Also use `2**96 - 1` as the `combinedGas` for the very first call to `_execute`.
-            mstore(add(data, 0x24), or(_FLAG_IS_SIMULATION, 0xffffffffffffffffffffffff))
+            let fullCombinedGasOverride := or(_FLAG_IS_SIMULATION, 0xffffffffffffffffffffffff)
+            mstore(add(data, 0x24), fullCombinedGasOverride)
             if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecuteFailed() }
             gUsed := mload(0x04)
             err := mload(0x24)
@@ -418,8 +419,7 @@ contract EntryPoint is
 
             // Execute one final time without reverting.
             // This allows `eth_simulateV1` to collect all logs from the execution.
-            let flags := or(_FLAG_BUBBLE_FULL_REVERT, _FLAG_IS_SIMULATION)
-            mstore(add(data, 0x24), or(flags, 0xffffffffffffffffffffffff))
+            mstore(add(data, 0x24), or(_FLAG_BUBBLE_FULL_REVERT, fullCombinedGasOverride))
             mstore(add(data, 0x44), caller()) // `noRevertCaller`.
 
             // Because `encodedUserOp` is in the calldata, we have to do a self call to
