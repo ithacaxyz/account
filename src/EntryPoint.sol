@@ -66,8 +66,9 @@ contract EntryPoint is
     /// we don't need to be too concerned about calldata overhead.
     struct UserOp {
         /// @dev The user's address.
-        /// If this is a PreOp, this can be set to `address(0)`, which will be
-        /// coalesced to the parent's eoa, and sets the `nonce` to `type(uint256).max`.
+        /// If this is a PreOp, this can be set to `address(0)`.
+        /// Setting to `address(0)` will allow it to be replaced with the parent's EOA,
+        /// and signal `nonce` to be replaced with `type(uint256).max`.
         address eoa;
         /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
         /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
@@ -176,10 +177,10 @@ contract EntryPoint is
     /// @dev No revert has been encountered.
     error NoRevertEncountered();
 
-    /// @dev A sub UserOp's EOA must be the same as its parent UserOp's eoa.
+    /// @dev A PreOp's EOA must be the same as its parent UserOp's.
     error InvalidPreOpEOA();
 
-    /// @dev The sub UserOp cannot be verified to be correct.
+    /// @dev The PreOp cannot be verified to be correct.
     error PreOpVerificationError();
 
     /// @dev Error calling the sub UserOp's `executionData`.
@@ -738,11 +739,12 @@ contract EntryPoint is
     }
 
     /// @dev Loops over the `encodedPreOps` and does the following for each:
-    /// - If the eoa is zero, coalesce it to the parent's eoa.
-    ///   Then check if it matches the parent's eoa.
-    /// - If there are any sub UserOp in a sub UserOp, recurse.
-    /// - Validate the signature.
-    /// - Check and increment the nonce.
+    /// - If the `eoa == address(0)`, it will be replaced with the `parentEOA`,
+    ///   and will replace the nonce with `type(uint256).max`.
+    /// - Check if `eoa == parentEOA`.
+    /// - If there are any PreOps in a PreOp, recurse.
+    /// - Validate the signature. This uses the original `nonce` that is passed in.
+    /// - Check and increment the nonce, if it is not `type(uint256).max`.
     /// - Call the Delegation with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
     /// - Emit an {UserOpExecuted} event.
