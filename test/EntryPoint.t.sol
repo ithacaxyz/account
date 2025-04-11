@@ -492,9 +492,9 @@ contract EntryPointTest is BaseTest {
 
         PassKey memory kSession = _randomSecp256r1PassKey();
 
-        EntryPoint.UserOp memory uSession;
+        EntryPoint.PreOp memory pSession;
 
-        uSession.eoa = t.eoa;
+        pSession.eoa = t.eoa;
 
         // Prepare session passkey authorization UserOp.
         {
@@ -521,11 +521,11 @@ contract EntryPointTest is BaseTest {
                 (calls[1], calls[2]) = (calls[2], calls[1]);
             }
 
-            uSession.executionData = abi.encode(calls);
+            pSession.executionData = abi.encode(calls);
             // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
-            uSession.nonce = (0xc1d0 << 240) | (2 << 64);
+            pSession.nonce = (0xc1d0 << 240) | (2 << 64);
 
-            uSession.signature = _sig(t.kPREP, uSession);
+            pSession.signature = _sig(t.kPREP, ep.computeDigest(pSession));
         }
 
         u.encodedPreOps = new bytes[](1);
@@ -538,7 +538,7 @@ contract EntryPointTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.nonce = 0;
 
-            u.encodedPreOps[0] = abi.encode(uSession);
+            u.encodedPreOps[0] = abi.encode(pSession);
         }
 
         // Test without gas estimation.
