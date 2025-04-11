@@ -574,14 +574,15 @@ contract Delegation is EIP712, GuardedExecutor {
         }
     }
 
-    /// @dev Allows the entry point to initialize the PREP.
+    /// @dev Initializes the PREP.
     /// `initData` is encoded using ERC7821 style batch execution encoding.
     /// (ERC7821 is a variant of ERC7579).
     /// `abi.encode(calls, abi.encodePacked(bytes32(saltAndDelegation)))`,
     /// where `calls` is of type `Call[]`,
     /// and `saltAndDelegation` is `bytes32((uint256(salt) << 160) | uint160(delegation))`.
     function initializePREP(bytes calldata initData) public virtual returns (bool) {
-        if (msg.sender != ENTRY_POINT) revert Unauthorized();
+        // We can omit the check for `msg.sender == ENTRY_POINT`,
+        // having a correct `initData` will be sufficient.
         DelegationStorage storage $ = _getDelegationStorage();
         if ($.rPREP != 0) revert PREPAlreadyInitialized();
 
