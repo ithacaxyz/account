@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {UserOp} from "../structs/Common.sol";
+import {ICommon} from "../interfaces/ICommon.sol";
 
 /// @title IEntryPoint
 /// @notice Interface for the EntryPoint contract
-interface IEntryPoint {
+interface IEntryPoint is ICommon {
     /// @dev Executes a single encoded user operation.
     /// @param encodedUserOp The encoded user operation
     /// @return err The error selector (non-zero if there is an error)

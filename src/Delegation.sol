@@ -20,11 +20,11 @@ import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {LibNonce} from "./libraries/LibNonce.sol";
 import {LibPREP} from "./libraries/LibPREP.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
-import {UserOp} from "./structs/Common.sol";
+import {IDelegation} from "./interfaces/IDelegation.sol";
 
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
-contract Delegation is EIP712, GuardedExecutor {
+contract Delegation is IDelegation, EIP712, GuardedExecutor {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for *;
     using LibBytes for LibBytes.BytesStorage;
@@ -497,22 +497,18 @@ contract Delegation is EIP712, GuardedExecutor {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
-    function pay(bool isPreExecution, bytes32 keyHash, UserOp calldata userOp) public virtual {
+    function pay(uint256 paymentAmount, bytes32 keyHash, UserOp calldata userOp) public virtual {
         if (!LibBit.and(msg.sender == ENTRY_POINT, userOp.eoa == address(this))) {
             revert Unauthorized();
         }
-        TokenTransferLib.safeTransfer(
-            userOp.paymentToken, msg.sender, userOp.paymentAmount
-        );
+        TokenTransferLib.safeTransfer(userOp.paymentToken, msg.sender, paymentAmount);
         // Increase spend.
         if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
             SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
             _incrementSpent(
-                spends.spends[userOp.paymentToken], userOp.paymentToken, userOp.paymentAmount
+                spends.spends[userOp.paymentToken], userOp.paymentToken, paymentAmount
             );
         }
-        // Silence unused variables warning.
-        isPreExecution = isPreExecution;
     }
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.
