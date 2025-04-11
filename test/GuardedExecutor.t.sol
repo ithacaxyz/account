@@ -125,6 +125,7 @@ contract GuardedExecutorTest is BaseTest {
         d.d.authorize(kSuperAdmin.k);
         vm.stopPrank();
 
+
         for (uint256 i; i < 2; ++i) {
             uint256 x = _randomUniform() | 1;
 
@@ -143,7 +144,7 @@ contract GuardedExecutorTest is BaseTest {
 
             vm.prank(d.eoa);
             d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, abi.encode(calls));
-            assertEq(d.d.x(), x);
+            assertEq(d.d.x(), x, "1");
 
             d.d.resetX();
 
@@ -152,15 +153,15 @@ contract GuardedExecutorTest is BaseTest {
 
             u.nonce = ep.getNonce(u.eoa, 0);
             u.signature = _eoaSig(d.privateKey, u);
-            assertEq(ep.execute(abi.encode(u)), 0);
-            assertEq(d.d.x(), x);
+            assertEq(ep.execute(abi.encode(u)), 0, "2");
+            assertEq(d.d.x(), x, "3");
 
             d.d.resetX();
 
             u.nonce = ep.getNonce(u.eoa, 0);
             u.signature = _sig(kSuperAdmin, u);
-            assertEq(ep.execute(abi.encode(u)), 0);
-            assertEq(d.d.x(), x);
+            assertEq(ep.execute(abi.encode(u)), 0, "4");
+            assertEq(d.d.x(), x, "5");
 
             d.d.resetX();
 
@@ -168,9 +169,10 @@ contract GuardedExecutorTest is BaseTest {
             u.signature = _sig(kRegular, u);
             assertEq(
                 ep.execute(abi.encode(u)),
-                bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)"))
+                bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")),
+                "6"
             );
-            assertEq(d.d.x(), 0);
+            assertEq(d.d.x(), 0, "7");
 
             d.d.resetX();
         }
@@ -604,7 +606,7 @@ contract GuardedExecutorTest is BaseTest {
 
     function testSpendNativeWithSecp256k1ViaEntryPoint() public {
         _testSpendWithPassKeyViaEntryPoint(_randomSecp256k1PassKey(), address(0));
-    }
+    }  
 
     function _testSpendWithPassKeyViaEntryPoint(PassKey memory k, address tokenToSpend) internal {
         EntryPoint.UserOp memory u;
@@ -616,8 +618,10 @@ contract GuardedExecutorTest is BaseTest {
         u.eoa = d.eoa;
         u.nonce = ep.getNonce(u.eoa, 0);
         u.paymentToken = address(paymentToken);
-        u.paymentAmount = 1 ether;
-        u.paymentMaxAmount = type(uint192).max;
+        u.prePaymentAmount = 1 ether;
+        u.prePaymentMaxAmount = type(uint192).max;
+        u.totalPaymentAmount = u.prePaymentAmount;
+        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
 
         // Mint some tokens.
         paymentToken.mint(u.eoa, type(uint192).max);

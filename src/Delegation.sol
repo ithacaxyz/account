@@ -501,7 +501,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         if (!LibBit.and(msg.sender == ENTRY_POINT, userOp.eoa == address(this))) {
             revert Unauthorized();
         }
-        TokenTransferLib.safeTransfer(userOp.paymentToken, msg.sender, paymentAmount);
+        TokenTransferLib.safeTransfer(userOp.paymentToken, userOp.paymentRecipient, paymentAmount);
         // Increase spend.
         if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
             SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;

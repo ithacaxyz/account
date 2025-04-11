@@ -49,8 +49,10 @@ contract LibPREPTest is BaseTest {
 
         u.nonce = 0xc1d0 << 240;
         u.paymentToken = address(paymentToken);
-        u.paymentAmount = 1 ether;
-        u.paymentMaxAmount = type(uint128).max;
+        u.prePaymentAmount = 1 ether;
+        u.prePaymentMaxAmount = type(uint128).max;
+        u.totalPaymentAmount = u.prePaymentAmount;
+        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
         u.combinedGas = 10000000;
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
