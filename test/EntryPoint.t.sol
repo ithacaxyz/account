@@ -3,6 +3,7 @@ pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
+import {LibClone} from "solady/utils/LibClone.sol";
 import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCallTarget.sol";
 import {MockPayerWithState} from "./utils/mocks/MockPayerWithState.sol";
 import {MockPayerWithSignature} from "./utils/mocks/MockPayerWithSignature.sol";
@@ -453,6 +454,93 @@ contract EntryPointTest is BaseTest {
         PassKey kPREP;
         DelegatedEOA d;
         address eoa;
+    }
+
+    function testPREPAndTransferInOneShot(bytes32) public {
+        _TestAuthorizeWithPreOpsAndTransferTemps memory t;
+        EntryPoint.UserOp memory u;
+
+        t.kPREP = _randomSecp256r1PassKey(); // This would be WebAuthn in practice.
+        t.kPREP.k.isSuperAdmin = true;
+
+        ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
+        initCalls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, t.kPREP.k);
+
+        bytes32 saltAndDelegation;
+        (saltAndDelegation, t.eoa) = _minePREP(_computePREPDigest(initCalls));
+        u.initData = abi.encode(initCalls, abi.encodePacked(saltAndDelegation));
+
+        vm.etch(t.eoa, abi.encodePacked(hex"ef0100", delegation));
+
+        u.eoa = t.eoa;
+
+        address tokenToTransfer =
+            _randomChance(2) ? address(0) : LibClone.clone(address(paymentToken));
+        _mint(tokenToTransfer, u.eoa, 2 ** 128 - 1);
+
+        paymentToken.mint(u.eoa, 2 ** 128 - 1);
+        u.paymentToken = address(paymentToken);
+        u.paymentAmount = _bound(_random(), 0, 0.5 ether);
+        u.paymentMaxAmount = u.paymentAmount;
+        u.nonce = 0xc1d0 << 240;
+
+        PassKey memory kSession = _randomSecp256r1PassKey();
+
+        EntryPoint.UserOp memory uSession;
+
+        uSession.eoa = t.eoa;
+
+        // Prepare session passkey authorization UserOp.
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](5);
+            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, kSession.k);
+            calls[1].data = abi.encodeWithSelector(
+                GuardedExecutor.setCanExecute.selector,
+                kSession.keyHash,
+                _randomChance(2) && tokenToTransfer != address(0) ? tokenToTransfer : _ANY_TARGET,
+                _randomChance(2) && tokenToTransfer != address(0)
+                    ? bytes4(keccak256("transfer(address,uint256)"))
+                    : _ANY_FN_SEL,
+                true
+            );
+            calls[2] = _setSpendLimitCall(
+                kSession, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
+            );
+            calls[3] =
+                _setSpendLimitCall(kSession, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether);
+            calls[4] = _setSpendLimitCall(
+                kSession, tokenToTransfer, GuardedExecutor.SpendPeriod.Hour, 1 ether
+            );
+            if (_randomChance(2)) {
+                (calls[1], calls[2]) = (calls[2], calls[1]);
+            }
+
+            uSession.executionData = abi.encode(calls);
+            // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
+            uSession.nonce = (0xc1d0 << 240) | (2 << 64);
+
+            uSession.signature = _sig(t.kPREP, uSession);
+        }
+
+        u.encodedPreOps = new bytes[](1);
+
+        // Prepare the enveloping UserOp.
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            calls[0] = _transferCall(address(tokenToTransfer), address(0xabcd), 0.5 ether);
+
+            u.executionData = abi.encode(calls);
+            u.nonce = 0;
+
+            u.encodedPreOps[0] = abi.encode(uSession);
+        }
+
+        // Test without gas estimation.
+        u.combinedGas = 10000000;
+        u.signature = _sig(kSession, u);
+        assertEq(ep.execute(abi.encode(u)), 0);
+
+        assertEq(_balanceOf(tokenToTransfer, address(0xabcd)), 0.5 ether);
     }
 
     function testAuthorizeWithPreOpsAndTransfer(bytes32) public {

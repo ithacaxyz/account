@@ -79,7 +79,7 @@ abstract contract GuardedExecutor is ERC7821 {
     error UnauthorizedCall(bytes32 keyHash, address target, bytes data);
 
     /// @dev Exceeded the spend limit.
-    error ExceededSpendLimit();
+    error ExceededSpendLimit(address token);
 
     /// @dev In order to spend a token, it must have spend permissions set.
     error NoSpendPermissions();
@@ -282,7 +282,7 @@ abstract contract GuardedExecutor is ERC7821 {
 
         // Perform after the `_execute`, so that in the case where `calls`
         // contain a `setSpendLimit`, it will affect the `_incrementSpent`.
-        _incrementSpent(spends.spends[address(0)], totalNativeSpend);
+        _incrementSpent(spends.spends[address(0)], address(0), totalNativeSpend);
 
         // Increments the spent amounts.
         for (uint256 i; i < t.erc20s.length(); ++i) {
@@ -290,6 +290,7 @@ abstract contract GuardedExecutor is ERC7821 {
             TokenSpendStorage storage tokenSpends = spends.spends[token];
             _incrementSpent(
                 tokenSpends,
+                token,
                 // While we can actually just use the difference before and after,
                 // we also want to let the sum of the transfer amounts in the calldata to be capped.
                 // This prevents tokens to be used as flash loans, and also handles cases
@@ -541,7 +542,7 @@ abstract contract GuardedExecutor is ERC7821 {
     }
 
     /// @dev Increments the amount spent.
-    function _incrementSpent(TokenSpendStorage storage s, uint256 amount) internal {
+    function _incrementSpent(TokenSpendStorage storage s, address token, uint256 amount) internal {
         if (amount == uint256(0)) return; // Early return.
         uint8[] memory periods = s.periods.values();
         if (periods.length == 0) revert NoSpendPermissions();
@@ -554,7 +555,7 @@ abstract contract GuardedExecutor is ERC7821 {
                 tokenPeriodSpend.spent = 0;
             }
             if ((tokenPeriodSpend.spent += amount) > tokenPeriodSpend.limit) {
-                revert ExceededSpendLimit();
+                revert ExceededSpendLimit(token);
             }
         }
     }

@@ -19,6 +19,7 @@ contract MockPayerWithState is Ownable {
         address paymentRecipient,
         uint256 paymentAmount,
         address eoa,
+        bytes32 keyHash,
         bytes32 userOpDigest,
         bytes paymentSignature
     );
@@ -52,6 +53,7 @@ contract MockPayerWithState is Ownable {
         address paymentRecipient,
         uint256 paymentAmount,
         address eoa,
+        bytes32 keyHash,
         bytes32 userOpDigest,
         bytes calldata paymentSignature
     ) public virtual {
@@ -60,9 +62,15 @@ contract MockPayerWithState is Ownable {
         funds[paymentToken][eoa] -= paymentAmount;
         TokenTransferLib.safeTransfer(paymentToken, paymentRecipient, paymentAmount);
         // Emit the event for debugging.
-        // The `userOpDigest` and `paymentSignature` are not used.
+        // The `keyHash`, `userOpDigest` and `paymentSignature` are not used.
         emit Compensated(
-            paymentToken, paymentRecipient, paymentAmount, eoa, userOpDigest, paymentSignature
+            paymentToken,
+            paymentRecipient,
+            paymentAmount,
+            eoa,
+            keyHash,
+            userOpDigest,
+            paymentSignature
         );
     }
 
