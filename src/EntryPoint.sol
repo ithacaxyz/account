@@ -4,6 +4,7 @@ pragma solidity ^0.8.23;
 import {AccountRegistry} from "./AccountRegistry.sol";
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
+import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
 import {ReentrancyGuardTransient} from "solady/utils/ReentrancyGuardTransient.sol";
@@ -123,6 +124,10 @@ contract EntryPoint is
         /// @dev Optional payment signature to be passed into the `compensate` function
         /// on the `payer`. This signature is NOT included in the EIP712 signature.
         bytes paymentSignature;
+        /// @dev Optional. If non-zero, the EOA must use `supportedDelegationImplementation`.
+        /// Otherwise, if left as `address(0)`, any EOA implementation will be supported.
+        /// This field is NOT included in the EIP712 signature.
+        address supportedDelegationImplementation;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -175,6 +180,9 @@ contract EntryPoint is
 
     /// @dev Error calling the sub UserOp's `executionData`.
     error PreOpCallError();
+
+    /// @dev The EOA's delegation implementation is not supported.
+    error UnsupportedDelegationImplementation();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -517,6 +525,7 @@ contract EntryPoint is
         uint256 g = Math.coalesce(uint96(combinedGasOverride), u.combinedGas);
         uint256 gStart = gasleft();
 
+        bool isSimulation = combinedGasOverride & _FLAG_IS_SIMULATION != 0;
         unchecked {
             // Check if there's sufficient gas left for the gas-limited self calls
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
@@ -525,11 +534,17 @@ contract EntryPoint is
                 // Don't revert if `_FLAG_IS_SIMULATION`.
                 // For `simulateExecute` to be able to get a simulation before knowing
                 // how much gas is needed without reverting.
-                if (combinedGasOverride & _FLAG_IS_SIMULATION == 0) revert InsufficientGas();
+                if (!isSimulation) revert InsufficientGas();
             }
             // If `_FLAG_63_OVER_64_TEST` is set, this means `simulateExecute` just wants
             // to check the 63/64 rule, so early return to skip the rest of the computations.
             if (combinedGasOverride & _FLAG_63_OVER_64_TEST != 0) return (0, 0);
+        }
+
+        if (u.supportedDelegationImplementation != address(0)) {
+            if (delegationImplementationOf(u.eoa) != u.supportedDelegationImplementation) {
+                if (!isSimulation) err = UnsupportedDelegationImplementation.selector;
+            }
         }
 
         address payer = Math.coalesce(u.payer, u.eoa);
@@ -551,7 +566,6 @@ contract EntryPoint is
                 // Copy the encoded user op to the memory to be ready to pass to the self call.
                 calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
                 mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
-                // The word after the function selector contains the simulation flags.
                 mstore(add(m, 0x20), shl(96, shr(96, combinedGasOverride)))
                 mstore(0x00, 0) // Zeroize the return slot.
 
@@ -781,6 +795,17 @@ contract EntryPoint is
             // Reaching here means there's no error in the PreOp.
             emit UserOpExecuted(eoa, u.nonce, true, 0); // `incremented = true`, `err = 0`.
         }
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // Delegation Implementation
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Returns the implementation of the EOA.
+    /// If the EOA's delegation's is not valid EIP7702Proxy (via bytecode check), returns `address(0)`.
+    /// This function is provided as a public helper for easier integration.
+    function delegationImplementationOf(address eoa) public view virtual returns (address result) {
+        (, result) = LibEIP7702.delegationAndImplementationOf(eoa);
     }
 
     ////////////////////////////////////////////////////////////////////////
