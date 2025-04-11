@@ -53,7 +53,7 @@ contract EntryPoint is
     ////////////////////////////////////////////////////////////////////////
     // UserOp Offets
     ////////////////////////////////////////////////////////////////////////
-
+    // TODO: These values are wrong, need to fix this, after fixing the simulateExecute function.
     /// @dev Offset of `paymentAmount` in the UserOp struct.
     uint256 internal constant _USER_OP_PAYMENT_AMOUNT_OFFSET = 6 * 0x20;
 
@@ -618,13 +618,16 @@ contract EntryPoint is
 
         // We call the selfCallExecutePay function with all the remaining gas,
         // because `selfCallPayVerifyCall537021665` is already gas-limited to the combined gas specified in the UserOp.
-        // TODO: Optimize this
-
+        // TODO: Optimize this with assembly
         try this.selfCallExecutePay(simulationFlags, keyHash, u) {}
         catch {
             // We don't revert if the selfCallExecutePay reverts,
             // Because we don't want to return the prePayment, since that will be used to pay for the gas.
             // TODO: Should we add some identifier here, either using a return flag, or an event, that informs the caller that execute/post-payment has failed.
+            assembly ("memory-safe") {
+                returndatacopy(0x00, 0x00, 0x20)
+                return(0x00, 0x20)
+            }
         }
     }
 
@@ -657,7 +660,7 @@ contract EntryPoint is
                     revert(mload(0x40), returndatasize())
                 }
                 if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x6c9d47e8)) } // `CallError()`.
-                return(0x00, 0x20) // Return the `err`.
+                revert(0x00, 0x20) // Revert with the `err`.
             }
         }
 
