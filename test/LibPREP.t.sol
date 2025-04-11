@@ -31,7 +31,7 @@ contract LibPREPTest is BaseTest {
 
     function testPREP() public {
         _TestTemps memory t;
-        UserOp memory u;
+        EntryPoint.UserOp memory u;
 
         PassKey memory k = _randomSecp256r1PassKey();
         k.k.isSuperAdmin = true;

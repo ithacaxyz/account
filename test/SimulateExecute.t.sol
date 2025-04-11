@@ -100,7 +100,7 @@ contract SimulateExecuteTest is BaseTest {
             abi.encodeWithSignature("burnGas(uint256,uint256)", t.gasToBurn, t.randomness)
         );
 
-        UserOp memory u;
+        EntryPoint.UserOp memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = t.executionData;
@@ -157,7 +157,7 @@ contract SimulateExecuteTest is BaseTest {
             abi.encodeWithSignature("burnGas(uint256,uint256)", t.gasToBurn, t.randomness)
         );
 
-        UserOp memory u;
+        EntryPoint.UserOp memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = t.executionData;
@@ -220,7 +220,7 @@ contract SimulateExecuteTest is BaseTest {
             abi.encodeWithSignature("burnGas(uint256,uint256)", t.gasToBurn, t.randomness)
         );
 
-        UserOp memory u;
+        EntryPoint.UserOp memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = t.executionData;
