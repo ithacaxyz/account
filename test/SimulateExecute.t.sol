@@ -107,9 +107,10 @@ contract SimulateExecuteTest is BaseTest {
         u.payer = address(0x00);
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(0x00);
-        u.paymentAmount = 0x112233112233112233112233;
-        u.paymentMaxAmount = 0x445566445566445566445566;
-        u.paymentPerGas = 1;
+        u.prePaymentAmount = 0x112233112233112233112233;
+        u.prePaymentMaxAmount = 0x445566445566445566445566;
+        u.totalPaymentAmount = u.prePaymentAmount;
+        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
 
         {
             // Just pass in a junk secp256k1 signature.
@@ -164,9 +165,10 @@ contract SimulateExecuteTest is BaseTest {
         u.payer = address(0x00);
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(0x00);
-        u.paymentAmount = _randomChance(2) ? 0 : 0.1 ether;
-        u.paymentMaxAmount = _bound(_random(), u.paymentAmount, 0.5 ether);
-        u.paymentPerGas = 1e9;
+        u.prePaymentAmount = _randomChance(2) ? 0 : 0.1 ether;
+        u.prePaymentMaxAmount = _bound(_random(), u.prePaymentAmount, 0.5 ether);
+        u.totalPaymentAmount = u.prePaymentAmount;
+        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
 
         {
             // Just pass in a junk secp256k1 signature.
@@ -227,9 +229,10 @@ contract SimulateExecuteTest is BaseTest {
         u.payer = address(0x00);
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(0x00);
-        u.paymentAmount = _randomChance(2) ? 0 : 0.1 ether;
-        u.paymentMaxAmount = _bound(_random(), u.paymentAmount, 0.5 ether);
-        u.paymentPerGas = 1e9;
+        u.prePaymentAmount = _randomChance(2) ? 0 : 0.1 ether;
+        u.prePaymentMaxAmount = _bound(_random(), u.prePaymentAmount, 0.5 ether);
+        u.totalPaymentAmount = u.prePaymentAmount;
+        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
 
         // Just fill with some non-zero junk P256 signature that contains the `keyHash`,
         // so that the `simulateExecute` knows that
