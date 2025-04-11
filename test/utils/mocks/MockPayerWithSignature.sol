@@ -19,6 +19,7 @@ contract MockPayerWithSignature is Ownable {
         address paymentRecipient,
         uint256 paymentAmount,
         address eoa,
+        bytes32 keyHash,
         bytes32 userOpDigest,
         bytes paymentSignature
     );
@@ -50,6 +51,7 @@ contract MockPayerWithSignature is Ownable {
         address paymentRecipient,
         uint256 paymentAmount,
         address eoa,
+        bytes32 keyHash,
         bytes32 userOpDigest,
         bytes calldata paymentSignature
     ) public virtual {
@@ -60,9 +62,15 @@ contract MockPayerWithSignature is Ownable {
             revert InvalidSignature();
         }
         // Emit the event for debugging.
-        // The `eoa` is not used.
+        // The `eoa` and `keyHash` are not used.
         emit Compensated(
-            paymentToken, paymentRecipient, paymentAmount, eoa, userOpDigest, paymentSignature
+            paymentToken,
+            paymentRecipient,
+            paymentAmount,
+            eoa,
+            keyHash,
+            userOpDigest,
+            paymentSignature
         );
     }
 

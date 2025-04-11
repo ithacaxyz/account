@@ -625,7 +625,7 @@ contract GuardedExecutorTest is BaseTest {
 
         // Authorize.
         {
-            ERC7821.Call[] memory calls = new ERC7821.Call[](3);
+            ERC7821.Call[] memory calls = new ERC7821.Call[](4);
             // Authorize the key.
             calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, k.k);
             // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
@@ -634,6 +634,10 @@ contract GuardedExecutorTest is BaseTest {
             );
             // Set some spend limit.
             calls[2] = _setSpendLimitCall(k, tokenToSpend, GuardedExecutor.SpendPeriod.Day, 1 ether);
+            // Set some spend limit on the payment token.
+            calls[3] = _setSpendLimitCall(
+                k, u.paymentToken, GuardedExecutor.SpendPeriod.Day, type(uint192).max
+            );
 
             u.executionData = abi.encode(calls);
             u.nonce = 0xc1d0 << 240;
@@ -642,8 +646,11 @@ contract GuardedExecutorTest is BaseTest {
             u.signature = _eoaSig(d.privateKey, u);
 
             assertEq(ep.execute{gas: gExecute}(abi.encode(u)), 0);
-            assertEq(d.d.spendInfos(k.keyHash).length, 1);
+            assertEq(d.d.spendInfos(k.keyHash).length, 2);
             assertEq(d.d.spendInfos(k.keyHash)[0].spent, 0);
+
+            assertEq(d.d.spendInfos(k.keyHash)[1].token, u.paymentToken);
+            assertEq(d.d.spendInfos(k.keyHash)[1].spent, 0);
         }
 
         // Prep UserOp, and submit it. This UserOp should pass.
@@ -661,6 +668,9 @@ contract GuardedExecutorTest is BaseTest {
             assertEq(ep.execute{gas: gExecute}(abi.encode(u)), 0);
             assertEq(_balanceOf(tokenToSpend, address(0xb0b)), 0.6 ether);
             assertEq(d.d.spendInfos(k.keyHash)[0].spent, 0.6 ether);
+
+            assertEq(d.d.spendInfos(k.keyHash)[1].token, u.paymentToken);
+            assertEq(d.d.spendInfos(k.keyHash)[1].spent, 1 ether);
         }
 
         // Prep UserOp to try to exceed daily spend limit. This UserOp should fail.
