@@ -135,9 +135,6 @@ contract Delegation is EIP712, GuardedExecutor {
     /// @dev The `opData` is too short.
     error OpDataTooShort();
 
-    /// @dev The PREP has already been initialized.
-    error PREPAlreadyInitialized();
-
     /// @dev The PREP `initData` is invalid.
     error InvalidPREP();
 
@@ -575,6 +572,7 @@ contract Delegation is EIP712, GuardedExecutor {
     }
 
     /// @dev Initializes the PREP.
+    /// If already initialized, early returns true.
     /// `initData` is encoded using ERC7821 style batch execution encoding.
     /// (ERC7821 is a variant of ERC7579).
     /// `abi.encode(calls, abi.encodePacked(bytes32(saltAndDelegation)))`,
@@ -584,7 +582,7 @@ contract Delegation is EIP712, GuardedExecutor {
         // We can omit the check for `msg.sender == ENTRY_POINT`,
         // having a correct `initData` will be sufficient.
         DelegationStorage storage $ = _getDelegationStorage();
-        if ($.rPREP != 0) revert PREPAlreadyInitialized();
+        if ($.rPREP != 0) return true;
 
         // Compute the digest of the calls in `initData`.
         (bytes32[] calldata pointers, bytes calldata opData) =
