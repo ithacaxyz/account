@@ -66,6 +66,8 @@ contract EntryPoint is
     /// we don't need to be too concerned about calldata overhead.
     struct UserOp {
         /// @dev The user's address.
+        /// If this is a PreOp, this can be set to `address(0)`, which allows it to be
+        /// coalesced to the parent UserOp's EOA.
         address eoa;
         /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
         /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
@@ -77,6 +79,7 @@ contract EntryPoint is
         ///   The upper 16 bits of the `seqKey` is `MULTICHAIN_NONCE_PREFIX`,
         ///   then the UserOp EIP712 hash will exclude the chain ID.
         /// - Lower 64 bits are used for the sequential nonce corresponding to the `seqKey`.
+        /// - If this is a PreOp, a nonce of `type(uint256).max` skips the check and incrementing.
         uint256 nonce;
         /// @dev The account paying the payment token.
         /// If this is `address(0)`, it defaults to the `eoa`.
@@ -167,10 +170,10 @@ contract EntryPoint is
     /// @dev The simulate execute run has failed. Try passing in more gas to the simulation.
     error SimulateExecuteFailed();
 
-    /// @dev A sub UserOp's EOA must be the same as its parent UserOp's eoa.
+    /// @dev A PreOp's EOA must be the same as its parent UserOp's.
     error InvalidPreOpEOA();
 
-    /// @dev The sub UserOp cannot be verified to be correct.
+    /// @dev The PreOp cannot be verified to be correct.
     error PreOpVerificationError();
 
     /// @dev Error calling the sub UserOp's `executionData`.
@@ -184,11 +187,12 @@ contract EntryPoint is
     /// The new available nonce will be `nonce + 1`.
     event NonceInvalidated(address indexed eoa, uint256 nonce);
 
-    /// @dev Emitted when a UserOp is executed.
+    /// @dev Emitted when a UserOp (including PreOp) is executed.
     /// This event is emitted in the `execute` function.
     /// - `incremented` denotes that `nonce`'s sequence has been incremented to invalidate `nonce`,
     /// - `err` denotes the resultant error selector.
     /// If `incremented` is true and `err` is non-zero, the UserOp was successful.
+    /// For PreOps where the nonce is skipped, this event will NOT be emitted.
     event UserOpExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
 
     ////////////////////////////////////////////////////////////////////////
@@ -469,7 +473,8 @@ contract EntryPoint is
         bytes4 err;
         if (combinedGasOverride & _FLAG_VERIFICATION_GAS_ONLY != 0) {
             uint256 gVerifyStart = gasleft();
-            _verify(_extractUserOp(encodedUserOp));
+            UserOp calldata u = _extractUserOp(encodedUserOp);
+            _verify(_computeDigest(u), u.eoa, u.signature);
             gUsed = Math.rawSub(gVerifyStart, gasleft());
         } else {
             (gUsed, err) = _execute(encodedUserOp, combinedGasOverride);
@@ -695,7 +700,8 @@ contract EntryPoint is
         // Off-chain simulation of `_verify` should suffice, provided that the eoa's
         // delegation is not changed, and the `keyHash` is not revoked
         // in the window between off-chain simulation and on-chain execution.
-        (bool isValid, bytes32 keyHash, bytes32 digest) = _verify(u);
+        bytes32 digest = _computeDigest(u);
+        (bool isValid, bytes32 keyHash) = _verify(digest, eoa, u.signature);
         if (!isValid) if (flags & _FLAG_IS_SIMULATION == 0) revert VerificationError();
 
         // If `_pay` fails, just revert.
@@ -732,30 +738,37 @@ contract EntryPoint is
         }
     }
 
-    /// @dev Loops over the `encodedPreOps` and does the following for each sub UserOp:
-    /// - Check that the eoa is indeed the eoa of the parent UserOp.
-    /// - If there are any sub UserOp in a sub UserOp, recurse.
-    /// - Validate the sub UserOp.
-    /// - Check and increment the nonce of the sub UserOp.
-    /// - Call the Delegation with `executionData` in the sub UserOp, using the ERC7821 batch-execution mode.
+    /// @dev Loops over the `encodedPreOps` and does the following for each:
+    /// - If the `eoa == address(0)`, it will be coalesced to `parentEOA`.
+    /// - Check if `eoa == parentEOA`.
+    /// - If there are any PreOps in a PreOp, recurse.
+    /// - Validate the signature.
+    /// - Check and increment the nonce, if it is not `type(uint256).max`.
+    /// - Call the Delegation with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
-    /// - Emit an {UserOpExecuted} event.
-    function _handlePreOps(address eoa, uint256 simulationFlags, bytes[] calldata encodedPreOps)
-        internal
-        virtual
-    {
+    /// - Emit an {UserOpExecuted} event, if `nonce` is not `type(uint256).max`.
+    function _handlePreOps(
+        address parentEOA,
+        uint256 simulationFlags,
+        bytes[] calldata encodedPreOps
+    ) internal virtual {
         for (uint256 i; i < encodedPreOps.length; ++i) {
             UserOp calldata u = _extractUserOp(encodedPreOps[i]);
-            if (eoa != u.eoa) revert InvalidPreOpEOA();
+            address eoa = Math.coalesce(u.eoa, parentEOA);
+            uint256 nonce = u.nonce;
+
+            if (eoa != parentEOA) revert InvalidPreOpEOA();
 
             // The order is exactly the same as `selfCallPayVerifyCall537021665`:
             // Recurse -> Verify -> Increment nonce -> Call eoa.
             if (u.encodedPreOps.length != 0) _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
 
-            (bool isValid, bytes32 keyHash,) = _verify(u);
+            (bool isValid, bytes32 keyHash) = _verify(_computeDigest(u), eoa, u.signature);
             if (!isValid) if (simulationFlags & 1 == 0) revert PreOpVerificationError();
 
-            LibNonce.checkAndIncrement(_getEntryPointStorage().nonceSeqs[eoa], u.nonce);
+            if (nonce != type(uint256).max) {
+                LibNonce.checkAndIncrement(_getEntryPointStorage().nonceSeqs[eoa], nonce);
+            }
 
             // This part is same as `selfCallPayVerifyCall537021665`. We simply inline to save gas.
             bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
@@ -777,9 +790,12 @@ contract EntryPoint is
                     revert(0x00, 0x20) // Revert the `err` (NOT return).
                 }
             }
-            // Event so that indexers can know that the nonce is used.
-            // Reaching here means there's no error in the PreOp.
-            emit UserOpExecuted(eoa, u.nonce, true, 0); // `incremented = true`, `err = 0`.
+
+            if (nonce != type(uint256).max) {
+                // Event so that indexers can know that the nonce is used.
+                // Reaching here means there's no error in the PreOp.
+                emit UserOpExecuted(eoa, nonce, true, 0); // `incremented = true`, `err = 0`.
+            }
         }
     }
 
@@ -878,19 +894,16 @@ contract EntryPoint is
     }
 
     /// @dev Calls `unwrapAndValidateSignature` on the `eoa`.
-    function _verify(UserOp calldata u)
+    function _verify(bytes32 digest, address eoa, bytes calldata sig)
         internal
         view
         virtual
-        returns (bool isValid, bytes32 keyHash, bytes32 digest)
+        returns (bool isValid, bytes32 keyHash)
     {
-        bytes calldata sig = u.signature;
-        address eoa = u.eoa;
         // While it is technically safe for the digest to be computed on the delegation,
         // we do it on the EntryPoint for efficiency and maintainability. Validating the
         // a single bytes32 digest avoids having to pass in the entire UserOp. Additionally,
         // the delegation does not need to know anything about the UserOp structure.
-        digest = _computeDigest(u);
         assembly ("memory-safe") {
             let m := mload(0x40)
             mstore(m, 0x0cef73b4) // `unwrapAndValidateSignature(bytes32,bytes)`.
