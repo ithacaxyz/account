@@ -419,7 +419,7 @@ contract EntryPoint is
                 || u.prePaymentAmount > u.prePaymentMaxAmount
                 || u.totalPaymentAmount > u.totalPaymentMaxAmount
         ) {
-            revert PaymentError(); // TODO: add more specific error here
+            revert PaymentError(); // TODO: add more specific error here?
         }
         uint256 g = Math.coalesce(uint96(combinedGasOverride), u.combinedGas);
         uint256 gStart = gasleft();
@@ -593,30 +593,53 @@ contract EntryPoint is
         // to make implementing this nonce-invalidation pattern more performant.
         seqRef.value = Math.rawAdd(seq, 1);
 
-        // We call the selfCallExecutePay function with all the remaining gas,
-        // because `selfCallPayVerifyCall537021665` is already gas-limited to the combined gas specified in the UserOp.
-        // TODO: Optimize this with assembly
-        try this.selfCallExecutePay(simulationFlags, keyHash, u) {}
-        catch {
+        // Equivalent Solidity code:
+        // try this.selfCallExecutePay(simulationFlags, keyHash, u) {}
+        // catch {
+        //     assembly ("memory-safe") {
+        //         returndatacopy(0x00, 0x00, 0x20)
+        //         return(0x00, 0x20)
+        //     }
+        // }
+        // Gas Savings:
+        // ~2.5k gas for general cases, by using existing calldata from the previous self call + avoiding solidity external call overhead.
+        assembly ("memory-safe") {
+            let m := mload(0x40) // Load the free memory pointer
+            mstore(0x00, 0) // Zeroize the return slot.
+            mstore(m, 0x759417a8) // `selfCallExecutePay()`
+            mstore(add(m, 0x20), simulationFlags) // Add simulationFlags as first param
+            mstore(add(m, 0x40), keyHash) // Add keyHash as second param
+            // mstore(add(m, 0x60), 0x20) // Add offset of userOp as third param
+
+            let encodedUserOpLength := sub(calldatasize(), 0x24)
+            calldatacopy(add(m, 0x60), 0x24, encodedUserOpLength) // Add offset of userOp as third param
+
+            // We call the selfCallExecutePay function with all the remaining gas,
+            // because `selfCallPayVerifyCall537021665` is already gas-limited to the combined gas specified in the UserOp.
             // We don't revert if the selfCallExecutePay reverts,
-            // Because we don't want to return the prePayment, since that will be used to pay for the gas.
+            // Because we don't want to return the prePayment, since the relay has already paid for the gas.
             // TODO: Should we add some identifier here, either using a return flag, or an event, that informs the caller that execute/post-payment has failed.
-            assembly ("memory-safe") {
-                returndatacopy(0x00, 0x00, 0x20)
-                return(0x00, 0x20)
-            }
+            if iszero(
+                call(gas(), address(), 0, add(m, 0x1c), add(0x44, encodedUserOpLength), 0x00, 0x20)
+            ) { return(0x00, 0x20) }
         }
     }
 
     /// @dev This function is only intended for self-call.
     /// We use this function to call the delegation.execute function, and then the delegation.pay function for post-payment.
     /// Self-calling this function ensures, that if the post payment reverts, then the execute function will also revert.
-    function selfCallExecutePay(uint256 simulationFlags, bytes32 keyHash, UserOp calldata u)
-        public
-        payable
-    {
+    function selfCallExecutePay() public payable {
         require(msg.sender == address(this));
 
+        uint256 simulationFlags;
+        bytes32 keyHash;
+        UserOp calldata u;
+
+        assembly ("memory-safe") {
+            simulationFlags := calldataload(0x04)
+            keyHash := calldataload(0x24)
+            u := add(0x44, calldataload(0x44))
+        }
         address eoa = u.eoa;
 
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
