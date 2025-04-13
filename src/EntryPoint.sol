@@ -770,9 +770,38 @@ contract EntryPoint is
 
         address payer = Math.coalesce(u.payer, u.eoa);
 
-        // TODO: Optimize
         // Call the pay function on the delegation contract
-        IDelegation(payer).pay(paymentAmount, keyHash, u);
+        // Equivalent Solidity code:
+        // IDelegation(payer).pay(paymentAmount, keyHash, abi.encode(u));
+        // Gas Savings:
+        // Saves ~2k gas for normal use cases, by avoiding abi.encode and solidity external call overhead
+        assembly ("memory-safe") {
+            let m := mload(0x40) // Load the free memory pointer
+            mstore(m, 0x49b42bdb) // `pay(uint256,bytes32,bytes)`
+            mstore(add(m, 0x20), paymentAmount) // Add payment amount as first param
+            mstore(add(m, 0x40), keyHash) // Add keyHash as second param
+            mstore(add(m, 0x60), 0x60) // Add offset of encoded UserOp as third param
+
+            let encodedSize := sub(calldatasize(), u)
+
+            mstore(add(m, 0x80), add(encodedSize, 0x20)) // Store length of encoded UserOp at offset.
+            mstore(add(m, 0xa0), 0x20) // Offset at which the UserOp struct starts in encoded UserOp.
+
+            // Copy the userOp data to memory
+            calldatacopy(add(m, 0xc0), u, encodedSize)
+
+            if iszero(
+                call(
+                    gas(), // gas
+                    payer, // address
+                    0, // value
+                    add(m, 0x1c), // input memory offset
+                    add(0xa4, encodedSize), // input size
+                    0x00, // output memory offset
+                    0x20 // output size
+                )
+            ) { revert(0x00, 0x20) }
+        }
 
         if (TokenTransferLib.balanceOf(u.paymentToken, u.paymentRecipient) < requiredBalanceAfter) {
             revert PaymentError();

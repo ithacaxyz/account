@@ -8,8 +8,8 @@ import {ICommon} from "../interfaces/ICommon.sol";
 interface IDelegation is ICommon {
     /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
     /// @param keyHash The hash of the key used to authorize the operation
-    /// @param userOp The user operation data
-    function pay(uint256 paymentAmount, bytes32 keyHash, UserOp calldata userOp) external;
+    /// @param encodedUserOp The encoded user operation
+    function pay(uint256 paymentAmount, bytes32 keyHash, bytes calldata encodedUserOp) external;
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.
     /// The `signature` is a wrapped signature, given by
