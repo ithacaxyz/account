@@ -786,6 +786,9 @@ contract EntryPoint is
         return _getEntryPointStorage().filledOrderIds.get(uint256(orderId));
     }
 
+    function computeDigest(UserOp calldata u) public view virtual returns (bytes32) {
+        return _computeDigest(u);
+    }
     ////////////////////////////////////////////////////////////////////////
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
@@ -819,6 +822,7 @@ contract EntryPoint is
             // Copy the userOp data to memory
             calldatacopy(add(m, 0xc0), u, encodedSize)
 
+            // TODO: If pay reverts, we now send a revert back instead of ignoring. This is a breaking change, add to changeset.
             if iszero(
                 call(
                     gas(), // gas

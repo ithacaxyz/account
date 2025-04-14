@@ -790,6 +790,10 @@ contract EntryPointTest is BaseTest {
         u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
         u.paymentRecipient = address(ep);
 
+        if (u.prePaymentMaxAmount > u.totalPaymentMaxAmount) {
+            u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        }
+
         t.funds = _bound(_random(), 0, 5 ether);
         if (t.isWithState) {
             t.withState.increaseFunds(u.paymentToken, u.eoa, t.funds);
@@ -811,25 +815,40 @@ contract EntryPointTest is BaseTest {
             t.withState.setApprovedEntryPoint(address(ep), false);
             t.withSignature.setApprovedEntryPoint(address(ep), false);
         }
+        if ((t.unapprovedEntryPoint && u.totalPaymentAmount != 0)) {
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("Unauthorized()")));
+            assertEq(ep.getNonce(u.eoa, 0), u.nonce);
+            assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
+            assertEq(_balanceOf(address(0), address(0xabcd)), 0);
+        } else if (t.isWithState && u.totalPaymentAmount > t.funds && u.totalPaymentAmount != 0) {
+            // Arithmetic underflow error
+            assertEq(
+                ep.execute(abi.encode(u)),
+                0x4e487b7100000000000000000000000000000000000000000000000000000000
+            );
 
-        if (
-            (t.isWithState && u.totalPaymentAmount > t.funds && u.totalPaymentAmount != 0)
-                || (!t.isWithState && t.corruptSignature && u.totalPaymentAmount != 0)
-                || (t.unapprovedEntryPoint && u.totalPaymentAmount != 0)
-        ) {
-            console.log("t.isWithState", t.isWithState);
-            console.log("t.corruptSignature", t.corruptSignature);
-            console.log("t.unapprovedEntryPoint", t.unapprovedEntryPoint);
-            console.log("u.totalPaymentAmount", u.totalPaymentAmount);
-            console.log("t.funds", t.funds);
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("PaymentError()")));
+            if (u.prePaymentAmount > t.funds) {
+                // Pre payment will not happen
+                assertEq(ep.getNonce(u.eoa, 0), u.nonce);
+                assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
+                assertEq(_balanceOf(address(0), address(0xabcd)), 0);
+            } else {
+                // Pre payment will happen, post payment will fail
+                assertEq(ep.getNonce(u.eoa, 0), u.nonce + 1);
+                assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.prePaymentAmount);
+                // Execution should have failed
+                assertEq(_balanceOf(address(0), address(0xabcd)), 0);
+            }
+        } else if ((!t.isWithState && t.corruptSignature && u.totalPaymentAmount != 0)) {
+            // Pre payment will not happen
+            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("InvalidSignature()")));
             assertEq(ep.getNonce(u.eoa, 0), u.nonce);
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
             assertEq(_balanceOf(address(0), address(0xabcd)), 0);
         } else {
             assertEq(ep.execute(abi.encode(u)), 0);
             assertEq(ep.getNonce(u.eoa, 0), u.nonce + 1);
-            assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.prePaymentAmount);
+            assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.totalPaymentAmount);
             assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
         }
     }

@@ -5,9 +5,10 @@ import {TokenTransferLib} from "../../../src/libraries/TokenTransferLib.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 import {ECDSA} from "solady/utils/ECDSA.sol";
 import {ICommon} from "../../../src/interfaces/ICommon.sol";
-
+import {IEntryPoint} from "../../../src/interfaces/IEntryPoint.sol";
 /// @dev WARNING! This mock is strictly intended for testing purposes only.
 /// Do NOT copy anything here into production code unless you really know what you are doing.
+
 contract MockPayerWithSignature is Ownable {
     error InvalidSignature();
 
@@ -58,8 +59,12 @@ contract MockPayerWithSignature is Ownable {
     {
         if (!isApprovedEntryPoint[msg.sender]) revert Unauthorized();
 
-        // TODO: Think about best way to check signature over userOp. Should we expose verify, and _computeDigest functions publicly?
         ICommon.UserOp memory u = abi.decode(encodedUserOp, (ICommon.UserOp));
+        bytes32 signatureDigest = computeSignatureDigest(IEntryPoint(msg.sender).computeDigest(u));
+
+        if (ECDSA.recover(signatureDigest, u.paymentSignature) != signer) {
+            revert InvalidSignature();
+        }
 
         TokenTransferLib.safeTransfer(u.paymentToken, u.paymentRecipient, paymentAmount);
 
