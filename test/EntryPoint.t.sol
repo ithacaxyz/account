@@ -113,14 +113,15 @@ contract EntryPointTest is BaseTest {
         u.prePaymentMaxAmount = 0.5 ether;
         u.totalPaymentAmount = u.prePaymentAmount;
         u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.paymentRecipient = address(ep);
         u.combinedGas = 1000000;
         u.signature = _sig(k, u);
 
         paymentToken.mint(d.eoa, 50 ether);
 
-        (uint256 gUsed,) = _simulateExecute(u);
+        _simulateExecute(u);
         assertEq(ep.execute(abi.encode(u)), 0);
-        uint256 actualAmount = (gUsed + 50000) * 1e9;
+        uint256 actualAmount = 0.1 ether;
         assertEq(paymentToken.balanceOf(address(ep)), actualAmount);
         assertEq(paymentToken.balanceOf(d.eoa), 50 ether - actualAmount - 1 ether);
     }
@@ -157,7 +158,7 @@ contract EntryPointTest is BaseTest {
         assertEq(result, abi.encodeWithSignature("ErrorWithData(bytes)", data));
     }
 
-    function testExecuteWithPayingERC20TokensWithRefund(bytes32) public {
+    function testExecuteWithPayingERC20TokensWithPartialPrePayment(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         paymentToken.mint(d.eoa, 500 ether);
@@ -176,9 +177,9 @@ contract EntryPointTest is BaseTest {
         u.combinedGas = 10000000;
         u.signature = _sig(d, u);
 
-        (uint256 gUsed,) = _simulateExecute(u);
+        _simulateExecute(u);
         assertEq(ep.execute(abi.encode(u)), 0);
-        uint256 actualAmount = (gUsed + 50000) * 1e9;
+        uint256 actualAmount = 10 ether;
         assertEq(paymentToken.balanceOf(address(this)), actualAmount);
         assertEq(paymentToken.balanceOf(d.eoa), 500 ether - actualAmount - 1 ether);
         assertEq(ep.getNonce(d.eoa, 0), 1);
@@ -240,13 +241,16 @@ contract EntryPointTest is BaseTest {
         u.paymentRecipient = address(0xbcde);
         u.prePaymentAmount = 10 ether;
         u.prePaymentMaxAmount = 10 ether;
+        u.totalPaymentAmount = 10 ether;
+        u.totalPaymentMaxAmount = 10 ether;
         u.combinedGas = 10000000;
         u.signature = _sig(d, u);
 
-        (uint256 gUsed,) = _simulateExecute(u);
+        _simulateExecute(u);
+
         assertEq(ep.execute(abi.encode(u)), 0);
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether * n);
-        assertEq(paymentToken.balanceOf(d.eoa), 100 ether - (0.5 ether * n + (gUsed + 50000) * 1e9));
+        assertEq(paymentToken.balanceOf(d.eoa), 100 ether - (0.5 ether * n + 10 ether));
         assertEq(ep.getNonce(d.eoa, 0), 1);
     }
 
@@ -493,8 +497,11 @@ contract EntryPointTest is BaseTest {
 
         paymentToken.mint(u.eoa, 2 ** 128 - 1);
         u.paymentToken = address(paymentToken);
-        u.paymentAmount = _bound(_random(), 0, 0.5 ether);
-        u.paymentMaxAmount = u.paymentAmount;
+        u.prePaymentAmount = _bound(_random(), 0, 0.5 ether);
+        u.prePaymentMaxAmount = u.prePaymentAmount;
+        u.totalPaymentAmount = u.prePaymentAmount;
+        u.totalPaymentMaxAmount = u.prePaymentAmount;
+        u.paymentRecipient = address(ep);
         u.nonce = 0xc1d0 << 240;
 
         PassKey memory kSession = _randomSecp256r1PassKey();
@@ -777,12 +784,13 @@ contract EntryPointTest is BaseTest {
         u.payer = t.isWithState ? address(t.withState) : address(t.withSignature);
         u.paymentToken = t.token;
         u.prePaymentAmount = _bound(_random(), 0, 1 ether);
-        u.prePaymentMaxAmount = 1 ether;
-        u.totalPaymentAmount = u.prePaymentAmount;
-        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.prePaymentMaxAmount = _bound(_random(), u.prePaymentAmount, 2 ether);
+        u.totalPaymentAmount = _bound(_random(), u.prePaymentAmount, 5 ether);
+        u.totalPaymentMaxAmount = _bound(_random(), u.totalPaymentAmount, 10 ether);
         u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
+        u.paymentRecipient = address(ep);
 
-        t.funds = _bound(_random(), 0, 2 ether);
+        t.funds = _bound(_random(), 0, 5 ether);
         if (t.isWithState) {
             t.withState.increaseFunds(u.paymentToken, u.eoa, t.funds);
         } else {
@@ -805,10 +813,15 @@ contract EntryPointTest is BaseTest {
         }
 
         if (
-            (t.isWithState && u.prePaymentAmount > t.funds && u.prePaymentAmount != 0)
-                || (!t.isWithState && t.corruptSignature && u.prePaymentAmount != 0)
-                || (t.unapprovedEntryPoint && u.prePaymentAmount != 0)
+            (t.isWithState && u.totalPaymentAmount > t.funds && u.totalPaymentAmount != 0)
+                || (!t.isWithState && t.corruptSignature && u.totalPaymentAmount != 0)
+                || (t.unapprovedEntryPoint && u.totalPaymentAmount != 0)
         ) {
+            console.log("t.isWithState", t.isWithState);
+            console.log("t.corruptSignature", t.corruptSignature);
+            console.log("t.unapprovedEntryPoint", t.unapprovedEntryPoint);
+            console.log("u.totalPaymentAmount", u.totalPaymentAmount);
+            console.log("t.funds", t.funds);
             assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("PaymentError()")));
             assertEq(ep.getNonce(u.eoa, 0), u.nonce);
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
