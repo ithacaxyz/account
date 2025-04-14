@@ -66,6 +66,7 @@ interface ICommon {
         /// @dev The payment recipient for the ERC20 token.
         /// Excluded from signature. The filler can replace this with their own address.
         /// This enables multiple fillers, allowing for competitive filling, better uptime.
+        // TODO: Payment recipient is not substituted with address(entrypoint), if you send address(0). This is a breaking change, add to changeset.
         address paymentRecipient;
         /// @dev The wrapped signature.
         /// `abi.encodePacked(innerSignature, keyHash, prehash)`.

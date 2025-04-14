@@ -62,6 +62,8 @@ interface IEntryPoint is ICommon {
     /// @param amount The amount to withdraw
     function withdrawTokens(address token, address recipient, uint256 amount) external;
 
+    function computeDigest(UserOp calldata u) external view returns (bytes32);
+
     // /// @dev This function is intended for debugging purposes.
     // /// @param encodedUserOp The encoded user operation
     // function simulateFailed(bytes calldata encodedUserOp) external payable;

@@ -11,10 +11,6 @@ contract MockEntryPoint is EntryPoint, Brutalizer {
 
     constructor() payable EntryPoint(msg.sender) {}
 
-    function computeDigest(EntryPoint.UserOp calldata userOp) public view returns (bytes32) {
-        return _computeDigest(userOp);
-    }
-
     /// @dev This function is provided for debugging purposes.
     /// This function bubbles up the full revert for the calls
     /// to `initializePREP` (if any) and `execute` on the eoa.

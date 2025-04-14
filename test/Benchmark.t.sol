@@ -229,6 +229,8 @@ contract BenchmarkTest is BaseTest {
         u.prePaymentMaxAmount = 0 ether;
         u.totalPaymentAmount = 0.01 ether;
         u.totalPaymentMaxAmount = 0.1 ether;
+        u.paymentToken = address(token0);
+        u.paymentRecipient = address(1234);
         u.executionData = executionData;
         // To maintain parity with the old benchmarks.
         u.paymentRecipient = address(ep);
