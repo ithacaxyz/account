@@ -125,7 +125,6 @@ contract GuardedExecutorTest is BaseTest {
         d.d.authorize(kSuperAdmin.k);
         vm.stopPrank();
 
-
         for (uint256 i; i < 2; ++i) {
             uint256 x = _randomUniform() | 1;
 
@@ -606,7 +605,7 @@ contract GuardedExecutorTest is BaseTest {
 
     function testSpendNativeWithSecp256k1ViaEntryPoint() public {
         _testSpendWithPassKeyViaEntryPoint(_randomSecp256k1PassKey(), address(0));
-    }  
+    }
 
     function _testSpendWithPassKeyViaEntryPoint(PassKey memory k, address tokenToSpend) internal {
         EntryPoint.UserOp memory u;

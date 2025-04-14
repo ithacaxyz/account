@@ -59,13 +59,13 @@ interface ICommon {
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
         ////////////////////////////////////////////////////////////////////////
-        /// @dev The actual pre payment amount, requested by the filler. MUST be less than or equal to `prePaymentMaxAmount` 
+        /// @dev The actual pre payment amount, requested by the filler. MUST be less than or equal to `prePaymentMaxAmount`
         uint256 prePaymentAmount;
-        /// @dev The actual total payment amount, requested by the filler. MUST be less than or equal to `totalPaymentMaxAmount` 
+        /// @dev The actual total payment amount, requested by the filler. MUST be less than or equal to `totalPaymentMaxAmount`
         uint256 totalPaymentAmount;
         /// @dev The payment recipient for the ERC20 token.
         /// Excluded from signature. The filler can replace this with their own address.
-        /// This enables multiple fillers, allowing for competitive filling, better uptime. 
+        /// This enables multiple fillers, allowing for competitive filling, better uptime.
         address paymentRecipient;
         /// @dev The wrapped signature.
         /// `abi.encodePacked(innerSignature, keyHash, prehash)`.
