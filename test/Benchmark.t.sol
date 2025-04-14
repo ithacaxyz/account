@@ -225,10 +225,10 @@ contract BenchmarkTest is BaseTest {
         u.eoa = d.eoa;
         u.nonce = 0;
         u.combinedGas = 1000000;
-        u.prePaymentAmount = 0.01 ether;
-        u.prePaymentMaxAmount = 0.1 ether;
-        u.totalPaymentAmount = u.prePaymentAmount;
-        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.prePaymentAmount = 0 ether;
+        u.prePaymentMaxAmount = 0 ether;
+        u.totalPaymentAmount = 0.01 ether;
+        u.totalPaymentMaxAmount = 0.1 ether;
         u.executionData = executionData;
         u.signature = _sig(d, u);
 
@@ -264,10 +264,10 @@ contract BenchmarkTest is BaseTest {
         u.eoa = d.eoa;
         u.nonce = 0;
         u.combinedGas = 1000000;
-        u.prePaymentAmount = 0.01 ether;
-        u.prePaymentMaxAmount = 0.1 ether;
-        u.totalPaymentAmount = u.prePaymentAmount;
-        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.prePaymentAmount = 0 ether;
+        u.prePaymentMaxAmount = 0 ether;
+        u.totalPaymentAmount = 0.01 ether;
+        u.totalPaymentMaxAmount = 0.1 ether;
         u.executionData = _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
         u.signature = _sig(k, u);
 
