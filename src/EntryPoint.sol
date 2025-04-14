@@ -413,13 +413,13 @@ contract EntryPoint is
         returns (uint256 gUsed, bytes4 err)
     {
         UserOp calldata u = _extractUserOp(encodedUserOp);
-
+        // TODO: add all early reverts here, to save gas in case of userOp failure.
         if (
             u.prePaymentMaxAmount > u.totalPaymentMaxAmount
                 || u.prePaymentAmount > u.prePaymentMaxAmount
                 || u.totalPaymentAmount > u.totalPaymentMaxAmount
         ) {
-            revert PaymentError(); // TODO: add more specific error here?
+            err = PaymentError.selector; // TODO: add more specific error here?
         }
         uint256 g = Math.coalesce(uint96(combinedGasOverride), u.combinedGas);
         uint256 gStart = gasleft();
