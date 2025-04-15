@@ -60,6 +60,4 @@ interface IEntryPoint is ICommon {
     /// @param recipient The recipient address
     /// @param amount The amount to withdraw
     function withdrawTokens(address token, address recipient, uint256 amount) external;
-
-    function computeDigest(UserOp calldata u) external view returns (bytes32);
 }

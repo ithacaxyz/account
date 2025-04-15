@@ -575,7 +575,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // Off-chain simulation of `_verify` should suffice, provided that the eoa's
         // delegation is not changed, and the `keyHash` is not revoked
         // in the window between off-chain simulation and on-chain execution.
-        (bool isValid, bytes32 keyHash,) = _verify(u);
+        (bool isValid, bytes32 keyHash, bytes32 digest) = _verify(u);
         if (!isValid) if (flags & _FLAG_IS_SIMULATION == 0) revert VerificationError();
 
         // PrePayment
@@ -583,7 +583,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // Off-chain simulation of `_pay` should suffice,
         // provided that the token balance does not decrease in the window between
         // off-chain simulation and on-chain execution.
-        if (u.prePaymentAmount != 0) _pay(u.prePaymentAmount, keyHash, u);
+        if (u.prePaymentAmount != 0) _pay(u.prePaymentAmount, keyHash, digest, u);
 
         // Once the payment has been made, the nonce must be invalidated.
         // Otherwise, an attacker can keep replaying the UserOp to take payment and drain the user.
@@ -607,10 +607,13 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             mstore(m, 0x759417a8) // `selfCallExecutePay()`
             mstore(add(m, 0x20), flags) // Add simulationFlags as first param
             mstore(add(m, 0x40), keyHash) // Add keyHash as second param
-            // mstore(add(m, 0x60), 0x20) // Add offset of userOp as third param
+            mstore(add(m, 0x60), digest) // Add digest as third param
 
             let encodedUserOpLength := sub(calldatasize(), 0x24)
-            calldatacopy(add(m, 0x60), 0x24, encodedUserOpLength) // Add offset of userOp as third param
+            // NOTE: The userOp encoding here is non standard, because the data offset does not start from the beginning of the calldata.
+            // The data offset starts from the location of the userOp offset itself. The decoding is done accordingly in the receiving function.
+            // TODO: Make the userOp encoding standard.
+            calldatacopy(add(m, 0x80), 0x24, encodedUserOpLength) // Add userOp starting from the fourth param.
 
             // We call the selfCallExecutePay function with all the remaining gas,
             // because `selfCallPayVerifyCall537021665` is already gas-limited to the combined gas specified in the UserOp.
@@ -637,12 +640,15 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
         uint256 flags;
         bytes32 keyHash;
+        bytes32 digest;
         UserOp calldata u;
 
         assembly ("memory-safe") {
             flags := calldataload(0x04)
             keyHash := calldataload(0x24)
-            u := add(0x44, calldataload(0x44))
+            digest := calldataload(0x44)
+            // Non standard decoding of the userOp.
+            u := add(0x64, calldataload(0x64))
         }
         address eoa = u.eoa;
 
@@ -669,7 +675,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
 
         uint256 remainingPaymentAmount = u.totalPaymentAmount - u.prePaymentAmount;
         if (remainingPaymentAmount != 0) {
-            _pay(remainingPaymentAmount, keyHash, u);
+            _pay(remainingPaymentAmount, keyHash, digest, u);
         }
 
         assembly ("memory-safe") {
@@ -784,16 +790,16 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         return _getEntryPointStorage().filledOrderIds.get(uint256(orderId));
     }
 
-    function computeDigest(UserOp calldata u) public view virtual returns (bytes32) {
-        return _computeDigest(u);
-    }
     ////////////////////////////////////////////////////////////////////////
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Makes the `eoa` perform a payment to the `paymentRecipient` directly.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
-    function _pay(uint256 paymentAmount, bytes32 keyHash, UserOp calldata u) internal virtual {
+    function _pay(uint256 paymentAmount, bytes32 keyHash, bytes32 digest, UserOp calldata u)
+        internal
+        virtual
+    {
         uint256 requiredBalanceAfter = Math.saturatingAdd(
             TokenTransferLib.balanceOf(u.paymentToken, u.paymentRecipient), paymentAmount
         );
@@ -807,18 +813,19 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         // Saves ~2k gas for normal use cases, by avoiding abi.encode and solidity external call overhead
         assembly ("memory-safe") {
             let m := mload(0x40) // Load the free memory pointer
-            mstore(m, 0x49b42bdb) // `pay(uint256,bytes32,bytes)`
+            mstore(m, 0xf81d87a7) // `pay(uint256,bytes32,bytes32,bytes)`
             mstore(add(m, 0x20), paymentAmount) // Add payment amount as first param
             mstore(add(m, 0x40), keyHash) // Add keyHash as second param
-            mstore(add(m, 0x60), 0x60) // Add offset of encoded UserOp as third param
+            mstore(add(m, 0x60), digest) // Add digest as third param
+            mstore(add(m, 0x80), 0x80) // Add offset of encoded UserOp as third param
 
             let encodedSize := sub(calldatasize(), u)
 
-            mstore(add(m, 0x80), add(encodedSize, 0x20)) // Store length of encoded UserOp at offset.
-            mstore(add(m, 0xa0), 0x20) // Offset at which the UserOp struct starts in encoded UserOp.
+            mstore(add(m, 0xa0), add(encodedSize, 0x20)) // Store length of encoded UserOp at offset.
+            mstore(add(m, 0xc0), 0x20) // Offset at which the UserOp struct starts in encoded UserOp.
 
             // Copy the userOp data to memory
-            calldatacopy(add(m, 0xc0), u, encodedSize)
+            calldatacopy(add(m, 0xe0), u, encodedSize)
 
             // TODO: If pay reverts, we now send a revert back instead of ignoring. This is a breaking change, add to changeset.
             if iszero(
@@ -827,7 +834,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
                     payer, // address
                     0, // value
                     add(m, 0x1c), // input memory offset
-                    add(0xa4, encodedSize), // input size
+                    add(0xc4, encodedSize), // input size
                     0x00, // output memory offset
                     0x20 // output size
                 )

@@ -53,14 +53,17 @@ contract MockPayerWithSignature is Ownable {
     /// @param paymentAmount The amount to pay.
     /// @param keyHash The key hash associated with the operation (not used in this mock's logic but kept for signature compatibility).
     /// @param encodedUserOp ABI encoded UserOp struct.
-    function pay(uint256 paymentAmount, bytes32 keyHash, bytes calldata encodedUserOp)
-        public
-        virtual
-    {
+    function pay(
+        uint256 paymentAmount,
+        bytes32 keyHash,
+        bytes32 digest,
+        bytes calldata encodedUserOp
+    ) public virtual {
         if (!isApprovedEntryPoint[msg.sender]) revert Unauthorized();
 
         ICommon.UserOp memory u = abi.decode(encodedUserOp, (ICommon.UserOp));
-        bytes32 signatureDigest = computeSignatureDigest(IEntryPoint(msg.sender).computeDigest(u));
+
+        bytes32 signatureDigest = computeSignatureDigest(digest);
 
         if (ECDSA.recover(signatureDigest, u.paymentSignature) != signer) {
             revert InvalidSignature();

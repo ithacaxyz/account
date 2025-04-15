@@ -18,4 +18,8 @@ contract MockEntryPoint is EntryPoint, Brutalizer {
         _execute(encodedUserOp, _FLAG_BUBBLE_FULL_REVERT);
         revert NoRevertEncountered();
     }
+
+    function computeDigest(UserOp calldata u) public view virtual returns (bytes32) {
+        return _computeDigest(u);
+    }
 }
