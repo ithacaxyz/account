@@ -23,7 +23,7 @@ jobs:
         env:
           PRIVATE_KEY: ${{ secrets.deployer }}
         # TODO: remove the --evm-version argument once https://github.com/blockscout/blockscout/pull/12115 is released.
-        # TODO: re-add --verify --verifier blockscout --verifier-url "https://odyssey-explorer.ithaca.xyz/api"
+        # TODO: add verification once the API is up.
         run: |
           forge script DeployAllScript \
             --rpc-url "https://odyssey-devnet.ithaca.xyz" \

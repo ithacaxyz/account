@@ -11,6 +11,10 @@ contract MockEntryPoint is EntryPoint, Brutalizer {
 
     constructor() payable EntryPoint(msg.sender) {}
 
+    function computeDigest(PreOp calldata preOp) public view returns (bytes32) {
+        return _computeDigest(preOp);
+    }
+
     function computeDigest(UserOp calldata userOp) public view returns (bytes32) {
         return _computeDigest(userOp);
     }

@@ -451,6 +451,12 @@ contract EntryPointTest is BaseTest {
         bool testPreOpVerificationError;
         bool testPreOpCallError;
         bool testPREP;
+        bool testEOACoalesce;
+        bool testSkipNonce;
+        uint192 superAdminNonceSeqKey;
+        uint192 sessionNonceSeqKey;
+        uint256 retrievedSuperAdminNonce;
+        uint256 retrievedSessionNonce;
         PassKey kPREP;
         DelegatedEOA d;
         address eoa;
@@ -486,9 +492,9 @@ contract EntryPointTest is BaseTest {
 
         PassKey memory kSession = _randomSecp256r1PassKey();
 
-        EntryPoint.UserOp memory uSession;
+        EntryPoint.PreOp memory pSession;
 
-        uSession.eoa = t.eoa;
+        pSession.eoa = t.eoa;
 
         // Prepare session passkey authorization UserOp.
         {
@@ -515,11 +521,11 @@ contract EntryPointTest is BaseTest {
                 (calls[1], calls[2]) = (calls[2], calls[1]);
             }
 
-            uSession.executionData = abi.encode(calls);
+            pSession.executionData = abi.encode(calls);
             // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
-            uSession.nonce = (0xc1d0 << 240) | (2 << 64);
+            pSession.nonce = (0xc1d0 << 240) | (2 << 64);
 
-            uSession.signature = _sig(t.kPREP, uSession);
+            pSession.signature = _sig(t.kPREP, ep.computeDigest(pSession));
         }
 
         u.encodedPreOps = new bytes[](1);
@@ -532,7 +538,7 @@ contract EntryPointTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.nonce = 0;
 
-            u.encodedPreOps[0] = abi.encode(uSession);
+            u.encodedPreOps[0] = abi.encode(pSession);
         }
 
         // Test without gas estimation.
@@ -579,14 +585,18 @@ contract EntryPointTest is BaseTest {
 
         kSuperAdmin.k.isSuperAdmin = true;
 
-        EntryPoint.UserOp memory uSuperAdmin;
-        EntryPoint.UserOp memory uSession;
+        EntryPoint.PreOp memory pSuperAdmin;
+        EntryPoint.PreOp memory pSession;
 
-        uSuperAdmin.eoa = t.eoa;
-        uSession.eoa = t.eoa;
+        if (_randomChance(2)) {
+            t.testEOACoalesce = true;
+        } else {
+            pSuperAdmin.eoa = t.eoa;
+            pSession.eoa = t.eoa;
+        }
 
-        if (_randomChance(64)) {
-            uSession.eoa = address(0);
+        if (_randomChance(64) && !t.testEOACoalesce) {
+            pSession.eoa = _randomUniqueHashedAddress();
             t.testInvalidPreOpEOA = true;
         }
 
@@ -596,14 +606,18 @@ contract EntryPointTest is BaseTest {
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
             calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, kSuperAdmin.k);
 
-            uSuperAdmin.executionData = abi.encode(calls);
+            pSuperAdmin.executionData = abi.encode(calls);
             // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
-            uSuperAdmin.nonce = (0xc1d0 << 240) | (1 << 64);
+            pSuperAdmin.nonce = (0xc1d0 << 240) | (1 << 64);
+            t.superAdminNonceSeqKey = uint192(pSuperAdmin.nonce >> 64);
+            if (t.testSkipNonce) {
+                pSuperAdmin.nonce = type(uint256).max;
+            }
 
             if (t.testPREP) {
-                uSuperAdmin.signature = _sig(t.kPREP, uSuperAdmin);
+                pSuperAdmin.signature = _sig(t.kPREP, ep.computeDigest(pSuperAdmin));
             } else {
-                uSuperAdmin.signature = _eoaSig(t.d.privateKey, uSuperAdmin);
+                pSuperAdmin.signature = _eoaSig(t.d.privateKey, ep.computeDigest(pSuperAdmin));
             }
         }
 
@@ -629,15 +643,19 @@ contract EntryPointTest is BaseTest {
                 t.testPreOpCallError = true;
             }
 
-            uSession.executionData = abi.encode(calls);
+            pSession.executionData = abi.encode(calls);
             // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
-            uSession.nonce = (0xc1d0 << 240) | (2 << 64);
+            pSession.nonce = (0xc1d0 << 240) | (2 << 64);
+            t.sessionNonceSeqKey = uint192(pSession.nonce >> 64);
+            if (t.testSkipNonce) {
+                pSession.nonce = type(uint256).max;
+            }
 
-            uSession.signature = _sig(kSuperAdmin, uSession);
+            pSession.signature = _sig(kSuperAdmin, ep.computeDigest(pSession));
 
             if (_randomChance(64)) {
-                uSession.signature = _sig(_randomSecp256r1PassKey(), uSession);
-                u.encodedPreOps[1] = abi.encode(uSession);
+                pSession.signature = _sig(_randomSecp256r1PassKey(), ep.computeDigest(pSession));
+                u.encodedPreOps[1] = abi.encode(pSession);
                 t.testPreOpVerificationError = true;
             }
         }
@@ -650,8 +668,8 @@ contract EntryPointTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.nonce = 0;
 
-            u.encodedPreOps[0] = abi.encode(uSuperAdmin);
-            u.encodedPreOps[1] = abi.encode(uSession);
+            u.encodedPreOps[0] = abi.encode(pSuperAdmin);
+            u.encodedPreOps[1] = abi.encode(pSession);
         }
 
         if (t.testInvalidPreOpEOA) {
@@ -673,16 +691,6 @@ contract EntryPointTest is BaseTest {
             u.signature = _sig(kSession, u);
             assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("PreOpCallError()")));
             return; // Skip the rest.
-        }
-
-        // Test recursive style.
-        if (_randomChance(8)) {
-            uSession.encodedPreOps = new bytes[](1);
-            uSession.encodedPreOps[0] = abi.encode(uSuperAdmin);
-            uSession.signature = _sig(kSuperAdmin, uSession);
-
-            u.encodedPreOps = new bytes[](1);
-            u.encodedPreOps[0] = abi.encode(uSession);
         }
 
         // Test gas estimation.
@@ -717,8 +725,15 @@ contract EntryPointTest is BaseTest {
         }
 
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
-        assertEq(ep.getNonce(t.eoa, uint192(uSession.nonce >> 64)), uSession.nonce | 1);
-        assertEq(ep.getNonce(t.eoa, uint192(uSuperAdmin.nonce >> 64)), uSuperAdmin.nonce | 1);
+        t.retrievedSessionNonce = ep.getNonce(t.eoa, t.sessionNonceSeqKey);
+        t.retrievedSuperAdminNonce = ep.getNonce(t.eoa, t.superAdminNonceSeqKey);
+        if (t.testSkipNonce) {
+            assertEq(t.retrievedSessionNonce, uint256(t.sessionNonceSeqKey) << 64);
+            assertEq(t.retrievedSuperAdminNonce, uint256(t.superAdminNonceSeqKey) << 64);
+        } else {
+            assertEq(t.retrievedSessionNonce, pSession.nonce | 1);
+            assertEq(t.retrievedSuperAdminNonce, pSuperAdmin.nonce | 1);
+        }
     }
 
     struct _TestPayViaAnotherPayerTemps {
@@ -800,6 +815,50 @@ contract EntryPointTest is BaseTest {
             assertEq(ep.execute(abi.encode(u)), 0);
             assertEq(ep.getNonce(u.eoa, 0), u.nonce + 1);
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.paymentAmount);
+            assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
+        }
+    }
+
+    struct _TestDelegationImplementationVerificationTemps {
+        bool testImplementationCheck;
+        bool requireWrongImplementation;
+        DelegatedEOA d;
+    }
+
+    function testDelegationImplementationVerification(bytes32) public {
+        _TestDelegationImplementationVerificationTemps memory t;
+        t.d = _randomEIP7702DelegatedEOA();
+        t.testImplementationCheck = _randomChance(2);
+        t.requireWrongImplementation = _randomChance(2);
+
+        EntryPoint.UserOp memory u;
+        vm.deal(t.d.eoa, type(uint192).max);
+
+        u.eoa = t.d.eoa;
+        u.nonce = ep.getNonce(u.eoa, 0);
+        u.combinedGas = 1000000;
+        u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
+        u.signature = _eoaSig(t.d.privateKey, u);
+
+        if (t.testImplementationCheck) {
+            if (t.requireWrongImplementation) {
+                u.supportedDelegationImplementation = _randomUniqueHashedAddress();
+            } else {
+                u.supportedDelegationImplementation = ep.delegationImplementationOf(u.eoa);
+                assertEq(u.supportedDelegationImplementation, delegationImplementation);
+            }
+        }
+
+        if (t.testImplementationCheck && t.requireWrongImplementation) {
+            assertEq(
+                ep.execute(abi.encode(u)),
+                bytes4(keccak256("UnsupportedDelegationImplementation()"))
+            );
+            assertEq(ep.getNonce(u.eoa, 0), u.nonce);
+            assertEq(_balanceOf(address(0), address(0xabcd)), 0);
+        } else {
+            assertEq(ep.execute(abi.encode(u)), 0);
+            assertEq(ep.getNonce(u.eoa, 0), u.nonce + 1);
             assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
         }
     }
