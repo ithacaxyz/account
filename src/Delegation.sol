@@ -495,32 +495,29 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     ////////////////////////////////////////////////////////////////////////
     // Entry Point Functions
     ////////////////////////////////////////////////////////////////////////
-    /// @dev Extracts the UserOp from the calldata bytes, with minimal checks.
-    /// We can avoid standard bound checks here, because the entrypoint already does this, when it interacts with ALL the fields in the userOp using solidity.
-    // temp: add to library later.
-    function _extractUserOp(bytes calldata encodedUserOp)
-        internal
+
+    /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
+    function pay(uint256 paymentAmount, bytes32 keyHash, bytes calldata encodedUserOp)
+        public
         virtual
-        returns (UserOp calldata u)
     {
-        // This function does NOT allocate memory to avoid quadratic memory expansion costs.
-        // Otherwise, it will be unfair to the UserOps at the back of the batch.
+        UserOp calldata userOp;
+        // Equivalent Solidity Code: (In the assembly userOp is stored in calldata, instead of memory)
+        // UserOp memory userOp = abi.decode(encodedUserOp, (UserOp));
+        // Gas Savings:
+        // ~2.5-3k gas for general cases, by avoiding duplicated bounds checks, and avoiding writing the userOp to memory.
+        /// @dev: Extracts the UserOp from the calldata bytes, with minimal checks.
+        /// @dev: Only use this implementation if you are sure that the encodedUserOp is coming from a trusted source.
+        /// We can avoid standard bound checks here, because the entrypoint already does this, when it interacts with ALL the fields in the userOp using solidity.
         assembly ("memory-safe") {
             let t := calldataload(encodedUserOp.offset)
-            u := add(t, encodedUserOp.offset)
+            userOp := add(t, encodedUserOp.offset)
             // Bounds check. We don't need to explicitly check the fields here.
             // In the self call functions, we will use regular Solidity to access the
             // dynamic fields like `signature`, which generate the implicit bounds checks.
             if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
         }
-    }
-    /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
 
-    function pay(uint256 paymentAmount, bytes32 keyHash, bytes calldata encodedUserOp)
-        public
-        virtual
-    {
-        UserOp calldata userOp = _extractUserOp(encodedUserOp);
         if (!LibBit.and(msg.sender == ENTRY_POINT, userOp.eoa == address(this))) {
             revert Unauthorized();
         }
