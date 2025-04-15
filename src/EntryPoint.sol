@@ -389,12 +389,11 @@ contract EntryPoint is
         if (msg.sender.balance != type(uint256).max) {
             revert SimulationResult(gExecute, gCombined, gUsed, err);
         }
+        // If `err` is `PaymentError()`, we don't need to do the final simulation.
+        if (err == PaymentError.selector) revert PaymentError();
         // Every time I use `abi.decode` and `abi.encode` a part of me dies.
         UserOp memory u = abi.decode(encodedUserOp, (UserOp));
         uint256 paymentOverride = Math.saturatingMul(gCombined, u.paymentPerGas);
-        if (LibBit.and(paymentOverride == uint256(0), err == PaymentError.selector)) {
-            paymentOverride = type(uint256).max;
-        }
         u.paymentAmount = paymentOverride;
         u.paymentMaxAmount = paymentOverride;
         (bool success, bytes memory result) = address(this).call(
