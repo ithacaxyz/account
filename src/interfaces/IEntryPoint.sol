@@ -19,16 +19,15 @@ interface IEntryPoint is ICommon {
         payable
         returns (bytes4[] memory errs);
 
-    // /// @dev Simulates an execution and returns gas estimates
-    // /// @param encodedUserOp The encoded user operation
-    // /// @return gExecute The recommended amount of gas for execute
-    // /// @return gCombined The recommended combined gas
-    // /// @return gUsed The amount of gas used
-    // /// @return err The error selector from the simulation
-    // function simulateExecute(bytes calldata encodedUserOp)
-    //     external
-    //     payable
-    //     returns (uint256 gExecute, uint256 gCombined, uint256 gUsed, bytes4 err);
+    /// @dev Simulates an execution and returns gas estimates
+    /// @param encodedUserOp The encoded user operation
+    /// @return gExecute The recommended amount of gas for execute
+    /// @return gCombined The recommended combined gas
+    /// @return gUsed The amount of gas used
+    function simulateExecute(bytes calldata encodedUserOp)
+        external
+        payable
+        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed);
 
     /// @dev Return current nonce with sequence key.
     /// @param eoa The EOA address
@@ -63,8 +62,4 @@ interface IEntryPoint is ICommon {
     function withdrawTokens(address token, address recipient, uint256 amount) external;
 
     function computeDigest(UserOp calldata u) external view returns (bytes32);
-
-    // /// @dev This function is intended for debugging purposes.
-    // /// @param encodedUserOp The encoded user operation
-    // function simulateFailed(bytes calldata encodedUserOp) external payable;
 }
