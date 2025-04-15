@@ -54,10 +54,12 @@ contract MockPayerWithState is Ownable {
     /// @param paymentAmount The amount to pay.
     /// @param keyHash The key hash associated with the operation (not used in this mock's logic but kept for signature compatibility).
     /// @param encodedUserOp ABI encoded UserOp struct.
-    function pay(uint256 paymentAmount, bytes32 keyHash, bytes calldata encodedUserOp)
-        public
-        virtual
-    {
+    function pay(
+        uint256 paymentAmount,
+        bytes32 keyHash,
+        bytes32 digest,
+        bytes calldata encodedUserOp
+    ) public virtual {
         if (!isApprovedEntryPoint[msg.sender]) revert Unauthorized();
 
         ICommon.UserOp memory u = abi.decode(encodedUserOp, (ICommon.UserOp));
@@ -68,6 +70,9 @@ contract MockPayerWithState is Ownable {
 
         // Emit the event for debugging.
         emit Compensated(u.paymentToken, u.paymentRecipient, paymentAmount, u.eoa, keyHash);
+
+        // Done to avoid compiler warnings.
+        digest = digest;
     }
 
     receive() external payable {}

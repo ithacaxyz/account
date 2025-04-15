@@ -497,18 +497,20 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
-    function pay(uint256 paymentAmount, bytes32 keyHash, bytes calldata encodedUserOp)
-        public
-        virtual
-    {
+    function pay(
+        uint256 paymentAmount,
+        bytes32 keyHash,
+        bytes32 userOpDigest,
+        bytes calldata encodedUserOp
+    ) public virtual {
         UserOp calldata userOp;
         // Equivalent Solidity Code: (In the assembly userOp is stored in calldata, instead of memory)
         // UserOp memory userOp = abi.decode(encodedUserOp, (UserOp));
         // Gas Savings:
         // ~2.5-3k gas for general cases, by avoiding duplicated bounds checks, and avoiding writing the userOp to memory.
-        /// @dev: Extracts the UserOp from the calldata bytes, with minimal checks.
-        /// @dev: Only use this implementation if you are sure that the encodedUserOp is coming from a trusted source.
-        /// We can avoid standard bound checks here, because the entrypoint already does this, when it interacts with ALL the fields in the userOp using solidity.
+        // Extracts the UserOp from the calldata bytes, with minimal checks.
+        // NOTE: Only use this implementation if you are sure that the encodedUserOp is coming from a trusted source.
+        // We can avoid standard bound checks here, because the entrypoint already does these checks when it interacts with ALL the fields in the userOp using solidity.
         assembly ("memory-safe") {
             let t := calldataload(encodedUserOp.offset)
             userOp := add(t, encodedUserOp.offset)
@@ -528,6 +530,9 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
             _incrementSpent(spends.spends[userOp.paymentToken], userOp.paymentToken, paymentAmount);
         }
+
+        // Done to avoid compiler warnings.
+        userOpDigest = userOpDigest;
     }
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.
