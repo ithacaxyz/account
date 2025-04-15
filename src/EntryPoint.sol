@@ -36,13 +36,7 @@ import {LibNonce} from "./LibNonce.sol";
 /// - Minimize chance of censorship.
 ///   This means once an UserOp is signed, it is infeasible to
 ///   alter or rearrange it to force it to fail.
-contract EntryPoint is
-    AccountRegistry,
-    EIP712,
-    Ownable,
-    CallContextChecker,
-    ReentrancyGuardTransient
-{
+contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTransient {
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;

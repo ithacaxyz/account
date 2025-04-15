@@ -25,6 +25,11 @@ jobs:
         # TODO: remove the --evm-version argument once https://github.com/blockscout/blockscout/pull/12115 is released.
         # TODO: re-add --verify --verifier blockscout --verifier-url "https://odyssey-explorer.ithaca.xyz/api"
         run: |
+          (forge create "src/AccountRegistry.sol:AccountRegistry" \
+            --rpc-url "https://odyssey-devnet.ithaca.xyz" \
+            --broadcast \
+            --private-key $PRIVATE_KEY \
+            --evm-version cancun | awk '/Deployed to:/ { print "AccountRegistry: " $NF }') && \
           forge script DeployAllScript \
             --rpc-url "https://odyssey-devnet.ithaca.xyz" \
             --broadcast -q \
