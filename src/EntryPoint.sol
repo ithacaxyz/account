@@ -313,9 +313,9 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         if (err == PaymentError.selector) revert PaymentError();
         // Every time I use `abi.decode` and `abi.encode` a part of me dies.
         UserOp memory u = abi.decode(encodedUserOp, (UserOp));
-        uint256 paymentOverride = Math.saturatingMul(gCombined, u.paymentPerGas);
-        u.paymentAmount = paymentOverride;
-        u.paymentMaxAmount = paymentOverride;
+        // uint256 paymentOverride = Math.saturatingMul(gCombined, u.paymentPerGas);
+        // u.paymentAmount = paymentOverride;
+        // u.paymentMaxAmount = paymentOverride;
         (bool success, bytes memory result) = address(this).call(
             abi.encodePacked(
                 bytes4(0xffffffff),
