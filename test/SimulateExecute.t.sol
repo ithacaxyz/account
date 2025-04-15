@@ -32,6 +32,54 @@ contract SimulateExecuteTest is BaseTest {
         return _bound(_random(), 0, 10000);
     }
 
+    function testSimulateExecuteNoRevertUnderfundedReverts() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        assertEq(_balanceOf(address(paymentToken), d.eoa), 0);
+
+        _SimulateExecuteTemps memory t;
+
+        gasBurner.setRandomness(1); // Warm the storage first.
+
+        t.gasToBurn = _gasToBurn();
+        do {
+            t.randomness = _randomUniform();
+        } while (t.randomness == 0);
+        emit LogUint("gasToBurn", t.gasToBurn);
+
+        t.executionData = _executionData(
+            address(gasBurner),
+            abi.encodeWithSignature("burnGas(uint256,uint256)", t.gasToBurn, t.randomness)
+        );
+
+        EntryPoint.UserOp memory u;
+        u.eoa = d.eoa;
+        u.nonce = 0;
+        u.executionData = t.executionData;
+        u.payer = address(0x00);
+        u.paymentToken = address(paymentToken);
+        u.paymentRecipient = address(0x00);
+        u.paymentAmount = 0x112233112233112233112233;
+        u.paymentMaxAmount = 0x445566445566445566445566;
+        u.paymentPerGas = 1;
+
+        {
+            // Just pass in a junk secp256k1 signature.
+            (uint8 v, bytes32 r, bytes32 s) =
+                vm.sign(uint128(_randomUniform()), bytes32(_randomUniform()));
+            u.signature = abi.encodePacked(r, s, v);
+        }
+
+        address maxBalanceCaller = _randomUniqueHashedAddress();
+        vm.deal(maxBalanceCaller, type(uint256).max);
+        vm.prank(maxBalanceCaller);
+        (t.success, t.result) =
+            address(ep).call(abi.encodeWithSignature("simulateExecute(bytes)", abi.encode(u)));
+
+        assertFalse(t.success);
+
+        assertEq(t.result, abi.encodePacked(bytes4(keccak256("PaymentError()"))));
+    }
+
     function testSimulateExecuteNoRevert() public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
