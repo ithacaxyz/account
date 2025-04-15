@@ -407,7 +407,7 @@ contract EntryPoint is
             )
         );
         if (!success) {
-            assembly {
+            assembly ("memory-safe") {
                 revert(add(0x20, result), mload(result))
             }
         }
