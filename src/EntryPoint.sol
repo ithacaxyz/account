@@ -389,7 +389,9 @@ contract EntryPoint is
         if (msg.sender.balance != type(uint256).max) {
             revert SimulationResult(gExecute, gCombined, gUsed, err);
         }
-        // If `err` is `PaymentError()`, we don't need to do the final simulation.
+        // If `err` is `PaymentError()`, directly revert, as `gCombined` will be zero,
+        // and `paymentOverride` will thus be zero, which won't trigger the revert
+        // in the final simulation.
         if (err == PaymentError.selector) revert PaymentError();
         // Every time I use `abi.decode` and `abi.encode` a part of me dies.
         UserOp memory u = abi.decode(encodedUserOp, (UserOp));
