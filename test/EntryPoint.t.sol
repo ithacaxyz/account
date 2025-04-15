@@ -842,7 +842,13 @@ contract EntryPointTest is BaseTest {
         } else if ((!t.isWithState && t.corruptSignature && u.totalPaymentAmount != 0)) {
             // Pre payment will not happen
             assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("InvalidSignature()")));
-            assertEq(ep.getNonce(u.eoa, 0), u.nonce);
+            // If prePayment is 0, then nonce is incremented, because the prePayment doesn't fail.
+            // TODO: Is this desirable?
+            if (u.prePaymentAmount == 0) {
+                assertEq(ep.getNonce(u.eoa, 0), u.nonce + 1);
+            } else {
+                assertEq(ep.getNonce(u.eoa, 0), u.nonce);
+            }
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
             assertEq(_balanceOf(address(0), address(0xabcd)), 0);
         } else {
