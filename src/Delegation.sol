@@ -17,13 +17,14 @@ import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
-import {TokenTransferLib} from "./TokenTransferLib.sol";
-import {LibPREP} from "./LibPREP.sol";
-import {LibNonce} from "./LibNonce.sol";
+import {LibNonce} from "./libraries/LibNonce.sol";
+import {LibPREP} from "./libraries/LibPREP.sol";
+import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
+import {IDelegation} from "./interfaces/IDelegation.sol";
 
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
-contract Delegation is EIP712, GuardedExecutor {
+contract Delegation is IDelegation, EIP712, GuardedExecutor {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for *;
     using LibBytes for LibBytes.BytesStorage;
@@ -496,25 +497,42 @@ contract Delegation is EIP712, GuardedExecutor {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
-    function compensate(
-        address paymentToken,
-        address paymentRecipient,
+    function pay(
         uint256 paymentAmount,
-        address eoa,
         bytes32 keyHash,
         bytes32 userOpDigest,
-        bytes calldata paymentSignature
+        bytes calldata encodedUserOp
     ) public virtual {
-        if (!LibBit.and(msg.sender == ENTRY_POINT, eoa == address(this))) revert Unauthorized();
-        TokenTransferLib.safeTransfer(paymentToken, paymentRecipient, paymentAmount);
+        UserOp calldata userOp;
+        // Equivalent Solidity Code: (In the assembly userOp is stored in calldata, instead of memory)
+        // UserOp memory userOp = abi.decode(encodedUserOp, (UserOp));
+        // Gas Savings:
+        // ~2.5-3k gas for general cases, by avoiding duplicated bounds checks, and avoiding writing the userOp to memory.
+        // Extracts the UserOp from the calldata bytes, with minimal checks.
+        // NOTE: Only use this implementation if you are sure that the encodedUserOp is coming from a trusted source.
+        // We can avoid standard bound checks here, because the entrypoint already does these checks when it interacts with ALL the fields in the userOp using solidity.
+        assembly ("memory-safe") {
+            let t := calldataload(encodedUserOp.offset)
+            userOp := add(t, encodedUserOp.offset)
+            // Bounds check. We don't need to explicitly check the fields here.
+            // In the self call functions, we will use regular Solidity to access the
+            // dynamic fields like `signature`, which generate the implicit bounds checks.
+            if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
+        }
+
+        if (!LibBit.and(msg.sender == ENTRY_POINT, userOp.eoa == address(this))) {
+            revert Unauthorized();
+        }
+
+        TokenTransferLib.safeTransfer(userOp.paymentToken, userOp.paymentRecipient, paymentAmount);
         // Increase spend.
         if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
             SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
-            _incrementSpent(spends.spends[paymentToken], paymentToken, paymentAmount);
+            _incrementSpent(spends.spends[userOp.paymentToken], userOp.paymentToken, paymentAmount);
         }
-        // Silence unused variables warning.
+
+        // Done to avoid compiler warnings.
         userOpDigest = userOpDigest;
-        paymentSignature = paymentSignature;
     }
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.

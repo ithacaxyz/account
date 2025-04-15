@@ -3,7 +3,7 @@ pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
-import {LibPREP} from "../src/LibPREP.sol";
+import {LibPREP} from "../src/libraries/LibPREP.sol";
 
 contract SampleTarget {
     uint256 public x;
@@ -49,8 +49,10 @@ contract LibPREPTest is BaseTest {
 
         u.nonce = 0xc1d0 << 240;
         u.paymentToken = address(paymentToken);
-        u.paymentAmount = 1 ether;
-        u.paymentMaxAmount = type(uint128).max;
+        u.prePaymentAmount = 1 ether;
+        u.prePaymentMaxAmount = type(uint128).max;
+        u.totalPaymentAmount = u.prePaymentAmount;
+        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
         u.combinedGas = 10000000;
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
