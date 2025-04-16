@@ -421,7 +421,7 @@ contract Delegation is EIP712, GuardedExecutor {
     }
 
     /// @dev Computes the EIP712 digest for `calls`.
-    /// If the the nonce starts with `MULTICHAIN_NONCE_PREFIX`,
+    /// If the nonce starts with `MULTICHAIN_NONCE_PREFIX`,
     /// the digest will be computed without the chain ID.
     /// Otherwise, the digest will be computed with the chain ID.
     function computeDigest(Call[] calldata calls, uint256 nonce)
