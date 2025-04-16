@@ -243,8 +243,9 @@ contract BaseTest is SoladyTest {
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
-        bytes memory data =
-            abi.encodeWithSelector(EntryPoint.simulateExecuteV2.selector, abi.encode(u));
+        bytes memory data = abi.encodeWithSelector(
+            EntryPoint.simulateExecuteV2.selector, abi.encode(u), type(uint256).max
+        );
 
         (bool success, bytes memory result) = address(ep).call(data);
         assertFalse(success);

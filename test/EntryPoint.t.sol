@@ -441,8 +441,9 @@ contract EntryPointTest is BaseTest {
         // );
         // gUsed = uint256(LibBytes.load(rD, 0x04));
         // err = bytes4(LibBytes.load(rD, 0x24));
-        bytes memory data =
-            abi.encodeWithSelector(EntryPoint.simulateExecuteV2.selector, abi.encode(u));
+        bytes memory data = abi.encodeWithSelector(
+            EntryPoint.simulateExecuteV2.selector, abi.encode(u), type(uint256).max
+        );
 
         (bool success, bytes memory result) = address(ep).call(data);
         assertFalse(success);

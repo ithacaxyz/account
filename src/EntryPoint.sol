@@ -319,13 +319,17 @@ contract EntryPoint is
         }
     }
 
-    function simulateExecuteV2(bytes calldata encodedUserOp) public payable virtual {
+    function simulateExecuteV2(bytes calldata encodedUserOp, uint256 combinedGasOverride)
+        public
+        payable
+        virtual
+    {
         // Set the simulation flag to true
         assembly ("memory-safe") {
             tstore(SIMULATION_V2_FLAG, 1)
         }
 
-        (uint256 gUsed,) = _execute(encodedUserOp, type(uint256).max);
+        (uint256 gUsed,) = _execute(encodedUserOp, combinedGasOverride);
 
         revert SimulationPassed(gUsed);
     }
