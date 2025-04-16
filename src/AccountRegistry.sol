@@ -85,7 +85,7 @@ contract AccountRegistry {
 
     /// @dev Appends a new account to the ID. This is useful when a user wants to associate a key with multiple accounts.
     /// We require the caller of this method to be an already registered account.
-    /// @param id Inititalized ID to append the account to.
+    /// @param id Initialized ID to append the account to.
     /// @param account Account to append to the ID.
     function appendAccount(address id, address account) external {
         StoredAccounts storage accounts = _getAccountRegistryStorage().accounts[id];
