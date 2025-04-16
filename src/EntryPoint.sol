@@ -186,6 +186,9 @@ contract EntryPoint is
     /// @dev The EOA's delegation implementation is not supported.
     error UnsupportedDelegationImplementation();
 
+    /// @dev The simulation has passed.
+    error SimulationPassed(uint256 gUsed);
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -226,6 +229,9 @@ contract EntryPoint is
     /// This constant is a pun for "chain ID 0".
     uint16 public constant MULTICHAIN_NONCE_PREFIX = 0xc1d0;
 
+    uint256 internal constant SIMULATION_V2_FLAG =
+        0xc8bb833e36d9bbf17340b99244f2ae42032d95dc3104a387cf9f88b7b52e9509; // uint256(keccak256("SIMULATION_V2_FLAG"));
+
     /// @dev For ensuring that the remaining gas is sufficient for a self-call with
     /// overhead for cleaning up after the self-call. This also has an added benefit
     /// of preventing the censorship vector of calling `execute` in a very deep call-stack.
@@ -237,19 +243,6 @@ contract EntryPoint is
     /// @dev The amount of expected gas for refunds.
     /// Should be enough for a cold zero to non-zero SSTORE + a warm SSTORE + a few SLOADs.
     uint256 internal constant _REFUND_GAS = 50000;
-
-    /// @dev Bit in `combinedGasOverride` that denotes if it is just for the 63/64 test.
-    uint256 internal constant _FLAG_63_OVER_64_TEST = 1 << 255;
-
-    /// @dev Bit in `combinedGasOverride` that denotes if it is for a simulation.
-    uint256 internal constant _FLAG_IS_SIMULATION = 1 << 254;
-
-    /// @dev Bit in `combinedGasOverride` that denotes if the reverts should be a full revert.
-    /// If this flag is set, `_execute` will also revert instead of returning `err`.
-    uint256 internal constant _FLAG_BUBBLE_FULL_REVERT = 1 << 253;
-
-    /// @dev Bit in `combinedGasOverride` that denotes if it is just for the verification gas.
-    uint256 internal constant _FLAG_VERIFICATION_GAS_ONLY = 1 << 252;
 
     ////////////////////////////////////////////////////////////////////////
     // Storage
@@ -326,174 +319,20 @@ contract EntryPoint is
         }
     }
 
-    /// @dev This function does not actually execute.
-    /// It simulates an execution and reverts with
-    /// `SimulationResult(gExecute, gCombined, gUsed, err)`:
-    /// - `gExecute` is the recommended amount of gas to pass into execute.
-    ///    This does not include the minimum transaction overhead of 21k gas.
-    ///    You will need to add that in.
-    /// - `gCombined` is the recommendation for `gasCombined`.
-    /// - `gUsed` is the amount of gas that has been eaten.
-    /// - `err` is the error selector from the simulation.
-    ///   If the `err` is non-zero, it means that the simulation with `gExecute`
-    ///   has not resulted in a success execution.
-    /// Notes:
-    /// - `combinedGas` will be ignored and overwritten during estimation. Just leave it as zero.
-    /// - `signature` is NOT required to be valid, but sufficient for triggering
-    ///    the code paths to meter the gas required.
-    ///   - EOA (no `keyHash`): `abi.encodePacked(r, s, v)`.
-    ///   - Others (e.g. P256, with `keyHash`):
-    ///     `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
-    ///     The `keyHash` is required for triggering to validation and GuardedExecutor
-    ///     code paths for that particular `keyHash`.
-    /// - For most accurate metering:
-    ///   - UserOp should have a payment amount greater than 0.
-    ///   - The signatures should be actual signatures,
-    ///     but signed by a different private key of the same key type.
-    ///     For simulations, we want to avoid early returns for trivially invalid signatures.
-    /// - To enable this function to return instead of reverting, for `eth_simulateV1`,
-    ///   use a state override to set `msg.sender.balance` to `type(uint256).max`.
-    function simulateExecute(bytes calldata encodedUserOp)
-        public
-        payable
-        virtual
-        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
-    {
-        gExecute = gasleft();
-        bytes4 err;
-
-        // Setting the bit at `1 << 254` tells `_execute` that we want the
-        // simulation to skip the invalid signature revert and also the 63/64 rule revert.
-        // Also use `2**96 - 1` as the `combinedGas` for the very first call to `_execute`.
-        uint256 combinedGasOverride = (1 << 254) | 0xffffffffffffffffffffffff;
-        bytes memory data =
-            abi.encodePacked(bytes4(0xffffffff), combinedGasOverride, uint256(0), encodedUserOp);
-
+    function simulateExecuteV2(bytes calldata encodedUserOp) public payable virtual {
+        // Set the simulation flag to true
         assembly ("memory-safe") {
-            function callSimulateExecute(g_, data_) -> _success {
-                calldatacopy(0x00, calldatasize(), 0x40) // Zeroize the memory for the return data.
-                pop(call(g_, address(), 0, add(data_, 0x20), mload(data_), 0x00, 0x40))
-                _success := eq(shr(224, mload(0x00)), 0xffffffff)
-            }
-            function revertSimulateExecuteFailed() {
-                mstore(0x00, 0x234e352e) // `SimulateExecuteFailed()`.
-                revert(0x1c, 0x04)
-            }
+            tstore(SIMULATION_V2_FLAG, 1)
+        }
 
-            if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecuteFailed() }
-            gUsed := mload(0x04)
-            err := mload(0x24)
-            // If the UserOp results in a successful execution, let's try to determine
-            // the amount of gas that needs to be passed in.
-            if iszero(err) {
-                // Tell `selfCallSimulateExecute565348489()` that we just want the verification gas.
-                mstore(add(data, 0x24), _FLAG_VERIFICATION_GAS_ONLY)
-                // We need to use a reverting simulation call to measure the verification gas,
-                // as it resets warm address and storage access.
-                if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecuteFailed() }
-                let gVerify := mload(0x04)
-                // Heuristic: if the verification gas is > 60k, assume it is P256 verification
-                // without the precompile, which has quite a large variance in verification gas.
-                // Add 110k (empirically determined) to the `gUsed` to account for the variance.
-                for { gCombined := add(gUsed, mul(110000, gt(gVerify, 60000))) } 1 {} {
-                    gCombined := add(gCombined, shr(4, gCombined)) // Heuristic: multiply by 1.0625.
-                    // Now that we are trying to hone in onto a good estimate for `combinedGas`, we
-                    // still want to skip the invalid signature revert and also the 63/64 rule revert.
-                    mstore(add(data, 0x24), or(_FLAG_IS_SIMULATION, gCombined))
-                    if iszero(callSimulateExecute(gas(), data)) { revertSimulateExecuteFailed() }
-                    if iszero(mload(0x24)) { break } // If `err` is zero, we've found the `gCombined`.
-                }
-                // Setting `_FLAG_63_OVER_64_TEST` tells `_execute` to early return,
-                // as we just want to test the 63/64 rule on `gExecute` for the given `gCombined`.
-                mstore(add(data, 0x24), or(_FLAG_63_OVER_64_TEST, gCombined))
-                for { gExecute := gCombined } 1 {} {
-                    gExecute := add(gExecute, shr(5, gExecute)) // Heuristic: multiply by 1.03125.
-                    if callSimulateExecute(gExecute, data) { if iszero(mload(0x24)) { break } }
-                }
-                // Add a bit of buffer to account for the variations in
-                // function dispatch between `execute` and `simulateExecute`.
-                gExecute := add(gExecute, 500)
-            }
-        }
-        if (msg.sender.balance != type(uint256).max) {
-            revert SimulationResult(gExecute, gCombined, gUsed, err);
-        }
-        // If `err` is `PaymentError()`, directly revert, as `gCombined` will be zero,
-        // and `paymentOverride` will thus be zero, which won't trigger the revert
-        // in the final simulation. And we need the simulation to revert.
-        if (err == PaymentError.selector) revert PaymentError();
-        // Every time I use `abi.decode` and `abi.encode` a part of me dies.
-        UserOp memory u = abi.decode(encodedUserOp, (UserOp));
-        uint256 paymentOverride = Math.saturatingMul(gCombined, u.paymentPerGas);
-        u.paymentAmount = paymentOverride;
-        u.paymentMaxAmount = paymentOverride;
-        (bool success, bytes memory result) = address(this).call(
-            abi.encodePacked(
-                bytes4(0xffffffff),
-                combinedGasOverride | _FLAG_BUBBLE_FULL_REVERT,
-                uint256(uint160(msg.sender)),
-                abi.encode(u)
-            )
-        );
-        if (!success) {
-            assembly ("memory-safe") {
-                revert(add(0x20, result), mload(result))
-            }
-        }
+        (uint256 gUsed,) = _execute(encodedUserOp, type(uint256).max);
+
+        revert SimulationPassed(gUsed);
     }
 
-    /// @dev This function is intended for self-call via `simulateExecute`.
-    /// The name is mined to give a function selector of `0xffffffff`, which makes it
-    /// least efficient to call by placing it at the rightmost part of the function dispatch tree.
-    /// As this is only for simulation purposes, it does not need to be efficient.
-    ///
-    /// Simply calling this function to get `gUsed` is NOT enough in production.
-    /// It is NOT sufficient to simply estimate `gExecute` as `gUsed * a + b; a > 1 && b > 0`.
-    /// Gas is burned at varying call depths, applying the 63/64 rule at different multiples
-    /// to different segments of the gas burned. `gExecute` is NOT a constant multiple of `gUsed`.
-    /// The only generalized reliable way to predict `gCombined` and `gExecute` is to
-    /// try and error gas-limited self-calls via `simulateExecute` to this function.
-    ///
-    /// This function does not actually execute.
-    /// It simulates an execution and reverts with
-    /// `abi.encodePacked(bytes4(0xffffffff), abi.encode(gUsed, err))`.
-    /// This function requires that `combinedGas` be set to a high enough value.
-    /// Notes:
-    /// - `gUsed` is the amount of gas that has been eaten.
-    /// - `err` is the error selector from the simulation.
-    ///   If the `err` is non-zero, it means that the simulation with `gExecute`
-    ///   has not resulted in a success execution.
-    function selfCallSimulateExecute565348489() public payable virtual {
-        bytes calldata encodedUserOp;
-        uint256 combinedGasOverride;
-        uint256 noRevertCaller;
+    function _isSimulationV2() internal view returns (bool isSimulation) {
         assembly ("memory-safe") {
-            combinedGasOverride := calldataload(0x04)
-            noRevertCaller := calldataload(0x24)
-            encodedUserOp.offset := 0x44
-            encodedUserOp.length := sub(calldatasize(), 0x44)
-        }
-        uint256 gUsed;
-        bytes4 err;
-        if (combinedGasOverride & _FLAG_VERIFICATION_GAS_ONLY != 0) {
-            uint256 gVerifyStart = gasleft();
-            UserOp calldata u = _extractUserOp(encodedUserOp);
-            _verify(_computeDigest(u), u.eoa, u.signature);
-            gUsed = Math.rawSub(gVerifyStart, gasleft());
-        } else {
-            (gUsed, err) = _execute(encodedUserOp, combinedGasOverride);
-        }
-        if (noRevertCaller != 0) {
-            require(msg.sender == address(this));
-            require(address(uint160(noRevertCaller)).balance == type(uint256).max);
-            return;
-        }
-        assembly ("memory-safe") {
-            // Revert with `abi.encodePacked(bytes4(0xffffffff), abi.encode(gUsed, err))`.
-            mstore(0x00, not(0)) // `0xffffffff`.
-            mstore(0x04, gUsed)
-            mstore(0x24, shl(224, shr(224, err))) // Clean the lower bytes of `err` word.
-            revert(0x00, 0x44)
+            isSimulation := tload(SIMULATION_V2_FLAG)
         }
     }
 
@@ -537,25 +376,19 @@ contract EntryPoint is
         uint256 g = Math.coalesce(uint96(combinedGasOverride), u.combinedGas);
         uint256 gStart = gasleft();
 
-        bool isSimulation = combinedGasOverride & _FLAG_IS_SIMULATION != 0;
-        unchecked {
-            // Check if there's sufficient gas left for the gas-limited self calls
-            // via the 63/64 rule. This is for gas estimation. If the total amount of gas
-            // for the whole transaction is insufficient, revert.
-            if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
-                // Don't revert if `_FLAG_IS_SIMULATION`.
-                // For `simulateExecute` to be able to get a simulation before knowing
-                // how much gas is needed without reverting.
-                if (!isSimulation) revert InsufficientGas();
-            }
-            // If `_FLAG_63_OVER_64_TEST` is set, this means `simulateExecute` just wants
-            // to check the 63/64 rule, so early return to skip the rest of the computations.
-            if (combinedGasOverride & _FLAG_63_OVER_64_TEST != 0) return (0, 0);
-        }
+        // TODO: Fix later
+        // unchecked {
+        //     // Check if there's sufficient gas left for the gas-limited self calls
+        //     // via the 63/64 rule. This is for gas estimation. If the total amount of gas
+        //     // for the whole transaction is insufficient, revert.
+        //     if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
+        //         if (!_isSimulationV2()) revert InsufficientGas();
+        //     }
+        // }
 
         if (u.supportedDelegationImplementation != address(0)) {
             if (delegationImplementationOf(u.eoa) != u.supportedDelegationImplementation) {
-                if (!isSimulation) err = UnsupportedDelegationImplementation.selector;
+                if (!_isSimulationV2()) err = UnsupportedDelegationImplementation.selector;
             }
         }
 
@@ -572,7 +405,6 @@ contract EntryPoint is
         bool selfCallSuccess;
         // We'll use assembly for frequently used call related stuff to save massive memory gas.
         assembly ("memory-safe") {
-            let bubbleSelfCallRevert := 0
             let m := mload(0x40) // Grab the free memory pointer.
             if iszero(err) {
                 // Copy the encoded user op to the memory to be ready to pass to the self call.
@@ -588,20 +420,16 @@ contract EntryPoint is
                 selfCallSuccess :=
                     call(g, address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x20)
                 err := mload(0x00) // The self call will do another self call to execute.
+
                 if iszero(selfCallSuccess) {
-                    bubbleSelfCallRevert := err // This will only be used in simulation.
-                    if iszero(err) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
-                }
-            }
-            // If `err` is non-zero and the simulation requires a full revert.
-            if err {
-                if and(combinedGasOverride, _FLAG_BUBBLE_FULL_REVERT) {
-                    if bubbleSelfCallRevert {
-                        returndatacopy(m, 0x00, returndatasize())
-                        revert(m, returndatasize())
+                    // If it is a simulation, we simply revert with the full error.
+                    if tload(SIMULATION_V2_FLAG) {
+                        returndatacopy(mload(0x40), 0x00, returndatasize())
+                        revert(mload(0x40), returndatasize())
                     }
-                    mstore(0x00, err)
-                    revert(0x00, 0x20)
+
+                    // If we don't get an error selector, then we set this one.
+                    if iszero(err) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
                 }
             }
         }
@@ -705,7 +533,7 @@ contract EntryPoint is
                 let success :=
                     call(gas(), eoa, 0, add(m, 0x1c), add(0x64, initData.length), m, 0x20)
                 if iszero(and(eq(mload(m), 1), success)) {
-                    if and(flags, _FLAG_BUBBLE_FULL_REVERT) {
+                    if tload(SIMULATION_V2_FLAG) {
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
@@ -723,8 +551,11 @@ contract EntryPoint is
         // in the window between off-chain simulation and on-chain execution.
         bytes32 digest = _computeDigest(u);
         (bool isValid, bytes32 keyHash) = _verify(digest, eoa, u.signature);
-        if (!isValid) if (flags & _FLAG_IS_SIMULATION == 0) revert VerificationError();
-
+        // if (!isValid) if (flags & _FLAG_IS_SIMULATION == 0) revert VerificationError();
+        if (_isSimulationV2()) {
+            isValid = true;
+        }
+        if (!isValid) revert VerificationError();
         // If `_pay` fails, just revert.
         // Off-chain simulation of `_pay` should suffice,
         // provided that the token balance does not decrease in the window between
@@ -748,7 +579,7 @@ contract EntryPoint is
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
             if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
-                if and(flags, _FLAG_BUBBLE_FULL_REVERT) {
+                if tload(SIMULATION_V2_FLAG) {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
                 }
@@ -772,6 +603,7 @@ contract EntryPoint is
         uint256 simulationFlags,
         bytes[] calldata encodedPreOps
     ) internal virtual {
+        simulationFlags = simulationFlags;
         for (uint256 i; i < encodedPreOps.length; ++i) {
             PreOp calldata p = _extractPreOp(encodedPreOps[i]);
             address eoa = Math.coalesce(p.eoa, parentEOA);
@@ -780,7 +612,11 @@ contract EntryPoint is
             if (eoa != parentEOA) revert InvalidPreOpEOA();
 
             (bool isValid, bytes32 keyHash) = _verify(_computeDigest(p), eoa, p.signature);
-            if (!isValid) if (simulationFlags & 1 == 0) revert PreOpVerificationError();
+            if (_isSimulationV2()) {
+                isValid = true;
+            }
+            // if (!isValid) if (simulationFlags & 1 == 0) revert PreOpVerificationError();
+            if (!isValid) revert PreOpVerificationError();
 
             if (nonce != type(uint256).max) {
                 LibNonce.checkAndIncrement(_getEntryPointStorage().nonceSeqs[eoa], nonce);
@@ -798,7 +634,7 @@ contract EntryPoint is
                 mstore(0x00, 0) // Zeroize the return slot.
                 if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
                     // If this is a simulation via `simulateFailed`, bubble up the whole revert.
-                    if and(simulationFlags, 2) {
+                    if tload(SIMULATION_V2_FLAG) {
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
