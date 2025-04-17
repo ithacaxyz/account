@@ -38,7 +38,13 @@ import {IEntryPoint} from "./interfaces/IEntryPoint.sol";
 /// - Minimize chance of censorship.
 ///   This means once an UserOp is signed, it is infeasible to
 ///   alter or rearrange it to force it to fail.
-contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTransient {
+contract EntryPoint is
+    IEntryPoint,
+    EIP712,
+    Ownable,
+    CallContextChecker,
+    ReentrancyGuardTransient
+{
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
@@ -275,11 +281,11 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
         //     }
         // }
 
-        if (u.supportedDelegationImplementation != address(0)) {
-            if (delegationImplementationOf(u.eoa) != u.supportedDelegationImplementation) {
-                if (!_isSimulationV2()) err = UnsupportedDelegationImplementation.selector;
-            }
-        }
+        // if (u.supportedDelegationImplementation != address(0)) {
+        //     if (delegationImplementationOf(u.eoa) != u.supportedDelegationImplementation) {
+        //         if (!_isSimulationV2()) err = UnsupportedDelegationImplementation.selector;
+        //     }
+        // }
 
         address payer = Math.coalesce(u.payer, u.eoa);
 
@@ -466,7 +472,7 @@ contract EntryPoint is EIP712, Ownable, CallContextChecker, ReentrancyGuardTrans
             if iszero(
                 call(gas(), address(), 0, add(m, 0x1c), add(0x44, encodedUserOpLength), m, 0x20)
             ) {
-                if and(flags, _FLAG_BUBBLE_FULL_REVERT) {
+                if tload(SIMULATION_V2_FLAG) {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
                 }
