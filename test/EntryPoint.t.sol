@@ -452,31 +452,9 @@ contract EntryPointTest is BaseTest {
         internal
         returns (uint256 gUsed, bytes4 err)
     {
-        // (, bytes memory rD) = address(ep).call(
-        //     abi.encodePacked(bytes4(0xffffffff), uint256(0), uint256(0), abi.encode(u))
-        // );
-        // gUsed = uint256(LibBytes.load(rD, 0x04));
-        // err = bytes4(LibBytes.load(rD, 0x24));
-        bytes memory data =
-            abi.encodeWithSelector(EntryPoint.simulateExecuteV2.selector, abi.encode(u));
-
-        (bool success, bytes memory result) = address(ep).call(data);
-        assertFalse(success);
-
-        assembly ("memory-safe") {
-            err := shl(224, shr(224, mload(add(result, 0x20))))
-            // Check if first 4 bytes are equal to SimulationPassed(uint256)
-            if iszero(
-                eq(
-                    err,
-                    shl(224, 0x4f0c028c00000000000000000000000000000000000000000000000000000000)
-                )
-            ) {
-                gUsed := mload(add(result, 0x24))
-                err := 0
-            }
-        }
-        // console.logBytes4(err);
+        EntryPoint.simulateExecuteV2(
+            EntryPoint.SimulateMode.POSTPAY_VERIFY, paymentPerGas, combinedGasOffset, encodedUserOp
+        );
     }
 
     struct _TestAuthorizeWithPreOpsAndTransferTemps {

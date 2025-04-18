@@ -6,9 +6,16 @@ import {ICommon} from "../interfaces/ICommon.sol";
 /// @title IEntryPoint
 /// @notice Interface for the EntryPoint contract
 interface IEntryPoint is ICommon {
+    enum SimulateMode {
+        SANS_VERIFY,
+        PREPAY_VERIFY,
+        POSTPAY_VERIFY
+    }
+
     /// @dev Executes a single encoded user operation.
     /// @param encodedUserOp The encoded user operation
     /// @return err The error selector (non-zero if there is an error)
+
     function execute(bytes calldata encodedUserOp) external payable returns (bytes4 err);
 
     /// @dev Executes an array of encoded user operations.
@@ -19,15 +26,12 @@ interface IEntryPoint is ICommon {
         payable
         returns (bytes4[] memory errs);
 
-    // /// @dev Simulates an execution and returns gas estimates
-    // /// @param encodedUserOp The encoded user operation
-    // /// @return gExecute The recommended amount of gas for execute
-    // /// @return gCombined The recommended combined gas
-    // /// @return gUsed The amount of gas used
-    // function simulateExecute(bytes calldata encodedUserOp)
-    //     external
-    //     payable
-    //     returns (uint256 gExecute, uint256 gCombined, uint256 gUsed);
+    function simulateExecuteV2(
+        SimulateMode mode,
+        uint256 paymentPerGas,
+        uint256 combinedGasOffset,
+        bytes calldata encodedUserOp
+    ) external payable returns (uint256 gasUsed);
 
     /// @dev Return current nonce with sequence key.
     /// @param eoa The EOA address
