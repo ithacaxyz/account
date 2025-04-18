@@ -243,14 +243,20 @@ contract BaseTest is SoladyTest {
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
-        bytes memory data =
-            abi.encodeWithSelector(EntryPoint.simulateExecute.selector, abi.encode(u));
+        bytes memory data = abi.encodeWithSelector(
+            EntryPoint.simulateExecuteV2.selector, abi.encode(u), type(uint256).max
+        );
+
         (bool success, bytes memory result) = address(ep).call(data);
         assertFalse(success);
 
-        gExecute = uint256(LibBytes.load(result, 0x04));
-        gCombined = uint256(LibBytes.load(result, 0x24));
-        gUsed = uint256(LibBytes.load(result, 0x44));
+        assembly ("memory-safe") {
+            gUsed := mload(add(result, 0x24))
+        }
+
+        // These values can be optimized down after static analysis
+        gCombined = gUsed + 10000;
+        gExecute = gUsed + 20000;
     }
 
     function _mint(address token, address to, uint256 amount) internal {

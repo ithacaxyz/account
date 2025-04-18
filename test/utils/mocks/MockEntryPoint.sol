@@ -23,7 +23,7 @@ contract MockEntryPoint is EntryPoint, Brutalizer {
     /// This function bubbles up the full revert for the calls
     /// to `initializePREP` (if any) and `execute` on the eoa.
     function simulateFailed(bytes calldata encodedUserOp) public payable virtual {
-        _execute(encodedUserOp, _FLAG_BUBBLE_FULL_REVERT);
+        _execute(encodedUserOp, type(uint256).max);
         revert NoRevertEncountered();
     }
 }
