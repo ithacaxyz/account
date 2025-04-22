@@ -476,7 +476,6 @@ abstract contract GuardedExecutor is ERC7821 {
             for (uint256 j; j < periods.length; ++j) {
                 uint8 period = periods[j];
                 TokenPeriodSpend memory tokenPeriodSpend = _loadSpend(tokenSpends.spends[period]);
-
                 SpendInfo memory info;
                 info.period = SpendPeriod(period);
                 info.token = token;
