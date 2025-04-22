@@ -229,8 +229,8 @@ contract Delegation is EIP712, GuardedExecutor {
     {
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
-            isValid = getKey(keyHash).isSuperAdmin
-                || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
+            isValid =
+                _isSuperAdmin(keyHash) || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
         }
         // `bytes4(keccak256("isValidSignature(bytes32,bytes)")) = 0x1626ba7e`.
         // We use `0xffffffff` for invalid, in convention with the reference implementation.
@@ -704,7 +704,12 @@ contract Delegation is EIP712, GuardedExecutor {
 
     /// @dev Returns if `keyHash` corresponds to a super admin key.
     function _isSuperAdmin(bytes32 keyHash) internal view virtual override returns (bool) {
-        return getKey(keyHash).isSuperAdmin;
+        LibBytes.BytesStorage storage $ = _getDelegationStorage().keyStorage[keyHash];
+        uint256 dataLength = $.length();
+        if (dataLength == uint256(0)) revert KeyDoesNotExist();
+        unchecked {
+            return $.uint8At(dataLength - 1) != 0;
+        }
     }
 
     /// @dev Returns the storage seed for a `keyHash`.
