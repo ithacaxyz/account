@@ -4,6 +4,7 @@ pragma solidity ^0.8.23;
 import {ERC7821} from "solady/accounts/ERC7821.sol";
 import {LibSort} from "solady/utils/LibSort.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
+import {LibZip} from "solady/utils/LibZip.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 import {DynamicArrayLib} from "solady/utils/DynamicArrayLib.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
@@ -131,7 +132,7 @@ abstract contract GuardedExecutor is ERC7821 {
 
     /// @dev Holds the storage for the token period spend limits.
     /// All timestamp related values are Unix timestamps in seconds.
-    struct TokenPeriodSpendStorage {
+    struct TokenPeriodSpend {
         /// @dev The maximum spend limit for the period.
         uint256 limit;
         /// @dev The amount spent in the last updated period.
@@ -144,8 +145,8 @@ abstract contract GuardedExecutor is ERC7821 {
     struct TokenSpendStorage {
         /// @dev An enumerable set of the periods.
         EnumerableSetLib.Uint8Set periods;
-        /// @dev Mapping of `uint8(period)` to `TokenPeriodSpendStorage`.
-        mapping(uint256 => TokenPeriodSpendStorage) spends;
+        /// @dev Mapping of `uint8(period)` to the encoded spends.
+        mapping(uint256 => LibBytes.BytesStorage) spends;
     }
 
     /// @dev Holds the storage for spend permissions and the current spend state.
@@ -373,7 +374,11 @@ abstract contract GuardedExecutor is ERC7821 {
         TokenSpendStorage storage tokenSpends = spends.spends[token];
         tokenSpends.periods.add(uint8(period));
 
-        tokenSpends.spends[uint8(period)].limit = limit;
+        LibBytes.BytesStorage storage $ = tokenSpends.spends[uint8(period)];
+        TokenPeriodSpend memory tokenPeriodSpend = _loadSpend($);
+        tokenPeriodSpend.limit = limit;
+        _storeSpend($, tokenPeriodSpend);
+
         emit SpendLimitSet(keyHash, token, period, limit);
     }
 
@@ -393,7 +398,7 @@ abstract contract GuardedExecutor is ERC7821 {
             if (tokenSpends.periods.length() == uint256(0)) spends.tokens.remove(token);
         }
 
-        delete tokenSpends.spends[uint8(period)];
+        LibBytes.clear(tokenSpends.spends[uint8(period)]);
 
         emit SpendLimitRemoved(keyHash, token, period);
     }
@@ -470,7 +475,8 @@ abstract contract GuardedExecutor is ERC7821 {
             uint8[] memory periods = tokenSpends.periods.values();
             for (uint256 j; j < periods.length; ++j) {
                 uint8 period = periods[j];
-                TokenPeriodSpendStorage storage tokenPeriodSpend = tokenSpends.spends[period];
+                TokenPeriodSpend memory tokenPeriodSpend = _loadSpend(tokenSpends.spends[period]);
+
                 SpendInfo memory info;
                 info.period = SpendPeriod(period);
                 info.token = token;
@@ -548,7 +554,8 @@ abstract contract GuardedExecutor is ERC7821 {
         if (periods.length == 0) revert NoSpendPermissions();
         for (uint256 i; i < periods.length; ++i) {
             uint8 period = periods[i];
-            TokenPeriodSpendStorage storage tokenPeriodSpend = s.spends[period];
+            LibBytes.BytesStorage storage $ = s.spends[period];
+            TokenPeriodSpend memory tokenPeriodSpend = _loadSpend($);
             uint256 current = startOfSpendPeriod(block.timestamp, SpendPeriod(period));
             if (tokenPeriodSpend.lastUpdated < current) {
                 tokenPeriodSpend.lastUpdated = current;
@@ -556,6 +563,27 @@ abstract contract GuardedExecutor is ERC7821 {
             }
             if ((tokenPeriodSpend.spent += amount) > tokenPeriodSpend.limit) {
                 revert ExceededSpendLimit(token);
+            }
+            _storeSpend($, tokenPeriodSpend);
+        }
+    }
+
+    /// @dev Stores the spend struct.
+    function _storeSpend(LibBytes.BytesStorage storage $, TokenPeriodSpend memory spend) internal {
+        LibBytes.set($, LibZip.cdCompress(abi.encode(spend)));
+    }
+
+    /// @dev Loads the spend struct.
+    function _loadSpend(LibBytes.BytesStorage storage $)
+        internal
+        view
+        returns (TokenPeriodSpend memory spend)
+    {
+        bytes memory compressed = LibBytes.get($);
+        if (compressed.length != 0) {
+            bytes memory decoded = LibZip.cdDecompress(compressed);
+            assembly ("memory-safe") {
+                spend := add(decoded, 0x20) // Directly make `spend` point to the decoded.
             }
         }
     }
