@@ -130,7 +130,7 @@ abstract contract GuardedExecutor is ERC7821 {
     // Storage
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Holds the storage for the token period spend limits.
+    /// @dev Holds the data for the token period spend limits.
     /// All timestamp related values are Unix timestamps in seconds.
     struct TokenPeriodSpend {
         /// @dev The maximum spend limit for the period.
