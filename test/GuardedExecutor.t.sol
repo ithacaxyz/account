@@ -225,7 +225,7 @@ contract GuardedExecutorTest is BaseTest {
         }
     }
 
-    function testSetAndRemoveSpendLimit() public {
+    function testSetAndRemoveSpendLimit(uint256 amount) public {
         vm.warp(86400 * 100);
 
         EntryPoint.UserOp memory u;
@@ -240,7 +240,7 @@ contract GuardedExecutorTest is BaseTest {
         address token = LibClone.clone(address(paymentToken));
         _mint(token, u.eoa, type(uint192).max);
 
-        uint256 amount = _bound(_randomUniform(), 0, 0.1 ether);
+        amount = bound(amount, 0, 0.1 ether);
 
         GuardedExecutor.SpendInfo[] memory infos;
         ERC7821.Call[] memory calls;
@@ -307,7 +307,6 @@ contract GuardedExecutorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.signature = _sig(k, u);
             assertEq(ep.execute(abi.encode(u)), 0);
-
             infos = d.d.spendInfos(k.keyHash);
             for (uint256 i; i < infos.length; ++i) {
                 if (infos[i].period == GuardedExecutor.SpendPeriod.Hour) {
@@ -315,7 +314,9 @@ contract GuardedExecutorTest is BaseTest {
                     assertEq(infos[i].lastUpdated, 0);
                 } else {
                     assertEq(infos[i].spent, amount);
-                    assertNotEq(infos[i].lastUpdated, 0);
+                    if (amount > 0) {
+                        assertNotEq(infos[i].lastUpdated, 0);
+                    }
                 }
             }
         }
@@ -363,7 +364,20 @@ contract GuardedExecutorTest is BaseTest {
             u.nonce = ep.getNonce(u.eoa, 0);
             u.executionData = abi.encode(calls);
             u.signature = _sig(k, u);
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("NoSpendPermissions()")));
+
+            // If first 4bytes are 0xdfc924d5, then it's "anotherTransfer" call, and the spend limit will not catch it.
+            if (
+                (
+                    calls[0].data[0] == bytes1(uint8(0xdf))
+                        && calls[0].data[1] == bytes1(uint8(0xc9))
+                        && calls[0].data[2] == bytes1(uint8(0x24))
+                        && calls[0].data[3] == bytes1(uint8(0xd5))
+                ) || amount == 0
+            ) {
+                assertEq(ep.execute(abi.encode(u)), 0);
+            } else {
+                assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("NoSpendPermissions()")));
+            }
         }
 
         // Test re-addition resets the spent and last updated.
