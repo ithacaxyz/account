@@ -109,6 +109,8 @@ contract EntryPoint is
     /// For PreOps where the nonce is skipped, this event will NOT be emitted..
     event UserOpExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
 
+    event DebugGas(string indexed tag, uint256 gasLeft);
+
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
@@ -233,6 +235,7 @@ contract EntryPoint is
         uint256 combinedGasOverride,
         bytes calldata encodedUserOp
     ) external payable returns (uint256) {
+        emit DebugGas("simulateExecute start", gasleft());
         // If Simulation Fails, then it will revert here.
         (uint256 gUsed, bytes4 err) = _execute(encodedUserOp, combinedGasOverride, 1);
 
@@ -245,6 +248,7 @@ contract EntryPoint is
 
         if (isStateOverride) {
             if (msg.sender.balance == type(uint256).max) {
+                emit DebugGas("simulateExecute end", gasleft());
                 return gUsed;
             } else {
                 revert StateOverrideError();
@@ -351,6 +355,8 @@ contract EntryPoint is
             }
         }
 
+        emit DebugGas("execute preSelfCall", gasleft());
+
         bool selfCallSuccess;
         // We'll use assembly for frequently used call related stuff to save massive memory gas.
         assembly ("memory-safe") {
@@ -383,6 +389,8 @@ contract EntryPoint is
                 }
             }
         }
+
+        emit DebugGas("execute postSelfCall", gasleft());
 
         emit UserOpExecuted(u.eoa, u.nonce, selfCallSuccess, err);
         if (selfCallSuccess) {
@@ -428,6 +436,8 @@ contract EntryPoint is
         (LibStorage.Ref storage seqRef, uint256 seq) =
             LibNonce.check(_getEntryPointStorage().nonceSeqs[eoa], u.nonce);
 
+        emit DebugGas("payVerify preInitPrep", gasleft());
+
         // The chicken and egg problem:
         // A off-chain simulation of a successful UserOp may not guarantee on-chain success.
         // The state may change in the window between simulation and actual on-chain execution.
@@ -466,8 +476,13 @@ contract EntryPoint is
                 }
             }
         }
+
+        emit DebugGas("payVerify postInitPrep", gasleft());
+
         // Handle the sub UserOps after the PREP (if any), and before the `_verify`.
         if (u.encodedPreOps.length != 0) _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
+
+        emit DebugGas("payVerify postPreOps", gasleft());
 
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the delegation logic.
@@ -476,6 +491,8 @@ contract EntryPoint is
         // in the window between off-chain simulation and on-chain execution.
         bytes32 digest = _computeDigest(u);
         (bool isValid, bytes32 keyHash) = _verify(digest, u.eoa, u.signature);
+
+        emit DebugGas("payVerify postVerify", gasleft());
 
         if (simulationFlags == 1) {
             isValid = true;
@@ -488,6 +505,8 @@ contract EntryPoint is
         // provided that the token balance does not decrease in the window between
         // off-chain simulation and on-chain execution.
         if (u.prePaymentAmount != 0) _pay(u.prePaymentAmount, keyHash, digest, u);
+
+        emit DebugGas("payVerify postPay", gasleft());
 
         // Once the payment has been made, the nonce must be invalidated.
         // Otherwise, an attacker can keep replaying the UserOp to take payment and drain the user.
@@ -534,6 +553,7 @@ contract EntryPoint is
                 return(m, 0x20)
             }
         }
+        emit DebugGas("payVerify postExecutePay", gasleft());
     }
 
     /// @dev This function is only intended for self-call. The name is mined to give a function selector of `0x00000001`
@@ -541,6 +561,8 @@ contract EntryPoint is
     /// Self-calling this function ensures, that if the post payment reverts, then the execute function will also revert.
     function selfCallExecutePay1395256087() public payable {
         require(msg.sender == address(this));
+
+        emit DebugGas("executePay start", gasleft());
 
         uint256 simulationFlags;
         bytes32 keyHash;
@@ -577,10 +599,14 @@ contract EntryPoint is
             }
         }
 
+        emit DebugGas("executePay postExecute", gasleft());
+
         uint256 remainingPaymentAmount = Math.rawSub(u.totalPaymentAmount, u.prePaymentAmount);
         if (remainingPaymentAmount != 0) {
             _pay(remainingPaymentAmount, keyHash, digest, u);
         }
+
+        emit DebugGas("executePay postPay", gasleft());
 
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
