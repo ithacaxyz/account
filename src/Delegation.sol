@@ -548,7 +548,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
             if (!isValid) {
                 // The error is skipped, if the paymaster is in simulation mode.
-                /// @dev to simulate a paymaster, state override the address of the delegation
+                /// @dev to simulate a paymaster, state override the address of the entrypoint
                 /// to type(uint256).max
                 revert Unauthorized();
             }
