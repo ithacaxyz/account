@@ -169,7 +169,6 @@ contract EntryPointTest is BaseTest {
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
-        u.payer = d.eoa;
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(this);
         u.prePaymentAmount = 10 ether;
@@ -202,7 +201,7 @@ contract EntryPointTest is BaseTest {
             u.nonce = 0;
             u.executionData =
                 _transferExecutionData(address(paymentToken), address(0xabcd), 0.5 ether);
-            u.payer = ds[i].eoa;
+
             u.paymentToken = address(paymentToken);
             u.paymentRecipient = address(0xbcde);
             u.prePaymentAmount = 0.5 ether;
@@ -238,7 +237,6 @@ contract EntryPointTest is BaseTest {
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = abi.encode(calls);
-        u.payer = d.eoa;
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(0xbcde);
         u.prePaymentAmount = 10 ether;
@@ -717,6 +715,68 @@ contract EntryPointTest is BaseTest {
             assertEq(t.retrievedSessionNonce, pSession.nonce | 1);
             assertEq(t.retrievedSuperAdminNonce, pSuperAdmin.nonce | 1);
         }
+    }
+
+    function testDelegationPaymaster(bytes32) public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        DelegatedEOA memory payer = _randomEIP7702DelegatedEOA();
+
+        bool isNative = _randomChance(2);
+
+        if (isNative) {
+            vm.deal(address(payer.d), type(uint192).max);
+        } else {
+            _mint(address(paymentToken), address(payer.d), type(uint192).max);
+        }
+
+        // 1 ether in the EOA for execution.
+        vm.deal(address(d.d), 1 ether);
+
+        EntryPoint.UserOp memory u;
+
+        u.eoa = d.eoa;
+        u.payer = address(payer.d);
+
+        console.log("u.payer", u.payer);
+        console.log("u.eoa", u.eoa);
+        u.nonce = d.d.getNonce(0);
+        u.paymentToken = isNative ? address(0) : address(paymentToken);
+        u.prePaymentAmount = _bound(_random(), 0, 1 ether);
+        u.prePaymentMaxAmount = _bound(_random(), u.prePaymentAmount, 2 ether);
+        u.totalPaymentAmount = _bound(_random(), u.prePaymentAmount, 5 ether);
+        u.totalPaymentMaxAmount = _bound(_random(), u.totalPaymentAmount, 10 ether);
+
+        if (u.prePaymentMaxAmount > u.totalPaymentMaxAmount) {
+            u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        }
+        u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
+        u.paymentRecipient = address(0x12345);
+
+        bytes32 digest = ep.computeDigest(u);
+
+        // vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        // _simulateExecute(u, false, 1, 11_000, 0);
+
+        uint256 snapshot = vm.snapshotState();
+        // To allow paymasters to be used in simulation mode.
+        vm.deal(address(ep), type(uint256).max);
+        (uint256 gExecute, uint256 gCombined,) = _estimateGas(u);
+        vm.revertToStateAndDelete(snapshot);
+        u.combinedGas = gCombined;
+
+        digest = ep.computeDigest(u);
+        u.signature = _eoaSig(d.privateKey, digest);
+        u.paymentSignature = _eoaSig(payer.privateKey, digest);
+
+        uint256 payerBalanceBefore = _balanceOf(u.paymentToken, address(payer.d));
+        assertEq(ep.execute{gas: gExecute}(abi.encode(u)), 0);
+        assertEq(d.d.getNonce(0), u.nonce + 1);
+        assertEq(_balanceOf(u.paymentToken, u.paymentRecipient), u.totalPaymentAmount);
+        assertEq(
+            _balanceOf(u.paymentToken, address(payer.d)), payerBalanceBefore - u.totalPaymentAmount
+        );
+        assertEq(address(d.d).balance, 0);
+        assertEq(address(0xabcd).balance, 1 ether);
     }
 
     struct _TestPayViaAnotherPayerTemps {
