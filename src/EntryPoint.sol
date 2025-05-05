@@ -642,7 +642,7 @@ contract EntryPoint is IEntryPoint, EIP712, CallContextChecker, ReentrancyGuardT
 
         // Call the pay function on the delegation contract
         // Equivalent Solidity code:
-        // IDelegation(payer).pay(paymentAmount, keyHash, abi.encode(u));
+        // IDelegation(payer).pay(paymentAmount, keyHash, digest, abi.encode(u));
         // Gas Savings:
         // Saves ~2k gas for normal use cases, by avoiding abi.encode and solidity external call overhead
         assembly ("memory-safe") {

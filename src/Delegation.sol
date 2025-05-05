@@ -70,6 +70,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
     /// @dev Holds the storage.
     struct DelegationStorage {
+        /// @dev 32 byte word for bit flags, can be extended to add features in future upgrades.
+        uint256 flags;
         /// @dev The label.
         LibBytes.BytesStorage label;
         /// @dev The `r` value for the secp256k1 curve to show that this contract is a PREP.
@@ -204,6 +206,9 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev General capacity for enumerable sets,
     /// to prevent off-chain full enumeration from running out-of-gas.
     uint256 internal constant _CAP = 512;
+
+    /// @dev Bit position of simulation flag.
+    uint256 internal constant SIMULATION_FLAG = 0;
 
     ////////////////////////////////////////////////////////////////////////
     // Constructor
@@ -528,8 +533,26 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
         }
 
-        if (!LibBit.and(msg.sender == ENTRY_POINT, userOp.eoa == address(this))) {
+        if (
+            !LibBit.and(
+                msg.sender == ENTRY_POINT,
+                LibBit.or(userOp.eoa == address(this), userOp.payer == address(this))
+            )
+        ) {
             revert Unauthorized();
+        }
+
+        // If this delegation is the paymaster, and the simulation flag is not set, validate the paymaster signature.
+        if (userOp.payer == address(this)) {
+            (bool isValid, bytes32 paymasterKeyHash) =
+                unwrapAndValidateSignature(userOpDigest, userOp.paymentSignature);
+
+            if (
+                _getDelegationStorage().flags & (1 << SIMULATION_FLAG) != 0
+                    && !LibBit.and(isValid, _isSuperAdmin(paymasterKeyHash))
+            ) {
+                revert Unauthorized();
+            }
         }
 
         TokenTransferLib.safeTransfer(userOp.paymentToken, userOp.paymentRecipient, paymentAmount);
