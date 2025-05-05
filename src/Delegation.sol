@@ -201,6 +201,14 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// This constant is a pun for "chain ID 0".
     uint16 public constant MULTICHAIN_NONCE_PREFIX = 0xc1d0;
 
+    /// @dev A unique identifier to be passed into `upgradeHook(bytes32,string)`.
+    bytes32 internal constant _UPGRADE_HOOK_ID = keccak256("PORTO_DELEGATION_UPGRADE_HOOK_ID");
+
+    /// @dev `bytes32(uint256(keccak256("_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT")) - 1)`.
+    /// This transient slot must be set before `upgradeHook` can be processed.
+    bytes32 internal constant _UPGRADE_HOOK_GUARD_TRANSIENT_SLOT =
+        0xa7d540c151934097be66b966a69e67d3055ab4350de7ff57a5f5cb2284ad4a59;
+
     /// @dev General capacity for enumerable sets,
     /// to prevent off-chain full enumeration from running out-of-gas.
     uint256 internal constant _CAP = 512;
@@ -323,6 +331,21 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// only a new EIP-7702 transaction can change the authority's logic.
     function upgradeProxyDelegation(address newImplementation) public virtual onlyThis {
         LibEIP7702.upgradeProxyDelegation(newImplementation);
+        (, string memory version) = _domainNameAndVersion();
+        bytes memory data =
+            abi.encodeWithSignature("upgradeHook(bytes32,string)", _UPGRADE_HOOK_ID, version);
+        assembly ("memory-safe") {
+            tstore(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT, 1)
+            mstore(0x00, 0) // Zeroize the return slot.
+            let success := delegatecall(gas(), newImplementation, add(0x20, data), data, 0x00, 0x20)
+            if iszero(and(eq(1, mload(0x00)), success)) {
+                returndatacopy(data, 0x00, returndatasize())
+                revert(data, returndatasize())
+            }
+        }
+        // As for this very first version, we do not have an upgrade hook.
+        // For future implementations, we will have an upgrade hook which can contain logic
+        // to migrate storage on a case-by-case basis if needed.
     }
 
     ////////////////////////////////////////////////////////////////////////

@@ -145,6 +145,7 @@ contract DelegationTest is BaseTest {
         d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
 
         assertEq(MockSampleDelegateCallTarget(d.eoa).version(), t.randomVersion);
+        assertEq(MockSampleDelegateCallTarget(d.eoa).upgradeHookCounter(), 1);
     }
 
     function testExecuteDelegateCall(bytes32) public {
