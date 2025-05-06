@@ -335,8 +335,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     function upgradeProxyDelegation(address newImplementation) public virtual onlyThis {
         LibEIP7702.upgradeProxyDelegation(newImplementation);
         (, string memory version) = _domainNameAndVersion();
-        // Using a dedicated guard makes the hook only callable via this function.
-        // This prevents direct self-calls which may use the wrong hook ID and version.
+        // Using a dedicated guard makes the hook only callable via this function
+        // prevents direct self-calls which may accidentally use the wrong hook ID and version.
         LibTransient.tBytes32(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT).set(_UPGRADE_HOOK_ID);
         // We MUST use `this`, so that it uses the new implementation's `updgradeHook`.
         require(this.upgradeHook(LibString.toSmallString(version)));
