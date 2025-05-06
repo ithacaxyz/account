@@ -338,7 +338,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         // Using a dedicated guard makes the hook only callable via this function
         // prevents direct self-calls which may accidentally use the wrong hook ID and version.
         LibTransient.tBytes32(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT).set(_UPGRADE_HOOK_ID);
-        // We MUST use `this`, so that it uses the new implementation's `updgradeHook`.
+        // We MUST use `this`, so that it uses the new implementation's `upgradeHook`.
         require(this.upgradeHook(LibString.toSmallString(version)));
     }
 
