@@ -5,6 +5,8 @@ import {LibBit} from "solady/utils/LibBit.sol";
 import {LibRLP} from "solady/utils/LibRLP.sol";
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
+import {LibString} from "solady/utils/LibString.sol";
+import {LibTransient} from "solady/utils/LibTransient.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
 import {ECDSA} from "solady/utils/ECDSA.sol";
@@ -31,6 +33,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     using LibBitmap for LibBitmap.Bitmap;
     using LibStorage for LibStorage.Bump;
     using LibRLP for LibRLP.List;
+    using LibTransient for LibTransient.TBytes32;
 
     ////////////////////////////////////////////////////////////////////////
     // Data Structures
@@ -201,13 +204,13 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// This constant is a pun for "chain ID 0".
     uint16 public constant MULTICHAIN_NONCE_PREFIX = 0xc1d0;
 
-    /// @dev A unique identifier to be passed into `upgradeHook(bytes32,string)`.
+    /// @dev A unique identifier to be passed into `upgradeHook(bytes32 previousVersion)`
+    /// via the transient storage slot at `_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT`.
     bytes32 internal constant _UPGRADE_HOOK_ID = keccak256("PORTO_DELEGATION_UPGRADE_HOOK_ID");
 
-    /// @dev `bytes32(uint256(keccak256("_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT")) - 1)`.
-    /// This transient slot must be set before `upgradeHook` can be processed.
+    /// @dev This transient slot must be set to `_UPGRADE_HOOK_ID` before `upgradeHook` can be processed.
     bytes32 internal constant _UPGRADE_HOOK_GUARD_TRANSIENT_SLOT =
-        0xa7d540c151934097be66b966a69e67d3055ab4350de7ff57a5f5cb2284ad4a59;
+        bytes32(uint256(keccak256("_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT")) - 1);
 
     /// @dev General capacity for enumerable sets,
     /// to prevent off-chain full enumeration from running out-of-gas.
@@ -332,24 +335,19 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     function upgradeProxyDelegation(address newImplementation) public virtual onlyThis {
         LibEIP7702.upgradeProxyDelegation(newImplementation);
         (, string memory version) = _domainNameAndVersion();
-        bytes memory data =
-            abi.encodeWithSignature("upgradeHook(bytes32,string)", _UPGRADE_HOOK_ID, version);
-        assembly ("memory-safe") {
-            // Using a dedicated guard makes the hook only callable via this function.
-            // This prevents direct self-calls which may use the wrong hook ID and version.
-            tstore(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT, 1)
-            mstore(0x00, 0) // Zeroize the return slot.
-            // Now that we have already set the implementation, we can do a self-call.
-            // No need for delegate call.
-            let success := call(gas(), address(), 0, add(0x20, data), data, 0x00, 0x20)
-            if iszero(and(eq(1, mload(0x00)), success)) {
-                returndatacopy(data, 0x00, returndatasize())
-                revert(data, returndatasize())
-            }
-        }
-        // As for this very first version, we do not have an upgrade hook.
-        // For future implementations, we will have an upgrade hook which can contain logic
-        // to migrate storage on a case-by-case basis if needed.
+        // Using a dedicated guard makes the hook only callable via this function.
+        // This prevents direct self-calls which may use the wrong hook ID and version.
+        LibTransient.tBytes32(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT).set(_UPGRADE_HOOK_ID);
+        // We have to use `this`, so that it uses the new implementation.
+        require(this.upgradeHook(LibString.toSmallString(version)));
+    }
+
+    /// @dev For this very first version, the upgrade hook is just an no-op.
+    /// For future implementations, we will have an upgrade hook which can contain logic
+    /// to migrate storage on a case-by-case basis if needed.
+    function upgradeHook(bytes32 previousVersion) public virtual returns (bool) {
+        previousVersion = previousVersion; // Silence unused variable warning.
+        return true; // Always returns true for cheaper success check (even with plain Solidity).
     }
 
     ////////////////////////////////////////////////////////////////////////
