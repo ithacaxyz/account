@@ -537,19 +537,18 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             revert Unauthorized();
         }
 
-        // If this delegation is the paymaster, and the simulation flag is not set, validate the paymaster signature.
+        // If this delegation is the paymaster, validate the paymaster signature.
         if (userOp.payer == address(this)) {
             (bool isValid,) = unwrapAndValidateSignature(userOpDigest, userOp.paymentSignature);
 
             // If this is a simulation, signature validation errors are skipped.
+            /// @dev to simulate a paymaster, state override the balance of the msg.sender
+            /// to type(uint256).max. In this case, the msg.sender is the ENTRY_POINT.
             if (address(ENTRY_POINT).balance == type(uint256).max) {
                 isValid = true;
             }
 
             if (!isValid) {
-                // The error is skipped, if the paymaster is in simulation mode.
-                /// @dev to simulate a paymaster, state override the address of the entrypoint
-                /// to type(uint256).max
                 revert Unauthorized();
             }
         }
