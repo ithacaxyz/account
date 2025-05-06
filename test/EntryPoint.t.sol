@@ -737,8 +737,6 @@ contract EntryPointTest is BaseTest {
         u.eoa = d.eoa;
         u.payer = address(payer.d);
 
-        console.log("u.payer", u.payer);
-        console.log("u.eoa", u.eoa);
         u.nonce = d.d.getNonce(0);
         u.paymentToken = isNative ? address(0) : address(paymentToken);
         u.prePaymentAmount = _bound(_random(), 0, 1 ether);
@@ -754,8 +752,8 @@ contract EntryPointTest is BaseTest {
 
         bytes32 digest = ep.computeDigest(u);
 
-        // vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        // _simulateExecute(u, false, 1, 11_000, 0);
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        _simulateExecute(u, false, 1, 11_000, 0);
 
         uint256 snapshot = vm.snapshotState();
         // To allow paymasters to be used in simulation mode.
