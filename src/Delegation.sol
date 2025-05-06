@@ -350,7 +350,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// it MUST check that `_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT` is correctly set.
     function upgradeHook(bytes32 previousVersion) public virtual returns (bool) {
         previousVersion = previousVersion; // Silence unused variable warning.
-        return true; // Always returns true for cheaper success check (even with plain Solidity).
+        return true; // Always returns true for cheaper call success check (even in plain Solidity).
     }
 
     ////////////////////////////////////////////////////////////////////////
