@@ -345,6 +345,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev For this very first version, the upgrade hook is just an no-op.
     /// For future implementations, we will have an upgrade hook which can contain logic
     /// to migrate storage on a case-by-case basis if needed.
+    /// If this hook is implemented to mutate storage,
+    /// it MUST check that `_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT` is correctly set.
     function upgradeHook(bytes32 previousVersion) public virtual returns (bool) {
         previousVersion = previousVersion; // Silence unused variable warning.
         return true; // Always returns true for cheaper success check (even with plain Solidity).
