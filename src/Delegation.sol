@@ -338,11 +338,12 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         // Using a dedicated guard makes the hook only callable via this function.
         // This prevents direct self-calls which may use the wrong hook ID and version.
         LibTransient.tBytes32(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT).set(_UPGRADE_HOOK_ID);
-        // We have to use `this`, so that it uses the new implementation.
+        // We MUST use `this`, so that it uses the new implementation's `updgradeHook`.
         require(this.upgradeHook(LibString.toSmallString(version)));
     }
 
     /// @dev For this very first version, the upgrade hook is just an no-op.
+    /// Provided to enable calling it via plain Solidity.
     /// For future implementations, we will have an upgrade hook which can contain logic
     /// to migrate storage on a case-by-case basis if needed.
     /// If this hook is implemented to mutate storage,
