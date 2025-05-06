@@ -335,9 +335,13 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         bytes memory data =
             abi.encodeWithSignature("upgradeHook(bytes32,string)", _UPGRADE_HOOK_ID, version);
         assembly ("memory-safe") {
+            // Using a dedicated guard makes the hook only callable via this function.
+            // This prevents direct self-calls which may use the wrong hook ID and version.
             tstore(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT, 1)
             mstore(0x00, 0) // Zeroize the return slot.
-            let success := delegatecall(gas(), newImplementation, add(0x20, data), data, 0x00, 0x20)
+            // Now that we have already set the implementation, we can do a self-call.
+            // No need for delegate call.
+            let success := call(gas(), address(), 0, add(0x20, data), data, 0x00, 0x20)
             if iszero(and(eq(1, mload(0x00)), success)) {
                 returndatacopy(data, 0x00, returndatasize())
                 revert(data, returndatasize())
