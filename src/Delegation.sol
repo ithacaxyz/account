@@ -73,6 +73,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
     /// @dev Holds the storage.
     struct DelegationStorage {
+        /// @dev flags bitmap, which can be extended in the future to add boolean values.
+        LibBitmap.Bitmap flags;
         /// @dev The label.
         LibBytes.BytesStorage label;
         /// @dev The `r` value for the secp256k1 curve to show that this contract is a PREP.
@@ -94,6 +96,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         EnumerableSetLib.AddressSet approvedImplementations;
         /// @dev Mapping of approved implementations to their callers storage.
         mapping(address => LibStorage.Bump) approvedImplementationCallers;
+        /// @dev Address that can call the `pause` function.
+        address pausingAuthority;
     }
 
     /// @dev Returns the storage pointer.
@@ -145,6 +149,9 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev The `keyType` cannot be super admin.
     error KeyTypeCannotBeSuperAdmin();
 
+    /// @dev The contract is paused.
+    error Paused();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -170,6 +177,9 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     event SignatureCheckerApprovalSet(
         bytes32 indexed keyHash, address indexed checker, bool isApproved
     );
+
+    /// @dev The pausing authority has been set to `pausingAuthority`.
+    event PausingAuthoritySet(address indexed pausingAuthority);
 
     /// @dev The nonce sequence of is invalidated up to (inclusive) of `nonce`.
     /// The new available nonce will be `nonce + 1`.
@@ -216,12 +226,17 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// to prevent off-chain full enumeration from running out-of-gas.
     uint256 internal constant _CAP = 512;
 
+    /// @dev Bit position of the pause flag.
+    uint256 internal constant PAUSE_FLAG = 0;
+
     ////////////////////////////////////////////////////////////////////////
     // Constructor
     ////////////////////////////////////////////////////////////////////////
 
-    constructor(address entryPoint) payable {
+    constructor(address entryPoint, address pausingAuthority) payable {
         ENTRY_POINT = entryPoint;
+
+        _getDelegationStorage().pausingAuthority = pausingAuthority;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -311,6 +326,11 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         emit SignatureCheckerApprovalSet(keyHash, checker, isApproved);
     }
 
+    function setPausingAuthority(address pausingAuthority) public virtual onlyThis {
+        _getDelegationStorage().pausingAuthority = pausingAuthority;
+        emit PausingAuthoritySet(pausingAuthority);
+    }
+
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
     /// This invalidates the nonces for the `seqKey`, up to (inclusive) `uint64(nonce)`.
     function invalidateNonce(uint256 nonce) public virtual onlyThis {
@@ -356,6 +376,18 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         LibTransient.tBytes32(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT).clear();
         // Always returns true for cheaper call success check (even in plain Solidity).
         return true;
+    }
+
+    function pause(bool isPause) public virtual {
+        if (msg.sender != _getDelegationStorage().pausingAuthority) {
+            revert Unauthorized();
+        }
+
+        isPause
+            ? _getDelegationStorage().flags.set(PAUSE_FLAG)
+            : _getDelegationStorage().flags.unset(PAUSE_FLAG);
+
+        emit Paused(isPause);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -544,6 +576,10 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         bytes32 userOpDigest,
         bytes calldata encodedUserOp
     ) public virtual {
+        if (_getDelegationStorage().flags.get(PAUSE_FLAG)) {
+            revert Paused();
+        }
+
         UserOp calldata userOp;
         // Equivalent Solidity Code: (In the assembly userOp is stored in calldata, instead of memory)
         // UserOp memory userOp = abi.decode(encodedUserOp, (UserOp));
@@ -710,6 +746,10 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev Override to allow for a delegate call workflow.
     /// Any implementation contract used in the delegate call workflow must be approved first.
     function execute(bytes32 mode, bytes calldata executionData) public payable virtual override {
+        if (_getDelegationStorage().flags.get(PAUSE_FLAG)) {
+            revert Paused();
+        }
+
         // ERC7579 designates `mode[0]` to denote the call mode, and delegate call is `0xff`.
         if (bytes1(mode) == 0xff) {
             _executeERC7579DelegateCall(executionData);
