@@ -539,7 +539,11 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
         // If this delegation is the paymaster, validate the paymaster signature.
         if (userOp.payer == address(this)) {
-            (bool isValid,) = unwrapAndValidateSignature(userOpDigest, userOp.paymentSignature);
+            (bool isValid, bytes32 k) =
+                unwrapAndValidateSignature(userOpDigest, userOp.paymentSignature);
+
+            // Set the target key hash to the payer's.
+            keyHash = k;
 
             // If this is a simulation, signature validation errors are skipped.
             /// @dev to simulate a paymaster, state override the balance of the msg.sender
