@@ -33,7 +33,7 @@ contract MockSampleDelegateCallTarget {
         revert ErrorWithData(data);
     }
 
-    function upgradeHook(bytes32 previousVersion) public returns (bool) {
+    function upgradeHook(bytes32 previousVersion) external returns (bool) {
         upgradeHookCounter++; // For testing, to check if we have hit this hook.
 
         previousVersion = previousVersion; // Silence unused variable warning.
