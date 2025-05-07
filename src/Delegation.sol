@@ -75,8 +75,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     struct DelegationStorage {
         /// @dev The label.
         LibBytes.BytesStorage label;
-        /// @dev flags bitmap, which can be extended in the future to add boolean values.
-        LibBitmap.Bitmap flags;
         /// @dev The `r` value for the secp256k1 curve to show that this contract is a PREP.
         bytes32 rPREP;
         /// @dev Mapping for 4337-style 2D nonce sequences.
@@ -96,6 +94,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         EnumerableSetLib.AddressSet approvedImplementations;
         /// @dev Mapping of approved implementations to their callers storage.
         mapping(address => LibStorage.Bump) approvedImplementationCallers;
+        /// @dev flags bitmap, which can be extended in the future to add boolean values.
+        LibBitmap.Bitmap flags;
         /// @dev Address that can call the `pause` function.
         address pauseAuthority;
         /// @dev Last pause timestamp.
