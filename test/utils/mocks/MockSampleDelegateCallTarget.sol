@@ -34,11 +34,14 @@ contract MockSampleDelegateCallTarget {
     }
 
     function upgradeHook(bytes32 previousVersion) public returns (bool) {
+        upgradeHookCounter++; // For testing, to check if we have hit this hook.
+
         previousVersion = previousVersion; // Silence unused variable warning.
+        // Example of how we are supposed to load, check and clear the upgrade hook guard.
         bytes32 hookId = LibTransient.tBytes32(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT).get();
-        LibTransient.tBytes32(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT).clear();
         require(hookId == _UPGRADE_HOOK_ID);
-        upgradeHookCounter++;
+        LibTransient.tBytes32(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT).clear();
+        // Always returns true for cheaper call success check (even in plain Solidity).
         return true;
     }
 }

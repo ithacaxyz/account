@@ -348,9 +348,14 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// to migrate storage on a case-by-case basis if needed.
     /// If this hook is implemented to mutate storage,
     /// it MUST check that `_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT` is correctly set.
-    function upgradeHook(bytes32 previousVersion) public virtual returns (bool) {
+    function upgradeHook(bytes32 previousVersion) external virtual onlyThis returns (bool) {
         previousVersion = previousVersion; // Silence unused variable warning.
-        return true; // Always returns true for cheaper call success check (even in plain Solidity).
+        // Example of how we are supposed to load, check and clear the upgrade hook guard.
+        bytes32 hookId = LibTransient.tBytes32(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT).get();
+        require(hookId == _UPGRADE_HOOK_ID);
+        LibTransient.tBytes32(_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT).clear();
+        // Always returns true for cheaper call success check (even in plain Solidity).
+        return true;
     }
 
     ////////////////////////////////////////////////////////////////////////
