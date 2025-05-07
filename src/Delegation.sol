@@ -73,10 +73,10 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
     /// @dev Holds the storage.
     struct DelegationStorage {
-        /// @dev flags bitmap, which can be extended in the future to add boolean values.
-        LibBitmap.Bitmap flags;
         /// @dev The label.
         LibBytes.BytesStorage label;
+        /// @dev flags bitmap, which can be extended in the future to add boolean values.
+        LibBitmap.Bitmap flags;
         /// @dev The `r` value for the secp256k1 curve to show that this contract is a PREP.
         bytes32 rPREP;
         /// @dev Mapping for 4337-style 2D nonce sequences.
@@ -98,6 +98,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         mapping(address => LibStorage.Bump) approvedImplementationCallers;
         /// @dev Address that can call the `pause` function.
         address pauseAuthority;
+        /// @dev Last pause timestamp.
+        uint256 lastPauseTimestamp;
     }
 
     /// @dev Returns the storage pointer.
@@ -216,6 +218,9 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev Nonce prefix to signal that the payload is to be signed with EIP-712 without the chain ID.
     /// This constant is a pun for "chain ID 0".
     uint16 public constant MULTICHAIN_NONCE_PREFIX = 0xc1d0;
+
+    /// @dev Time period after which the contract can be unpaused by anyone.
+    uint256 public constant PAUSE_EXPIRY = 4 weeks;
 
     /// @dev A unique identifier to be passed into `upgradeHook(bytes32 previousVersion)`
     /// via the transient storage slot at `_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT`.
@@ -379,14 +384,39 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         return true;
     }
 
+    /// @dev Can be used to pause/unpause the contract, in case of emergencies.
+    /// - Pausing the contract will make all signature validations fail,
+    ///   effectively blocking all pay, execute, isValidSignature attempts.
+    /// - The `pauseAuthority` can unpause the contract at any time.
+    /// - Anyone can unpause the contract after the PAUSE_EXPIRY has passed.
+    /// - Note: Contracts CANNOT be paused again until PAUSE_EXPIRY + 1 week has passed.
+    ///   This is done to prevent griefing attacks, where a malicious pauseAuthority,
+    ///   keeps censoring the user.
     function pause(bool isPause) public virtual {
-        if (msg.sender != _getDelegationStorage().pauseAuthority) {
-            revert Unauthorized();
-        }
+        DelegationStorage storage $ = _getDelegationStorage();
+        if (isPause) {
+            // Owners can use this 1 week buffer, to update their `pauseAuthority` if needed.
+            if (
+                msg.sender != $.pauseAuthority
+                    || block.timestamp < $.lastPauseTimestamp + PAUSE_EXPIRY + 1 weeks
+            ) {
+                revert Unauthorized();
+            }
 
-        isPause
-            ? _getDelegationStorage().flags.set(PAUSE_FLAG)
-            : _getDelegationStorage().flags.unset(PAUSE_FLAG);
+            // Set the pause flag.
+            $.flags.set(PAUSE_FLAG);
+            $.lastPauseTimestamp = block.timestamp;
+        } else {
+            if (
+                msg.sender == $.pauseAuthority
+                    || block.timestamp > $.lastPauseTimestamp + PAUSE_EXPIRY
+            ) {
+                // Unpause the contract.
+                $.flags.unset(PAUSE_FLAG);
+            } else {
+                revert Unauthorized();
+            }
+        }
 
         emit PauseUpdated(isPause);
     }
@@ -582,10 +612,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         bytes32 userOpDigest,
         bytes calldata encodedUserOp
     ) public virtual {
-        if (_getDelegationStorage().flags.get(PAUSE_FLAG)) {
-            revert Paused();
-        }
-
         UserOp calldata userOp;
         // Equivalent Solidity Code: (In the assembly userOp is stored in calldata, instead of memory)
         // UserOp memory userOp = abi.decode(encodedUserOp, (UserOp));
@@ -652,6 +678,12 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         virtual
         returns (bool isValid, bytes32 keyHash)
     {
+        // We only have to enforce the pause flag here, because all execution/payment flows
+        // always have to do a signature validation.
+        if (_getDelegationStorage().flags.get(PAUSE_FLAG)) {
+            return (false, 0);
+        }
+
         // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
             return (ECDSA.recoverCalldata(digest, signature) == address(this), 0);
@@ -752,10 +784,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev Override to allow for a delegate call workflow.
     /// Any implementation contract used in the delegate call workflow must be approved first.
     function execute(bytes32 mode, bytes calldata executionData) public payable virtual override {
-        if (_getDelegationStorage().flags.get(PAUSE_FLAG)) {
-            revert Paused();
-        }
-
         // ERC7579 designates `mode[0]` to denote the call mode, and delegate call is `0xff`.
         if (bytes1(mode) == 0xff) {
             _executeERC7579DelegateCall(executionData);
