@@ -32,7 +32,7 @@ contract BaseTest is SoladyTest {
     EIP7702Proxy eip7702Proxy;
     TargetFunctionPayload[] targetFunctionPayloads;
     Simulator simulator;
-    address pausingAuthority;
+    address pauseAuthority;
 
     struct TargetFunctionPayload {
         address by;
@@ -70,10 +70,10 @@ contract BaseTest is SoladyTest {
     }
 
     function setUp() public virtual {
-        pausingAuthority = _randomAddress();
+        pauseAuthority = _randomAddress();
         ep = new MockEntryPoint();
         paymentToken = new MockPaymentToken();
-        delegationImplementation = address(new MockDelegation(address(ep), pausingAuthority));
+        delegationImplementation = address(new MockDelegation(address(ep)));
         eip7702Proxy = new EIP7702Proxy(delegationImplementation, address(this));
         delegation = MockDelegation(payable(eip7702Proxy));
         simulator = new Simulator();

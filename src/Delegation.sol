@@ -97,7 +97,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         /// @dev Mapping of approved implementations to their callers storage.
         mapping(address => LibStorage.Bump) approvedImplementationCallers;
         /// @dev Address that can call the `pause` function.
-        address pausingAuthority;
+        address pauseAuthority;
     }
 
     /// @dev Returns the storage pointer.
@@ -178,15 +178,18 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         bytes32 indexed keyHash, address indexed checker, bool isApproved
     );
 
-    /// @dev The pausing authority has been set to `pausingAuthority`.
-    event PausingAuthoritySet(address indexed pausingAuthority);
-
     /// @dev The nonce sequence of is invalidated up to (inclusive) of `nonce`.
     /// The new available nonce will be `nonce + 1`.
     /// This event is emitted in the `invalidateNonce` function,
     /// as well as the `execute` function when an execution is performed directly
     /// on the Delegation with a `keyHash`, bypassing the EntryPoint.
     event NonceInvalidated(uint256 nonce);
+
+    /// @dev The pause flag has been updated.
+    event PauseUpdated(bool indexed isPaused);
+
+    /// @dev The pausing authority has been set to `pauseAuthority`.
+    event PauseAuthoritySet(address indexed pauseAuthority);
 
     ////////////////////////////////////////////////////////////////////////
     // Immutables
@@ -233,10 +236,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     // Constructor
     ////////////////////////////////////////////////////////////////////////
 
-    constructor(address entryPoint, address pausingAuthority) payable {
+    constructor(address entryPoint) payable {
         ENTRY_POINT = entryPoint;
-
-        _getDelegationStorage().pausingAuthority = pausingAuthority;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -326,9 +327,9 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         emit SignatureCheckerApprovalSet(keyHash, checker, isApproved);
     }
 
-    function setPausingAuthority(address pausingAuthority) public virtual onlyThis {
-        _getDelegationStorage().pausingAuthority = pausingAuthority;
-        emit PausingAuthoritySet(pausingAuthority);
+    function setPauseAuthority(address newPauseAuthority) public virtual onlyThis {
+        _getDelegationStorage().pauseAuthority = newPauseAuthority;
+        emit PauseAuthoritySet(newPauseAuthority);
     }
 
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
@@ -379,7 +380,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     }
 
     function pause(bool isPause) public virtual {
-        if (msg.sender != _getDelegationStorage().pausingAuthority) {
+        if (msg.sender != _getDelegationStorage().pauseAuthority) {
             revert Unauthorized();
         }
 
@@ -387,7 +388,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             ? _getDelegationStorage().flags.set(PAUSE_FLAG)
             : _getDelegationStorage().flags.unset(PAUSE_FLAG);
 
-        emit Paused(isPause);
+        emit PauseUpdated(isPause);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -402,6 +403,11 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev Returns the label.
     function label() public view virtual returns (string memory) {
         return string(_getDelegationStorage().label.get());
+    }
+
+    /// @dev Returns the pausing authority.
+    function pauseAuthority() public view virtual returns (address) {
+        return _getDelegationStorage().pauseAuthority;
     }
 
     /// @dev Returns the number of authorized keys.
