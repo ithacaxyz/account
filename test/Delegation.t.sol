@@ -328,4 +328,105 @@ contract DelegationTest is BaseTest {
 
         vm.stopPrank();
     }
+
+    function testPause() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+        address pauseAuthority = _randomAddress();
+
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+
+        calls[0].to = address(d.d);
+        calls[0].data = abi.encodeWithSignature("setPauseAuthority(address)", pauseAuthority);
+        uint256 nonce = d.d.getNonce(0);
+        bytes memory opData = abi.encodePacked(nonce, _sig(d, d.d.computeDigest(calls, nonce)));
+        bytes memory executionData = abi.encode(calls, opData);
+
+        assertEq(d.d.pauseAuthority(), address(0));
+        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
+        assertEq(d.d.pauseAuthority(), pauseAuthority);
+
+        // Setup a mock call
+        calls[0] = _transferCall(address(0), address(0x1234), 1 ether);
+        nonce = d.d.getNonce(0);
+        bytes32 digest = d.d.computeDigest(calls, nonce);
+        bytes memory signature = _sig(d, digest);
+
+        // Check isValidSignature passes before pause.
+        assertEq(
+            d.d.isValidSignature(digest, signature),
+            bytes4(keccak256("isValidSignature(bytes32,bytes)"))
+        );
+
+        // The block timestamp needs to be realistic
+        vm.warp(6 weeks + 1 days);
+
+        // Only the pause authority can pause.
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        d.d.setPauseAuthority(pauseAuthority);
+
+        vm.startPrank(pauseAuthority);
+        d.d.pause(true);
+
+        (bool isPaused, uint256 lastPauseTimestamp) = d.d.isPaused();
+        assertEq(isPaused, true);
+        assertEq(lastPauseTimestamp, block.timestamp);
+        vm.stopPrank();
+
+        // Check that execute fails
+        opData = abi.encodePacked(nonce, signature);
+        executionData = abi.encode(calls, opData);
+
+        vm.expectRevert(bytes4(keccak256("Paused()")));
+        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
+
+        // Check that isValidSignature fails
+        vm.expectRevert(bytes4(keccak256("Paused()")));
+        d.d.isValidSignature(digest, signature);
+
+        // Check that userOp fails
+        EntryPoint.UserOp memory u;
+        u.eoa = d.eoa;
+        u.nonce = d.d.getNonce(0);
+        u.combinedGas = 1000000;
+        u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
+        u.signature = _eoaSig(d.privateKey, u);
+
+        assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("VerificationError()")));
+
+        vm.startPrank(pauseAuthority);
+        // Try to pause already paused delegation.
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        d.d.pause(true);
+
+        d.d.pause(false);
+        (isPaused, lastPauseTimestamp) = d.d.isPaused();
+        assertEq(isPaused, false);
+        assertEq(lastPauseTimestamp, block.timestamp);
+
+        // Cannot immediately repause again.
+        vm.warp(lastPauseTimestamp + 4 weeks + 1 days);
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        d.d.pause(true);
+        vm.stopPrank();
+
+        // UserOp should now succeed.
+        assertEq(ep.execute(abi.encode(u)), 0);
+
+        // Can pause again, after the cooldown period.
+        vm.warp(lastPauseTimestamp + 5 weeks + 1);
+        vm.startPrank(pauseAuthority);
+        d.d.pause(true);
+        vm.stopPrank();
+
+        (isPaused, lastPauseTimestamp) = d.d.isPaused();
+        assertEq(isPaused, true);
+        assertEq(lastPauseTimestamp, block.timestamp);
+
+        // Anyone can unpause after 4 weeks.
+        vm.warp(lastPauseTimestamp + 4 weeks + 1);
+        d.d.pause(false);
+        (isPaused,) = d.d.isPaused();
+        assertEq(isPaused, false);
+    }
 }

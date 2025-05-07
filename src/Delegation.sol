@@ -190,7 +190,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev The pause flag has been updated.
     event PauseUpdated(bool indexed isPaused);
 
-    /// @dev The pausing authority has been set to `pauseAuthority`.
+    /// @dev The pause authority has been set to `pauseAuthority`.
     event PauseAuthoritySet(address indexed pauseAuthority);
 
     ////////////////////////////////////////////////////////////////////////
@@ -399,6 +399,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             if (
                 msg.sender != $.pauseAuthority
                     || block.timestamp < $.lastPauseTimestamp + PAUSE_EXPIRY + 1 weeks
+                    || $.flags.get(PAUSE_FLAG)
             ) {
                 revert Unauthorized();
             }
@@ -435,7 +436,15 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         return string(_getDelegationStorage().label.get());
     }
 
-    /// @dev Returns the pausing authority.
+    /// @dev Returns the pause flag and the last pause timestamp.
+    function isPaused() public view virtual returns (bool, uint256) {
+        return (
+            _getDelegationStorage().flags.get(PAUSE_FLAG),
+            _getDelegationStorage().lastPauseTimestamp
+        );
+    }
+
+    /// @dev Returns the pause authority.
     function pauseAuthority() public view virtual returns (address) {
         return _getDelegationStorage().pauseAuthority;
     }
@@ -681,7 +690,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         // We only have to enforce the pause flag here, because all execution/payment flows
         // always have to do a signature validation.
         if (_getDelegationStorage().flags.get(PAUSE_FLAG)) {
-            return (false, 0);
+            revert Paused();
         }
 
         // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
