@@ -307,7 +307,7 @@ contract DelegationTest is BaseTest {
     }
 
     function testAddDisallowedSuperAdminKeyTypeReverts() public {
-        address entryPoint = address(new EntryPoint());
+        address entryPoint = address(new EntryPoint(address(this)));
         address delegationImplementation = address(new Delegation(address(entryPoint)));
         address delegationProxy = address(new EIP7702Proxy(delegationImplementation, address(0)));
         delegation = MockDelegation(payable(delegationProxy));
@@ -333,18 +333,23 @@ contract DelegationTest is BaseTest {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         vm.deal(d.eoa, 100 ether);
         address pauseAuthority = _randomAddress();
+        ep.setPauseAuthority(pauseAuthority);
+
+        (address epPauseAuthority, uint40 lastPaused) = ep.getPauseConfig();
+        assertEq(epPauseAuthority, pauseAuthority);
+        assertEq(lastPaused, 0);
 
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
 
+        // Pause authority is always the EP
         calls[0].to = address(d.d);
         calls[0].data = abi.encodeWithSignature("setPauseAuthority(address)", pauseAuthority);
         uint256 nonce = d.d.getNonce(0);
         bytes memory opData = abi.encodePacked(nonce, _sig(d, d.d.computeDigest(calls, nonce)));
         bytes memory executionData = abi.encode(calls, opData);
-
-        assertEq(d.d.pauseAuthority(), address(0));
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
-        assertEq(d.d.pauseAuthority(), pauseAuthority);
+        // assertEq(d.d.pauseAuthority(), address(0));
+        // d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
+        // assertEq(d.d.pauseAuthority(), pauseAuthority);
 
         // Setup a mock call
         calls[0] = _transferCall(address(0), address(0x1234), 1 ether);
@@ -363,14 +368,18 @@ contract DelegationTest is BaseTest {
 
         // Only the pause authority can pause.
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        d.d.setPauseAuthority(pauseAuthority);
+        ep.setPauseAuthority(pauseAuthority);
 
         vm.startPrank(pauseAuthority);
-        d.d.pause(true);
+        ep.pause(true);
 
-        (bool isPaused, uint256 lastPauseTimestamp) = d.d.isPaused();
-        assertEq(isPaused, true);
-        assertEq(lastPauseTimestamp, block.timestamp);
+        assertEq(ep.pauseFlag(), 1);
+        (epPauseAuthority, lastPaused) = ep.getPauseConfig();
+        assertEq(epPauseAuthority, pauseAuthority);
+        assertEq(lastPaused, block.timestamp);
+        // (bool isPaused, uint256 lastPauseTimestamp) = d.d.isPaused();
+        // assertEq(isPaused, true);
+        // assertEq(lastPauseTimestamp, block.timestamp);
         vm.stopPrank();
 
         // Check that execute fails
@@ -397,36 +406,40 @@ contract DelegationTest is BaseTest {
         vm.startPrank(pauseAuthority);
         // Try to pause already paused delegation.
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        d.d.pause(true);
+        ep.pause(true);
 
-        d.d.pause(false);
-        (isPaused, lastPauseTimestamp) = d.d.isPaused();
-        assertEq(isPaused, false);
-        assertEq(lastPauseTimestamp, block.timestamp);
+        ep.pause(false);
+        assertEq(ep.pauseFlag(), 0);
+        (epPauseAuthority, lastPaused) = ep.getPauseConfig();
+        assertEq(epPauseAuthority, pauseAuthority);
+        assertEq(lastPaused, block.timestamp);
 
         // Cannot immediately repause again.
-        vm.warp(lastPauseTimestamp + 4 weeks + 1 days);
+        vm.warp(lastPaused + 4 weeks + 1 days);
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        d.d.pause(true);
+        ep.pause(true);
         vm.stopPrank();
 
         // UserOp should now succeed.
         assertEq(ep.execute(abi.encode(u)), 0);
 
         // Can pause again, after the cooldown period.
-        vm.warp(lastPauseTimestamp + 5 weeks + 1);
+        vm.warp(lastPaused + 5 weeks + 1);
         vm.startPrank(pauseAuthority);
-        d.d.pause(true);
+        ep.pause(true);
         vm.stopPrank();
 
-        (isPaused, lastPauseTimestamp) = d.d.isPaused();
-        assertEq(isPaused, true);
-        assertEq(lastPauseTimestamp, block.timestamp);
+        assertEq(ep.pauseFlag(), 1);
+        (epPauseAuthority, lastPaused) = ep.getPauseConfig();
+        assertEq(epPauseAuthority, pauseAuthority);
+        assertEq(lastPaused, block.timestamp);
 
         // Anyone can unpause after 4 weeks.
-        vm.warp(lastPauseTimestamp + 4 weeks + 1);
-        d.d.pause(false);
-        (isPaused,) = d.d.isPaused();
-        assertEq(isPaused, false);
+        vm.warp(lastPaused + 4 weeks + 1);
+        ep.pause(false);
+        assertEq(ep.pauseFlag(), 0);
+        (epPauseAuthority, lastPaused) = ep.getPauseConfig();
+        assertEq(epPauseAuthority, pauseAuthority);
+        assertEq(lastPaused, block.timestamp - 4 weeks - 1);
     }
 }
