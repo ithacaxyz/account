@@ -617,10 +617,11 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             mstore(0x00, 0x060f052a) // `pauseFlag()`
             mstore(0x20, 0x00)
 
-            pop(staticcall(gas(), ep, 0x1c, 0x20, 0x20, 0x40))
-            if iszero(mload(0x20)) {
+            let success := staticcall(gas(), ep, 0x1c, 0x20, 0x00, 0x20)
+
+            if or(eq(success, 0), mload(0x00)) {
                 mstore(0x00, 0x9e87fac8) // `Paused()`
-                revert(0x1c, 0x20)
+                revert(0x1c, 0x04)
             }
         }
 

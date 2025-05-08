@@ -15,7 +15,7 @@ abstract contract PauseAuthority {
     event PauseAuthoritySet(address indexed pauseAuthority);
 
     uint256 public pauseFlag;
-    uint256 public pauseConfig;
+    uint256 internal _pauseConfig;
 
     /// @dev Can be used to pause/unpause the contract, in case of emergencies.
     /// - Pausing the contract will make all signature validations fail,
@@ -26,9 +26,9 @@ abstract contract PauseAuthority {
     ///   This is done to prevent griefing attacks, where a malicious pauseAuthority,
     ///   keeps censoring the user.
     function pause(bool isPause) public virtual {
-        uint256 _pauseConfig = pauseConfig;
-        address authority = address(uint160(_pauseConfig & type(uint160).max));
-        uint40 lastPaused = uint40(_pauseConfig >> 160);
+        uint256 pauseConfig = _pauseConfig;
+        address authority = address(uint160(pauseConfig & type(uint160).max));
+        uint40 lastPaused = uint40(pauseConfig >> 160);
         uint256 timeout = lastPaused + PAUSE_TIMEOUT;
 
         if (isPause) {
@@ -39,7 +39,7 @@ abstract contract PauseAuthority {
 
             // Set the pause flag.
             pauseFlag = 1;
-            pauseConfig = (block.timestamp << 160) | uint256(uint160(authority));
+            _pauseConfig = (block.timestamp << 160) | uint256(uint160(authority));
         } else {
             if (msg.sender == authority || block.timestamp > timeout) {
                 // Unpause the contract.
@@ -52,16 +52,19 @@ abstract contract PauseAuthority {
         emit PauseSet(isPause);
     }
 
-    /// @dev Returns the pause authority.
-    function pauseAuthority() public view virtual returns (address) {
-        return address(uint160(pauseConfig & type(uint160).max));
+    /// @dev Returns the pause authority and the last pause timestamp.
+    function getPauseConfig() public view virtual returns (address, uint40) {
+        return (address(uint160(_pauseConfig & type(uint160).max)), uint40(_pauseConfig >> 160));
     }
 
     function setPauseAuthority(address newPauseAuthority) public virtual {
-        // TODO: Do we need to sanitize the upper 96 bits of the newPauseAuthority,
-        // or does solidity have a check for that?
-        pauseConfig = (pauseConfig & (type(uint96).max << 160))
-            | (uint160(newPauseAuthority) & type(uint160).max);
+        uint256 pauseConfig = _pauseConfig;
+        if (msg.sender != address(uint160(pauseConfig & type(uint160).max))) {
+            revert Unauthorized();
+        }
+
+        // TODO: Double check that solidity sanitizes the newPauseAuthority address
+        _pauseConfig = (pauseConfig & (type(uint96).max << 160)) | uint160(newPauseAuthority);
 
         emit PauseAuthoritySet(newPauseAuthority);
     }
