@@ -16,7 +16,7 @@ contract DeployAll {
     address public immutable simulator;
 
     constructor() payable {
-        entryPoint = address(new EntryPoint());
+        entryPoint = address(new EntryPoint(msg.sender));
         delegationImplementation = address(new Delegation(address(entryPoint)));
         delegationProxy = LibEIP7702.deployProxy(delegationImplementation, address(0));
         accountRegistry = address(new AccountRegistry());

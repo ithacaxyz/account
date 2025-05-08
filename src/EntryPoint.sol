@@ -17,6 +17,7 @@ import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {LibPREP} from "./libraries/LibPREP.sol";
 import {IDelegation} from "./interfaces/IDelegation.sol";
 import {IEntryPoint} from "./interfaces/IEntryPoint.sol";
+import {PauseAuthority} from "./PauseAuthority.sol";
 
 /// @title EntryPoint
 /// @notice Enables atomic verification, gas compensation and execution across eoas.
@@ -37,7 +38,14 @@ import {IEntryPoint} from "./interfaces/IEntryPoint.sol";
 /// - Minimize chance of censorship.
 ///   This means once an UserOp is signed, it is infeasible to
 ///   alter or rearrange it to force it to fail.
-contract EntryPoint is IEntryPoint, EIP712, CallContextChecker, ReentrancyGuardTransient {
+
+contract EntryPoint is
+    IEntryPoint,
+    EIP712,
+    CallContextChecker,
+    ReentrancyGuardTransient,
+    PauseAuthority
+{
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
@@ -132,6 +140,12 @@ contract EntryPoint is IEntryPoint, EIP712, CallContextChecker, ReentrancyGuardT
     /// @dev The amount of expected gas for refunds.
     /// Should be enough for a cold zero to non-zero SSTORE + a warm SSTORE + a few SLOADs.
     uint256 internal constant _REFUND_GAS = 50000;
+
+    ////////////////////////////////////////////////////////////////////////
+    // Constructor
+    ////////////////////////////////////////////////////////////////////////
+
+    constructor(address pauseAuthority) {}
 
     ////////////////////////////////////////////////////////////////////////
     // Main

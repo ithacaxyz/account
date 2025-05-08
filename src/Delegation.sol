@@ -94,12 +94,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         EnumerableSetLib.AddressSet approvedImplementations;
         /// @dev Mapping of approved implementations to their callers storage.
         mapping(address => LibStorage.Bump) approvedImplementationCallers;
-        /// @dev flags bitmap, which can be extended in the future to add boolean values.
-        LibBitmap.Bitmap flags;
-        /// @dev Address that can call the `pause` function.
-        address pauseAuthority;
-        /// @dev Last pause timestamp.
-        uint256 lastPauseTimestamp;
     }
 
     /// @dev Returns the storage pointer.
@@ -151,9 +145,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev The `keyType` cannot be super admin.
     error KeyTypeCannotBeSuperAdmin();
 
-    /// @dev The contract is paused.
-    error Paused();
-
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -187,12 +178,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// on the Delegation with a `keyHash`, bypassing the EntryPoint.
     event NonceInvalidated(uint256 nonce);
 
-    /// @dev The pause flag has been updated.
-    event PauseUpdated(bool indexed isPaused);
-
-    /// @dev The pause authority has been set to `pauseAuthority`.
-    event PauseAuthoritySet(address indexed pauseAuthority);
-
     ////////////////////////////////////////////////////////////////////////
     // Immutables
     ////////////////////////////////////////////////////////////////////////
@@ -219,9 +204,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// This constant is a pun for "chain ID 0".
     uint16 public constant MULTICHAIN_NONCE_PREFIX = 0xc1d0;
 
-    /// @dev Time period after which the contract can be unpaused by anyone.
-    uint256 public constant PAUSE_EXPIRY = 4 weeks;
-
     /// @dev A unique identifier to be passed into `upgradeHook(bytes32 previousVersion)`
     /// via the transient storage slot at `_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT`.
     bytes32 internal constant _UPGRADE_HOOK_ID = keccak256("PORTO_DELEGATION_UPGRADE_HOOK_ID");
@@ -233,9 +215,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev General capacity for enumerable sets,
     /// to prevent off-chain full enumeration from running out-of-gas.
     uint256 internal constant _CAP = 512;
-
-    /// @dev Bit position of the pause flag.
-    uint256 internal constant PAUSE_FLAG = 0;
 
     ////////////////////////////////////////////////////////////////////////
     // Constructor
@@ -332,11 +311,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         emit SignatureCheckerApprovalSet(keyHash, checker, isApproved);
     }
 
-    function setPauseAuthority(address newPauseAuthority) public virtual onlyThis {
-        _getDelegationStorage().pauseAuthority = newPauseAuthority;
-        emit PauseAuthoritySet(newPauseAuthority);
-    }
-
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
     /// This invalidates the nonces for the `seqKey`, up to (inclusive) `uint64(nonce)`.
     function invalidateNonce(uint256 nonce) public virtual onlyThis {
@@ -384,44 +358,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         return true;
     }
 
-    /// @dev Can be used to pause/unpause the contract, in case of emergencies.
-    /// - Pausing the contract will make all signature validations fail,
-    ///   effectively blocking all pay, execute, isValidSignature attempts.
-    /// - The `pauseAuthority` can unpause the contract at any time.
-    /// - Anyone can unpause the contract after the PAUSE_EXPIRY has passed.
-    /// - Note: Contracts CANNOT be paused again until PAUSE_EXPIRY + 1 week has passed.
-    ///   This is done to prevent griefing attacks, where a malicious pauseAuthority,
-    ///   keeps censoring the user.
-    function pause(bool isPause) public virtual {
-        DelegationStorage storage $ = _getDelegationStorage();
-        if (isPause) {
-            // Owners can use this 1 week buffer, to update their `pauseAuthority` if needed.
-            if (
-                msg.sender != $.pauseAuthority
-                    || block.timestamp < $.lastPauseTimestamp + PAUSE_EXPIRY + 1 weeks
-                    || $.flags.get(PAUSE_FLAG)
-            ) {
-                revert Unauthorized();
-            }
-
-            // Set the pause flag.
-            $.flags.set(PAUSE_FLAG);
-            $.lastPauseTimestamp = block.timestamp;
-        } else {
-            if (
-                msg.sender == $.pauseAuthority
-                    || block.timestamp > $.lastPauseTimestamp + PAUSE_EXPIRY
-            ) {
-                // Unpause the contract.
-                $.flags.unset(PAUSE_FLAG);
-            } else {
-                revert Unauthorized();
-            }
-        }
-
-        emit PauseUpdated(isPause);
-    }
-
     ////////////////////////////////////////////////////////////////////////
     // Public View Functions
     ////////////////////////////////////////////////////////////////////////
@@ -434,19 +370,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev Returns the label.
     function label() public view virtual returns (string memory) {
         return string(_getDelegationStorage().label.get());
-    }
-
-    /// @dev Returns the pause flag and the last pause timestamp.
-    function isPaused() public view virtual returns (bool, uint256) {
-        return (
-            _getDelegationStorage().flags.get(PAUSE_FLAG),
-            _getDelegationStorage().lastPauseTimestamp
-        );
-    }
-
-    /// @dev Returns the pause authority.
-    function pauseAuthority() public view virtual returns (address) {
-        return _getDelegationStorage().pauseAuthority;
     }
 
     /// @dev Returns the number of authorized keys.
@@ -687,10 +610,18 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         virtual
         returns (bool isValid, bytes32 keyHash)
     {
+        address ep = ENTRY_POINT;
         // We only have to enforce the pause flag here, because all execution/payment flows
         // always have to do a signature validation.
-        if (_getDelegationStorage().flags.get(PAUSE_FLAG)) {
-            revert Paused();
+        assembly ("memory-safe") {
+            mstore(0x00, 0x060f052a) // `pauseFlag()`
+            mstore(0x20, 0x00)
+
+            pop(staticcall(gas(), ep, 0x1c, 0x20, 0x20, 0x40))
+            if iszero(mload(0x20)) {
+                mstore(0x00, 0x9e87fac8) // `Paused()`
+                revert(0x1c, 0x20)
+            }
         }
 
         // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
