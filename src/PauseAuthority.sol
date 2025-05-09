@@ -2,9 +2,6 @@
 pragma solidity ^0.8.23;
 
 abstract contract PauseAuthority {
-    /// @dev Time period after which the contract can be unpaused by anyone.
-    uint256 public constant PAUSE_TIMEOUT = 4 weeks;
-
     /// @dev Unauthorized to perform this action.
     error Unauthorized();
 
@@ -14,7 +11,15 @@ abstract contract PauseAuthority {
     /// @dev The pause authority has been set to `pauseAuthority`.
     event PauseAuthoritySet(address indexed pauseAuthority);
 
+    /// @dev Time period after which the contract can be unpaused by anyone.
+    uint256 public constant PAUSE_TIMEOUT = 4 weeks;
+
+    /// @dev The pause flag.
     uint256 public pauseFlag;
+
+    /// @dev The pause configuration.
+    /// - The lower 160 bits store the pause authority.
+    /// - The 40 bits after that store the last paused timestamp.
     uint256 internal _pauseConfig;
 
     /// @dev Can be used to pause/unpause the contract, in case of emergencies.
@@ -26,13 +31,12 @@ abstract contract PauseAuthority {
     ///   This is done to prevent griefing attacks, where a malicious pauseAuthority,
     ///   keeps censoring the user.
     function pause(bool isPause) public virtual {
-        uint256 pauseConfig = _pauseConfig;
-        address authority = address(uint160(pauseConfig & type(uint160).max));
-        uint40 lastPaused = uint40(pauseConfig >> 160);
+        (address authority, uint40 lastPaused) = getPauseConfig();
         uint256 timeout = lastPaused + PAUSE_TIMEOUT;
 
         if (isPause) {
-            // Owners can use this 1 week buffer, to update their `pauseAuthority` if needed.
+            // Account owners, can use this 1 week buffer, to migrate,
+            // if they don't trust the pauseAuthority.
             if (msg.sender != authority || block.timestamp < timeout + 1 weeks || pauseFlag == 1) {
                 revert Unauthorized();
             }
@@ -58,13 +62,13 @@ abstract contract PauseAuthority {
     }
 
     function setPauseAuthority(address newPauseAuthority) public virtual {
-        uint256 pauseConfig = _pauseConfig;
-        if (msg.sender != address(uint160(pauseConfig & type(uint160).max))) {
+        (address authority, uint40 lastPaused) = getPauseConfig();
+        if (msg.sender != authority) {
             revert Unauthorized();
         }
 
-        // TODO: Double check that solidity sanitizes the newPauseAuthority address
-        _pauseConfig = (pauseConfig & (type(uint96).max << 160)) | uint160(newPauseAuthority);
+        // TODO: Check if solidity sanitizes the newPauseAuthority address already
+        _pauseConfig = lastPaused << 160 | (uint160(newPauseAuthority) & type(uint160).max);
 
         emit PauseAuthoritySet(newPauseAuthority);
     }

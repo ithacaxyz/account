@@ -4,13 +4,12 @@
 
 ### Patch Changes
 
-- Add an optional `pauseAuthority` that can pause all activities on a user's account for upto 4 weeks.
-- `pauseAuthority` can unpause the account whenever they want.
-- Anyone can unpause the account after 4 weeks, to prevent censorship.
-- An account cannot be paused again until 5 weeks after the last pause.
-  This gives the user 1 week, to update their `pauseAuthority` if they are being censored.
+- Add a `pauseAuthority` to Entrypoint that can pause all activities for all user accounts for upto 4 weeks.
+- `pauseAuthority` can unpause the accounts whenever they want.
+- Anyone can unpause the accounts after 4 weeks, to prevent censorship.
+- Accounts cannot be paused again until 5 weeks after the last pause.
+  This gives the users 1 week, to migrate their funds if they are being censored.
 - Signature validation fails when an account is paused. So `pay`, `execute`, `isValidSignature` will all fail.
-- Users can opt out of this feature, by setting the `pauseAuthority` to `address(0)`
 
 ## 0.1.1
 

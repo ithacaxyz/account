@@ -347,9 +347,6 @@ contract DelegationTest is BaseTest {
         uint256 nonce = d.d.getNonce(0);
         bytes memory opData = abi.encodePacked(nonce, _sig(d, d.d.computeDigest(calls, nonce)));
         bytes memory executionData = abi.encode(calls, opData);
-        // assertEq(d.d.pauseAuthority(), address(0));
-        // d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
-        // assertEq(d.d.pauseAuthority(), pauseAuthority);
 
         // Setup a mock call
         calls[0] = _transferCall(address(0), address(0x1234), 1 ether);
@@ -377,9 +374,6 @@ contract DelegationTest is BaseTest {
         (epPauseAuthority, lastPaused) = ep.getPauseConfig();
         assertEq(epPauseAuthority, pauseAuthority);
         assertEq(lastPaused, block.timestamp);
-        // (bool isPaused, uint256 lastPauseTimestamp) = d.d.isPaused();
-        // assertEq(isPaused, true);
-        // assertEq(lastPauseTimestamp, block.timestamp);
         vm.stopPrank();
 
         // Check that execute fails
@@ -441,5 +435,16 @@ contract DelegationTest is BaseTest {
         (epPauseAuthority, lastPaused) = ep.getPauseConfig();
         assertEq(epPauseAuthority, pauseAuthority);
         assertEq(lastPaused, block.timestamp - 4 weeks - 1);
+
+        address entryPointAddress = address(ep);
+
+        // Try setting pauseAuthority with dirty bits.
+        assembly ("memory-safe") {
+            mstore(0x00, 0x4b90364f) // `setPauseAuthority(address)`
+            mstore(0x20, 0xffffffffffffffffffffffffffffffffffffffff)
+
+            let success := call(gas(), entryPointAddress, 0x00, 0x1c, 0x24, 0x00, 0x00)
+            if success { revert(0, 0) }
+        }
     }
 }
