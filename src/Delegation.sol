@@ -43,7 +43,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     enum KeyType {
         P256,
         WebAuthnP256,
-        Secp256k1
+        Secp256k1,
+        MultiSig
     }
 
     /// @dev A key that can be used to authorize call.
@@ -69,6 +70,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         /// @dev The `msg.senders` that can use `isValidSignature`
         /// to successfully validate a signature for a given key hash.
         EnumerableSetLib.AddressSet checkers;
+        /// @dev Arbitrary data for any key type.
+        bytes data;
     }
 
     /// @dev Holds the storage.
@@ -637,6 +640,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             keyHash = LibBytes.loadCalldata(signature, n);
             signature = LibBytes.truncatedCalldata(signature, n);
             // Do the prehash if last byte is non-zero.
+            // TODO: When do we use this?
             if (uint256(LibBytes.loadCalldata(signature, n + 1)) & 0xff != 0) {
                 digest = EfficientHashLib.sha2(digest); // `sha256(abi.encode(digest))`.
             }
@@ -646,7 +650,45 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         // Early return if the key has expired.
         if (LibBit.and(key.expiry != 0, block.timestamp > key.expiry)) return (false, keyHash);
 
-        if (key.keyType == KeyType.P256) {
+        if (key.keyType == KeyType.MultiSig) {
+            bytes memory keyData = _getKeyExtraStorage(keyHash).data;
+            bytes[] memory signatures = abi.decode(signature, (bytes[]));
+            (uint256 threshold, bytes32[] memory multiSigKeys) =
+                abi.decode(keyData, (uint256, bytes32[]));
+
+            uint256 validKeyNum;
+
+            for (uint256 i; i < signatures.length; ++i) {
+                // temporary self call to make this work with a memory array
+                (bool v, bytes32 k) = this.unwrapAndValidateSignature(digest, signatures[i]);
+
+                if (!v) {
+                    return (false, keyHash);
+                }
+
+                uint256 j;
+                while (j < multiSigKeys.length) {
+                    if (multiSigKeys[j] == k) {
+                        validKeyNum++;
+                        multiSigKeys[j] = bytes32(0);
+                    }
+
+                    if (validKeyNum == threshold) {
+                        return (true, keyHash);
+                    }
+
+                    j++;
+                }
+
+                // This means that the keyHash was not found
+                if (j == multiSigKeys.length) {
+                    return (false, keyHash);
+                }
+            }
+
+            // If we reach here, then the required threshold was not met.
+            return (false, keyHash);
+        } else if (key.keyType == KeyType.P256) {
             // The try decode functions returns `(0,0)` if the bytes is too short,
             // which will make the signature check fail.
             (bytes32 r, bytes32 s) = P256.tryDecodePointCalldata(signature);
