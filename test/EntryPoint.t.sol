@@ -985,4 +985,36 @@ contract EntryPointTest is BaseTest {
             assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
         }
     }
+
+    struct _TestMultiSigTemps {
+        DelegatedEOA d;
+        uint256 numKeys;
+        uint256 threshold;
+        Delegation.Key[] signerKeys;
+    }
+
+    function testMultiSig(bytes32) public {
+        _TestMultiSigTemps memory t;
+        t.d = _randomEIP7702DelegatedEOA();
+        t.numKeys = _bound(_random(), 0, 256);
+        t.threshold = _bound(_random(), 0, t.numKeys);
+
+        for (uint256 i; i < t.numKeys; ++i) {
+            Delegation.KeyType keyType = Delegation.KeyType(uint8(_bound(_random(), 0, 3)));
+            t.signerKeys[i] = Delegation.Key({
+                expiry: 0,
+                keyType: keyType,
+                isSuperAdmin: _randomChance(2),
+                
+            });
+        }
+        EntryPoint.UserOp memory u;
+        vm.deal(t.d.eoa, type(uint192).max);
+
+        u.eoa = t.d.eoa;
+        u.nonce = t.d.d.getNonce(0);
+        u.combinedGas = 1000000;
+        u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
+        u.signature = _eoaSig(t.d.privateKey, u);
+    }
 }
