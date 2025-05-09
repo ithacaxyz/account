@@ -146,7 +146,6 @@ contract EntryPoint is
     ////////////////////////////////////////////////////////////////////////
 
     constructor(address pauseAuthority) {
-        // TODO: Check if solidity sanitizes the pauseAuthority address
         _pauseConfig = uint160(pauseAuthority) & type(uint160).max;
     }
 

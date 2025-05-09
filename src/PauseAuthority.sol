@@ -67,8 +67,7 @@ abstract contract PauseAuthority {
             revert Unauthorized();
         }
 
-        // TODO: Check if solidity sanitizes the newPauseAuthority address already
-        _pauseConfig = lastPaused << 160 | (uint160(newPauseAuthority) & type(uint160).max);
+        _pauseConfig = (uint256(lastPaused) << 160) | uint160(newPauseAuthority);
 
         emit PauseAuthoritySet(newPauseAuthority);
     }
