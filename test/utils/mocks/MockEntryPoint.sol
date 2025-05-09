@@ -9,6 +9,8 @@ import {Brutalizer} from "../Brutalizer.sol";
 contract MockEntryPoint is EntryPoint, Brutalizer {
     error NoRevertEncountered();
 
+    constructor(address pauseAuthority) EntryPoint(pauseAuthority) {}
+
     function computeDigest(PreOp calldata preOp) public view returns (bytes32) {
         return _computeDigest(preOp);
     }

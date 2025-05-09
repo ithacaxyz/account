@@ -1,5 +1,16 @@
 # porto-account
 
+## 0.1.2
+
+### Patch Changes
+
+- Add a `pauseAuthority` to Entrypoint that can pause all activities for all user accounts for upto 4 weeks.
+- `pauseAuthority` can unpause the accounts whenever they want.
+- Anyone can unpause the accounts after 4 weeks, to prevent censorship.
+- Accounts cannot be paused again until 5 weeks after the last pause.
+  This gives the users 1 week, to migrate their funds if they are being censored.
+- Signature validation fails when an account is paused. So `pay`, `execute`, `isValidSignature` will all fail.
+
 ## 0.1.1
 
 ### Patch Changes

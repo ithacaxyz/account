@@ -69,7 +69,7 @@ contract BaseTest is SoladyTest {
     }
 
     function setUp() public virtual {
-        ep = new MockEntryPoint();
+        ep = new MockEntryPoint(address(this));
         paymentToken = new MockPaymentToken();
         delegationImplementation = address(new MockDelegation(address(ep)));
         eip7702Proxy = new EIP7702Proxy(delegationImplementation, address(this));

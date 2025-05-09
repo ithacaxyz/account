@@ -307,7 +307,7 @@ contract DelegationTest is BaseTest {
     }
 
     function testAddDisallowedSuperAdminKeyTypeReverts() public {
-        address entryPoint = address(new EntryPoint());
+        address entryPoint = address(new EntryPoint(address(this)));
         address delegationImplementation = address(new Delegation(address(entryPoint)));
         address delegationProxy = address(new EIP7702Proxy(delegationImplementation, address(0)));
         delegation = MockDelegation(payable(delegationProxy));
@@ -327,5 +327,124 @@ contract DelegationTest is BaseTest {
         d.d.authorize(k.k);
 
         vm.stopPrank();
+    }
+
+    function testPause() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+        address pauseAuthority = _randomAddress();
+        ep.setPauseAuthority(pauseAuthority);
+
+        (address epPauseAuthority, uint40 lastPaused) = ep.getPauseConfig();
+        assertEq(epPauseAuthority, pauseAuthority);
+        assertEq(lastPaused, 0);
+
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+
+        // Pause authority is always the EP
+        calls[0].to = address(d.d);
+        calls[0].data = abi.encodeWithSignature("setPauseAuthority(address)", pauseAuthority);
+        uint256 nonce = d.d.getNonce(0);
+        bytes memory opData = abi.encodePacked(nonce, _sig(d, d.d.computeDigest(calls, nonce)));
+        bytes memory executionData = abi.encode(calls, opData);
+
+        // Setup a mock call
+        calls[0] = _transferCall(address(0), address(0x1234), 1 ether);
+        nonce = d.d.getNonce(0);
+        bytes32 digest = d.d.computeDigest(calls, nonce);
+        bytes memory signature = _sig(d, digest);
+
+        // Check isValidSignature passes before pause.
+        assertEq(
+            d.d.isValidSignature(digest, signature),
+            bytes4(keccak256("isValidSignature(bytes32,bytes)"))
+        );
+
+        // The block timestamp needs to be realistic
+        vm.warp(6 weeks + 1 days);
+
+        // Only the pause authority can pause.
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        ep.setPauseAuthority(pauseAuthority);
+
+        vm.startPrank(pauseAuthority);
+        ep.pause(true);
+
+        assertEq(ep.pauseFlag(), 1);
+        (epPauseAuthority, lastPaused) = ep.getPauseConfig();
+        assertEq(epPauseAuthority, pauseAuthority);
+        assertEq(lastPaused, block.timestamp);
+        vm.stopPrank();
+
+        // Check that execute fails
+        opData = abi.encodePacked(nonce, signature);
+        executionData = abi.encode(calls, opData);
+
+        vm.expectRevert(bytes4(keccak256("Paused()")));
+        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
+
+        // Check that isValidSignature fails
+        vm.expectRevert(bytes4(keccak256("Paused()")));
+        d.d.isValidSignature(digest, signature);
+
+        // Check that userOp fails
+        EntryPoint.UserOp memory u;
+        u.eoa = d.eoa;
+        u.nonce = d.d.getNonce(0);
+        u.combinedGas = 1000000;
+        u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
+        u.signature = _eoaSig(d.privateKey, u);
+
+        assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("VerificationError()")));
+
+        vm.startPrank(pauseAuthority);
+        // Try to pause already paused delegation.
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        ep.pause(true);
+
+        ep.pause(false);
+        assertEq(ep.pauseFlag(), 0);
+        (epPauseAuthority, lastPaused) = ep.getPauseConfig();
+        assertEq(epPauseAuthority, pauseAuthority);
+        assertEq(lastPaused, block.timestamp);
+
+        // Cannot immediately repause again.
+        vm.warp(lastPaused + 4 weeks + 1 days);
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        ep.pause(true);
+        vm.stopPrank();
+
+        // UserOp should now succeed.
+        assertEq(ep.execute(abi.encode(u)), 0);
+
+        // Can pause again, after the cooldown period.
+        vm.warp(lastPaused + 5 weeks + 1);
+        vm.startPrank(pauseAuthority);
+        ep.pause(true);
+        vm.stopPrank();
+
+        assertEq(ep.pauseFlag(), 1);
+        (epPauseAuthority, lastPaused) = ep.getPauseConfig();
+        assertEq(epPauseAuthority, pauseAuthority);
+        assertEq(lastPaused, block.timestamp);
+
+        // Anyone can unpause after 4 weeks.
+        vm.warp(lastPaused + 4 weeks + 1);
+        ep.pause(false);
+        assertEq(ep.pauseFlag(), 0);
+        (epPauseAuthority, lastPaused) = ep.getPauseConfig();
+        assertEq(epPauseAuthority, pauseAuthority);
+        assertEq(lastPaused, block.timestamp - 4 weeks - 1);
+
+        address entryPointAddress = address(ep);
+
+        // Try setting pauseAuthority with dirty bits.
+        assembly ("memory-safe") {
+            mstore(0x00, 0x4b90364f) // `setPauseAuthority(address)`
+            mstore(0x20, 0xffffffffffffffffffffffffffffffffffffffff)
+
+            let success := call(gas(), entryPointAddress, 0x00, 0x1c, 0x24, 0x00, 0x00)
+            if success { revert(0, 0) }
+        }
     }
 }

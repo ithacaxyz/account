@@ -610,6 +610,21 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         virtual
         returns (bool isValid, bytes32 keyHash)
     {
+        address ep = ENTRY_POINT;
+        // We only have to enforce the pause flag here, because all execution/payment flows
+        // always have to do a signature validation.
+        assembly ("memory-safe") {
+            mstore(0x00, 0x060f052a) // `pauseFlag()`
+            mstore(0x20, 0x00)
+
+            let success := staticcall(gas(), ep, 0x1c, 0x20, 0x00, 0x20)
+
+            if or(eq(success, 0), mload(0x00)) {
+                mstore(0x00, 0x9e87fac8) // `Paused()`
+                revert(0x1c, 0x04)
+            }
+        }
+
         // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
             return (ECDSA.recoverCalldata(digest, signature) == address(this), 0);
@@ -820,6 +835,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         returns (string memory name, string memory version)
     {
         name = "Delegation";
-        version = "0.1.1";
+        version = "0.1.2";
     }
 }
