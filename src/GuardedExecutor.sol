@@ -569,7 +569,11 @@ abstract contract GuardedExecutor is ERC7821 {
 
     /// @dev Stores the spend struct.
     function _storeSpend(LibBytes.BytesStorage storage $, TokenPeriodSpend memory spend) internal {
-        LibBytes.set($, LibZip.cdCompress(abi.encode(spend)));
+        bytes memory encoded = new bytes(96);
+        assembly ("memory-safe") {
+            mcopy(add(encoded, 0x20), spend, 96)
+        }
+        LibBytes.set($, LibZip.cdCompress(encoded));
     }
 
     /// @dev Loads the spend struct.
