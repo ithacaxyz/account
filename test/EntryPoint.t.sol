@@ -9,6 +9,7 @@ import {MockPayerWithState} from "./utils/mocks/MockPayerWithState.sol";
 import {MockPayerWithSignature} from "./utils/mocks/MockPayerWithSignature.sol";
 import {IEntryPoint} from "../src/interfaces/IEntryPoint.sol";
 import {IDelegation} from "../src/interfaces/IDelegation.sol";
+import {MultiSigSigner} from "../src/MultiSigSigner.sol";
 
 contract EntryPointTest is BaseTest {
     struct _TestFullFlowTemps {
@@ -988,33 +989,74 @@ contract EntryPointTest is BaseTest {
 
     struct _TestMultiSigTemps {
         DelegatedEOA d;
+        Delegation.Key multiSigKey;
+        MultiSigSigner multiSigSigner;
         uint256 numKeys;
         uint256 threshold;
-        Delegation.Key[] signerKeys;
+        PassKey[] ownerKeys;
     }
 
     function testMultiSig(bytes32) public {
         _TestMultiSigTemps memory t;
         t.d = _randomEIP7702DelegatedEOA();
-        t.numKeys = _bound(_random(), 0, 256);
+
+        t.multiSigSigner = new MultiSigSigner();
+        t.multiSigKey = Delegation.Key({
+            expiry: 0,
+            keyType: Delegation.KeyType.External,
+            isSuperAdmin: _randomChance(2) ? true : false,
+            publicKey: abi.encodePacked(address(t.multiSigSigner), bytes12(0))
+        });
+
+        // Setup Phase
+        vm.startPrank(t.d.eoa);
+        t.d.d.authorize(t.multiSigKey);
+
+        t.numKeys = _bound(_random(), 0, 32);
         t.threshold = _bound(_random(), 0, t.numKeys);
 
-        for (uint256 i; i < t.numKeys; ++i) {
-            Delegation.KeyType keyType = Delegation.KeyType(uint8(_bound(_random(), 0, 3)));
-            t.signerKeys[i] = Delegation.Key({
-                expiry: 0,
-                keyType: keyType,
-                isSuperAdmin: _randomChance(2),
-                
-            });
-        }
-        EntryPoint.UserOp memory u;
-        vm.deal(t.d.eoa, type(uint192).max);
+        t.ownerKeys = new PassKey[](t.numKeys);
 
-        u.eoa = t.d.eoa;
-        u.nonce = t.d.d.getNonce(0);
-        u.combinedGas = 1000000;
-        u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
-        u.signature = _eoaSig(t.d.privateKey, u);
+        bytes32[] memory ownerKeyHashes = new bytes32[](t.numKeys);
+
+        for (uint256 i; i < t.numKeys; ++i) {
+            PassKey memory passKey =
+                _randomChance(2) ? _randomSecp256k1PassKey() : _randomSecp256r1PassKey();
+            t.d.d.authorize(passKey.k);
+            t.ownerKeys[i] = passKey;
+            ownerKeyHashes[i] = _hash(passKey.k);
+        }
+
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0] = ERC7821.Call({
+            to: address(t.multiSigSigner),
+            value: 0,
+            data: abi.encodeWithSelector(
+                MultiSigSigner.setConfig.selector, _hash(t.multiSigKey), t.threshold, ownerKeyHashes
+            )
+        });
+
+        if (t.threshold == 0) vm.expectRevert(bytes4(keccak256("InvalidThreshold()")));
+        t.d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, abi.encode(calls));
+        if (t.threshold == 0) return;
+
+        vm.stopPrank();
+
+        assertEq(t.d.d.keyCount(), t.numKeys + 1);
+
+        // Test unwrapAndValidateSignature
+        bytes32 digest = keccak256(_randomBytes());
+        bytes[] memory signatures = new bytes[](t.threshold);
+
+        for (uint256 i; i < t.threshold; ++i) {
+            signatures[i] = _sig(t.ownerKeys[i], digest);
+        }
+
+        (bool isValid, bytes32 keyHash) = t.d.d.unwrapAndValidateSignature(
+            digest, abi.encodePacked(abi.encode(signatures), _hash(t.multiSigKey), uint8(0))
+        );
+
+        assertEq(isValid, true);
+        assertEq(keyHash, _hash(t.multiSigKey));
     }
 }

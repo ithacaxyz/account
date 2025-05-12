@@ -120,10 +120,7 @@ contract BaseTest is SoladyTest {
         k.keyHash = _hash(k.k);
     }
 
-    function _randomKey()
-        internal
-        returns (Delegation.Key memory k, Delegation.KeyExtraStorage memory e)
-    {
+    function _randomKey() internal returns (Delegation.Key memory k) {
         k.keyType = Delegation.KeyType(uint8(_bound(_random(), 0, 3)));
         k.isSuperAdmin = _randomChance(2);
         k.publicKey = abi.encode(address(_randomUniqueHashedAddress()));

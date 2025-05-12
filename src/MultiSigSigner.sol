@@ -23,6 +23,9 @@ contract MultiSigSigner is ISigner {
     /// @dev The threshold can't be zero.
     error InvalidThreshold();
 
+    /// @dev The owner key hash was not found in the config.
+    error OwnerNotFound();
+
     ////////////////////////////////////////////////////////////////////////
     // Storage
     ////////////////////////////////////////////////////////////////////////
@@ -60,22 +63,28 @@ contract MultiSigSigner is ISigner {
         bytes32[] storage ownerKeyHashes_ = config.ownerKeyHashes;
         uint256 ownerKeyCount = ownerKeyHashes_.length;
 
+        bool found = false;
+
         for (uint256 i = 0; i < ownerKeyCount; i++) {
             if (ownerKeyHashes_[i] == ownerKeyHash) {
                 // Replace the owner to remove with the last owner
                 ownerKeyHashes_[i] = ownerKeyHashes_[ownerKeyCount - 1];
                 // Remove the last element
                 ownerKeyHashes_.pop();
+                found = true;
                 break;
             }
         }
+
+        if (!found) revert OwnerNotFound();
+        if (ownerKeyCount - 1 < config.threshold) revert InvalidThreshold();
     }
 
     function setThreshold(bytes32 keyHash, uint256 threshold) public {
-        // Threshold can't be zero
-        if (threshold == 0) revert InvalidThreshold();
-
         Config storage config = configs[msg.sender][keyHash];
+
+        if (threshold == 0 || threshold > config.ownerKeyHashes.length) revert InvalidThreshold();
+
         config.threshold = threshold;
     }
 
