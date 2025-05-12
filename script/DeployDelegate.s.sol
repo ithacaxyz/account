@@ -23,7 +23,7 @@ contract DeployDelegateScript is Script {
             string memory proxyAddr = vm.toString(deploy.delegationProxy());
             string memory registryAddr = vm.parseJsonString(json, ".contracts.AccountRegistry");
             string memory simulatorAddr = vm.parseJsonString(json, ".contracts.Simulator");
-
+            string memory pauseAuthority = vm.parseJsonString(json, ".contracts.PauseAuthority");
             string memory contractsJson = string.concat(
                 '{\n  "EntryPoint": "',
                 entryPointAddr,
@@ -35,6 +35,8 @@ contract DeployDelegateScript is Script {
                 registryAddr,
                 '",\n  "Simulator": "',
                 simulatorAddr,
+                '",\n  "PauseAuthority": "',
+                pauseAuthority,
                 '"\n}'
             );
 

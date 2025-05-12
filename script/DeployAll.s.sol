@@ -18,6 +18,7 @@ contract DeployAllScript is Script {
         address proxy = deployer.delegationProxy();
         address registry = deployer.accountRegistry();
         address simulator = deployer.simulator();
+        address pauseAuthority = vm.addr(deployerPrivateKey);
 
         if (shouldWrite) {
             string memory contractsJson = string.concat(
@@ -31,6 +32,8 @@ contract DeployAllScript is Script {
                 vm.toString(registry),
                 '","Simulator":"',
                 vm.toString(simulator),
+                '","PauseAuthority":"',
+                vm.toString(pauseAuthority),
                 '"}'
             );
 
