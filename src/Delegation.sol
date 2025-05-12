@@ -44,7 +44,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         P256,
         WebAuthnP256,
         Secp256k1,
-        MultiSig
+        External
     }
 
     /// @dev A key that can be used to authorize call.
@@ -70,8 +70,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         /// @dev The `msg.senders` that can use `isValidSignature`
         /// to successfully validate a signature for a given key hash.
         EnumerableSetLib.AddressSet checkers;
-        /// @dev Arbitrary data for any key type.
-        bytes data;
     }
 
     /// @dev Holds the storage.
@@ -131,6 +129,9 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
     /// @dev The `keyType` cannot be super admin.
     error KeyTypeCannotBeSuperAdmin();
+
+    /// @dev The public key is invalid.
+    error InvalidPublicKey();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -590,50 +591,13 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
                 digest = EfficientHashLib.sha2(digest); // `sha256(abi.encode(digest))`.
             }
         }
+
         Key memory key = getKey(keyHash);
 
         // Early return if the key has expired.
         if (LibBit.and(key.expiry != 0, block.timestamp > key.expiry)) return (false, keyHash);
 
-        if (key.keyType == KeyType.MultiSig) {
-            bytes memory keyData = _getKeyExtraStorage(keyHash).data;
-            bytes[] memory signatures = abi.decode(signature, (bytes[]));
-            (uint256 threshold, bytes32[] memory multiSigKeys) =
-                abi.decode(keyData, (uint256, bytes32[]));
-
-            uint256 validKeyNum;
-
-            for (uint256 i; i < signatures.length; ++i) {
-                // temporary self call to make this work with a memory array
-                (bool v, bytes32 k) = this.unwrapAndValidateSignature(digest, signatures[i]);
-
-                if (!v) {
-                    return (false, keyHash);
-                }
-
-                uint256 j;
-                while (j < multiSigKeys.length) {
-                    if (multiSigKeys[j] == k) {
-                        validKeyNum++;
-                        multiSigKeys[j] = bytes32(0);
-                    }
-
-                    if (validKeyNum == threshold) {
-                        return (true, keyHash);
-                    }
-
-                    j++;
-                }
-
-                // This means that the keyHash was not found
-                if (j == multiSigKeys.length) {
-                    return (false, keyHash);
-                }
-            }
-
-            // If we reach here, then the required threshold was not met.
-            return (false, keyHash);
-        } else if (key.keyType == KeyType.P256) {
+        if (key.keyType == KeyType.P256) {
             // The try decode functions returns `(0,0)` if the bytes is too short,
             // which will make the signature check fail.
             (bytes32 r, bytes32 s) = P256.tryDecodePointCalldata(signature);
@@ -653,6 +617,29 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             isValid = SignatureCheckerLib.isValidSignatureNowCalldata(
                 abi.decode(key.publicKey, (address)), digest, signature
             );
+        } else if (key.keyType == KeyType.External) {
+            // The public key of an external key type HAS to be 32 bytes.
+            // Top 20 bytes: address of the signer.
+            // Bottom 12 bytes: arbitrary data, that should be used as a salt.
+            if (key.publicKey.length != 32) revert InvalidPublicKey();
+
+            address signer = address(bytes20(key.publicKey));
+
+            // MagicValue: bytes4(keccak256("isValidSignature(bytes32,bytes)")
+            assembly ("memory-safe") {
+                let m := mload(0x40)
+                mstore(m, 0x8afc93b4) // `isValidSignatureWithKeyHash(bytes32,bytes32,bytes)`
+                mstore(add(m, 0x20), digest)
+                mstore(add(m, 0x40), keyHash)
+                mstore(add(m, 0x60), 0x60) // signature offset
+                mstore(add(m, 0x80), signature.length) // signature length
+                calldatacopy(add(m, 0xa0), signature.offset, signature.length) // copy data to memory offset
+
+                let size := add(signature.length, 0x84)
+                let success := staticcall(gas(), signer, add(m, 0x1c), size, 0x00, 0x20)
+
+                if and(success, eq(shr(224, mload(0x00)), 0x8afc93b4)) { isValid := true }
+            }
         }
     }
 
