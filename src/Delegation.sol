@@ -680,7 +680,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
             address signer = address(bytes20(key.publicKey));
 
-            // MagicValue: bytes4(keccak256("isValidSignature(bytes32,bytes)")
             assembly ("memory-safe") {
                 let m := mload(0x40)
                 mstore(m, 0x8afc93b4) // `isValidSignatureWithKeyHash(bytes32,bytes32,bytes)`
@@ -693,6 +692,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
                 let size := add(signature.length, 0x84)
                 let success := staticcall(gas(), signer, add(m, 0x1c), size, 0x00, 0x20)
 
+                // MagicValue: bytes4(keccak256("isValidSignatureWithKeyHash(bytes32,bytes32,bytes)")
                 if and(success, eq(shr(224, mload(0x00)), 0x8afc93b4)) { isValid := true }
             }
         }
