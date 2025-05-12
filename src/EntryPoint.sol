@@ -146,7 +146,7 @@ contract EntryPoint is
     ////////////////////////////////////////////////////////////////////////
 
     constructor(address pauseAuthority) {
-        _pauseConfig = uint160(pauseAuthority) & type(uint160).max;
+        _pauseConfig = uint160(pauseAuthority);
     }
 
     ////////////////////////////////////////////////////////////////////////

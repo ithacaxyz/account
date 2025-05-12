@@ -58,7 +58,7 @@ abstract contract PauseAuthority {
 
     /// @dev Returns the pause authority and the last pause timestamp.
     function getPauseConfig() public view virtual returns (address, uint40) {
-        return (address(uint160(_pauseConfig & type(uint160).max)), uint40(_pauseConfig >> 160));
+        return (address(uint160(_pauseConfig)), uint40(_pauseConfig >> 160));
     }
 
     function setPauseAuthority(address newPauseAuthority) public virtual {
