@@ -136,7 +136,6 @@ contract SimulateExecuteTest is BaseTest {
         u.totalPaymentAmount = u.prePaymentAmount;
         u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
         u.combinedGas = 20_000;
-        // u.paymentPerGas = 1;
 
         {
             // Just pass in a junk secp256k1 signature.
@@ -145,12 +144,12 @@ contract SimulateExecuteTest is BaseTest {
             u.signature = abi.encodePacked(r, s, v);
         }
 
-        address maxBalanceCaller = _randomUniqueHashedAddress();
-        vm.deal(maxBalanceCaller, type(uint256).max);
-        vm.prank(maxBalanceCaller);
         vm.expectRevert(bytes4(keccak256("PaymentError()")));
-        (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(ep), false, 1, 11_000, 0, abi.encode(u));
+        simulator.simulateV1Logs(address(ep), false, 1, 11_000, 0, abi.encode(u));
+
+        deal(u.paymentToken, address(u.eoa), 0x112233112233112233112233);
+        vm.expectRevert(bytes4(keccak256("PaymentError()")));
+        simulator.simulateCombinedGas(address(ep), true, 1, 11_000, abi.encode(u));
     }
 
     function testSimulateExecuteNoRevert() public {
