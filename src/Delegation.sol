@@ -23,9 +23,10 @@ import {LibNonce} from "./libraries/LibNonce.sol";
 import {LibPREP} from "./libraries/LibPREP.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {IDelegation} from "./interfaces/IDelegation.sol";
-
+import {LibTStack} from "./libraries/LibTStack.sol";
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
+
 contract Delegation is IDelegation, EIP712, GuardedExecutor {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for *;
@@ -34,6 +35,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     using LibStorage for LibStorage.Bump;
     using LibRLP for LibRLP.List;
     using LibTransient for LibTransient.TBytes32;
+    using LibTStack for LibTStack.TStack;
 
     ////////////////////////////////////////////////////////////////////////
     // Data Structures
@@ -199,6 +201,11 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev This transient slot must be set to `_UPGRADE_HOOK_ID` before `upgradeHook` can be processed.
     bytes32 internal constant _UPGRADE_HOOK_GUARD_TRANSIENT_SLOT =
         bytes32(uint256(keccak256("_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT")) - 1);
+
+    /// @dev List of keyhashes that have authorized the current execution context.
+    /// Increasing in order of recursive depth.
+    uint256 internal constant _KEYHASH_STACK_TRANSIENT_SLOT =
+        uint256(keccak256("_KEYHASH_STACK_TRANSIENT_SLOT")) - 1;
 
     /// @dev General capacity for enumerable sets,
     /// to prevent off-chain full enumeration from running out-of-gas.
@@ -393,6 +400,10 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             mstore(keys, validCount)
             mstore(keyHashes, validCount)
         }
+    }
+
+    function getContextKeyHash() public view virtual returns (bytes32) {
+        return LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).top();
     }
 
     /// @dev Returns the hash of the key, which does not includes the expiry.
@@ -706,8 +717,13 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             // opdata
             // 0x00: keyHash
             if (opData.length != 0x20) revert OpDataError();
+            bytes32 _keyHash = LibBytes.loadCalldata(opData, 0x00);
 
-            return _execute(calls, LibBytes.loadCalldata(opData, 0x00));
+            LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(_keyHash);
+            _execute(calls, _keyHash);
+            LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
+
+            return;
         }
 
         // Simple workflow without `opData`.
@@ -726,7 +742,11 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
         if (!isValid) revert Unauthorized();
+
+        // TODO: Figure out where else to add these operations, after removing delegate call.
+        LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
         _execute(calls, keyHash);
+        LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
     }
 
     ////////////////////////////////////////////////////////////////////////
