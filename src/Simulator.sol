@@ -172,6 +172,15 @@ contract Simulator {
         while (true) {
             gasUsed = _callEntryPointMemory(ep, false, 0, u);
 
+            // If the simulation failed, bubble up the full revert.
+            assembly ("memory-safe") {
+                if iszero(gasUsed) {
+                    let m := mload(0x40)
+                    returndatacopy(m, 0x00, returndatasize())
+                    revert(m, returndatasize())
+                }
+            }
+
             if (gasUsed != 0) {
                 return (gasUsed, u.combinedGas);
             }
