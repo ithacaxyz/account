@@ -26,6 +26,9 @@ contract MultiSigSigner is ISigner {
     /// @dev The owner key hash was not found in the config.
     error OwnerNotFound();
 
+    /// @dev The key hash is invalid.
+    error InvalidKeyHash();
+
     ////////////////////////////////////////////////////////////////////////
     // Storage
     ////////////////////////////////////////////////////////////////////////
@@ -43,9 +46,16 @@ contract MultiSigSigner is ISigner {
     // Config Functions
     ////////////////////////////////////////////////////////////////////////
 
+    function _checkKeyHash(bytes32 expectedKeyHash) internal view {
+        bytes32 keyHash = IDelegation(msg.sender).getContextKeyHash();
+        if (keyHash != expectedKeyHash) revert InvalidKeyHash();
+    }
+
     function setConfig(bytes32 keyHash, uint256 threshold, bytes32[] memory ownerKeyHashes)
         public
     {
+        _checkKeyHash(keyHash);
+
         // Threshold can't be zero
         if (threshold == 0) revert InvalidThreshold();
 
@@ -54,11 +64,15 @@ contract MultiSigSigner is ISigner {
     }
 
     function addOwner(bytes32 keyHash, bytes32 ownerKeyHash) public {
+        _checkKeyHash(keyHash);
+
         Config storage config = configs[msg.sender][keyHash];
         config.ownerKeyHashes.push(ownerKeyHash);
     }
 
     function removeOwner(bytes32 keyHash, bytes32 ownerKeyHash) public {
+        _checkKeyHash(keyHash);
+
         Config storage config = configs[msg.sender][keyHash];
         bytes32[] storage ownerKeyHashes_ = config.ownerKeyHashes;
         uint256 ownerKeyCount = ownerKeyHashes_.length;
@@ -81,6 +95,8 @@ contract MultiSigSigner is ISigner {
     }
 
     function setThreshold(bytes32 keyHash, uint256 threshold) public {
+        _checkKeyHash(keyHash);
+
         Config storage config = configs[msg.sender][keyHash];
 
         if (threshold == 0 || threshold > config.ownerKeyHashes.length) revert InvalidThreshold();
@@ -108,16 +124,16 @@ contract MultiSigSigner is ISigner {
         uint256 validKeyNum;
 
         for (uint256 i; i < signatures.length; ++i) {
-            (bool v, bytes32 k) =
+            (bool isValid, bytes32 ownerKeyHash) =
                 IDelegation(msg.sender).unwrapAndValidateSignature(digest, signatures[i]);
 
-            if (!v) {
+            if (!isValid) {
                 return FAIL_VALUE;
             }
 
             uint256 j;
             while (j < config.ownerKeyHashes.length) {
-                if (config.ownerKeyHashes[j] == k) {
+                if (config.ownerKeyHashes[j] == ownerKeyHash) {
                     // Incrementing validKeyNum
                     validKeyNum++;
                     config.ownerKeyHashes[j] = bytes32(0);
