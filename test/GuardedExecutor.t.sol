@@ -244,6 +244,14 @@ contract GuardedExecutorTest is BaseTest {
 
         GuardedExecutor.SpendInfo[] memory infos;
         ERC7821.Call[] memory calls;
+
+        GuardedExecutor.SpendPeriod[] memory periods = new GuardedExecutor.SpendPeriod[](2);
+        periods[0] = GuardedExecutor.SpendPeriod.Hour;
+        periods[1] = GuardedExecutor.SpendPeriod.Day;
+        if (_randomChance(2)) {
+            periods[0] = GuardedExecutor.SpendPeriod.Forever;
+        }
+
         // Authorize.
         {
             calls = new ERC7821.Call[](4);
@@ -254,8 +262,8 @@ contract GuardedExecutorTest is BaseTest {
                 GuardedExecutor.setCanExecute.selector, k.keyHash, _ANY_TARGET, _ANY_FN_SEL, true
             );
             // Set some spend limits.
-            calls[2] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
-            calls[3] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Day, 1 ether);
+            calls[2] = _setSpendLimitCall(k, token, periods[0], 1 ether);
+            calls[3] = _setSpendLimitCall(k, token, periods[1], 1 ether);
 
             u.executionData = abi.encode(calls);
             u.nonce = 0xc1d0 << 240;
@@ -285,7 +293,7 @@ contract GuardedExecutorTest is BaseTest {
         // Test removal reduces infos' length.
         {
             calls = new ERC7821.Call[](1);
-            calls[0] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour);
+            calls[0] = _removeSpendLimitCall(k, token, periods[0]);
 
             u.nonce = d.d.getNonce(0);
             u.executionData = abi.encode(calls);
@@ -294,14 +302,14 @@ contract GuardedExecutorTest is BaseTest {
 
             infos = d.d.spendInfos(k.keyHash);
             assertEq(infos.length, 1);
-            assertEq(uint8(infos[0].period), uint8(GuardedExecutor.SpendPeriod.Day));
+            assertEq(uint8(infos[0].period), uint8(periods[1]));
             assertEq(infos[0].spent, amount);
         }
 
         // Test re-addition resets the spent and last updated.
         {
             calls = new ERC7821.Call[](1);
-            calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
+            calls[0] = _setSpendLimitCall(k, token, periods[0], 1 ether);
 
             u.nonce = d.d.getNonce(0);
             u.executionData = abi.encode(calls);
@@ -309,7 +317,7 @@ contract GuardedExecutorTest is BaseTest {
             assertEq(ep.execute(abi.encode(u)), 0);
             infos = d.d.spendInfos(k.keyHash);
             for (uint256 i; i < infos.length; ++i) {
-                if (infos[i].period == GuardedExecutor.SpendPeriod.Hour) {
+                if (infos[i].period == periods[0]) {
                     assertEq(infos[i].spent, 0);
                     assertEq(infos[i].lastUpdated, 0);
                 } else {
@@ -333,7 +341,7 @@ contract GuardedExecutorTest is BaseTest {
 
             infos = d.d.spendInfos(k.keyHash);
             for (uint256 i; i < infos.length; ++i) {
-                if (infos[i].period == GuardedExecutor.SpendPeriod.Hour) {
+                if (infos[i].period == periods[0]) {
                     assertEq(infos[i].spent, amount);
                 } else {
                     assertEq(infos[i].spent, amount * 2);
@@ -344,8 +352,8 @@ contract GuardedExecutorTest is BaseTest {
         // Test removal.
         {
             calls = new ERC7821.Call[](2);
-            calls[0] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour);
-            calls[1] = _removeSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Day);
+            calls[0] = _removeSpendLimitCall(k, token, periods[0]);
+            calls[1] = _removeSpendLimitCall(k, token, periods[1]);
 
             u.nonce = d.d.getNonce(0);
             u.executionData = abi.encode(calls);
@@ -382,8 +390,8 @@ contract GuardedExecutorTest is BaseTest {
         // Test re-addition resets the spent and last updated.
         {
             calls = new ERC7821.Call[](2);
-            calls[0] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Hour, 1 ether);
-            calls[1] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Day, 1 ether);
+            calls[0] = _setSpendLimitCall(k, token, periods[0], 1 ether);
+            calls[1] = _setSpendLimitCall(k, token, periods[1], 1 ether);
 
             u.nonce = d.d.getNonce(0);
             u.executionData = abi.encode(calls);

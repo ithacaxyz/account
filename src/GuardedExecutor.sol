@@ -37,7 +37,8 @@ abstract contract GuardedExecutor is ERC7821 {
         Day,
         Week,
         Month,
-        Year
+        Year,
+        Forever
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -527,6 +528,7 @@ abstract contract GuardedExecutor is ERC7821 {
         // Note: DateTimeLib's months and month-days start from 1.
         if (period == SpendPeriod.Month) return DateTimeLib.dateToTimestamp(year, month, 1);
         if (period == SpendPeriod.Year) return DateTimeLib.dateToTimestamp(year, 1, 1);
+        if (period == SpendPeriod.Forever) return 1; // Non-zero to differentiate from not set.
         revert(); // We shouldn't hit here.
     }
 
