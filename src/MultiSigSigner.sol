@@ -29,6 +29,9 @@ contract MultiSigSigner is ISigner {
     /// @dev The key hash is invalid.
     error InvalidKeyHash();
 
+    /// @dev Multisigs cannot be re-initialized.
+    error ConfigAlreadySet();
+
     ////////////////////////////////////////////////////////////////////////
     // Storage
     ////////////////////////////////////////////////////////////////////////
@@ -54,10 +57,14 @@ contract MultiSigSigner is ISigner {
     function setConfig(bytes32 keyHash, uint256 threshold, bytes32[] memory ownerKeyHashes)
         public
     {
-        _checkKeyHash(keyHash);
-
         // Threshold can't be zero
         if (threshold == 0) revert InvalidThreshold();
+
+        Config storage config = configs[msg.sender][keyHash];
+
+        if (config.ownerKeyHashes.length > 0) {
+            revert ConfigAlreadySet();
+        }
 
         configs[msg.sender][keyHash] =
             Config({threshold: threshold, ownerKeyHashes: ownerKeyHashes});
