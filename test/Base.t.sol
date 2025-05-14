@@ -63,6 +63,12 @@ contract BaseTest is SoladyTest {
         bytes32 keyHash;
     }
 
+    struct MultiSigKey {
+        Delegation.Key k;
+        uint256 threshold;
+        PassKey[] owners;
+    }
+
     struct DelegatedEOA {
         address eoa;
         uint256 privateKey;
@@ -178,6 +184,10 @@ contract BaseTest is SoladyTest {
         revert("Unsupported");
     }
 
+    function _sig(MultiSigKey memory k, bytes32 digest) internal pure returns (bytes memory) {
+        return _multiSig(k, _hash(k.k), false, digest);
+    }
+
     function _secp256r1Sig(uint256 privateKey, bytes32 keyHash, bytes32 digest)
         internal
         pure
@@ -211,6 +221,18 @@ contract BaseTest is SoladyTest {
     {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(prehash ? 1 : 0));
+    }
+
+    function _multiSig(MultiSigKey memory k, bytes32 keyHash, bool preHash, bytes32 digest)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        bytes[] memory signatures = new bytes[](k.threshold);
+        for (uint256 i; i < k.threshold; ++i) {
+            signatures[i] = _sig(k.owners[i], digest);
+        }
+        return abi.encodePacked(abi.encode(signatures), keyHash, uint8(preHash ? 1 : 0));
     }
 
     function _estimateGasForEOAKey(EntryPoint.UserOp memory u)

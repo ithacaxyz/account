@@ -989,11 +989,10 @@ contract EntryPointTest is BaseTest {
 
     struct _TestMultiSigTemps {
         DelegatedEOA d;
-        Delegation.Key multiSigKey;
+        Delegation.Key k;
         MultiSigSigner multiSigSigner;
         uint256 numKeys;
-        uint256 threshold;
-        PassKey[] ownerKeys;
+        MultiSigKey multiSigKey;
     }
 
     function testMultiSig(bytes32) public {
@@ -1001,21 +1000,23 @@ contract EntryPointTest is BaseTest {
         t.d = _randomEIP7702DelegatedEOA();
 
         t.multiSigSigner = new MultiSigSigner();
-        t.multiSigKey = Delegation.Key({
+        t.k = Delegation.Key({
             expiry: 0,
             keyType: Delegation.KeyType.External,
             isSuperAdmin: _randomChance(2) ? true : false,
-            publicKey: abi.encodePacked(address(t.multiSigSigner), bytes12(0))
+            publicKey: abi.encodePacked(
+                address(t.multiSigSigner), bytes12(uint96(_bound(_random(), 0, type(uint96).max)))
+            )
         });
 
         // Setup Phase
         vm.startPrank(t.d.eoa);
-        t.d.d.authorize(t.multiSigKey);
+        t.d.d.authorize(t.k);
 
         t.numKeys = _bound(_random(), 0, 32);
-        t.threshold = _bound(_random(), 0, t.numKeys);
+        t.multiSigKey.threshold = _bound(_random(), 0, t.numKeys);
 
-        t.ownerKeys = new PassKey[](t.numKeys);
+        t.multiSigKey.owners = new PassKey[](t.numKeys);
 
         bytes32[] memory ownerKeyHashes = new bytes32[](t.numKeys);
 
@@ -1023,7 +1024,7 @@ contract EntryPointTest is BaseTest {
             PassKey memory passKey =
                 _randomChance(2) ? _randomSecp256k1PassKey() : _randomSecp256r1PassKey();
             t.d.d.authorize(passKey.k);
-            t.ownerKeys[i] = passKey;
+            t.multiSigKey.owners[i] = passKey;
             ownerKeyHashes[i] = _hash(passKey.k);
         }
 
@@ -1032,13 +1033,13 @@ contract EntryPointTest is BaseTest {
             to: address(t.multiSigSigner),
             value: 0,
             data: abi.encodeWithSelector(
-                MultiSigSigner.setConfig.selector, _hash(t.multiSigKey), t.threshold, ownerKeyHashes
+                MultiSigSigner.setConfig.selector, _hash(t.k), t.multiSigKey.threshold, ownerKeyHashes
             )
         });
 
-        if (t.threshold == 0) vm.expectRevert(bytes4(keccak256("InvalidThreshold()")));
+        if (t.multiSigKey.threshold == 0) vm.expectRevert(bytes4(keccak256("InvalidThreshold()")));
         t.d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, abi.encode(calls));
-        if (t.threshold == 0) return;
+        if (t.multiSigKey.threshold == 0) return;
 
         vm.stopPrank();
 
@@ -1046,17 +1047,13 @@ contract EntryPointTest is BaseTest {
 
         // Test unwrapAndValidateSignature
         bytes32 digest = keccak256(_randomBytes());
-        bytes[] memory signatures = new bytes[](t.threshold);
 
-        for (uint256 i; i < t.threshold; ++i) {
-            signatures[i] = _sig(t.ownerKeys[i], digest);
-        }
-
-        (bool isValid, bytes32 keyHash) = t.d.d.unwrapAndValidateSignature(
-            digest, abi.encodePacked(abi.encode(signatures), _hash(t.multiSigKey), uint8(0))
-        );
+        (bool isValid, bytes32 keyHash) =
+            t.d.d.unwrapAndValidateSignature(digest, _sig(t.multiSigKey, digest));
 
         assertEq(isValid, true);
-        assertEq(keyHash, _hash(t.multiSigKey));
+        assertEq(keyHash, _hash(t.k));
+
+        // Test config operations
     }
 }
