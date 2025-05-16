@@ -62,7 +62,7 @@ contract MultiSigSigner is ISigner {
 
         Config storage config = configs[msg.sender][keyHash];
 
-        if (config.ownerKeyHashes.length > 0) {
+        if (config.threshold > 0) {
             revert ConfigAlreadySet();
         }
 
@@ -135,7 +135,7 @@ contract MultiSigSigner is ISigner {
                 IDelegation(msg.sender).unwrapAndValidateSignature(digest, signatures[i]);
 
             if (!isValid) {
-                return FAIL_VALUE;
+                continue;
             }
 
             uint256 j;
