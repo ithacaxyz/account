@@ -1,4 +1,15 @@
 # porto-account
+## 0.1.3
+
+### Patch Changes
+
+- Adds support for `External` keytype. Which allows external contracts that implement the `ISigner` 
+  to verify signatures.
+- Adds a `MultiSigSigner` which adds multi-sig support to the account, using `External` keytype.
+- Adds a stack of `context key hashes` to the account. External observers can check which key signed
+  the account's current execution, by calling the `getContextKeyHash` function on the msg.sender.
+  This has a variety of usecases like validating key operations, setting data in account registry etc.
+- Only adds features. Should not have breaking changes for the relay.
 
 ## 0.1.4
 

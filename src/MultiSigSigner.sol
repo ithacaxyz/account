@@ -129,6 +129,7 @@ contract MultiSigSigner is ISigner {
     ///   for each owner key hash in the config.
     /// - Signature of a multi-sig should be encoded as abi.encode(bytes[] memory ownerSignatures)
     /// - For efficiency, place the signatures in the same order as the ownerKeyHashes in the config.
+    /// - Failing owner signatures are ignored, as long as valid signaturs > threshold.
     function isValidSignatureWithKeyHash(bytes32 digest, bytes32 keyHash, bytes memory signature)
         public
         view
