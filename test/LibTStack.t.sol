@@ -3,7 +3,6 @@ pragma solidity ^0.8.23;
 
 import {LibTStack} from "../src/libraries/LibTStack.sol";
 import {BaseTest} from "./Base.t.sol";
-import "forge-std/console.sol";
 
 contract LibTStackTest is BaseTest {
     using LibTStack for LibTStack.TStack;

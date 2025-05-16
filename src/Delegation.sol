@@ -402,6 +402,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         }
     }
 
+    /// @dev Return the key hash that signed the latest execution context.
+    /// @dev Returns bytes32(0) if the EOA key was used.
     function getContextKeyHash() public view virtual returns (bytes32) {
         LibTStack.TStack memory t = LibTStack.tStack(_KEYHASH_STACK_TRANSIENT_SLOT);
         if (LibTStack.size(t) == 0) {

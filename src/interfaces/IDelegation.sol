@@ -32,6 +32,7 @@ interface IDelegation is ICommon {
     /// @dev Return current nonce with sequence key.
     function getNonce(uint192 seqKey) external view returns (uint256 nonce);
 
-    /// @dev Return the key hash of the current context.
+    /// @dev Return the key hash that signed the latest execution context.
+    /// @dev Returns bytes32(0) if the EOA key was used.
     function getContextKeyHash() external view returns (bytes32);
 }
