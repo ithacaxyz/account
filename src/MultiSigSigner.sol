@@ -43,7 +43,16 @@ contract MultiSigSigner is ISigner {
 
     /// @dev A config is mapped to a tuple of (address, keyhash)
     /// This allows a single account, to register multiple multi-sig configs.
-    mapping(address => mapping(bytes32 => Config)) public configs;
+    mapping(address => mapping(bytes32 => Config)) internal _configs;
+
+    function getConfig(address account, bytes32 keyHash)
+        public
+        view
+        returns (uint256 threshold, bytes32[] memory ownerKeyHashes)
+    {
+        Config memory config = _configs[account][keyHash];
+        return (config.threshold, config.ownerKeyHashes);
+    }
 
     ////////////////////////////////////////////////////////////////////////
     // Config Functions
@@ -60,27 +69,27 @@ contract MultiSigSigner is ISigner {
         // Threshold can't be zero
         if (threshold == 0) revert InvalidThreshold();
 
-        Config storage config = configs[msg.sender][keyHash];
+        Config storage config = _configs[msg.sender][keyHash];
 
         if (config.threshold > 0) {
             revert ConfigAlreadySet();
         }
 
-        configs[msg.sender][keyHash] =
+        _configs[msg.sender][keyHash] =
             Config({threshold: threshold, ownerKeyHashes: ownerKeyHashes});
     }
 
     function addOwner(bytes32 keyHash, bytes32 ownerKeyHash) public {
         _checkKeyHash(keyHash);
 
-        Config storage config = configs[msg.sender][keyHash];
+        Config storage config = _configs[msg.sender][keyHash];
         config.ownerKeyHashes.push(ownerKeyHash);
     }
 
     function removeOwner(bytes32 keyHash, bytes32 ownerKeyHash) public {
         _checkKeyHash(keyHash);
 
-        Config storage config = configs[msg.sender][keyHash];
+        Config storage config = _configs[msg.sender][keyHash];
         bytes32[] storage ownerKeyHashes_ = config.ownerKeyHashes;
         uint256 ownerKeyCount = ownerKeyHashes_.length;
 
@@ -104,7 +113,7 @@ contract MultiSigSigner is ISigner {
     function setThreshold(bytes32 keyHash, uint256 threshold) public {
         _checkKeyHash(keyHash);
 
-        Config storage config = configs[msg.sender][keyHash];
+        Config storage config = _configs[msg.sender][keyHash];
 
         if (threshold == 0 || threshold > config.ownerKeyHashes.length) revert InvalidThreshold();
 
@@ -126,7 +135,7 @@ contract MultiSigSigner is ISigner {
         returns (bytes4 magicValue)
     {
         bytes[] memory signatures = abi.decode(signature, (bytes[]));
-        Config memory config = configs[msg.sender][keyHash];
+        Config memory config = _configs[msg.sender][keyHash];
 
         uint256 validKeyNum;
 
