@@ -403,7 +403,12 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     }
 
     function getContextKeyHash() public view virtual returns (bytes32) {
-        return LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).top();
+        LibTStack.TStack memory t = LibTStack.tStack(_KEYHASH_STACK_TRANSIENT_SLOT);
+        if (LibTStack.size(t) == 0) {
+            return bytes32(0);
+        }
+
+        return LibTStack.top(t);
     }
 
     /// @dev Returns the hash of the key, which does not includes the expiry.

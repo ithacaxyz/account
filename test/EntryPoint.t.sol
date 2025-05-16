@@ -989,7 +989,6 @@ contract EntryPointTest is BaseTest {
 
     struct _TestMultiSigTemps {
         DelegatedEOA d;
-        Delegation.Key k;
         MultiSigSigner multiSigSigner;
         uint256 numKeys;
         MultiSigKey multiSigKey;
@@ -999,11 +998,13 @@ contract EntryPointTest is BaseTest {
         _TestMultiSigTemps memory t;
         t.d = _randomEIP7702DelegatedEOA();
 
+        vm.deal(t.d.eoa, type(uint192).max);
+
         t.multiSigSigner = new MultiSigSigner();
-        t.k = Delegation.Key({
+        t.multiSigKey.k = Delegation.Key({
             expiry: 0,
             keyType: Delegation.KeyType.External,
-            isSuperAdmin: _randomChance(2) ? true : false,
+            isSuperAdmin: true,
             publicKey: abi.encodePacked(
                 address(t.multiSigSigner), bytes12(uint96(_bound(_random(), 0, type(uint96).max)))
             )
@@ -1011,9 +1012,10 @@ contract EntryPointTest is BaseTest {
 
         // Setup Phase
         vm.startPrank(t.d.eoa);
-        t.d.d.authorize(t.k);
+        t.d.d.authorize(t.multiSigKey.k);
 
         t.numKeys = _bound(_random(), 0, 32);
+        t.numKeys = 3;
         t.multiSigKey.threshold = _bound(_random(), 0, t.numKeys);
 
         t.multiSigKey.owners = new PassKey[](t.numKeys);
@@ -1033,7 +1035,10 @@ contract EntryPointTest is BaseTest {
             to: address(t.multiSigSigner),
             value: 0,
             data: abi.encodeWithSelector(
-                MultiSigSigner.setConfig.selector, _hash(t.k), t.multiSigKey.threshold, ownerKeyHashes
+                MultiSigSigner.setConfig.selector,
+                _hash(t.multiSigKey.k),
+                t.multiSigKey.threshold,
+                ownerKeyHashes
             )
         });
 
@@ -1045,15 +1050,105 @@ contract EntryPointTest is BaseTest {
 
         assertEq(t.d.d.keyCount(), t.numKeys + 1);
 
-        // Test unwrapAndValidateSignature
-        bytes32 digest = keccak256(_randomBytes());
+        // Try to set config again
+        vm.startPrank(t.d.eoa);
+        vm.expectRevert(bytes4(keccak256("ConfigAlreadySet()")));
+        t.multiSigSigner.setConfig(_hash(t.multiSigKey.k), 5, ownerKeyHashes);
+        vm.stopPrank();
 
+        calls[0] = ERC7821.Call({
+            to: address(t.multiSigSigner),
+            value: 0,
+            data: abi.encodeWithSelector(
+                MultiSigSigner.addOwner.selector, _hash(t.multiSigKey.k), bytes32(_random())
+            )
+        });
+
+        vm.prank(t.d.eoa);
+        vm.expectRevert(bytes4(keccak256("InvalidKeyHash()")));
+        t.d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, abi.encode(calls));
+
+        EntryPoint.UserOp memory u;
+        u.eoa = t.d.eoa;
+        u.nonce = t.d.d.getNonce(0);
+        u.executionData = abi.encode(calls);
+        u.signature = _sig(t.multiSigKey, bytes32(_random()));
+        (uint256 gExecute, uint256 gCombined,) = _estimateGasForMultiSigKey(t.multiSigKey, u);
+        u.combinedGas = gCombined;
+        u.signature = _sig(t.multiSigKey, u);
+
+        // Test unwrapAndValidateSignature
+        bytes32 digest = ep.computeDigest(u);
         (bool isValid, bytes32 keyHash) =
             t.d.d.unwrapAndValidateSignature(digest, _sig(t.multiSigKey, digest));
 
         assertEq(isValid, true);
-        assertEq(keyHash, _hash(t.k));
+        assertEq(keyHash, _hash(t.multiSigKey.k));
 
-        // Test config operations
+        assertEq(ep.execute{gas: gExecute}(abi.encode(u)), 0);
+        (uint256 _threshold, bytes32[] memory o) =
+            t.multiSigSigner.getConfig(address(t.d.d), _hash(t.multiSigKey.k));
+
+        assertEq(o.length, t.multiSigKey.owners.length + 1);
+        assertEq(_threshold, t.multiSigKey.threshold);
+
+        // Test setThreshold
+        {
+            uint256 newThreshold = _bound(_random(), 0, t.multiSigKey.owners.length);
+            calls[0] = ERC7821.Call({
+                to: address(t.multiSigSigner),
+                value: 0,
+                data: abi.encodeWithSelector(
+                    MultiSigSigner.setThreshold.selector, _hash(t.multiSigKey.k), newThreshold
+                )
+            });
+
+            u.nonce = t.d.d.getNonce(0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(t.multiSigKey, bytes32(_random()));
+            if (newThreshold == 0) {
+                vm.expectRevert(bytes4(keccak256("InvalidThreshold()")));
+            }
+
+            (gExecute, gCombined,) = _estimateGasForMultiSigKey(t.multiSigKey, u);
+
+            u.combinedGas = gCombined;
+            u.signature = _sig(t.multiSigKey, u);
+
+            if (newThreshold > 0) {
+                assertEq(ep.execute{gas: gExecute}(abi.encode(u)), 0);
+                (_threshold, o) = t.multiSigSigner.getConfig(address(t.d.d), _hash(t.multiSigKey.k));
+
+                assertEq(_threshold, newThreshold);
+                assertEq(o.length, t.multiSigKey.owners.length + 1);
+
+                t.multiSigKey.threshold = newThreshold;
+            }
+        }
+
+        // Test removeOwner
+        {
+            uint256 removeIndex = _bound(_random(), 0, o.length - 1);
+            calls[0] = ERC7821.Call({
+                to: address(t.multiSigSigner),
+                value: 0,
+                data: abi.encodeWithSelector(
+                    MultiSigSigner.removeOwner.selector, _hash(t.multiSigKey.k), o[removeIndex]
+                )
+            });
+
+            u.nonce = t.d.d.getNonce(0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(t.multiSigKey, bytes32(_random()));
+            (gExecute, gCombined,) = _estimateGasForMultiSigKey(t.multiSigKey, u);
+            u.combinedGas = gCombined;
+            u.signature = _sig(t.multiSigKey, u);
+
+            assertEq(ep.execute{gas: gExecute}(abi.encode(u)), 0);
+            (_threshold, o) = t.multiSigSigner.getConfig(address(t.d.d), _hash(t.multiSigKey.k));
+
+            assertEq(o.length, t.multiSigKey.owners.length);
+            assertEq(_threshold, t.multiSigKey.threshold);
+        }
     }
 }
