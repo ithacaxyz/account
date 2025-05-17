@@ -23,9 +23,10 @@ import {LibNonce} from "./libraries/LibNonce.sol";
 import {LibPREP} from "./libraries/LibPREP.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {IDelegation} from "./interfaces/IDelegation.sol";
-
+import {LibTStack} from "./libraries/LibTStack.sol";
 /// @title Delegation
 /// @notice A delegation contract for EOAs with EIP7702.
+
 contract Delegation is IDelegation, EIP712, GuardedExecutor {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for *;
@@ -34,6 +35,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     using LibStorage for LibStorage.Bump;
     using LibRLP for LibRLP.List;
     using LibTransient for LibTransient.TBytes32;
+    using LibTStack for LibTStack.TStack;
 
     ////////////////////////////////////////////////////////////////////////
     // Data Structures
@@ -43,7 +45,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     enum KeyType {
         P256,
         WebAuthnP256,
-        Secp256k1
+        Secp256k1,
+        External
     }
 
     /// @dev A key that can be used to authorize call.
@@ -145,6 +148,9 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev The `keyType` cannot be super admin.
     error KeyTypeCannotBeSuperAdmin();
 
+    /// @dev The public key is invalid.
+    error InvalidPublicKey();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -211,6 +217,11 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev This transient slot must be set to `_UPGRADE_HOOK_ID` before `upgradeHook` can be processed.
     bytes32 internal constant _UPGRADE_HOOK_GUARD_TRANSIENT_SLOT =
         bytes32(uint256(keccak256("_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT")) - 1);
+
+    /// @dev List of keyhashes that have authorized the current execution context.
+    /// Increasing in order of recursive depth.
+    uint256 internal constant _KEYHASH_STACK_TRANSIENT_SLOT =
+        uint256(keccak256("_KEYHASH_STACK_TRANSIENT_SLOT")) - 1;
 
     /// @dev General capacity for enumerable sets,
     /// to prevent off-chain full enumeration from running out-of-gas.
@@ -431,6 +442,17 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         }
     }
 
+    /// @dev Return the key hash that signed the latest execution context.
+    /// @dev Returns bytes32(0) if the EOA key was used.
+    function getContextKeyHash() public view virtual returns (bytes32) {
+        LibTStack.TStack memory t = LibTStack.tStack(_KEYHASH_STACK_TRANSIENT_SLOT);
+        if (LibTStack.size(t) == 0) {
+            return bytes32(0);
+        }
+
+        return LibTStack.top(t);
+    }
+
     /// @dev Returns the hash of the key, which does not includes the expiry.
     function hash(Key memory key) public pure virtual returns (bytes32) {
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
@@ -637,10 +659,12 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             keyHash = LibBytes.loadCalldata(signature, n);
             signature = LibBytes.truncatedCalldata(signature, n);
             // Do the prehash if last byte is non-zero.
+            // TODO: When do we use this?
             if (uint256(LibBytes.loadCalldata(signature, n + 1)) & 0xff != 0) {
                 digest = EfficientHashLib.sha2(digest); // `sha256(abi.encode(digest))`.
             }
         }
+
         Key memory key = getKey(keyHash);
 
         // Early return if the key has expired.
@@ -666,6 +690,29 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             isValid = SignatureCheckerLib.isValidSignatureNowCalldata(
                 abi.decode(key.publicKey, (address)), digest, signature
             );
+        } else if (key.keyType == KeyType.External) {
+            // The public key of an external key type HAS to be 32 bytes.
+            // Top 20 bytes: address of the signer.
+            // Bottom 12 bytes: arbitrary data, that should be used as a salt.
+            if (key.publicKey.length != 32) revert InvalidPublicKey();
+
+            address signer = address(bytes20(key.publicKey));
+
+            assembly ("memory-safe") {
+                let m := mload(0x40)
+                mstore(m, 0x8afc93b4) // `isValidSignatureWithKeyHash(bytes32,bytes32,bytes)`
+                mstore(add(m, 0x20), digest)
+                mstore(add(m, 0x40), keyHash)
+                mstore(add(m, 0x60), 0x60) // signature offset
+                mstore(add(m, 0x80), signature.length) // signature length
+                calldatacopy(add(m, 0xa0), signature.offset, signature.length) // copy data to memory offset
+
+                let size := add(signature.length, 0x84)
+                let success := staticcall(gas(), signer, add(m, 0x1c), size, 0x00, 0x20)
+
+                // MagicValue: bytes4(keccak256("isValidSignatureWithKeyHash(bytes32,bytes32,bytes)")
+                if and(success, eq(shr(224, mload(0x00)), 0x8afc93b4)) { isValid := true }
+            }
         }
     }
 
@@ -776,8 +823,13 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             // opdata
             // 0x00: keyHash
             if (opData.length != 0x20) revert OpDataError();
+            bytes32 _keyHash = LibBytes.loadCalldata(opData, 0x00);
 
-            return _execute(calls, LibBytes.loadCalldata(opData, 0x00));
+            LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(_keyHash);
+            _execute(calls, _keyHash);
+            LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
+
+            return;
         }
 
         // Simple workflow without `opData`.
@@ -796,7 +848,11 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
         if (!isValid) revert Unauthorized();
+
+        // TODO: Figure out where else to add these operations, after removing delegate call.
+        LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
         _execute(calls, keyHash);
+        LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -834,6 +890,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         returns (string memory name, string memory version)
     {
         name = "Delegation";
-        version = "0.1.2";
+        version = "0.1.3";
     }
 }

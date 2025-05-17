@@ -62,6 +62,12 @@ contract BaseTest is SoladyTest {
         bytes32 keyHash;
     }
 
+    struct MultiSigKey {
+        Delegation.Key k;
+        uint256 threshold;
+        PassKey[] owners;
+    }
+
     struct DelegatedEOA {
         address eoa;
         uint256 privateKey;
@@ -118,6 +124,13 @@ contract BaseTest is SoladyTest {
         k.keyHash = _hash(k.k);
     }
 
+    function _randomKey() internal returns (Delegation.Key memory k) {
+        k.keyType = Delegation.KeyType(uint8(_bound(_random(), 0, 3)));
+        k.isSuperAdmin = _randomChance(2);
+        k.publicKey = abi.encode(address(_randomUniqueHashedAddress()));
+        k.expiry = 0;
+    }
+
     function _sig(DelegatedEOA memory d, EntryPoint.UserOp memory u)
         internal
         view
@@ -169,6 +182,26 @@ contract BaseTest is SoladyTest {
         revert("Unsupported");
     }
 
+    function _sig(MultiSigKey memory k, bytes32 digest) internal pure returns (bytes memory) {
+        return _multiSig(k, _hash(k.k), false, digest);
+    }
+
+    function _sig(MultiSigKey memory k, EntryPoint.UserOp memory u)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return _multiSig(k, _hash(k.k), false, ep.computeDigest(u));
+    }
+
+    function _sig(MultiSigKey memory k, bool prehash, bytes32 digest)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return _multiSig(k, _hash(k.k), prehash, digest);
+    }
+
     function _secp256r1Sig(uint256 privateKey, bytes32 keyHash, bytes32 digest)
         internal
         pure
@@ -202,6 +235,19 @@ contract BaseTest is SoladyTest {
     {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(prehash ? 1 : 0));
+    }
+
+    function _multiSig(MultiSigKey memory k, bytes32 keyHash, bool preHash, bytes32 digest)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        bytes[] memory signatures = new bytes[](k.threshold);
+        for (uint256 i; i < k.threshold; ++i) {
+            signatures[i] = _sig(k.owners[i], digest);
+        }
+
+        return abi.encodePacked(abi.encode(signatures), keyHash, uint8(preHash ? 1 : 0));
     }
 
     function _estimateGasForEOAKey(EntryPoint.UserOp memory u)
@@ -244,6 +290,13 @@ contract BaseTest is SoladyTest {
         u.signature = abi.encodePacked(keccak256("a"), keccak256("b"), keyHash, uint8(0));
 
         return _estimateGas(u);
+    }
+
+    function _estimateGasForMultiSigKey(MultiSigKey memory k, EntryPoint.UserOp memory u)
+        internal
+        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+    {
+        return _estimateGas(u, true, 1, 11_000, 10_000 * k.threshold);
     }
 
     function _estimateGas(EntryPoint.UserOp memory u)
