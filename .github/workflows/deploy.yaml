@@ -26,7 +26,7 @@ jobs:
         # TODO: re-add --verify --verifier blockscout --verifier-url "https://odyssey-explorer.ithaca.xyz/api"
         run: |
           forge script DeployAllScript \
-            --rpc-url "https://porto-dev.ithaca.xyz" \
+            --rpc-url "https://porto-dev.rpc.ithaca.xyz/" \
             --broadcast -q \
             --evm-version cancun && \
           jq -r '.transactions[].additionalContracts | "EntryPoint: " + .[0].address, "Delegation: "  + .[1].address, "EIP7702Proxy: " + .[2].address, "AccountRegistry: " + .[3].address, "Simulator: " + .[4].address'  broadcast/DeployAll.s.sol/28404/run-latest.json
