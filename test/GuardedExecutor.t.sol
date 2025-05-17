@@ -135,7 +135,7 @@ contract GuardedExecutorTest is BaseTest {
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
             calls[0].to = i == 0 ? address(d.eoa) : address(0);
             calls[0].data = abi.encodeWithSelector(
-                Delegation.execute.selector, _ERC7821_BATCH_EXECUTION_MODE, abi.encode(innerCalls)
+                ERC7821.execute.selector, _ERC7821_BATCH_EXECUTION_MODE, abi.encode(innerCalls)
             );
 
             vm.expectRevert(bytes4(keccak256("Unauthorized()")));
