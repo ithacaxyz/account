@@ -180,7 +180,7 @@ contract Simulator {
                     // `PaymentError` is given special treatment here, as it comes from
                     // the account not having enough funds, and cannot be recovered from,
                     // since the paymentAmount will keep increasing in this loop.
-                    if eq(shr(224, mload(0x00)), 0xabab8fc9) { revert(m, 32) }
+                    if eq(shr(224, mload(m)), 0xabab8fc9) { revert(m, 0x20) }
                 }
             }
 
