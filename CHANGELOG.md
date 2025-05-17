@@ -1,5 +1,11 @@
 # porto-account
 
+## 0.1.4
+
+### Patch Changes
+
+- Removes support for delegate call executions in the account.
+
 ## 0.1.2
 
 ### Patch Changes

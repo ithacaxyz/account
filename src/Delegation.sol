@@ -90,10 +90,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         mapping(bytes32 => LibBytes.BytesStorage) keyStorage;
         /// @dev Mapping of key hash to the key's extra storage.
         mapping(bytes32 => LibStorage.Bump) keyExtraStorage;
-        /// @dev Set of approved implementations for delegate calls.
-        EnumerableSetLib.AddressSet approvedImplementations;
-        /// @dev Mapping of approved implementations to their callers storage.
-        mapping(address => LibStorage.Bump) approvedImplementationCallers;
     }
 
     /// @dev Returns the storage pointer.
@@ -112,18 +108,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         returns (KeyExtraStorage storage $)
     {
         bytes32 s = _getDelegationStorage().keyExtraStorage[keyHash].slot();
-        assembly ("memory-safe") {
-            $.slot := s
-        }
-    }
-
-    /// @dev Returns the storage pointer.
-    function _getApprovedImplementationCallers(address implementation)
-        internal
-        view
-        returns (EnumerableSetLib.AddressSet storage $)
-    {
-        bytes32 s = _getDelegationStorage().approvedImplementationCallers[implementation].slot();
         assembly ("memory-safe") {
             $.slot := s
         }
@@ -275,30 +259,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         emit Authorized(keyHash, key);
     }
 
-    /// @dev Sets whether `implementation` is approved to be delegate called into.
-    function setImplementationApproval(address implementation, bool isApproved)
-        public
-        virtual
-        onlyThis
-    {
-        DelegationStorage storage $ = _getDelegationStorage();
-        $.approvedImplementations.update(implementation, isApproved, _CAP);
-        if (!isApproved) $.approvedImplementationCallers[implementation].invalidate();
-        emit ImplementationApprovalSet(implementation, isApproved);
-    }
-
-    /// @dev Sets whether `implementation` can be delegate called by `caller`.
-    function setImplementationCallerApproval(
-        address implementation,
-        address caller,
-        bool isApproved
-    ) public virtual onlyThis {
-        DelegationStorage storage $ = _getDelegationStorage();
-        if (!$.approvedImplementations.contains(implementation)) revert Unauthorized();
-        _getApprovedImplementationCallers(implementation).update(caller, isApproved, _CAP);
-        emit ImplementationCallerApprovalSet(implementation, caller, isApproved);
-    }
-
     /// @dev Sets whether `checker` can use `isValidSignature` to successfully validate
     /// a signature for a given key hash.
     function setSignatureCheckerApproval(bytes32 keyHash, address checker, bool isApproved)
@@ -435,21 +395,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     function hash(Key memory key) public pure virtual returns (bytes32) {
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         return EfficientHashLib.hash(uint8(key.keyType), uint256(keccak256(key.publicKey)));
-    }
-
-    /// @dev Returns the list of approved implementations.
-    function approvedImplementations() public view virtual returns (address[] memory) {
-        return _getDelegationStorage().approvedImplementations.values();
-    }
-
-    /// @dev Returns the list of callers approved to delegate call into `implementation`.
-    function approvedImplementationCallers(address implementation)
-        public
-        view
-        virtual
-        returns (address[] memory)
-    {
-        return _getApprovedImplementationCallers(implementation).values();
     }
 
     /// @dev Returns the list of approved signature checkers for `keyHash`.
@@ -721,50 +666,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     // ERC7821
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Override to allow for a delegate call workflow.
-    /// Any implementation contract used in the delegate call workflow must be approved first.
-    function execute(bytes32 mode, bytes calldata executionData) public payable virtual override {
-        // ERC7579 designates `mode[0]` to denote the call mode, and delegate call is `0xff`.
-        if (bytes1(mode) == 0xff) {
-            _executeERC7579DelegateCall(executionData);
-        } else {
-            super.execute(mode, executionData);
-        }
-    }
-
-    /// @dev Supported modes:
-    /// - `0x01000000000000000000...`: Single batch. Does not support optional `opData`.
-    /// - `0x01000000000078210001...`: Single batch. Supports optional `opData`.
-    /// - `0x01000000000078210002...`: Batch of batches.
-    /// - `0xff000000000000000000...`: Delegate call.
-    function supportsExecutionMode(bytes32 mode) public view virtual override returns (bool) {
-        return LibBit.or(bytes1(mode) == 0xff, super.supportsExecutionMode(mode));
-    }
-
-    /// @dev Special execute for the delegate call mode.
-    function _executeERC7579DelegateCall(bytes calldata executionData) internal virtual {
-        DelegationStorage storage $ = _getDelegationStorage();
-        // ERC7579 defines the delegate call encoding as `abi.encodePacked(implementation,data)`.
-        address target = address(bytes20(LibBytes.loadCalldata(executionData, 0x00)));
-        bytes calldata data = LibBytes.sliceCalldata(executionData, 0x14);
-        if (!$.approvedImplementations.contains(target)) {
-            revert Unauthorized();
-        }
-        if (msg.sender != address(this)) {
-            if (!_getApprovedImplementationCallers(target).contains(msg.sender)) {
-                revert Unauthorized();
-            }
-        }
-        assembly ("memory-safe") {
-            let m := mload(0x40)
-            calldatacopy(m, data.offset, data.length)
-            if iszero(delegatecall(gas(), target, m, data.length, codesize(), 0x00)) {
-                returndatacopy(m, 0x00, returndatasize())
-                revert(m, returndatasize())
-            }
-        }
-    }
-
     /// @dev For ERC7821.
     function _execute(bytes32, bytes calldata, Call[] calldata calls, bytes calldata opData)
         internal
@@ -834,6 +735,6 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         returns (string memory name, string memory version)
     {
         name = "Delegation";
-        version = "0.1.2";
+        version = "0.1.4";
     }
 }

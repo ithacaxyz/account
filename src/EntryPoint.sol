@@ -814,7 +814,7 @@ contract EntryPoint is
         returns (string memory name, string memory version)
     {
         name = "EntryPoint";
-        version = "0.1.2";
+        version = "0.1.4";
     }
 
     ////////////////////////////////////////////////////////////////////////
