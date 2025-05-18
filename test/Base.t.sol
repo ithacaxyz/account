@@ -3,6 +3,7 @@ pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
 import {EIP7702Proxy} from "solady/accounts/EIP7702Proxy.sol";
+import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 import {ERC7821} from "solady/accounts/ERC7821.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
@@ -72,7 +73,8 @@ contract BaseTest is SoladyTest {
         ep = new MockEntryPoint(address(this));
         paymentToken = new MockPaymentToken();
         delegationImplementation = address(new MockDelegation(address(ep)));
-        eip7702Proxy = new EIP7702Proxy(delegationImplementation, address(this));
+        eip7702Proxy =
+            EIP7702Proxy(payable(LibEIP7702.deployProxy(delegationImplementation, address(this))));
         delegation = MockDelegation(payable(eip7702Proxy));
         simulator = new Simulator();
 

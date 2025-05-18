@@ -4,6 +4,7 @@ pragma solidity ^0.8.4;
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
 import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCallTarget.sol";
+import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 
 contract DelegationTest is BaseTest {
     struct _TestExecuteWithSignatureTemps {
@@ -309,7 +310,8 @@ contract DelegationTest is BaseTest {
     function testAddDisallowedSuperAdminKeyTypeReverts() public {
         address entryPoint = address(new EntryPoint(address(this)));
         address delegationImplementation = address(new Delegation(address(entryPoint)));
-        address delegationProxy = address(new EIP7702Proxy(delegationImplementation, address(0)));
+        address delegationProxy =
+            address(LibEIP7702.deployProxy(delegationImplementation, address(0)));
         delegation = MockDelegation(payable(delegationProxy));
 
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();

@@ -10,6 +10,7 @@ import {MockERC4337Account, ERC4337} from "./utils/mocks/MockERC4337Account.sol"
 import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {LibClone} from "solady/utils/LibClone.sol";
+import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 
 interface IUniswapV2Router {
     function addLiquidity(
@@ -51,7 +52,9 @@ contract BenchmarkTest is BaseTest {
         super.setUp();
 
         // re-setup the EIP7702Proxy to have no admin, like in production, for efficiency.
-        eip7702Proxy = new EIP7702Proxy(address(new MockDelegation(address(ep))), address(0));
+        eip7702Proxy = EIP7702Proxy(
+            payable(LibEIP7702.deployProxy(address(new MockDelegation(address(ep))), address(0)))
+        );
         delegation = MockDelegation(payable(eip7702Proxy));
 
         vm.etch(
@@ -335,7 +338,9 @@ contract BenchmarkTest is BaseTest {
     function testERC20TransferViaMinimals() public {
         vm.pauseGasMetering();
 
-        eip7702Proxy = new EIP7702Proxy(address(new MockMinimalDelegation()), address(0));
+        eip7702Proxy = EIP7702Proxy(
+            payable(LibEIP7702.deployProxy(address(new MockMinimalDelegation()), address(0)))
+        );
         delegation = MockDelegation(payable(eip7702Proxy));
 
         MockMinimalEntryPoint epMinimal = new MockMinimalEntryPoint();
