@@ -248,15 +248,9 @@ contract Orchestrator is
     /// @dev Extracts the PreOp from the calldata bytes, with minimal checks.
 
     function _extractPreOp(bytes calldata encodedPreOp) internal pure returns (PreOp calldata p) {
-        // This function does NOT allocate memory to avoid quadratic memory expansion costs.
-        // Otherwise, it will be unfair to the PreOps at the back of the batch.
+        Intent calldata i = _extractIntent(encodedPreOp);
         assembly ("memory-safe") {
-            let t := calldataload(encodedPreOp.offset)
-            p := add(t, encodedPreOp.offset)
-            // Bounds check. We don't need to explicitly check the fields here.
-            // In the self call functions, we will use regular Solidity to access the
-            // dynamic fields like `signature`, which generate the implicit bounds checks.
-            if or(shr(64, t), lt(encodedPreOp.length, 0x20)) { revert(0x00, 0x00) }
+            p := u
         }
     }
 
@@ -575,16 +569,16 @@ contract Orchestrator is
     ///   If the call fails, revert.
     /// - Emit an {IntentExecuted} event.
     function _handlePreOps(
-        Intent calldata i,
+        address parentEOA,
         uint256 simulationFlags,
         bytes[] calldata encodedPreOps
     ) internal virtual {
         for (uint256 j; j < encodedPreOps.length; ++j) {
             PreOp calldata p = _extractPreOp(encodedPreOps[j]);
-            address eoa = Math.coalesce(p.eoa, i.eoa);
+            address eoa = Math.coalesce(p.eoa, parentEOA);
             uint256 nonce = p.nonce;
 
-            if (eoa != i.eoa) revert InvalidPreOpEOA();
+            if (eoa != parentEOA) revert InvalidPreOpEOA();
 
             (bool isValid, bytes32 keyHash) = _verify(_computeDigest(p), eoa, p.signature);
 
@@ -639,7 +633,7 @@ contract Orchestrator is
     /// If the EOA's account's is not valid EIP7702Proxy (via bytecode check), returns `address(0)`.
     /// This function is provided as a public helper for easier integration.
     function accountImplementationOf(address eoa) public view virtual returns (address result) {
-        (, result) = LibEIP7702.accountAndImplementationOf(eoa);
+        (, result) = LibEIP7702.delegationAndImplementationOf(eoa);
     }
 
     ////////////////////////////////////////////////////////////////////////
