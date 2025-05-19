@@ -11,10 +11,10 @@ contract MultiSigSigner is ISigner {
 
     /// @dev The magic value returned by `isValidSignatureWithKeyHash` when the signature is valid.
     /// - Calcualated as: bytes4(keccak256("isValidSignatureWithKeyHash(bytes32,bytes32,bytes)")
-    bytes4 internal constant MAGIC_VALUE = 0x8afc93b4;
+    bytes4 internal constant _MAGIC_VALUE = 0x8afc93b4;
 
     /// @dev The magic value returned by `isValidSignatureWithKeyHash` when the signature is invalid.
-    bytes4 internal constant FAIL_VALUE = 0xffffffff;
+    bytes4 internal constant _FAIL_VALUE = 0xffffffff;
 
     ////////////////////////////////////////////////////////////////////////
     // Errors
@@ -63,7 +63,7 @@ contract MultiSigSigner is ISigner {
         if (keyHash != expectedKeyHash) revert InvalidKeyHash();
     }
 
-    function setConfig(bytes32 keyHash, uint256 threshold, bytes32[] memory ownerKeyHashes)
+    function initConfig(bytes32 keyHash, uint256 threshold, bytes32[] memory ownerKeyHashes)
         public
     {
         // Threshold can't be zero
@@ -156,7 +156,7 @@ contract MultiSigSigner is ISigner {
                     config.ownerKeyHashes[j] = bytes32(0);
 
                     if (validKeyNum == config.threshold) {
-                        return MAGIC_VALUE;
+                        return _MAGIC_VALUE;
                     }
 
                     break;
@@ -169,11 +169,11 @@ contract MultiSigSigner is ISigner {
 
             // This means that the keyHash was not found
             if (j == config.ownerKeyHashes.length) {
-                return FAIL_VALUE;
+                return _FAIL_VALUE;
             }
         }
 
         // If we reach here, then the required threshold was not met.
-        return FAIL_VALUE;
+        return _FAIL_VALUE;
     }
 }

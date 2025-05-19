@@ -298,7 +298,16 @@ contract BaseTest is SoladyTest {
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
-        return _estimateGas(u, true, 1, 11_000, 10_000 * k.threshold);
+        return _estimateGas(
+            _EstimateGasParams({
+                u: u,
+                isPrePayment: true,
+                paymentPerGasPrecision: 0,
+                paymentPerGas: 1,
+                combinedGasIncrement: 110_000,
+                combinedGasVerificationOffset: 10_000 * k.threshold
+            })
+        );
     }
 
     function _estimateGas(EntryPoint.UserOp memory u)
@@ -320,34 +329,40 @@ contract BaseTest is SoladyTest {
         vm.revertToStateAndDelete(snapshot);
     }
 
-    function _estimateGas(
-        EntryPoint.UserOp memory u,
-        bool isPrePayment,
-        uint8 paymentPerGasPrecision,
-        uint256 paymentPerGas,
-        uint256 combinedGasIncrement,
-        uint256 combinedGasVerificationOffset
-    ) internal returns (uint256 gExecute, uint256 gCombined, uint256 gUsed) {
-        uint256 snapshot = vm.snapshotState();
+    struct _EstimateGasParams {
+        EntryPoint.UserOp u;
+        bool isPrePayment;
+        uint8 paymentPerGasPrecision;
+        uint256 paymentPerGas;
+        uint256 combinedGasIncrement;
+        uint256 combinedGasVerificationOffset;
+    }
 
-        // Set the simulator to have max balance, so that it can run in state override mode.
-        // This is meant to mimic an offchain state override.
-        vm.deal(address(simulator), type(uint256).max);
+    function _estimateGas(_EstimateGasParams memory p)
+        internal
+        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+    {
+        {
+            uint256 snapshot = vm.snapshotState();
 
-        (gUsed, gCombined) = simulator.simulateV1Logs(
-            address(ep),
-            isPrePayment,
-            paymentPerGasPrecision,
-            paymentPerGas,
-            combinedGasIncrement,
-            combinedGasVerificationOffset,
-            abi.encode(u)
-        );
+            // Set the simulator to have max balance, so that it can run in state override mode.
+            // This is meant to mimic an offchain state override.
+            vm.deal(address(simulator), type(uint256).max);
+
+            (gUsed, gCombined) = simulator.simulateV1Logs(
+                address(ep),
+                p.isPrePayment,
+                p.paymentPerGasPrecision,
+                p.paymentPerGas,
+                p.combinedGasIncrement,
+                p.combinedGasVerificationOffset,
+                abi.encode(p.u)
+            );
+            vm.revertToStateAndDelete(snapshot);
+        }
 
         // gExecute > (100k + combinedGas) * 64/63
         gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
-
-        vm.revertToStateAndDelete(snapshot);
     }
 
     function _mint(address token, address to, uint256 amount) internal {

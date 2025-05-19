@@ -123,7 +123,7 @@ contract EntryPointTest is BaseTest {
         paymentToken.mint(d.eoa, 50 ether);
 
         _simulateExecute(
-            _SimulateExecuteParams({
+            _EstimateGasParams({
                 u: u,
                 isPrePayment: false,
                 paymentPerGasPrecision: 0,
@@ -189,7 +189,7 @@ contract EntryPointTest is BaseTest {
         u.signature = _sig(d, u);
 
         _simulateExecute(
-            _SimulateExecuteParams({
+            _EstimateGasParams({
                 u: u,
                 isPrePayment: false,
                 paymentPerGasPrecision: 0,
@@ -296,7 +296,7 @@ contract EntryPointTest is BaseTest {
         vm.expectRevert(bytes4(keccak256("PaymentError()")));
 
         _simulateExecute(
-            _SimulateExecuteParams({
+            _EstimateGasParams({
                 u: u,
                 isPrePayment: false,
                 paymentPerGasPrecision: 0,
@@ -433,16 +433,7 @@ contract EntryPointTest is BaseTest {
         }
     }
 
-    struct _SimulateExecuteParams {
-        EntryPoint.UserOp u;
-        bool isPrePayment;
-        uint8 paymentPerGasPrecision;
-        uint256 paymentPerGas;
-        uint256 combinedGasIncrement;
-        uint256 combinedGasVerificationOffset;
-    }
-
-    function _simulateExecute(_SimulateExecuteParams memory p)
+    function _simulateExecute(_EstimateGasParams memory p)
         internal
         returns (uint256 gUsed, uint256 gCombined)
     {
@@ -790,7 +781,7 @@ contract EntryPointTest is BaseTest {
 
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
         _simulateExecute(
-            _SimulateExecuteParams({
+            _EstimateGasParams({
                 u: u,
                 isPrePayment: false,
                 paymentPerGasPrecision: 0,
@@ -1035,7 +1026,7 @@ contract EntryPointTest is BaseTest {
             to: address(t.multiSigSigner),
             value: 0,
             data: abi.encodeWithSelector(
-                MultiSigSigner.setConfig.selector,
+                MultiSigSigner.initConfig.selector,
                 _hash(t.multiSigKey.k),
                 t.multiSigKey.threshold,
                 ownerKeyHashes
@@ -1053,7 +1044,7 @@ contract EntryPointTest is BaseTest {
         // Try to set config again
         vm.startPrank(t.d.eoa);
         vm.expectRevert(bytes4(keccak256("ConfigAlreadySet()")));
-        t.multiSigSigner.setConfig(_hash(t.multiSigKey.k), 5, ownerKeyHashes);
+        t.multiSigSigner.initConfig(_hash(t.multiSigKey.k), 5, ownerKeyHashes);
         vm.stopPrank();
 
         calls[0] = ERC7821.Call({
