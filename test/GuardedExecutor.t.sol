@@ -109,7 +109,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function testOnlySuperAdminAndEOACanSelfExecute() public {
-        EntryPoint.UserOp memory u;
+        Orchestrator.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         u.eoa = d.eoa;
         u.combinedGas = 10000000;
@@ -130,7 +130,7 @@ contract GuardedExecutorTest is BaseTest {
 
             ERC7821.Call[] memory innerCalls = new ERC7821.Call[](1);
             innerCalls[0].to = address(0);
-            innerCalls[0].data = abi.encodeWithSelector(MockDelegation.setX.selector, x);
+            innerCalls[0].data = abi.encodeWithSelector(MockAccount.setX.selector, x);
 
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
             calls[0].to = i == 0 ? address(d.eoa) : address(0);
@@ -177,7 +177,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function testSetAndRemoveSpendLimitRevertsForSuperAdmin() public {
-        EntryPoint.UserOp memory u;
+        Orchestrator.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
@@ -192,7 +192,7 @@ contract GuardedExecutorTest is BaseTest {
         {
             calls = new ERC7821.Call[](1);
             // Authorize the key.
-            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, k.k);
+            calls[0].data = abi.encodeWithSelector(Account.authorize.selector, k.k);
 
             u.executionData = abi.encode(calls);
             u.nonce = 0xc1d0 << 240;
@@ -228,7 +228,7 @@ contract GuardedExecutorTest is BaseTest {
     function testSetAndRemoveSpendLimit(uint256 amount) public {
         vm.warp(86400 * 100);
 
-        EntryPoint.UserOp memory u;
+        Orchestrator.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
@@ -256,7 +256,7 @@ contract GuardedExecutorTest is BaseTest {
         {
             calls = new ERC7821.Call[](4);
             // Authorize the key.
-            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, k.k);
+            calls[0].data = abi.encodeWithSelector(Account.authorize.selector, k.k);
             // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
             calls[1].data = abi.encodeWithSelector(
                 GuardedExecutor.setCanExecute.selector, k.keyHash, _ANY_TARGET, _ANY_FN_SEL, true
@@ -423,7 +423,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function testSetSpendLimitWithTwoPeriods() public {
-        EntryPoint.UserOp memory u;
+        Orchestrator.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
@@ -442,7 +442,7 @@ contract GuardedExecutorTest is BaseTest {
         {
             calls = new ERC7821.Call[](6);
             // Authorize the key.
-            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, k.k);
+            calls[0].data = abi.encodeWithSelector(Account.authorize.selector, k.k);
             // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
             calls[1].data = abi.encodeWithSelector(
                 GuardedExecutor.setCanExecute.selector, k.keyHash, _ANY_TARGET, _ANY_FN_SEL, true
@@ -481,7 +481,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function testSpends(bytes32) public {
-        EntryPoint.UserOp memory u;
+        Orchestrator.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
@@ -504,7 +504,7 @@ contract GuardedExecutorTest is BaseTest {
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](2 + tokens.length);
             // Authorize the key.
-            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, k.k);
+            calls[0].data = abi.encodeWithSelector(Account.authorize.selector, k.k);
             // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
             calls[1].data = abi.encodeWithSelector(
                 GuardedExecutor.setCanExecute.selector, k.keyHash, _ANY_TARGET, _ANY_FN_SEL, true
@@ -607,28 +607,30 @@ contract GuardedExecutorTest is BaseTest {
         }
     }
 
-    function testSpendERC20WithSecp256r1ViaEntryPoint() public {
-        _testSpendWithPassKeyViaEntryPoint(
+    function testSpendERC20WithSecp256r1ViaOrchestrator() public {
+        _testSpendWithPassKeyViaOrchestrator(
             _randomSecp256r1PassKey(), LibClone.clone(address(paymentToken))
         );
     }
 
-    function testSpendERC20WithSecp256k1ViaEntryPoint() public {
-        _testSpendWithPassKeyViaEntryPoint(
+    function testSpendERC20WithSecp256k1ViaOrchestrator() public {
+        _testSpendWithPassKeyViaOrchestrator(
             _randomSecp256k1PassKey(), LibClone.clone(address(paymentToken))
         );
     }
 
-    function testSpendNativeWithSecp256r1ViaEntryPoint() public {
-        _testSpendWithPassKeyViaEntryPoint(_randomSecp256r1PassKey(), address(0));
+    function testSpendNativeWithSecp256r1ViaOrchestrator() public {
+        _testSpendWithPassKeyViaOrchestrator(_randomSecp256r1PassKey(), address(0));
     }
 
-    function testSpendNativeWithSecp256k1ViaEntryPoint() public {
-        _testSpendWithPassKeyViaEntryPoint(_randomSecp256k1PassKey(), address(0));
+    function testSpendNativeWithSecp256k1ViaOrchestrator() public {
+        _testSpendWithPassKeyViaOrchestrator(_randomSecp256k1PassKey(), address(0));
     }
 
-    function _testSpendWithPassKeyViaEntryPoint(PassKey memory k, address tokenToSpend) internal {
-        EntryPoint.UserOp memory u;
+    function _testSpendWithPassKeyViaOrchestrator(PassKey memory k, address tokenToSpend)
+        internal
+    {
+        Orchestrator.Intent memory u;
         GuardedExecutor.SpendInfo memory info;
 
         uint256 gExecute;
@@ -650,7 +652,7 @@ contract GuardedExecutorTest is BaseTest {
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](4);
             // Authorize the key.
-            calls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, k.k);
+            calls[0].data = abi.encodeWithSelector(Account.authorize.selector, k.k);
             // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
             calls[1].data = abi.encodeWithSelector(
                 GuardedExecutor.setCanExecute.selector, k.keyHash, _ANY_TARGET, _ANY_FN_SEL, true
@@ -676,7 +678,7 @@ contract GuardedExecutorTest is BaseTest {
             assertEq(d.d.spendInfos(k.keyHash)[1].spent, 0);
         }
 
-        // Prep UserOp, and submit it. This UserOp should pass.
+        // Prep Intent, and submit it. This Intent should pass.
         {
             u.nonce = 0;
 
@@ -687,7 +689,7 @@ contract GuardedExecutorTest is BaseTest {
             (gExecute, u.combinedGas,) = _estimateGas(k, u);
             u.signature = _sig(k, u);
 
-            // UserOp should pass.
+            // Intent should pass.
             assertEq(ep.execute{gas: gExecute}(abi.encode(u)), 0);
             assertEq(_balanceOf(tokenToSpend, address(0xb0b)), 0.6 ether);
             assertEq(d.d.spendInfos(k.keyHash)[0].spent, 0.6 ether);
@@ -696,16 +698,16 @@ contract GuardedExecutorTest is BaseTest {
             assertEq(d.d.spendInfos(k.keyHash)[1].spent, 1 ether);
         }
 
-        // Prep UserOp to try to exceed daily spend limit. This UserOp should fail.
+        // Prep Intent to try to exceed daily spend limit. This Intent should fail.
         {
             u.nonce++;
             u.signature = _sig(k, u);
 
-            // UserOp should fail.
+            // Intent should fail.
             assertEq(ep.execute(abi.encode(u)), GuardedExecutor.ExceededSpendLimit.selector);
         }
 
-        // Prep UserOp to try to exactly hit daily spend limit. This UserOp should pass.
+        // Prep Intent to try to exactly hit daily spend limit. This Intent should pass.
         {
             u.nonce++;
 
@@ -743,8 +745,8 @@ contract GuardedExecutorTest is BaseTest {
         assertEq(uint8(info.period), uint8(GuardedExecutor.SpendPeriod.Day));
         assertEq(info.limit, 1 ether);
 
-        // Prep UserOp to try to see if we can start spending again in a new day.
-        // This UserOp should pass.
+        // Prep Intent to try to see if we can start spending again in a new day.
+        // This Intent should pass.
         {
             u.nonce++;
 

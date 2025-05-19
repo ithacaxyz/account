@@ -6,7 +6,7 @@ import "./Base.t.sol";
 import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCallTarget.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 
-contract DelegationTest is BaseTest {
+contract AccountTest is BaseTest {
     struct _TestExecuteWithSignatureTemps {
         TargetFunctionPayload[] targetFunctionPayloads;
         ERC7821.Call[] calls;
@@ -88,12 +88,12 @@ contract DelegationTest is BaseTest {
         bytes32 digest = bytes32(_randomUniform());
         bytes memory sig = _sig(k, digest);
         assertEq(
-            d.d.isValidSignature(digest, sig) == Delegation.isValidSignature.selector,
+            d.d.isValidSignature(digest, sig) == Account.isValidSignature.selector,
             k.k.isSuperAdmin
         );
 
         vm.prank(checkers[_randomUniform() % checkers.length]);
-        assertEq(d.d.isValidSignature(digest, sig), Delegation.isValidSignature.selector);
+        assertEq(d.d.isValidSignature(digest, sig), Account.isValidSignature.selector);
 
         vm.prank(d.eoa);
         d.d.revoke(_hash(k.k));
@@ -106,13 +106,13 @@ contract DelegationTest is BaseTest {
         d.d.authorize(k.k);
 
         assertEq(
-            d.d.isValidSignature(digest, sig) == Delegation.isValidSignature.selector,
+            d.d.isValidSignature(digest, sig) == Account.isValidSignature.selector,
             k.k.isSuperAdmin
         );
         assertEq(d.d.approvedSignatureCheckers(k.keyHash).length, 0);
     }
 
-    struct _TestUpgradeDelegationWithPassKeyTemps {
+    struct _TestUpgradeAccountWithPassKeyTemps {
         uint256 randomVersion;
         address implementation;
         ERC7821.Call[] calls;
@@ -121,7 +121,7 @@ contract DelegationTest is BaseTest {
         bytes executionData;
     }
 
-    function testUpgradeDelegationWithPassKey(bytes32) public {
+    function testUpgradeAccountWithPassKey(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256k1PassKey();
 
@@ -130,13 +130,13 @@ contract DelegationTest is BaseTest {
         vm.prank(d.eoa);
         d.d.authorize(k.k);
 
-        _TestUpgradeDelegationWithPassKeyTemps memory t;
+        _TestUpgradeAccountWithPassKeyTemps memory t;
         t.randomVersion = _randomUniform();
         t.implementation = address(new MockSampleDelegateCallTarget(t.randomVersion));
 
         t.calls = new ERC7821.Call[](1);
         t.calls[0].data =
-            abi.encodeWithSignature("upgradeProxyDelegation(address)", t.implementation);
+            abi.encodeWithSignature("upgradeProxyAccount(address)", t.implementation);
 
         t.nonce = d.d.getNonce(0);
         bytes memory signature = _sig(d, d.d.computeDigest(t.calls, t.nonce));
@@ -151,10 +151,10 @@ contract DelegationTest is BaseTest {
 
     function testApproveAndRevokeKey(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        Delegation.Key memory k;
-        Delegation.Key memory kRetrieved;
+        Account.Key memory k;
+        Account.Key memory kRetrieved;
 
-        k.keyType = Delegation.KeyType(_randomUniform() & 1);
+        k.keyType = Account.KeyType(_randomUniform() & 1);
         k.expiry = uint40(_bound(_random(), 0, 2 ** 40 - 1));
         k.publicKey = _truncateBytes(_randomBytes(), 0x1ff);
 
@@ -201,8 +201,8 @@ contract DelegationTest is BaseTest {
 
     function testManyKeys() public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        Delegation.Key memory k;
-        k.keyType = Delegation.KeyType(_randomUniform() & 1);
+        Account.Key memory k;
+        k.keyType = Account.KeyType(_randomUniform() & 1);
 
         for (uint40 i = 0; i < 20; i++) {
             k.expiry = i;
@@ -213,7 +213,7 @@ contract DelegationTest is BaseTest {
 
         vm.warp(5);
 
-        (Delegation.Key[] memory keys, bytes32[] memory keyHashes) = d.d.getKeys();
+        (Account.Key[] memory keys, bytes32[] memory keyHashes) = d.d.getKeys();
 
         assert(keys.length == keyHashes.length);
         assert(keys.length == 16);
@@ -224,10 +224,10 @@ contract DelegationTest is BaseTest {
 
     function testAddDisallowedSuperAdminKeyTypeReverts() public {
         address entryPoint = address(new EntryPoint(address(this)));
-        address delegationImplementation = address(new Delegation(address(entryPoint)));
-        address delegationProxy =
-            address(LibEIP7702.deployProxy(delegationImplementation, address(0)));
-        delegation = MockDelegation(payable(delegationProxy));
+        address accountImplementation = address(new Account(address(entryPoint)));
+        address accountProxy =
+            address(LibEIP7702.deployProxy(accountImplementation, address(0)));
+        account = MockAccount(payable(accountProxy));
 
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
@@ -304,8 +304,8 @@ contract DelegationTest is BaseTest {
         vm.expectRevert(bytes4(keccak256("Paused()")));
         d.d.isValidSignature(digest, signature);
 
-        // Check that userOp fails
-        EntryPoint.UserOp memory u;
+        // Check that intent fails
+        EntryPoint.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = d.d.getNonce(0);
         u.combinedGas = 1000000;
@@ -315,7 +315,7 @@ contract DelegationTest is BaseTest {
         assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("VerificationError()")));
 
         vm.startPrank(pauseAuthority);
-        // Try to pause already paused delegation.
+        // Try to pause already paused account.
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
         ep.pause(true);
 
@@ -331,7 +331,7 @@ contract DelegationTest is BaseTest {
         ep.pause(true);
         vm.stopPrank();
 
-        // UserOp should now succeed.
+        // Intent should now succeed.
         assertEq(ep.execute(abi.encode(u)), 0);
 
         // Can pause again, after the cooldown period.
