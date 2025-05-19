@@ -22,12 +22,11 @@ import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {LibNonce} from "./libraries/LibNonce.sol";
 import {LibPREP} from "./libraries/LibPREP.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
-import {IDelegation} from "./interfaces/IDelegation.sol";
+import {IAccount} from "./interfaces/IAccount.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
-/// @title Delegation
-/// @notice A delegation contract for EOAs with EIP7702.
-
-contract Delegation is IDelegation, EIP712, GuardedExecutor {
+/// @title Account
+/// @notice A account contract for EOAs with EIP7702.
+contract Account is IAccount, EIP712, GuardedExecutor {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for *;
     using LibBytes for LibBytes.BytesStorage;
@@ -75,7 +74,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     }
 
     /// @dev Holds the storage.
-    struct DelegationStorage {
+    struct AccountStorage {
         /// @dev The label.
         LibBytes.BytesStorage label;
         /// @dev The `r` value for the secp256k1 curve to show that this contract is a PREP.
@@ -84,7 +83,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         /// Each nonce has the following bit layout:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
         ///   The upper 16 bits of the `seqKey` is `MULTICHAIN_NONCE_PREFIX`,
-        ///   then the UserOp EIP-712 hash will exclude the chain ID.
+        ///   then the Intent EIP-712 hash will exclude the chain ID.
         /// - Lower 64 bits are used for the sequential nonce corresponding to the `seqKey`.
         mapping(uint192 => LibStorage.Ref) nonceSeqs;
         /// @dev Set of key hashes for onchain enumeration of authorized keys.
@@ -96,9 +95,9 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     }
 
     /// @dev Returns the storage pointer.
-    function _getDelegationStorage() internal pure returns (DelegationStorage storage $) {
+    function _getAccountStorage() internal pure returns (AccountStorage storage $) {
         // Truncate to 9 bytes to reduce bytecode size.
-        uint256 s = uint72(bytes9(keccak256("PORTO_DELEGATION_STORAGE")));
+        uint256 s = uint72(bytes9(keccak256("PORTO_ACCOUNT_STORAGE")));
         assembly ("memory-safe") {
             $.slot := s
         }
@@ -110,7 +109,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         view
         returns (KeyExtraStorage storage $)
     {
-        bytes32 s = _getDelegationStorage().keyExtraStorage[keyHash].slot();
+        bytes32 s = _getAccountStorage().keyExtraStorage[keyHash].slot();
         assembly ("memory-safe") {
             $.slot := s
         }
@@ -165,15 +164,15 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// The new available nonce will be `nonce + 1`.
     /// This event is emitted in the `invalidateNonce` function,
     /// as well as the `execute` function when an execution is performed directly
-    /// on the Delegation with a `keyHash`, bypassing the EntryPoint.
+    /// on the Account with a `keyHash`, bypassing the Orchestrator.
     event NonceInvalidated(uint256 nonce);
 
     ////////////////////////////////////////////////////////////////////////
     // Immutables
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev The entry point address.
-    address public immutable ENTRY_POINT;
+    /// @dev The orchestrator address.
+    address public immutable ORCHESTRATOR;
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
@@ -196,7 +195,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
     /// @dev A unique identifier to be passed into `upgradeHook(bytes32 previousVersion)`
     /// via the transient storage slot at `_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT`.
-    bytes32 internal constant _UPGRADE_HOOK_ID = keccak256("PORTO_DELEGATION_UPGRADE_HOOK_ID");
+    bytes32 internal constant _UPGRADE_HOOK_ID = keccak256("PORTO_ACCOUNT_UPGRADE_HOOK_ID");
 
     /// @dev This transient slot must be set to `_UPGRADE_HOOK_ID` before `upgradeHook` can be processed.
     bytes32 internal constant _UPGRADE_HOOK_GUARD_TRANSIENT_SLOT =
@@ -215,8 +214,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     // Constructor
     ////////////////////////////////////////////////////////////////////////
 
-    constructor(address entryPoint) payable {
-        ENTRY_POINT = entryPoint;
+    constructor(address orchestrator) payable {
+        ORCHESTRATOR = orchestrator;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -254,7 +253,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
     /// @dev Sets the label.
     function setLabel(string calldata newLabel) public virtual onlyThis {
-        _getDelegationStorage().label.set(bytes(newLabel));
+        _getAccountStorage().label.set(bytes(newLabel));
         emit LabelSet(newLabel);
     }
 
@@ -277,7 +276,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         virtual
         onlyThis
     {
-        if (_getDelegationStorage().keyStorage[keyHash].isEmpty()) revert KeyDoesNotExist();
+        if (_getAccountStorage().keyStorage[keyHash].isEmpty()) revert KeyDoesNotExist();
         _getKeyExtraStorage(keyHash).checkers.update(checker, isApproved, _CAP);
         emit SignatureCheckerApprovalSet(keyHash, checker, isApproved);
     }
@@ -285,25 +284,25 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
     /// This invalidates the nonces for the `seqKey`, up to (inclusive) `uint64(nonce)`.
     function invalidateNonce(uint256 nonce) public virtual onlyThis {
-        LibNonce.invalidate(_getDelegationStorage().nonceSeqs, nonce);
+        LibNonce.invalidate(_getAccountStorage().nonceSeqs, nonce);
         emit NonceInvalidated(nonce);
     }
 
     /// @dev Checks current nonce and increments the sequence for the `seqKey`.
     function checkAndIncrementNonce(uint256 nonce) public payable virtual {
-        if (msg.sender != ENTRY_POINT) {
+        if (msg.sender != ORCHESTRATOR) {
             revert Unauthorized();
         }
-        LibNonce.checkAndIncrement(_getDelegationStorage().nonceSeqs, nonce);
+        LibNonce.checkAndIncrement(_getAccountStorage().nonceSeqs, nonce);
     }
 
-    /// @dev Upgrades the proxy delegation.
-    /// If this delegation is delegated directly without usage of EIP7702Proxy,
+    /// @dev Upgrades the proxy account.
+    /// If this account is delegated directly without usage of EIP7702Proxy,
     /// this operation will not affect the logic until the authority is redelegated
     /// to a proper EIP7702Proxy. The `newImplementation` should implement
-    /// `upgradeProxyDelegation` or similar, otherwise upgrades will be locked and
+    /// `upgradeProxyAccount` or similar, otherwise upgrades will be locked and
     /// only a new EIP-7702 transaction can change the authority's logic.
-    function upgradeProxyDelegation(address newImplementation) public virtual onlyThis {
+    function upgradeProxyAccount(address newImplementation) public virtual onlyThis {
         LibEIP7702.upgradeProxyDelegation(newImplementation);
         (, string memory version) = _domainNameAndVersion();
         // Using a dedicated guard makes the hook only callable via this function
@@ -335,27 +334,27 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
     /// @dev Return current nonce with sequence key.
     function getNonce(uint192 seqKey) public view virtual returns (uint256) {
-        return LibNonce.get(_getDelegationStorage().nonceSeqs, seqKey);
+        return LibNonce.get(_getAccountStorage().nonceSeqs, seqKey);
     }
 
     /// @dev Returns the label.
     function label() public view virtual returns (string memory) {
-        return string(_getDelegationStorage().label.get());
+        return string(_getAccountStorage().label.get());
     }
 
     /// @dev Returns the number of authorized keys.
     function keyCount() public view virtual returns (uint256) {
-        return _getDelegationStorage().keyHashes.length();
+        return _getAccountStorage().keyHashes.length();
     }
 
     /// @dev Returns the authorized key at index `i`.
     function keyAt(uint256 i) public view virtual returns (Key memory) {
-        return getKey(_getDelegationStorage().keyHashes.at(i));
+        return getKey(_getAccountStorage().keyHashes.at(i));
     }
 
     /// @dev Returns the key corresponding to the `keyHash`. Reverts if the key does not exist.
     function getKey(bytes32 keyHash) public view virtual returns (Key memory key) {
-        bytes memory data = _getDelegationStorage().keyStorage[keyHash].get();
+        bytes memory data = _getAccountStorage().keyStorage[keyHash].get();
         if (data.length == uint256(0)) revert KeyDoesNotExist();
         unchecked {
             uint256 n = data.length - 7; // 5 + 1 + 1 bytes of fixed length fields.
@@ -381,7 +380,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
         uint256 validCount = 0;
         for (uint256 i = 0; i < totalCount; i++) {
-            bytes32 keyHash = _getDelegationStorage().keyHashes.at(i);
+            bytes32 keyHash = _getAccountStorage().keyHashes.at(i);
             Key memory key = getKey(keyHash);
 
             // If key.expiry is set and the key is expired, skip it.
@@ -461,12 +460,12 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
     /// @dev Returns the `r` value for initializing the PREP.
     function rPREP() public view virtual returns (bytes32) {
-        return _getDelegationStorage().rPREP;
+        return _getAccountStorage().rPREP;
     }
 
     /// @dev Returns if the compact PREP signature is valid.
     function isPREP() public view virtual returns (bool) {
-        return LibPREP.isPREP(address(this), _getDelegationStorage().rPREP);
+        return LibPREP.isPREP(address(this), _getAccountStorage().rPREP);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -480,7 +479,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         }
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         keyHash = hash(key);
-        DelegationStorage storage $ = _getDelegationStorage();
+        AccountStorage storage $ = _getAccountStorage();
         $.keyStorage[keyHash].set(
             abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin)
         );
@@ -494,61 +493,61 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
     /// @dev Removes the key corresponding to the `keyHash`. Reverts if the key does not exist.
     function _removeKey(bytes32 keyHash) internal virtual {
-        DelegationStorage storage $ = _getDelegationStorage();
+        AccountStorage storage $ = _getAccountStorage();
         $.keyStorage[keyHash].clear();
         $.keyExtraStorage[keyHash].invalidate();
         if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
     }
 
     ////////////////////////////////////////////////////////////////////////
-    // Entry Point Functions
+    // Orchestrator Functions
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
     function pay(
         uint256 paymentAmount,
         bytes32 keyHash,
-        bytes32 userOpDigest,
-        bytes calldata encodedUserOp
+        bytes32 intentDigest,
+        bytes calldata encodedIntent
     ) public virtual {
-        UserOp calldata userOp;
-        // Equivalent Solidity Code: (In the assembly userOp is stored in calldata, instead of memory)
-        // UserOp memory userOp = abi.decode(encodedUserOp, (UserOp));
+        Intent calldata intent;
+        // Equivalent Solidity Code: (In the assembly intent is stored in calldata, instead of memory)
+        // Intent memory intent = abi.decode(encodedIntent, (Intent));
         // Gas Savings:
-        // ~2.5-3k gas for general cases, by avoiding duplicated bounds checks, and avoiding writing the userOp to memory.
-        // Extracts the UserOp from the calldata bytes, with minimal checks.
-        // NOTE: Only use this implementation if you are sure that the encodedUserOp is coming from a trusted source.
-        // We can avoid standard bound checks here, because the entrypoint already does these checks when it interacts with ALL the fields in the userOp using solidity.
+        // ~2.5-3k gas for general cases, by avoiding duplicated bounds checks, and avoiding writing the intent to memory.
+        // Extracts the Intent from the calldata bytes, with minimal checks.
+        // NOTE: Only use this implementation if you are sure that the encodedIntent is coming from a trusted source.
+        // We can avoid standard bound checks here, because the Orchestrator already does these checks when it interacts with ALL the fields in the intent using solidity.
         assembly ("memory-safe") {
-            let t := calldataload(encodedUserOp.offset)
-            userOp := add(t, encodedUserOp.offset)
+            let t := calldataload(encodedIntent.offset)
+            intent := add(t, encodedIntent.offset)
             // Bounds check. We don't need to explicitly check the fields here.
             // In the self call functions, we will use regular Solidity to access the
             // dynamic fields like `signature`, which generate the implicit bounds checks.
-            if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
+            if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
         }
 
         if (
             !LibBit.and(
-                msg.sender == ENTRY_POINT,
-                LibBit.or(userOp.eoa == address(this), userOp.payer == address(this))
+                msg.sender == ORCHESTRATOR,
+                LibBit.or(intent.eoa == address(this), intent.payer == address(this))
             )
         ) {
             revert Unauthorized();
         }
 
-        // If this delegation is the paymaster, validate the paymaster signature.
-        if (userOp.payer == address(this)) {
+        // If this account is the paymaster, validate the paymaster signature.
+        if (intent.payer == address(this)) {
             (bool isValid, bytes32 k) =
-                unwrapAndValidateSignature(userOpDigest, userOp.paymentSignature);
+                unwrapAndValidateSignature(intentDigest, intent.paymentSignature);
 
             // Set the target key hash to the payer's.
             keyHash = k;
 
             // If this is a simulation, signature validation errors are skipped.
             /// @dev to simulate a paymaster, state override the balance of the msg.sender
-            /// to type(uint256).max. In this case, the msg.sender is the ENTRY_POINT.
-            if (address(ENTRY_POINT).balance == type(uint256).max) {
+            /// to type(uint256).max. In this case, the msg.sender is the ORCHESTRATOR.
+            if (address(ORCHESTRATOR).balance == type(uint256).max) {
                 isValid = true;
             }
 
@@ -557,15 +556,15 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
             }
         }
 
-        TokenTransferLib.safeTransfer(userOp.paymentToken, userOp.paymentRecipient, paymentAmount);
+        TokenTransferLib.safeTransfer(intent.paymentToken, intent.paymentRecipient, paymentAmount);
         // Increase spend.
         if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
             SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
-            _incrementSpent(spends.spends[userOp.paymentToken], userOp.paymentToken, paymentAmount);
+            _incrementSpent(spends.spends[intent.paymentToken], intent.paymentToken, paymentAmount);
         }
 
         // Done to avoid compiler warnings.
-        userOpDigest = userOpDigest;
+        intentDigest = intentDigest;
     }
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.
@@ -577,13 +576,13 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         virtual
         returns (bool isValid, bytes32 keyHash)
     {
-        address ep = ENTRY_POINT;
+        address oc = ORCHESTRATOR;
         // We only have to enforce the pause flag here, because all execution/payment flows
         // always have to do a signature validation.
         assembly ("memory-safe") {
             mstore(0x00, 0x060f052a) // `pauseFlag()`
 
-            let success := staticcall(gas(), ep, 0x1c, 0x04, 0x00, 0x20)
+            let success := staticcall(gas(), oc, 0x1c, 0x04, 0x00, 0x20)
 
             if or(mload(0x00), iszero(success)) {
                 mstore(0x00, 0x9e87fac8) // `Paused()`
@@ -665,13 +664,13 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
     /// If already initialized, early returns true.
     /// `initData` is encoded using ERC7821 style batch execution encoding.
     /// (ERC7821 is a variant of ERC7579).
-    /// `abi.encode(calls, abi.encodePacked(bytes32(saltAndDelegation)))`,
+    /// `abi.encode(calls, abi.encodePacked(bytes32(saltAndAccount)))`,
     /// where `calls` is of type `Call[]`,
-    /// and `saltAndDelegation` is `bytes32((uint256(salt) << 160) | uint160(delegation))`.
+    /// and `saltAndAccount` is `bytes32((uint256(salt) << 160) | uint160(account))`.
     function initializePREP(bytes calldata initData) public virtual returns (bool) {
-        // We can omit the check for `msg.sender == ENTRY_POINT`,
+        // We can omit the check for `msg.sender == ORCHESTRATOR`,
         // having a correct `initData` will be sufficient.
-        DelegationStorage storage $ = _getDelegationStorage();
+        AccountStorage storage $ = _getAccountStorage();
         if ($.rPREP != 0) return true;
 
         // Compute the digest of the calls in `initData`.
@@ -691,7 +690,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
                 )
             );
         }
-        // Arguments are `(address target, bytes32 digest, bytes32 saltAndDelegation)`.
+        // Arguments are `(address target, bytes32 digest, bytes32 saltAndAccount)`.
         bytes32 r = LibPREP.rPREP(address(this), a.hash(), LibBytes.loadCalldata(opData, 0x00));
         // If `r == 0`, it means that `address(this)` is not a valid PREP address.
         // Also, add in a bounds check just to be extra safe.
@@ -719,8 +718,8 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         virtual
         override
     {
-        // Entry point workflow.
-        if (msg.sender == ENTRY_POINT) {
+        // Orchestrator workflow.
+        if (msg.sender == ORCHESTRATOR) {
             // opdata
             // 0x00: keyHash
             if (opData.length != 0x20) revert OpDataError();
@@ -742,7 +741,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         // Simple workflow with `opData`.
         if (opData.length < 0x20) revert OpDataError();
         uint256 nonce = uint256(LibBytes.loadCalldata(opData, 0x00));
-        LibNonce.checkAndIncrement(_getDelegationStorage().nonceSeqs, nonce);
+        LibNonce.checkAndIncrement(_getAccountStorage().nonceSeqs, nonce);
         emit NonceInvalidated(nonce);
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
@@ -762,7 +761,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
     /// @dev Returns if `keyHash` corresponds to a super admin key.
     function _isSuperAdmin(bytes32 keyHash) internal view virtual override returns (bool) {
-        LibBytes.BytesStorage storage s = _getDelegationStorage().keyStorage[keyHash];
+        LibBytes.BytesStorage storage s = _getAccountStorage().keyStorage[keyHash];
         uint256 encodedLength = s.length();
         if (encodedLength == uint256(0)) revert KeyDoesNotExist();
         return s.uint8At(Math.rawSub(encodedLength, 1)) != 0;
@@ -775,7 +774,7 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
         override
         returns (bytes32)
     {
-        return _getDelegationStorage().keyExtraStorage[keyHash].slot();
+        return _getAccountStorage().keyExtraStorage[keyHash].slot();
     }
 
     ////////////////////////////////////////////////////////////////////////

@@ -15,14 +15,14 @@ import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {LibPREP} from "./libraries/LibPREP.sol";
-import {IDelegation} from "./interfaces/IDelegation.sol";
-import {IEntryPoint} from "./interfaces/IEntryPoint.sol";
+import {IAccount} from "./interfaces/IAccount.sol";
+import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
 import {PauseAuthority} from "./PauseAuthority.sol";
 
-/// @title EntryPoint
+/// @title Orchestrator
 /// @notice Enables atomic verification, gas compensation and execution across eoas.
 /// @dev
-/// The EntryPoint allows relayers to submit payloads on one or more eoas,
+/// The Orchestrator allows relayers to submit payloads on one or more eoas,
 /// and get compensated for the gas spent in an atomic transaction.
 /// It serves the following purposes:
 /// - Facilitate fair gas compensation to the relayer.
@@ -36,11 +36,11 @@ import {PauseAuthority} from "./PauseAuthority.sol";
 ///   This means ensuring that the compensation is capped by the signed max amount.
 ///   Tokens can only be deducted from an eoa once per signed nonce.
 /// - Minimize chance of censorship.
-///   This means once an UserOp is signed, it is infeasible to
+///   This means once an Intent is signed, it is infeasible to
 ///   alter or rearrange it to force it to fail.
 
-contract EntryPoint is
-    IEntryPoint,
+contract Orchestrator is
+    IOrchestrator,
     EIP712,
     CallContextChecker,
     ReentrancyGuardTransient,
@@ -75,17 +75,17 @@ contract EntryPoint is
     /// @dev The simulate execute run has failed. Try passing in more gas to the simulation.
     error SimulateExecuteFailed();
 
-    /// @dev A PreOp's EOA must be the same as its parent UserOp's.
+    /// @dev A PreOp's EOA must be the same as its parent Intent's.
     error InvalidPreOpEOA();
 
     /// @dev The PreOp cannot be verified to be correct.
     error PreOpVerificationError();
 
-    /// @dev Error calling the sub UserOp's `executionData`.
+    /// @dev Error calling the sub Intents `executionData`.
     error PreOpCallError();
 
-    /// @dev The EOA's delegation implementation is not supported.
-    error UnsupportedDelegationImplementation();
+    /// @dev The EOA's account implementation is not supported.
+    error UnsupportedAccountImplementation();
 
     /// @dev The simulation has passed.
     error SimulationPassed(uint256 gUsed);
@@ -97,21 +97,21 @@ contract EntryPoint is
     // Events
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Emitted when a UserOp (including PreOps) is executed.
+    /// @dev Emitted when an Intent (including PreOps) is executed.
     /// This event is emitted in the `execute` function.
     /// - `incremented` denotes that `nonce`'s sequence has been incremented to invalidate `nonce`,
     /// - `err` denotes the resultant error selector.
-    /// If `incremented` is true and `err` is non-zero, the UserOp was successful.
+    /// If `incremented` is true and `err` is non-zero, the Intent was successful.
     /// For PreOps where the nonce is skipped, this event will NOT be emitted..
-    event UserOpExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
+    event IntentExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
-    bytes32 public constant USER_OP_TYPEHASH = keccak256(
-        "UserOp(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreOps)Call(address to,uint256 value,bytes data)"
+    bytes32 public constant INTENT_TYPEHASH = keccak256(
+        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreOps)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for PreOps in the `execute` functions.
@@ -153,30 +153,30 @@ contract EntryPoint is
     // Main
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Allows anyone to sweep tokens from the entry point.
+    /// @dev Allows anyone to sweep tokens from the orchestrator.
     /// If `token` is `address(0)`, withdraws the native gas token.
     function withdrawTokens(address token, address recipient, uint256 amount) public virtual {
         TokenTransferLib.safeTransfer(token, recipient, amount);
     }
 
-    /// @dev Executes a single encoded user operation.
-    /// `encodedUserOp` is given by `abi.encode(userOp)`, where `userOp` is a struct of type `UserOp`.
+    /// @dev Executes a single encoded intent.
+    /// `encodedIntent` is given by `abi.encode(intent)`, where `intent` is a struct of type `Intent`.
     /// If sufficient gas is provided, returns an error selector that is non-zero
     /// if there is an error during the payment, verification, and call execution.
-    function execute(bytes calldata encodedUserOp)
+    function execute(bytes calldata encodedIntent)
         public
         payable
         virtual
         nonReentrant
         returns (bytes4 err)
     {
-        (, err) = _execute(encodedUserOp, 0, 0);
+        (, err) = _execute(encodedIntent, 0, 0);
     }
 
-    /// @dev Executes the array of encoded user operations.
-    /// Each element in `encodedUserOps` is given by `abi.encode(userOp)`,
-    /// where `userOp` is a struct of type `UserOp`.
-    function execute(bytes[] calldata encodedUserOps)
+    /// @dev Executes the array of encoded intents.
+    /// Each element in `encodedIntents` is given by `abi.encode(intent)`,
+    /// where `intent` is a struct of type `Intent`.
+    function execute(bytes[] calldata encodedIntents)
         public
         payable
         virtual
@@ -184,12 +184,12 @@ contract EntryPoint is
         returns (bytes4[] memory errs)
     {
         // This allocation and loop was initially in assembly, but I've normified it for now.
-        errs = new bytes4[](encodedUserOps.length);
-        for (uint256 i; i < encodedUserOps.length; ++i) {
-            // We reluctantly use regular Solidity to access `encodedUserOps[i]`.
-            // This generates an unnecessary check for `i < encodedUserOps.length`, but helps
-            // generate all the implicit calldata bound checks on `encodedUserOps[i]`.
-            (, errs[i]) = _execute(encodedUserOps[i], 0, 0);
+        errs = new bytes4[](encodedIntents.length);
+        for (uint256 i; i < encodedIntents.length; ++i) {
+            // We reluctantly use regular Solidity to access `encodedIntents[i]`.
+            // This generates an unnecessary check for `i < encodedIntents.length`, but helps
+            // generate all the implicit calldata bound checks on `encodedIntents[i]`.
+            (, errs[i]) = _execute(encodedIntents[i], 0, 0);
         }
     }
 
@@ -204,10 +204,10 @@ contract EntryPoint is
     function simulateExecute(
         bool isStateOverride,
         uint256 combinedGasOverride,
-        bytes calldata encodedUserOp
+        bytes calldata encodedIntent
     ) external payable returns (uint256) {
         // If Simulation Fails, then it will revert here.
-        (uint256 gUsed, bytes4 err) = _execute(encodedUserOp, combinedGasOverride, 1);
+        (uint256 gUsed, bytes4 err) = _execute(encodedIntent, combinedGasOverride, 1);
 
         if (err != 0) {
             assembly ("memory-safe") {
@@ -228,58 +228,60 @@ contract EntryPoint is
         }
     }
 
-    /// @dev Extracts the UserOp from the calldata bytes, with minimal checks.
-    function _extractUserOp(bytes calldata encodedUserOp)
+    /// @dev Extracts the Intent from the calldata bytes, with minimal checks.
+    function _extractIntent(bytes calldata encodedIntent)
         internal
         virtual
-        returns (UserOp calldata u)
+        returns (Intent calldata i)
     {
         // This function does NOT allocate memory to avoid quadratic memory expansion costs.
-        // Otherwise, it will be unfair to the UserOps at the back of the batch.
+        // Otherwise, it will be unfair to the Intents at the back of the batch.
         assembly ("memory-safe") {
-            let t := calldataload(encodedUserOp.offset)
-            u := add(t, encodedUserOp.offset)
+            let t := calldataload(encodedIntent.offset)
+            i := add(t, encodedIntent.offset)
             // Bounds check. We don't need to explicitly check the fields here.
             // In the self call functions, we will use regular Solidity to access the
             // dynamic fields like `signature`, which generate the implicit bounds checks.
-            if or(shr(64, t), lt(encodedUserOp.length, 0x20)) { revert(0x00, 0x00) }
+            if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
         }
     }
     /// @dev Extracts the PreOp from the calldata bytes, with minimal checks.
 
-    function _extractPreOp(bytes calldata encodedPreOp)
-        internal
-        virtual
-        returns (PreOp calldata p)
-    {
-        UserOp calldata u = _extractUserOp(encodedPreOp);
+    function _extractPreOp(bytes calldata encodedPreOp) internal pure returns (PreOp calldata p) {
+        // This function does NOT allocate memory to avoid quadratic memory expansion costs.
+        // Otherwise, it will be unfair to the PreOps at the back of the batch.
         assembly ("memory-safe") {
-            p := u
+            let t := calldataload(encodedPreOp.offset)
+            p := add(t, encodedPreOp.offset)
+            // Bounds check. We don't need to explicitly check the fields here.
+            // In the self call functions, we will use regular Solidity to access the
+            // dynamic fields like `signature`, which generate the implicit bounds checks.
+            if or(shr(64, t), lt(encodedPreOp.length, 0x20)) { revert(0x00, 0x00) }
         }
     }
 
-    /// @dev Executes a single encoded UserOp.
+    /// @dev Executes a single encoded intent.
     /// @dev If simulationFlags is non-zero, then all errors are bubbled up.
     /// Currently there can only be 2 modes - simulation mode, and execution mode.
     /// But we use a uint256 for efficient stack operations, and more flexiblity in the future.
     /// Note: We keep the simulationFlags in the stack/memory (TSTORE doesn't work) to make sure they are reset in each new call context,
     /// to provide protection against attacks which could spoof the execute function to believe it is in simulation mode.
     function _execute(
-        bytes calldata encodedUserOp,
+        bytes calldata encodedIntent,
         uint256 combinedGasOverride,
         uint256 simulationFlags
     ) internal virtual returns (uint256 gUsed, bytes4 err) {
-        UserOp calldata u = _extractUserOp(encodedUserOp);
+        Intent calldata i = _extractIntent(encodedIntent);
 
-        uint256 g = Math.coalesce(uint96(combinedGasOverride), u.combinedGas);
+        uint256 g = Math.coalesce(uint96(combinedGasOverride), i.combinedGas);
         uint256 gStart = gasleft();
 
         if (
             LibBit.or(
-                u.prePaymentAmount > u.prePaymentMaxAmount,
+                i.prePaymentAmount > i.prePaymentMaxAmount,
                 LibBit.or(
-                    u.prePaymentMaxAmount > u.totalPaymentMaxAmount,
-                    u.totalPaymentAmount > u.totalPaymentMaxAmount
+                    i.prePaymentMaxAmount > i.totalPaymentMaxAmount,
+                    i.totalPaymentAmount > i.totalPaymentMaxAmount
                 )
             )
         ) {
@@ -301,21 +303,21 @@ contract EntryPoint is
             }
         }
 
-        if (u.supportedDelegationImplementation != address(0)) {
-            if (delegationImplementationOf(u.eoa) != u.supportedDelegationImplementation) {
-                err = UnsupportedDelegationImplementation.selector;
+        if (i.supportedAccountImplementation != address(0)) {
+            if (accountImplementationOf(i.eoa) != i.supportedAccountImplementation) {
+                err = UnsupportedAccountImplementation.selector;
                 if (simulationFlags == 1) {
-                    revert UnsupportedDelegationImplementation();
+                    revert UnsupportedAccountImplementation();
                 }
             }
         }
 
-        address payer = Math.coalesce(u.payer, u.eoa);
+        address payer = Math.coalesce(i.payer, i.eoa);
 
         // Early skip the entire pay-verify-call workflow if the payer lacks tokens,
-        // so that less gas is wasted when the UserOp fails.
-        if (LibBit.and(u.prePaymentAmount != 0, err == 0)) {
-            if (TokenTransferLib.balanceOf(u.paymentToken, payer) < u.prePaymentAmount) {
+        // so that less gas is wasted when the Intent fails.
+        if (LibBit.and(i.prePaymentAmount != 0, err == 0)) {
+            if (TokenTransferLib.balanceOf(i.paymentToken, payer) < i.prePaymentAmount) {
                 err = PaymentError.selector;
 
                 if (simulationFlags == 1) {
@@ -330,7 +332,7 @@ contract EntryPoint is
             let m := mload(0x40) // Grab the free memory pointer.
             if iszero(err) {
                 // Copy the encoded user op to the memory to be ready to pass to the self call.
-                calldatacopy(add(m, 0x40), encodedUserOp.offset, encodedUserOp.length)
+                calldatacopy(add(m, 0x40), encodedIntent.offset, encodedIntent.length)
                 mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
                 // The word after the function selector contains the simulation flags.
                 mstore(add(m, 0x20), simulationFlags)
@@ -341,7 +343,7 @@ contract EntryPoint is
                 // and the sequence for `nonce` has been incremented.
                 // For more information, see `selfCallPayVerifyCall537021665()`.
                 selfCallSuccess :=
-                    call(g, address(), 0, add(m, 0x1c), add(encodedUserOp.length, 0x44), 0x00, 0x20)
+                    call(g, address(), 0, add(m, 0x1c), add(encodedIntent.length, 0x44), 0x00, 0x20)
                 err := mload(0x00) // The self call will do another self call to execute.
 
                 if iszero(selfCallSuccess) {
@@ -357,7 +359,7 @@ contract EntryPoint is
             }
         }
 
-        emit UserOpExecuted(u.eoa, u.nonce, selfCallSuccess, err);
+        emit IntentExecuted(i.eoa, i.nonce, selfCallSuccess, err);
         if (selfCallSuccess) {
             gUsed = Math.rawSub(gStart, gasleft());
         }
@@ -380,46 +382,46 @@ contract EntryPoint is
     /// - Avoid the overheads of `abi.encode`, `abi.decode`, and memory allocation.
     ///   Doing `(bool success, bytes memory result) = address(this).call(abi.encodeCall(...))`
     ///   incurs unnecessary ABI encoding, decoding, and memory allocation.
-    ///   Quadratic memory expansion costs will make UserOps in later parts of a batch
+    ///   Quadratic memory expansion costs will make Intents in later parts of a batch
     ///   unfairly punished, while making gas estimates unreliable.
-    /// - For even more efficiency, we directly rip the UserOp from the calldata instead
+    /// - For even more efficiency, we directly rip the Intent from the calldata instead
     ///   of making it as an argument to this function.
     ///
-    /// This function reverts if the PREP initialization or the UserOp validation fails.
-    /// This is to prevent incorrect compensation (the UserOp's signature defines what is correct).
+    /// This function reverts if the PREP initialization or the Intent validation fails.
+    /// This is to prevent incorrect compensation (the Intent's signature defines what is correct).
     function selfCallPayVerifyCall537021665() public payable {
         require(msg.sender == address(this));
 
-        UserOp calldata u;
+        Intent calldata i;
         uint256 simulationFlags;
         assembly ("memory-safe") {
-            u := add(0x24, calldataload(0x24))
+            i := add(0x24, calldataload(0x24))
             simulationFlags := calldataload(0x04)
         }
-        address eoa = u.eoa;
-        uint256 nonce = u.nonce;
+        address eoa = i.eoa;
+        uint256 nonce = i.nonce;
 
         // The chicken and egg problem:
-        // A off-chain simulation of a successful UserOp may not guarantee on-chain success.
+        // A off-chain simulation of a successful Intent may not guarantee on-chain success.
         // The state may change in the window between simulation and actual on-chain execution.
         // If on-chain execution fails, gas that has already been burned cannot be returned
         // and will be debited from the relayer.
-        // Yet, we still need to minimally check that the UserOp has a valid signature to draw
+        // Yet, we still need to minimally check that the Intent has a valid signature to draw
         // compensation. If we draw compensation first and then realize that the signature is
         // invalid, we will need to refund the compensation, which is more inefficient than
         // simply ensuring validity of the signature before drawing compensation.
-        // The best we can do is to minimize the chance that an UserOp success in off-chain
+        // The best we can do is to minimize the chance that an Intent success in off-chain
         // simulation can somehow result in an uncompensated on-chain failure.
         // This is why ERC4337 has all those weird storage and opcode restrictions for
         // simulation, and suggests banning users that intentionally grief the simulation.
 
         // If `initializePREP` fails, just revert.
         // Off-chain simulation can ensure that the eoa is indeed a PREP address.
-        // If the eoa is a PREP address, this means the delegation cannot be altered
-        // while the UserOp is in-flight, which means off-chain simulation success
+        // If the eoa is a PREP address, this means the account cannot be altered
+        // while the Intent is in-flight, which means off-chain simulation success
         // guarantees on-chain execution success.
-        if (u.initData.length != 0) {
-            bytes calldata initData = u.initData;
+        if (i.initData.length != 0) {
+            bytes calldata initData = i.initData;
             assembly ("memory-safe") {
                 let m := mload(0x40)
                 mstore(m, 0x36745d10) // `initializePREP(bytes)`.
@@ -437,23 +439,23 @@ contract EntryPoint is
                 }
             }
         }
-        // Handle the sub UserOps after the PREP (if any), and before the `_verify`.
-        if (u.encodedPreOps.length != 0) _handlePreOps(eoa, simulationFlags, u.encodedPreOps);
+        // Handle the sub Intents after the PREP (if any), and before the `_verify`.
+        if (i.encodedPreOps.length != 0) _handlePreOps(i, simulationFlags, i.encodedPreOps);
 
         // If `_verify` is invalid, just revert.
-        // The verification gas is determined by `executionData` and the delegation logic.
+        // The verification gas is determined by `executionData` and the account logic.
         // Off-chain simulation of `_verify` should suffice, provided that the eoa's
-        // delegation is not changed, and the `keyHash` is not revoked
+        // account is not changed, and the `keyHash` is not revoked
         // in the window between off-chain simulation and on-chain execution.
-        bytes32 digest = _computeDigest(u);
-        (bool isValid, bytes32 keyHash) = _verify(digest, u.eoa, u.signature);
+        bytes32 digest = _computeDigest(i);
+        (bool isValid, bytes32 keyHash) = _verify(digest, eoa, i.signature);
 
         if (simulationFlags == 1) {
             isValid = true;
         }
         if (!isValid) revert VerificationError();
 
-        // Call eoa.checkAndIncrementNonce(u.nonce);
+        // Call eoa.checkAndIncrementNonce(i.nonce);
         assembly ("memory-safe") {
             mstore(0x00, 0x9e49fbf1) // `checkAndIncrementNonce(uint256)`.
             mstore(0x20, nonce)
@@ -469,10 +471,10 @@ contract EntryPoint is
         // Off-chain simulation of `_pay` should suffice,
         // provided that the token balance does not decrease in the window between
         // off-chain simulation and on-chain execution.
-        if (u.prePaymentAmount != 0) _pay(u.prePaymentAmount, keyHash, digest, u);
+        if (i.prePaymentAmount != 0) _pay(i.prePaymentAmount, keyHash, digest, i);
 
         // Equivalent Solidity code:
-        // try this.selfCallExecutePay(simulationFlags, keyHash, u) {}
+        // try this.selfCallExecutePay(simulationFlags, keyHash, i) {}
         // catch {
         //     assembly ("memory-safe") {
         //         returndatacopy(0x00, 0x00, 0x20)
@@ -489,19 +491,19 @@ contract EntryPoint is
             mstore(add(m, 0x40), keyHash) // Add keyHash as second param
             mstore(add(m, 0x60), digest) // Add digest as third param
 
-            let encodedUserOpLength := sub(calldatasize(), 0x24)
-            // NOTE: The userOp encoding here is non standard, because the data offset does not start from the beginning of the calldata.
-            // The data offset starts from the location of the userOp offset itself. The decoding is done accordingly in the receiving function.
-            // TODO: Make the userOp encoding standard.
-            calldatacopy(add(m, 0x80), 0x24, encodedUserOpLength) // Add userOp starting from the fourth param.
+            let encodedIntentLength := sub(calldatasize(), 0x24)
+            // NOTE: The intent encoding here is non standard, because the data offset does not start from the beginning of the calldata.
+            // The data offset starts from the location of the intent offset itself. The decoding is done accordingly in the receiving function.
+            // TODO: Make the intent encoding standard.
+            calldatacopy(add(m, 0x80), 0x24, encodedIntentLength) // Add intent starting from the fourth param.
 
             // We call the selfCallExecutePay function with all the remaining gas,
-            // because `selfCallPayVerifyCall537021665` is already gas-limited to the combined gas specified in the UserOp.
+            // because `selfCallPayVerifyCall537021665` is already gas-limited to the combined gas specified in the Intent.
             // We don't revert if the selfCallExecutePay reverts,
             // Because we don't want to return the prePayment, since the relay has already paid for the gas.
             // TODO: Should we add some identifier here, either using a return flag, or an event, that informs the caller that execute/post-payment has failed.
             if iszero(
-                call(gas(), address(), 0, add(m, 0x1c), add(0x44, encodedUserOpLength), m, 0x20)
+                call(gas(), address(), 0, add(m, 0x1c), add(0x44, encodedIntentLength), m, 0x20)
             ) {
                 if simulationFlags {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
@@ -513,7 +515,7 @@ contract EntryPoint is
     }
 
     /// @dev This function is only intended for self-call. The name is mined to give a function selector of `0x00000001`
-    /// We use this function to call the delegation.execute function, and then the delegation.pay function for post-payment.
+    /// We use this function to call the account.execute function, and then the account.pay function for post-payment.
     /// Self-calling this function ensures, that if the post payment reverts, then the execute function will also revert.
     function selfCallExecutePay1395256087() public payable {
         require(msg.sender == address(this));
@@ -521,23 +523,23 @@ contract EntryPoint is
         uint256 simulationFlags;
         bytes32 keyHash;
         bytes32 digest;
-        UserOp calldata u;
+        Intent calldata i;
 
         assembly ("memory-safe") {
             simulationFlags := calldataload(0x04)
             keyHash := calldataload(0x24)
             digest := calldataload(0x44)
-            // Non standard decoding of the userOp.
-            u := add(0x64, calldataload(0x64))
+            // Non standard decoding of the intent.
+            i := add(0x64, calldataload(0x64))
         }
-        address eoa = u.eoa;
+        address eoa = i.eoa;
 
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
-        // We expect that the delegation supports ERC7821
+        // We expect that the account supports ERC7821
         // (an extension of ERC7579 tailored for 7702 accounts).
         bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
             hex"01000000000078210001", // ERC7821 batch execution mode.
-            u.executionData,
+            i.executionData,
             abi.encode(keyHash) // `opData`.
         );
 
@@ -553,9 +555,9 @@ contract EntryPoint is
             }
         }
 
-        uint256 remainingPaymentAmount = Math.rawSub(u.totalPaymentAmount, u.prePaymentAmount);
+        uint256 remainingPaymentAmount = Math.rawSub(i.totalPaymentAmount, i.prePaymentAmount);
         if (remainingPaymentAmount != 0) {
-            _pay(remainingPaymentAmount, keyHash, digest, u);
+            _pay(remainingPaymentAmount, keyHash, digest, i);
         }
 
         assembly ("memory-safe") {
@@ -569,20 +571,20 @@ contract EntryPoint is
     /// - Check if `eoa == parentEOA`.
     /// - Validate the signature.
     /// - Check and increment the nonce.
-    /// - Call the Delegation with `executionData`, using the ERC7821 batch-execution mode.
+    /// - Call the Account with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
-    /// - Emit an {UserOpExecuted} event.
+    /// - Emit an {IntentExecuted} event.
     function _handlePreOps(
-        address parentEOA,
+        Intent calldata i,
         uint256 simulationFlags,
         bytes[] calldata encodedPreOps
     ) internal virtual {
-        for (uint256 i; i < encodedPreOps.length; ++i) {
-            PreOp calldata p = _extractPreOp(encodedPreOps[i]);
-            address eoa = Math.coalesce(p.eoa, parentEOA);
+        for (uint256 j; j < encodedPreOps.length; ++j) {
+            PreOp calldata p = _extractPreOp(encodedPreOps[j]);
+            address eoa = Math.coalesce(p.eoa, i.eoa);
             uint256 nonce = p.nonce;
 
-            if (eoa != parentEOA) revert InvalidPreOpEOA();
+            if (eoa != i.eoa) revert InvalidPreOpEOA();
 
             (bool isValid, bytes32 keyHash) = _verify(_computeDigest(p), eoa, p.signature);
 
@@ -625,19 +627,19 @@ contract EntryPoint is
 
             // Event so that indexers can know that the nonce is used.
             // Reaching here means there's no error in the PreOp.
-            emit UserOpExecuted(eoa, p.nonce, true, 0); // `incremented = true`, `err = 0`.
+            emit IntentExecuted(eoa, p.nonce, true, 0); // `incremented = true`, `err = 0`.
         }
     }
 
     ////////////////////////////////////////////////////////////////////////
-    // Delegation Implementation
+    // Account Implementation
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Returns the implementation of the EOA.
-    /// If the EOA's delegation's is not valid EIP7702Proxy (via bytecode check), returns `address(0)`.
+    /// If the EOA's account's is not valid EIP7702Proxy (via bytecode check), returns `address(0)`.
     /// This function is provided as a public helper for easier integration.
-    function delegationImplementationOf(address eoa) public view virtual returns (address result) {
-        (, result) = LibEIP7702.delegationAndImplementationOf(eoa);
+    function accountImplementationOf(address eoa) public view virtual returns (address result) {
+        (, result) = LibEIP7702.accountAndImplementationOf(eoa);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -646,19 +648,19 @@ contract EntryPoint is
 
     /// @dev Makes the `eoa` perform a payment to the `paymentRecipient` directly.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
-    function _pay(uint256 paymentAmount, bytes32 keyHash, bytes32 digest, UserOp calldata u)
+    function _pay(uint256 paymentAmount, bytes32 keyHash, bytes32 digest, Intent calldata i)
         internal
         virtual
     {
         uint256 requiredBalanceAfter = Math.saturatingAdd(
-            TokenTransferLib.balanceOf(u.paymentToken, u.paymentRecipient), paymentAmount
+            TokenTransferLib.balanceOf(i.paymentToken, i.paymentRecipient), paymentAmount
         );
 
-        address payer = Math.coalesce(u.payer, u.eoa);
+        address payer = Math.coalesce(i.payer, i.eoa);
 
-        // Call the pay function on the delegation contract
+        // Call the pay function on the account contract
         // Equivalent Solidity code:
-        // IDelegation(payer).pay(paymentAmount, keyHash, digest, abi.encode(u));
+        // IAccount(payer).pay(paymentAmount, keyHash, digest, abi.encode(i));
         // Gas Savings:
         // Saves ~2k gas for normal use cases, by avoiding abi.encode and solidity external call overhead
         assembly ("memory-safe") {
@@ -667,15 +669,15 @@ contract EntryPoint is
             mstore(add(m, 0x20), paymentAmount) // Add payment amount as first param
             mstore(add(m, 0x40), keyHash) // Add keyHash as second param
             mstore(add(m, 0x60), digest) // Add digest as third param
-            mstore(add(m, 0x80), 0x80) // Add offset of encoded UserOp as third param
+            mstore(add(m, 0x80), 0x80) // Add offset of encoded Intent as third param
 
-            let encodedSize := sub(calldatasize(), u)
+            let encodedSize := sub(calldatasize(), i)
 
-            mstore(add(m, 0xa0), add(encodedSize, 0x20)) // Store length of encoded UserOp at offset.
-            mstore(add(m, 0xc0), 0x20) // Offset at which the UserOp struct starts in encoded UserOp.
+            mstore(add(m, 0xa0), add(encodedSize, 0x20)) // Store length of encoded Intent at offset.
+            mstore(add(m, 0xc0), 0x20) // Offset at which the Intent struct starts in encoded Intent.
 
-            // Copy the userOp data to memory
-            calldatacopy(add(m, 0xe0), u, encodedSize)
+            // Copy the intent data to memory
+            calldatacopy(add(m, 0xe0), i, encodedSize)
 
             // We revert here, so that if the post payment fails, the execution is also reverted.
             // The revert for post payment is caught inside the selfCallExecutePay function.
@@ -693,7 +695,7 @@ contract EntryPoint is
             ) { revert(0x00, 0x20) }
         }
 
-        if (TokenTransferLib.balanceOf(u.paymentToken, u.paymentRecipient) < requiredBalanceAfter) {
+        if (TokenTransferLib.balanceOf(i.paymentToken, i.paymentRecipient) < requiredBalanceAfter) {
             revert PaymentError();
         }
     }
@@ -705,10 +707,10 @@ contract EntryPoint is
         virtual
         returns (bool isValid, bytes32 keyHash)
     {
-        // While it is technically safe for the digest to be computed on the delegation,
-        // we do it on the EntryPoint for efficiency and maintainability. Validating the
-        // a single bytes32 digest avoids having to pass in the entire UserOp. Additionally,
-        // the delegation does not need to know anything about the UserOp structure.
+        // While it is technically safe for the digest to be computed on the account,
+        // we do it on the Orchestrator for efficiency and maintainability. Validating the
+        // a single bytes32 digest avoids having to pass in the entire Intent. Additionally,
+        // the account does not need to know anything about the Intent structure.
         assembly ("memory-safe") {
             let m := mload(0x40)
             mstore(m, 0x0cef73b4) // `unwrapAndValidateSignature(bytes32,bytes)`.
@@ -736,25 +738,25 @@ contract EntryPoint is
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
 
-    /// @dev Computes the EIP712 digest for the UserOp.
+    /// @dev Computes the EIP712 digest for the Intent.
     /// If the the nonce starts with `MULTICHAIN_NONCE_PREFIX`,
     /// the digest will be computed without the chain ID.
     /// Otherwise, the digest will be computed with the chain ID.
-    function _computeDigest(UserOp calldata u) internal view virtual returns (bytes32) {
-        bool isMultichain = u.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
+    function _computeDigest(Intent calldata i) internal view virtual returns (bytes32) {
+        bool isMultichain = i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
         bytes32[] memory f = EfficientHashLib.malloc(11);
-        f.set(0, USER_OP_TYPEHASH);
+        f.set(0, INTENT_TYPEHASH);
         f.set(1, LibBit.toUint(isMultichain));
-        f.set(2, uint160(u.eoa));
-        f.set(3, _executionDataHash(u.executionData));
-        f.set(4, u.nonce);
-        f.set(5, uint160(u.payer));
-        f.set(6, uint160(u.paymentToken));
-        f.set(7, u.prePaymentMaxAmount);
-        f.set(8, u.totalPaymentMaxAmount);
-        f.set(9, u.combinedGas);
-        f.set(10, _encodedPreOpsHash(u.encodedPreOps));
+        f.set(2, uint160(i.eoa));
+        f.set(3, _executionDataHash(i.executionData));
+        f.set(4, i.nonce);
+        f.set(5, uint160(i.payer));
+        f.set(6, uint160(i.paymentToken));
+        f.set(7, i.prePaymentMaxAmount);
+        f.set(8, i.totalPaymentMaxAmount);
+        f.set(9, i.combinedGas);
+        f.set(10, _encodedPreOpsHash(i.encodedPreOps));
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
@@ -813,8 +815,13 @@ contract EntryPoint is
         override
         returns (string memory name, string memory version)
     {
+<<<<<<< HEAD:src/EntryPoint.sol
         name = "EntryPoint";
         version = "0.1.4";
+=======
+        name = "Orchestrator";
+        version = "0.1.2";
+>>>>>>> c207a80 (chore: rename main Entrypoint & Delegation contracts):src/Orchestrator.sol
     }
 
     ////////////////////////////////////////////////////////////////////////

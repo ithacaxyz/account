@@ -3,19 +3,19 @@ pragma solidity ^0.8.23;
 
 import {ICommon} from "../interfaces/ICommon.sol";
 
-/// @title IEntryPoint
-/// @notice Interface for the EntryPoint contract
-interface IEntryPoint is ICommon {
-    /// @dev Executes a single encoded user operation.
-    /// @param encodedUserOp The encoded user operation
+/// @title IOrchestrator
+/// @notice Interface for the Orchestrator contract
+interface IOrchestrator is ICommon {
+    /// @dev Executes a single encoded intent.
+    /// @param encodedIntent The encoded intent
     /// @return err The error selector (non-zero if there is an error)
 
-    function execute(bytes calldata encodedUserOp) external payable returns (bytes4 err);
+    function execute(bytes calldata encodedIntent) external payable returns (bytes4 err);
 
-    /// @dev Executes an array of encoded user operations.
-    /// @param encodedUserOps Array of encoded user operations
+    /// @dev Executes an array of encoded intents.
+    /// @param encodedIntents Array of encoded intents
     /// @return errs Array of error selectors (non-zero if there are errors)
-    function execute(bytes[] calldata encodedUserOps)
+    function execute(bytes[] calldata encodedIntents)
         external
         payable
         returns (bytes4[] memory errs);
@@ -31,10 +31,10 @@ interface IEntryPoint is ICommon {
     function simulateExecute(
         bool isStateOverride,
         uint256 combinedGasOverride,
-        bytes calldata encodedUserOp
+        bytes calldata encodedIntent
     ) external payable returns (uint256 gasUsed);
 
-    /// @dev Allows the entry point owner to withdraw tokens.
+    /// @dev Allows the orchestrator owner to withdraw tokens.
     /// @param token The token address (0 for native token)
     /// @param recipient The recipient address
     /// @param amount The amount to withdraw
