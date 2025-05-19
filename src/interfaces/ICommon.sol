@@ -5,10 +5,10 @@ interface ICommon {
     ////////////////////////////////////////////////////////////////////////
     // Data Structures
     ////////////////////////////////////////////////////////////////////////
-    /// @dev A struct to hold the user operation fields.
+    /// @dev A struct to hold the intent fields.
     /// Since L2s already include calldata compression with savings forwarded to users,
     /// we don't need to be too concerned about calldata overhead
-    struct UserOp {
+    struct Intent {
         ////////////////////////////////////////////////////////////////////////
         // EIP-712 Fields
         ////////////////////////////////////////////////////////////////////////
@@ -22,7 +22,7 @@ interface ICommon {
         /// This nonce is a 4337-style 2D nonce with some specializations:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
         ///   The upper 16 bits of the `seqKey` is `MULTICHAIN_NONCE_PREFIX`,
-        ///   then the UserOp EIP712 hash will exclude the chain ID.
+        ///   then the Intent EIP712 hash will exclude the chain ID.
         /// - Lower 64 bits are used for the sequential nonce corresponding to the `seqKey`.
         uint256 nonce;
         /// @dev The account paying the payment token.
@@ -37,13 +37,13 @@ interface ICommon {
         uint256 totalPaymentMaxAmount;
         /// @dev The combined gas limit for payment, verification, and calling the EOA.
         uint256 combinedGas;
-        /// @dev Optional array of encoded UserOps that will be verified and executed
-        /// after PREP (if any) and before the validation of the overall UserOp.
+        /// @dev Optional array of encoded PreOps that will be verified and executed
+        /// after PREP (if any) and before the validation of the overall Intent.
         /// A PreOp will NOT have its gas limit or payment applied.
-        /// The overall UserOp's gas limit and payment will be applied, encompassing all its PreOps.
+        /// The overall Intent's gas limit and payment will be applied, encompassing all its PreOps.
         /// The execution of a PreOp will check and increment the nonce in the PreOp.
         /// If at any point, any PreOp cannot be verified to be correct, or fails in execution,
-        /// the overall UserOp will revert before validation, and execute will return a non-zero error.
+        /// the overall Intent will revert before validation, and execute will return a non-zero error.
         /// A PreOp can contain PreOps, forming a tree structure.
         /// The `executionData` tree will be executed in post-order (i.e. left -> right -> current).
         /// The `encodedPreOps` are included in the EIP712 signature, which enables execution order
@@ -52,12 +52,12 @@ interface ICommon {
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
         ////////////////////////////////////////////////////////////////////////
-        /// @dev Optional data for `initPREP` on the delegation.
+        /// @dev Optional data for `initPREP` on the account.
         /// This is encoded using ERC7821 style batch execution encoding.
         /// (ERC7821 is a variant of ERC7579).
-        /// `abi.encode(calls, abi.encodePacked(bytes32(saltAndDelegation)))`,
+        /// `abi.encode(calls, abi.encodePacked(bytes32(saltAndAccount)))`,
         /// where `calls` is of type `Call[]`,
-        /// and `saltAndDelegation` is `bytes32((uint256(salt) << 160) | uint160(delegation))`.
+        /// and `saltAndAccount` is `bytes32((uint256(salt) << 160) | uint160(account))`.
         bytes initData;
         /// @dev The actual pre payment amount, requested by the filler. MUST be less than or equal to `prePaymentMaxAmount`
         uint256 prePaymentAmount;
@@ -73,26 +73,26 @@ interface ICommon {
         /// @dev Optional payment signature to be passed into the `compensate` function
         /// on the `payer`. This signature is NOT included in the EIP712 signature.
         bytes paymentSignature;
-        /// @dev Optional. If non-zero, the EOA must use `supportedDelegationImplementation`.
+        /// @dev Optional. If non-zero, the EOA must use `supportedAccountImplementation`.
         /// Otherwise, if left as `address(0)`, any EOA implementation will be supported.
         /// This field is NOT included in the EIP712 signature.
-        address supportedDelegationImplementation;
+        address supportedAccountImplementation;
     }
 
     /// @dev A struct to hold the fields for a PreOp.
     /// A PreOp is a set of Signed Executions by a user, which can only do restricted operations on the account.
-    /// Like adding and removing keys. PreOps can be appended along with any userOp, they are paid for by the userOp,
-    /// and are executed before the userOp verification happens.
+    /// Like adding and removing keys. PreOps can be appended along with any intent, they are paid for by the intent,
+    /// and are executed before the intent verification happens.
     struct PreOp {
         /// @dev The user's address.
         /// This can be set to `address(0)`, which allows it to be
-        /// coalesced to the parent UserOp's EOA.
+        /// coalesced to the parent Intent's EOA.
         address eoa;
         /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
         /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
         /// This allows for more efficient safe forwarding to the EOA.
         bytes executionData;
-        /// @dev Per delegated EOA. Same logic as the `nonce` in UserOp.
+        /// @dev Per delegated EOA. Same logic as the `nonce` in Intent.
         uint256 nonce;
         /// @dev The wrapped signature.
         /// `abi.encodePacked(innerSignature, keyHash, prehash)`.

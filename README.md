@@ -4,9 +4,9 @@
 > This repository is under active development.
 > Contracts are **unaudited**, and the codebase may have **breaking changes** without notice.
 
-**All-in-one EIP-7702 powered delegation contract, coupled with [Porto](https://github.com/ithacaxyz/porto)**
+**All-in-one EIP-7702 powered account contract, coupled with [Porto](https://github.com/ithacaxyz/porto)**
 
-Every app needs an account, traditionally requiring separate services for auth, payments, and recovery. Doing this in a way that empowers users with control over their funds and their data is the core challenge of the crypto space. While crypto wallets have made great strides, users still face a fragmented experience - juggling private keys, managing account balances across networks, 
+Every app needs an account, traditionally requiring separate services for auth, payments, and recovery. Doing this in a way that empowers users with control over their funds and their data is the core challenge of the crypto space. While crypto wallets have made great strides, users still face a fragmented experience - juggling private keys, managing account balances across networks,
 having to install browser extensions, and more.
 
 We believe that unstoppable crypto-powered accounts should be excellent throughout a user's journey:
@@ -21,13 +21,13 @@ We believe that unstoppable crypto-powered accounts should be excellent througho
 
 # Features out of the box
 
-* [x] Secure Login: Using WebAuthN-compatible credentials like PassKeys.
-* [x] Call Batching: Send multiple calls in 1.
-* [x] Gas Sponsorship: Allow anyone to pay for your fees in any ERC20 or ETH.
-* [x] Access Control: Whitelist receivers, function selectors and arguments.
-* [x] Session Keys: Allow transactions without confirmations if they pass low-security access control policies.
-* [ ] Multi-factor Authentication: If a call is outside of a certain access control policy, require multiple signatures.
-* [ ] Optimized for L2: Using BLS signatures.
-* [ ] Chain Abstraction: Transaction on any chain invisibly. Powered by ERC7683. WIP
-* [ ] Privacy: Using stealth addresses and confidential transactions.
-* [ ] Account Recovery & Identity: Using ZK {Email, OAUth, Passport} and more.
+- [x] Secure Login: Using WebAuthN-compatible credentials like PassKeys.
+- [x] Call Batching: Send multiple calls in 1.
+- [x] Gas Sponsorship: Allow anyone to pay for your fees in any ERC20 or ETH.
+- [x] Access Control: Whitelist receivers, function selectors and arguments.
+- [x] Session Keys: Allow transactions without confirmations if they pass low-security access control policies.
+- [ ] Multi-factor Authentication: If a call is outside of a certain access control policy, require multiple signatures.
+- [ ] Optimized for L2: Using BLS signatures.
+- [ ] Chain Abstraction: Transaction on any chain invisibly. Powered by ERC7683. WIP
+- [ ] Privacy: Using stealth addresses and confidential transactions.
+- [ ] Account Recovery & Identity: Using ZK {Email, OAUth, Passport} and more.

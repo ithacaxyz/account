@@ -5,7 +5,7 @@ import {ECDSA} from "solady/utils/ECDSA.sol";
 
 /// @dev WARNING! This mock is strictly intended for testing purposes only.
 /// Do NOT copy anything here into production code unless you really know what you are doing.
-contract MockMinimalDelegation {
+contract MockMinimalAccount {
     function execute(address target, uint256 value, bytes calldata data) public payable {
         assembly ("memory-safe") {
             let m := mload(0x40)

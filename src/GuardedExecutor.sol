@@ -600,7 +600,7 @@ abstract contract GuardedExecutor is ERC7821 {
         // Sanity check as a key hash of `bytes32(0)` represents the EOA's key itself.
         // The EOA is should be able to call any function on itself,
         // and able to spend as much as it needs. No point restricting, since the EOA
-        // key can always be used to change the delegation anyways.
+        // key can always be used to change the account anyways.
         if (keyHash == bytes32(0)) revert KeyHashIsZero();
         _;
     }

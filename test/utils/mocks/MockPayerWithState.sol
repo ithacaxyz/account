@@ -11,7 +11,7 @@ contract MockPayerWithState is Ownable {
     // `token` => `eoa` => `amount`.
     mapping(address => mapping(address => uint256)) public funds;
 
-    mapping(address => bool) public isApprovedEntryPoint;
+    mapping(address => bool) public isApprovedOrchestrator;
 
     event FundsIncreased(address token, address eoa, uint256 amount);
 
@@ -43,26 +43,26 @@ contract MockPayerWithState is Ownable {
         TokenTransferLib.safeTransfer(token, recipient, amount);
     }
 
-    function setApprovedEntryPoint(address entryPoint, bool approved) public onlyOwner {
-        isApprovedEntryPoint[entryPoint] = approved;
+    function setApprovedOrchestrator(address orchestrator, bool approved) public onlyOwner {
+        isApprovedOrchestrator[orchestrator] = approved;
     }
 
     /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
-    /// The EOA and token details are extracted from the `encodedUserOp`.
-    /// Reverts if the specified EntryPoint (`msg.sender`) is not approved
+    /// The EOA and token details are extracted from the `encodedIntent`.
+    /// Reverts if the specified Orchestrator (`msg.sender`) is not approved
     /// or if the EOA lacks sufficient funds.
     /// @param paymentAmount The amount to pay.
     /// @param keyHash The key hash associated with the operation (not used in this mock's logic but kept for signature compatibility).
-    /// @param encodedUserOp ABI encoded UserOp struct.
+    /// @param encodedIntent ABI encoded Intent struct.
     function pay(
         uint256 paymentAmount,
         bytes32 keyHash,
         bytes32 digest,
-        bytes calldata encodedUserOp
+        bytes calldata encodedIntent
     ) public virtual {
-        if (!isApprovedEntryPoint[msg.sender]) revert Unauthorized();
+        if (!isApprovedOrchestrator[msg.sender]) revert Unauthorized();
 
-        ICommon.UserOp memory u = abi.decode(encodedUserOp, (ICommon.UserOp));
+        ICommon.Intent memory u = abi.decode(encodedIntent, (ICommon.Intent));
 
         // We shall rely on arithmetic underflow error to revert if there's insufficient funds.
         funds[u.paymentToken][u.eoa] -= paymentAmount;

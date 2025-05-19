@@ -30,4 +30,4 @@ jobs:
             --broadcast -q \
             --private-key $PRIVATE_KEY \
             --evm-version cancun && \
-          jq -r '.transactions[].additionalContracts | "EntryPoint: " + .[0].address, "Delegation: "  + .[1].address, "EIP7702Proxy: " + .[2].address, "AccountRegistry: " + .[3].address, "Simulator: " + .[4].address'  broadcast/DeployAll.s.sol/28404/run-latest.json
+          jq -r '.transactions[].additionalContracts | "Orchestrator: " + .[0].address, "Account: "  + .[1].address, "EIP7702Proxy: " + .[2].address, "AccountRegistry: " + .[3].address, "Simulator: " + .[4].address'  broadcast/DeployAll.s.sol/28404/run-latest.json

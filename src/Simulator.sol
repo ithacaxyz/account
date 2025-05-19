@@ -5,8 +5,7 @@ import {ICommon} from "./interfaces/ICommon.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 
 /// @title Simulator
-/// @notice A separate contract for calling the EntryPoint contract solely for gas simulation.
-
+/// @notice A separate contract for calling the Orchestrator contract solely for gas simulation.
 contract Simulator {
     /// @dev This modifier is used to free up memory after a function call.
     modifier freeTempMemory() {
@@ -22,9 +21,9 @@ contract Simulator {
         }
     }
 
-    /// @dev Updates the payment amounts for the UserOp passed in.
+    /// @dev Updates the payment amounts for the Intent passed in.
     function _updatePaymentAmounts(
-        ICommon.UserOp memory u,
+        ICommon.Intent memory u,
         bool isPrePayment,
         uint256 gas,
         uint8 paymentPerGasPrecision,
@@ -41,9 +40,9 @@ contract Simulator {
         u.totalPaymentMaxAmount += paymentAmount;
     }
 
-    /// @dev Performs a call to the EntryPoint, and returns the gas used by the UserOp.
+    /// @dev Performs a call to the Orchestrator, and returns the gas used by the Intent.
     /// This function expects that the `data` is correctly encoded.
-    function _callEntryPoint(address ep, bool isStateOverride, bytes memory data)
+    function _callOrchestrator(address oc, bool isStateOverride, bytes memory data)
         internal
         returns (uint256 gasUsed)
     {
@@ -52,7 +51,7 @@ contract Simulator {
             mstore(0x00, 0)
             mstore(0x20, 0)
 
-            let success := call(gas(), ep, 0, add(data, 0x20), mload(data), 0x00, 0x40)
+            let success := call(gas(), oc, 0, add(data, 0x20), mload(data), 0x00, 0x40)
 
             switch isStateOverride
             case 0 {
@@ -68,30 +67,30 @@ contract Simulator {
         }
     }
 
-    /// @dev Performs a call to the EntryPoint, and returns the gas used by the UserOp.
-    /// This function is for directly forwarding the UserOp in the calldata.
-    function _callEntryPointCalldata(
-        address ep,
+    /// @dev Performs a call to the Orchestrator, and returns the gas used by the Intent.
+    /// This function is for directly forwarding the Intent in the calldata.
+    function _callOrchestratorCalldata(
+        address oc,
         bool isStateOverride,
         uint256 combinedGasOverride,
-        bytes calldata encodedUserOp
+        bytes calldata encodedIntent
     ) internal freeTempMemory returns (uint256) {
         bytes memory data = abi.encodeWithSignature(
             "simulateExecute(bool,uint256,bytes)",
             isStateOverride,
             combinedGasOverride,
-            encodedUserOp
+            encodedIntent
         );
-        return _callEntryPoint(ep, isStateOverride, data);
+        return _callOrchestrator(oc, isStateOverride, data);
     }
 
-    /// @dev Performs a call to the EntryPoint, and returns the gas used by the UserOp.
-    /// This function is for forwarding the re-encoded UserOp.
-    function _callEntryPointMemory(
-        address ep,
+    /// @dev Performs a call to the Orchestrator, and returns the gas used by the Intent.
+    /// This function is for forwarding the re-encoded Intent.
+    function _callOrchestratorMemory(
+        address oc,
         bool isStateOverride,
         uint256 combinedGasOverride,
-        ICommon.UserOp memory u
+        ICommon.Intent memory u
     ) internal freeTempMemory returns (uint256) {
         bytes memory data = abi.encodeWithSignature(
             "simulateExecute(bool,uint256,bytes)",
@@ -99,22 +98,22 @@ contract Simulator {
             combinedGasOverride,
             abi.encode(u)
         );
-        return _callEntryPoint(ep, isStateOverride, data);
+        return _callOrchestrator(oc, isStateOverride, data);
     }
 
     /// @dev Simulate the gas usage for a user operation. This function reverts if the simulation fails.
-    /// @param ep The entry point address
-    /// @param overrideCombinedGas Whether to override the combined gas for the userOp to type(uint256).max
-    /// @param encodedUserOp The encoded user operation
+    /// @param oc The orchestrator address
+    /// @param overrideCombinedGas Whether to override the combined gas for the intent to type(uint256).max
+    /// @param encodedIntent The encoded user operation
     /// @return gasUsed The amount of gas used by the simulation
-    function simulateGasUsed(address ep, bool overrideCombinedGas, bytes calldata encodedUserOp)
+    function simulateGasUsed(address oc, bool overrideCombinedGas, bytes calldata encodedIntent)
         public
         payable
         virtual
         returns (uint256 gasUsed)
     {
-        gasUsed = _callEntryPointCalldata(
-            ep, false, Math.ternary(overrideCombinedGas, type(uint256).max, 0), encodedUserOp
+        gasUsed = _callOrchestratorCalldata(
+            oc, false, Math.ternary(overrideCombinedGas, type(uint256).max, 0), encodedIntent
         );
 
         // If the simulation failed, bubble up full revert.
@@ -127,10 +126,10 @@ contract Simulator {
         }
     }
 
-    /// @dev Simulates the execution of a userOp, and finds the combined gas by iteratively increasing it until the simulation passes.
+    /// @dev Simulates the execution of a intent, and finds the combined gas by iteratively increasing it until the simulation passes.
     /// The start value for combinedGas is gasUsed + original combinedGas.
     /// Set u.combinedGas to add some starting offset to the gasUsed value.
-    /// @param ep The entry point address
+    /// @param oc The orchestrator address
     /// @param isPrePayment Whether to add gas amount to prePayment or postPayment
     /// @param paymentPerGasPrecision The precision of the payment per gas value.
     /// paymentAmount = gas * paymentPerGas / (10 ** paymentPerGasPrecision)
@@ -141,22 +140,22 @@ contract Simulator {
     /// @dev The closer this number is to 10_000, the more precise combined gas will be. But more iterations will be needed.
     /// @dev This number should always be > 10_000, to get correct results.
     //// If the increment is too small, the function might run out of gas while finding the combined gas value.
-    /// @param encodedUserOp The encoded user operation
+    /// @param encodedIntent The encoded user operation
     /// @return gasUsed The gas used in the successful simulation
     /// @return combinedGas The first combined gas value that gives a successful simulation.
     /// This function reverts if the primary simulation run with max combinedGas fails.
     /// If the primary run is successful, it itertively increases u.combinedGas by `combinedGasIncrement` until the simulation passes.
     /// All failing simulations during this run are ignored.
     function simulateCombinedGas(
-        address ep,
+        address oc,
         bool isPrePayment,
         uint8 paymentPerGasPrecision,
         uint256 paymentPerGas,
         uint256 combinedGasIncrement,
-        bytes calldata encodedUserOp
+        bytes calldata encodedIntent
     ) public payable virtual returns (uint256 gasUsed, uint256 combinedGas) {
         // 1. Primary Simulation Run to get initial gasUsed value with combinedGasOverride
-        gasUsed = _callEntryPointCalldata(ep, false, type(uint256).max, encodedUserOp);
+        gasUsed = _callOrchestratorCalldata(oc, false, type(uint256).max, encodedIntent);
 
         // If the simulation failed, bubble up the full revert.
         assembly ("memory-safe") {
@@ -168,14 +167,14 @@ contract Simulator {
         }
 
         // Update payment amounts using the gasUsed value
-        ICommon.UserOp memory u = abi.decode(encodedUserOp, (ICommon.UserOp));
+        ICommon.Intent memory u = abi.decode(encodedIntent, (ICommon.Intent));
 
         u.combinedGas += gasUsed;
 
         _updatePaymentAmounts(u, isPrePayment, u.combinedGas, paymentPerGasPrecision, paymentPerGas);
 
         while (true) {
-            gasUsed = _callEntryPointMemory(ep, false, 0, u);
+            gasUsed = _callOrchestratorMemory(oc, false, 0, u);
 
             // If the simulation failed, bubble up the full revert.
             assembly ("memory-safe") {
@@ -212,16 +211,16 @@ contract Simulator {
     /// @param paymentPerGasPrecision The precision of the payment per gas value.
     /// paymentAmount = gas * paymentPerGas / (10 ** paymentPerGasPrecision)
     function simulateV1Logs(
-        address ep,
+        address oc,
         bool isPrePayment,
         uint8 paymentPerGasPrecision,
         uint256 paymentPerGas,
         uint256 combinedGasIncrement,
         uint256 combinedGasVerificationOffset,
-        bytes calldata encodedUserOp
+        bytes calldata encodedIntent
     ) public payable virtual returns (uint256 gasUsed, uint256 combinedGas) {
         (gasUsed, combinedGas) = simulateCombinedGas(
-            ep,
+            oc,
             isPrePayment,
             paymentPerGasPrecision,
             paymentPerGas,
@@ -231,14 +230,14 @@ contract Simulator {
 
         combinedGas += combinedGasVerificationOffset;
 
-        ICommon.UserOp memory u = abi.decode(encodedUserOp, (ICommon.UserOp));
+        ICommon.Intent memory u = abi.decode(encodedIntent, (ICommon.Intent));
 
         _updatePaymentAmounts(u, isPrePayment, combinedGas, paymentPerGasPrecision, paymentPerGas);
 
         u.combinedGas = combinedGas;
 
         // Verification Run to generate the logs with the correct combinedGas and payment amounts.
-        gasUsed = _callEntryPointMemory(ep, true, 0, u);
+        gasUsed = _callOrchestratorMemory(oc, true, 0, u);
 
         // If the simulation failed, bubble up full revert
         assembly ("memory-safe") {
