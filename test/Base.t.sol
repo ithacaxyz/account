@@ -259,7 +259,7 @@ contract BaseTest is SoladyTest {
         vm.deal(address(simulator), type(uint256).max);
 
         (gUsed, gCombined) =
-            simulator.simulateV1Logs(address(ep), true, 1, 11_000, 10_000, abi.encode(u));
+            simulator.simulateV1Logs(address(ep), true, 0, 1, 11_000, 10_000, abi.encode(u));
 
         // gExecute > (100k + combinedGas) * 64/63
         gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
@@ -270,6 +270,7 @@ contract BaseTest is SoladyTest {
     function _estimateGas(
         EntryPoint.UserOp memory u,
         bool isPrePayment,
+        uint8 paymentPerGasPrecision,
         uint256 paymentPerGas,
         uint256 combinedGasIncrement,
         uint256 combinedGasVerificationOffset
@@ -283,6 +284,7 @@ contract BaseTest is SoladyTest {
         (gUsed, gCombined) = simulator.simulateV1Logs(
             address(ep),
             isPrePayment,
+            paymentPerGasPrecision,
             paymentPerGas,
             combinedGasIncrement,
             combinedGasVerificationOffset,

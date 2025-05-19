@@ -76,7 +76,7 @@ contract SimulateExecuteTest is BaseTest {
         // If the caller does not have max balance, then the simulation should revert.
         vm.expectRevert(bytes4(keccak256("StateOverrideError()")));
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(ep), false, 1, 11_000, 10_000, abi.encode(u));
+            simulator.simulateV1Logs(address(ep), false, 0, 1, 11_000, 10_000, abi.encode(u));
 
         vm.expectRevert(bytes4(keccak256("StateOverrideError()")));
         ep.simulateExecute(true, type(uint256).max, abi.encode(u));
@@ -88,7 +88,7 @@ contract SimulateExecuteTest is BaseTest {
         vm.deal(address(simulator), type(uint256).max);
 
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(ep), false, 1e9, 11_000, 0, abi.encode(u));
+            simulator.simulateV1Logs(address(ep), false, 2, 1e11, 11_000, 0, abi.encode(u));
 
         vm.revertToStateAndDelete(snapshot);
         u.combinedGas = t.gCombined;
@@ -145,11 +145,11 @@ contract SimulateExecuteTest is BaseTest {
         }
 
         vm.expectRevert(bytes4(keccak256("PaymentError()")));
-        simulator.simulateV1Logs(address(ep), false, 1, 11_000, 0, abi.encode(u));
+        simulator.simulateV1Logs(address(ep), false, 0, 1, 11_000, 0, abi.encode(u));
 
         deal(u.paymentToken, address(u.eoa), 0x112233112233112233112233);
         vm.expectRevert(bytes4(keccak256("PaymentError()")));
-        simulator.simulateCombinedGas(address(ep), true, 1, 11_000, abi.encode(u));
+        simulator.simulateCombinedGas(address(ep), true, 0, 1, 11_000, abi.encode(u));
     }
 
     function testSimulateExecuteNoRevert() public {
@@ -196,7 +196,7 @@ contract SimulateExecuteTest is BaseTest {
         vm.deal(address(simulator), type(uint256).max);
 
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(ep), false, 1e9, 11_000, 0, abi.encode(u));
+            simulator.simulateV1Logs(address(ep), false, 2, 1e11, 11_000, 0, abi.encode(u));
 
         vm.revertToStateAndDelete(snapshot);
 
@@ -254,7 +254,7 @@ contract SimulateExecuteTest is BaseTest {
         vm.deal(address(simulator), type(uint256).max);
 
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(ep), false, 1e9, 10_800, 0, abi.encode(u));
+            simulator.simulateV1Logs(address(ep), false, 2, 1e11, 10_800, 0, abi.encode(u));
 
         vm.revertToStateAndDelete(snapshot);
 
@@ -316,7 +316,7 @@ contract SimulateExecuteTest is BaseTest {
         vm.deal(address(simulator), type(uint256).max);
 
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(ep), false, 1e9, 12_000, 10_000, abi.encode(u));
+            simulator.simulateV1Logs(address(ep), false, 2, 1e11, 12_000, 10_000, abi.encode(u));
 
         vm.revertToStateAndDelete(snapshot);
 

@@ -6,6 +6,7 @@ import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 
 /// @title Simulator
 /// @notice A separate contract for calling the EntryPoint contract solely for gas simulation.
+
 contract Simulator {
     /// @dev This modifier is used to free up memory after a function call.
     modifier freeTempMemory() {
@@ -26,9 +27,10 @@ contract Simulator {
         ICommon.UserOp memory u,
         bool isPrePayment,
         uint256 gas,
+        uint8 paymentPerGasPrecision,
         uint256 paymentPerGas
     ) internal pure {
-        uint256 paymentAmount = gas * paymentPerGas;
+        uint256 paymentAmount = Math.fullMulDiv(gas, paymentPerGas, 10 ** paymentPerGasPrecision);
 
         if (isPrePayment) {
             u.prePaymentAmount += paymentAmount;
@@ -130,6 +132,8 @@ contract Simulator {
     /// Set u.combinedGas to add some starting offset to the gasUsed value.
     /// @param ep The entry point address
     /// @param isPrePayment Whether to add gas amount to prePayment or postPayment
+    /// @param paymentPerGasPrecision The precision of the payment per gas value.
+    /// paymentAmount = gas * paymentPerGas / (10 ** paymentPerGasPrecision)
     /// @param paymentPerGas The amount of `paymentToken` to be added per gas unit.
     /// Total payment is calculated as pre/postPaymentAmount += gasUsed * paymentPerGas.
     /// @dev Set prePayment or totalPaymentAmount to include any static offset to the gas value.
@@ -146,6 +150,7 @@ contract Simulator {
     function simulateCombinedGas(
         address ep,
         bool isPrePayment,
+        uint8 paymentPerGasPrecision,
         uint256 paymentPerGas,
         uint256 combinedGasIncrement,
         bytes calldata encodedUserOp
@@ -167,7 +172,7 @@ contract Simulator {
 
         u.combinedGas += gasUsed;
 
-        _updatePaymentAmounts(u, isPrePayment, u.combinedGas, paymentPerGas);
+        _updatePaymentAmounts(u, isPrePayment, u.combinedGas, paymentPerGasPrecision, paymentPerGas);
 
         while (true) {
             gasUsed = _callEntryPointMemory(ep, false, 0, u);
@@ -190,7 +195,9 @@ contract Simulator {
 
             uint256 gasIncrement = Math.mulDiv(u.combinedGas, combinedGasIncrement, 10_000);
 
-            _updatePaymentAmounts(u, isPrePayment, gasIncrement, paymentPerGas);
+            _updatePaymentAmounts(
+                u, isPrePayment, gasIncrement, paymentPerGasPrecision, paymentPerGas
+            );
 
             // Step up the combined gas, until we see a simulation passing
             u.combinedGas += gasIncrement;
@@ -200,25 +207,33 @@ contract Simulator {
     /// @dev Same as simulateCombinedGas, but with an additional verification run
     /// that generates a successful non reverting state override simulation.
     /// Which can be used in eth_simulateV1 to get the trace.\
-    /// @dev combinedGasVerificationOffset is a static value that is added after a succesful combinedGas is found.
+    /// @param combinedGasVerificationOffset is a static value that is added after a succesful combinedGas is found.
     /// This can be used to account for variations in sig verification gas, for keytypes like P256.
+    /// @param paymentPerGasPrecision The precision of the payment per gas value.
+    /// paymentAmount = gas * paymentPerGas / (10 ** paymentPerGasPrecision)
     function simulateV1Logs(
         address ep,
         bool isPrePayment,
+        uint8 paymentPerGasPrecision,
         uint256 paymentPerGas,
         uint256 combinedGasIncrement,
         uint256 combinedGasVerificationOffset,
         bytes calldata encodedUserOp
     ) public payable virtual returns (uint256 gasUsed, uint256 combinedGas) {
         (gasUsed, combinedGas) = simulateCombinedGas(
-            ep, isPrePayment, paymentPerGas, combinedGasIncrement, encodedUserOp
+            ep,
+            isPrePayment,
+            paymentPerGasPrecision,
+            paymentPerGas,
+            combinedGasIncrement,
+            encodedUserOp
         );
 
         combinedGas += combinedGasVerificationOffset;
 
         ICommon.UserOp memory u = abi.decode(encodedUserOp, (ICommon.UserOp));
 
-        _updatePaymentAmounts(u, isPrePayment, combinedGas, paymentPerGas);
+        _updatePaymentAmounts(u, isPrePayment, combinedGas, paymentPerGasPrecision, paymentPerGas);
 
         u.combinedGas = combinedGas;
 

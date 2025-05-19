@@ -121,7 +121,16 @@ contract EntryPointTest is BaseTest {
 
         paymentToken.mint(d.eoa, 50 ether);
 
-        _simulateExecute(u, false, 1, 11_000, 10_000);
+        _simulateExecute(
+            _SimulateExecuteParams({
+                u: u,
+                isPrePayment: false,
+                paymentPerGasPrecision: 0,
+                paymentPerGas: 1,
+                combinedGasIncrement: 11_000,
+                combinedGasVerificationOffset: 0
+            })
+        );
         assertEq(ep.execute(abi.encode(u)), 0);
         uint256 actualAmount = 0.1 ether;
         assertEq(paymentToken.balanceOf(address(ep)), actualAmount);
@@ -178,7 +187,17 @@ contract EntryPointTest is BaseTest {
         u.combinedGas = 10000000;
         u.signature = _sig(d, u);
 
-        _simulateExecute(u, false, 1, 11_000, 0);
+        _simulateExecute(
+            _SimulateExecuteParams({
+                u: u,
+                isPrePayment: false,
+                paymentPerGasPrecision: 0,
+                paymentPerGas: 1,
+                combinedGasIncrement: 11_000,
+                combinedGasVerificationOffset: 0
+            })
+        );
+
         assertEq(ep.execute(abi.encode(u)), 0);
         uint256 actualAmount = 10 ether;
         assertEq(paymentToken.balanceOf(address(this)), actualAmount);
@@ -275,7 +294,16 @@ contract EntryPointTest is BaseTest {
 
         vm.expectRevert(bytes4(keccak256("PaymentError()")));
 
-        _simulateExecute(u, false, 1, 11_000, 0);
+        _simulateExecute(
+            _SimulateExecuteParams({
+                u: u,
+                isPrePayment: false,
+                paymentPerGasPrecision: 0,
+                paymentPerGas: 1,
+                combinedGasIncrement: 11_000,
+                combinedGasVerificationOffset: 0
+            })
+        );
     }
 
     function testWithdrawTokens() public {
@@ -404,13 +432,19 @@ contract EntryPointTest is BaseTest {
         }
     }
 
-    function _simulateExecute(
-        EntryPoint.UserOp memory u,
-        bool isPrePayment,
-        uint256 paymentPerGas,
-        uint256 combinedGasIncrement,
-        uint256 combinedGasVerificationOffset
-    ) internal returns (uint256 gUsed, uint256 gCombined) {
+    struct _SimulateExecuteParams {
+        EntryPoint.UserOp u;
+        bool isPrePayment;
+        uint8 paymentPerGasPrecision;
+        uint256 paymentPerGas;
+        uint256 combinedGasIncrement;
+        uint256 combinedGasVerificationOffset;
+    }
+
+    function _simulateExecute(_SimulateExecuteParams memory p)
+        internal
+        returns (uint256 gUsed, uint256 gCombined)
+    {
         uint256 snapshot = vm.snapshotState();
 
         // Set the simulator to have max balance, so that it can run in state override mode.
@@ -418,11 +452,12 @@ contract EntryPointTest is BaseTest {
         vm.deal(address(simulator), type(uint256).max);
         (gUsed, gCombined) = simulator.simulateV1Logs(
             address(ep),
-            isPrePayment,
-            paymentPerGas,
-            combinedGasIncrement,
-            combinedGasVerificationOffset,
-            abi.encode(u)
+            p.isPrePayment,
+            p.paymentPerGasPrecision,
+            p.paymentPerGas,
+            p.combinedGasIncrement,
+            p.combinedGasVerificationOffset,
+            abi.encode(p.u)
         );
 
         vm.revertToStateAndDelete(snapshot);
@@ -753,7 +788,16 @@ contract EntryPointTest is BaseTest {
         bytes32 digest = ep.computeDigest(u);
 
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        _simulateExecute(u, false, 1, 11_000, 0);
+        _simulateExecute(
+            _SimulateExecuteParams({
+                u: u,
+                isPrePayment: false,
+                paymentPerGasPrecision: 0,
+                paymentPerGas: 1,
+                combinedGasIncrement: 11_000,
+                combinedGasVerificationOffset: 0
+            })
+        );
 
         uint256 snapshot = vm.snapshotState();
         // To allow paymasters to be used in simulation mode.
