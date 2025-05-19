@@ -247,10 +247,14 @@ contract Orchestrator is
     }
     /// @dev Extracts the PreOp from the calldata bytes, with minimal checks.
 
-    function _extractPreOp(bytes calldata encodedPreOp) internal pure returns (PreOp calldata p) {
+    function _extractPreOp(bytes calldata encodedPreOp)
+        internal
+        virtual
+        returns (PreOp calldata p)
+    {
         Intent calldata i = _extractIntent(encodedPreOp);
         assembly ("memory-safe") {
-            p := u
+            p := i
         }
     }
 
@@ -434,7 +438,7 @@ contract Orchestrator is
             }
         }
         // Handle the sub Intents after the PREP (if any), and before the `_verify`.
-        if (i.encodedPreOps.length != 0) _handlePreOps(i, simulationFlags, i.encodedPreOps);
+        if (i.encodedPreOps.length != 0) _handlePreOps(eoa, simulationFlags, i.encodedPreOps);
 
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the account logic.
