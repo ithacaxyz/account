@@ -4,8 +4,8 @@ pragma solidity ^0.8.4;
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
 import "./utils/interfaces/IERC4337EntryPoint.sol";
-import "./utils/mocks/MockMinimalDelegation.sol";
-import "./utils/mocks/MockMinimalEntryPoint.sol";
+import "./utils/mocks/MockMinimalAccount.sol";
+import "./utils/mocks/MockMinimalOrchestrator.sol";
 import {MockERC4337Account, ERC4337} from "./utils/mocks/MockERC4337Account.sol";
 import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
@@ -53,9 +53,9 @@ contract BenchmarkTest is BaseTest {
 
         // re-setup the EIP7702Proxy to have no admin, like in production, for efficiency.
         eip7702Proxy = EIP7702Proxy(
-            payable(LibEIP7702.deployProxy(address(new MockDelegation(address(ep))), address(0)))
+            payable(LibEIP7702.deployProxy(address(new MockAccount(address(ep))), address(0)))
         );
-        delegation = MockDelegation(payable(eip7702Proxy));
+        account = MockAccount(payable(eip7702Proxy));
 
         vm.etch(
             _ERC4337_ENTRYPOINT_ADDR,
@@ -118,15 +118,15 @@ contract BenchmarkTest is BaseTest {
         vm.stopPrank();
     }
 
-    function testERC20TransferViaERC4337EntryPoint() public {
-        _testERC20TransferViaERC4337EntryPoint("");
+    function testERC20TransferViaERC4337Orchestrator() public {
+        _testERC20TransferViaERC4337Orchestrator("");
     }
 
-    function testERC20TransferViaERC4337EntryPointWithExtendedCalldata() public {
-        _testERC20TransferViaERC4337EntryPoint(new bytes(2048));
+    function testERC20TransferViaERC4337OrchestratorWithExtendedCalldata() public {
+        _testERC20TransferViaERC4337Orchestrator(new bytes(2048));
     }
 
-    function _testERC20TransferViaERC4337EntryPoint(bytes memory junk) internal {
+    function _testERC20TransferViaERC4337Orchestrator(bytes memory junk) internal {
         vm.pauseGasMetering();
         ERC4337.Call[] memory calls = new ERC4337.Call[](1);
         calls[0].target = address(paymentToken);
@@ -136,14 +136,14 @@ contract BenchmarkTest is BaseTest {
             abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
         vm.resumeGasMetering();
 
-        _testPayloadViaERC4337EntryPoint(payload, junk);
+        _testPayloadViaERC4337Orchestrator(payload, junk);
 
         vm.pauseGasMetering();
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
         vm.resumeGasMetering();
     }
 
-    function testUniswapV2SwapViaERC4337EntryPoint() public {
+    function testUniswapV2SwapViaERC4337Orchestrator() public {
         vm.pauseGasMetering();
 
         ERC4337.Call[] memory calls = new ERC4337.Call[](1);
@@ -154,10 +154,10 @@ contract BenchmarkTest is BaseTest {
 
         vm.resumeGasMetering();
 
-        _testPayloadViaERC4337EntryPoint(payload, "");
+        _testPayloadViaERC4337Orchestrator(payload, "");
     }
 
-    function _testPayloadViaERC4337EntryPoint(bytes memory payload, bytes memory junk) internal {
+    function _testPayloadViaERC4337Orchestrator(bytes memory payload, bytes memory junk) internal {
         vm.pauseGasMetering();
 
         _giveAccountSomeTokens(address(erc4337Account));
@@ -177,7 +177,7 @@ contract BenchmarkTest is BaseTest {
 
         u.signature = _eoaSig(
             erc4337AccountEOAPrivateKey,
-            SignatureCheckerLib.toEthSignedMessageHash(erc4337EntryPoint.getUserOpHash(u))
+            SignatureCheckerLib.toEthSignedMessageHash(erc4337EntryPoint.getIntentHash(u))
         );
 
         PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
@@ -188,44 +188,44 @@ contract BenchmarkTest is BaseTest {
         erc4337EntryPoint.handleOps(userOps, payable(address(0x69)));
     }
 
-    function testERC20TransferViaPortoEntryPoint() public {
-        _testERC20TransferViaPortoEntryPoint("");
+    function testERC20TransferViaPortoOrchestrator() public {
+        _testERC20TransferViaPortoOrchestrator("");
     }
 
-    function testERC20TransferViaPortoEntryPointWithExtendedCalldata() public {
-        _testERC20TransferViaPortoEntryPoint(new bytes(2048));
+    function testERC20TransferViaPortoOrchestratorWithExtendedCalldata() public {
+        _testERC20TransferViaPortoOrchestrator(new bytes(2048));
     }
 
-    function _testNativeTransferViaPortoEntryPoint(bytes memory junk) internal {
+    function _testNativeTransferViaPortoOrchestrator(bytes memory junk) internal {
         vm.pauseGasMetering();
         bytes memory payload = _transferExecutionData(address(0), address(0xbabe), 1 ether);
         vm.resumeGasMetering();
 
-        _testViaPortoEntryPoint(payload, junk);
+        _testViaPortoOrchestrator(payload, junk);
 
         vm.pauseGasMetering();
         assertEq(address(0xbabe).balance, 1 ether);
         vm.resumeGasMetering();
     }
 
-    function testNativeTransferViaPortoEntryPoint() public {
-        _testNativeTransferViaPortoEntryPoint("");
+    function testNativeTransferViaPortoOrchestrator() public {
+        _testNativeTransferViaPortoOrchestrator("");
     }
 
-    function _testERC20TransferViaPortoEntryPoint(bytes memory junk) internal {
+    function _testERC20TransferViaPortoOrchestrator(bytes memory junk) internal {
         vm.pauseGasMetering();
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
         vm.resumeGasMetering();
 
-        _testViaPortoEntryPoint(payload, junk);
+        _testViaPortoOrchestrator(payload, junk);
 
         vm.pauseGasMetering();
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
         vm.resumeGasMetering();
     }
 
-    function testUniswapV2SwapViaPortoEntryPoint() public {
+    function testUniswapV2SwapViaPortoOrchestrator() public {
         vm.pauseGasMetering();
 
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
@@ -235,10 +235,10 @@ contract BenchmarkTest is BaseTest {
 
         vm.resumeGasMetering();
 
-        _testViaPortoEntryPoint(payload, "");
+        _testViaPortoOrchestrator(payload, "");
     }
 
-    function _testViaPortoEntryPoint(bytes memory executionData, bytes memory junk) internal {
+    function _testViaPortoOrchestrator(bytes memory executionData, bytes memory junk) internal {
         vm.pauseGasMetering();
 
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
@@ -247,7 +247,7 @@ contract BenchmarkTest is BaseTest {
 
         _giveAccountSomeTokens(d.eoa);
 
-        EntryPoint.UserOp memory u;
+        Orchestrator.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.combinedGas = 1000000;
@@ -262,15 +262,15 @@ contract BenchmarkTest is BaseTest {
         u.paymentRecipient = address(ep);
         u.signature = _sig(d, u);
 
-        bytes[] memory encodedUserOps = new bytes[](1);
-        encodedUserOps[0] = abi.encodePacked(abi.encode(u), junk);
+        bytes[] memory encodedIntents = new bytes[](1);
+        encodedIntents[0] = abi.encodePacked(abi.encode(u), junk);
 
         vm.resumeGasMetering();
 
-        ep.execute(encodedUserOps);
+        ep.execute(encodedIntents);
     }
 
-    function testERC20TransferViaPortoEntryPointWithSpendLimits() public {
+    function testERC20TransferViaPortoOrchestratorWithSpendLimits() public {
         vm.pauseGasMetering();
 
         PassKey memory k = _randomSecp256k1PassKey();
@@ -290,7 +290,7 @@ contract BenchmarkTest is BaseTest {
         d.d.setSpendLimit(k.keyHash, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether);
         vm.stopPrank();
 
-        EntryPoint.UserOp memory u;
+        Orchestrator.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.combinedGas = 1000000;
@@ -303,12 +303,12 @@ contract BenchmarkTest is BaseTest {
         u.executionData = _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
         u.signature = _sig(k, u);
 
-        bytes[] memory encodedUserOps = new bytes[](1);
-        encodedUserOps[0] = abi.encode(u);
+        bytes[] memory encodedIntents = new bytes[](1);
+        encodedIntents[0] = abi.encode(u);
 
         vm.resumeGasMetering();
 
-        ep.execute(encodedUserOps);
+        ep.execute(encodedIntents);
 
         vm.pauseGasMetering();
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
@@ -339,11 +339,11 @@ contract BenchmarkTest is BaseTest {
         vm.pauseGasMetering();
 
         eip7702Proxy = EIP7702Proxy(
-            payable(LibEIP7702.deployProxy(address(new MockMinimalDelegation()), address(0)))
+            payable(LibEIP7702.deployProxy(address(new MockMinimalAccount()), address(0)))
         );
-        delegation = MockDelegation(payable(eip7702Proxy));
+        account = MockAccount(payable(eip7702Proxy));
 
-        MockMinimalEntryPoint epMinimal = new MockMinimalEntryPoint();
+        MockMinimalOrchestrator ocMinimal = new MockMinimalOrchestrator();
 
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         vm.deal(d.eoa, type(uint128).max);
@@ -356,10 +356,10 @@ contract BenchmarkTest is BaseTest {
 
         vm.resumeGasMetering();
 
-        MockMinimalDelegation(payable(d.eoa)).execute(address(paymentToken), 0, data);
-        MockMinimalDelegation(payable(d.eoa)).sendETH(address(epMinimal), 0.01 ether);
-        epMinimal.setNonce(1);
-        require(MockMinimalDelegation(payable(d.eoa)).isValidSignature(hash, signature) != 0);
+        MockMinimalAccount(payable(d.eoa)).execute(address(paymentToken), 0, data);
+        MockMinimalAccount(payable(d.eoa)).sendETH(address(ocMinimal), 0.01 ether);
+        ocMinimal.setNonce(1);
+        require(MockMinimalAccount(payable(d.eoa)).isValidSignature(hash, signature) != 0);
 
         vm.pauseGasMetering();
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
