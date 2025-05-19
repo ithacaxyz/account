@@ -2,20 +2,8 @@
 pragma solidity ^0.8.23;
 
 import {IDelegation} from "./interfaces/IDelegation.sol";
-import {ISigner} from "./interfaces/ISigner.sol";
 
-contract MultiSigSigner is ISigner {
-    ////////////////////////////////////////////////////////////////////////
-    // Constants
-    ////////////////////////////////////////////////////////////////////////
-
-    /// @dev The magic value returned by `isValidSignatureWithKeyHash` when the signature is valid.
-    /// - Calcualated as: bytes4(keccak256("isValidSignatureWithKeyHash(bytes32,bytes32,bytes)")
-    bytes4 internal constant MAGIC_VALUE = 0x8afc93b4;
-
-    /// @dev The magic value returned by `isValidSignatureWithKeyHash` when the signature is invalid.
-    bytes4 internal constant FAIL_VALUE = 0xffffffff;
-
+contract MultiSigSigner {
     ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
@@ -130,12 +118,12 @@ contract MultiSigSigner is ISigner {
     /// - Signature of a multi-sig should be encoded as abi.encode(bytes[] memory ownerSignatures)
     /// - For efficiency, place the signatures in the same order as the ownerKeyHashes in the config.
     /// - Failing owner signatures are ignored, as long as valid signaturs > threshold.
-    function isValidSignatureWithKeyHash(bytes32 digest, bytes32 keyHash, bytes memory signature)
+    function isValidSignature(bytes32 digest, bytes memory signature)
         public
         view
-        returns (bytes4 magicValue)
+        returns (bytes4)
     {
-        bytes[] memory signatures = abi.decode(signature, (bytes[]));
+        (bytes32 keyHash, bytes[] memory signatures) = abi.decode(signature, (bytes32, bytes[]));
         Config memory config = _configs[msg.sender][keyHash];
 
         uint256 validKeyNum;
@@ -156,7 +144,7 @@ contract MultiSigSigner is ISigner {
                     config.ownerKeyHashes[j] = bytes32(0);
 
                     if (validKeyNum == config.threshold) {
-                        return MAGIC_VALUE;
+                        return msg.sig;
                     }
 
                     break;
@@ -169,11 +157,11 @@ contract MultiSigSigner is ISigner {
 
             // This means that the keyHash was not found
             if (j == config.ownerKeyHashes.length) {
-                return FAIL_VALUE;
+                return 0xffffffff;
             }
         }
 
         // If we reach here, then the required threshold was not met.
-        return FAIL_VALUE;
+        return 0xffffffff;
     }
 }

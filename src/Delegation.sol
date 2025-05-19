@@ -700,18 +700,17 @@ contract Delegation is IDelegation, EIP712, GuardedExecutor {
 
             assembly ("memory-safe") {
                 let m := mload(0x40)
-                mstore(m, 0x8afc93b4) // `isValidSignatureWithKeyHash(bytes32,bytes32,bytes)`
+                mstore(m, 0x1626ba7e) // `isValidSignature(bytes32,bytes)`.
                 mstore(add(m, 0x20), digest)
-                mstore(add(m, 0x40), keyHash)
-                mstore(add(m, 0x60), 0x60) // signature offset
-                mstore(add(m, 0x80), signature.length) // signature length
-                calldatacopy(add(m, 0xa0), signature.offset, signature.length) // copy data to memory offset
+                mstore(add(m, 0x40), 0x40) // `signature` offset.
+                mstore(add(m, 0x60), add(signature.length, 0x20)) // Length of re-encoded signature.
+                mstore(add(m, 0x80), keyHash)
+                calldatacopy(add(m, 0xa0), signature.offset, signature.length) // Copy signature.
+                mstore(add(m, 0xa0), add(0x20, mload(add(m, 0xa0)))) // Re-encode `bytes[]` offset.
 
                 let size := add(signature.length, 0x84)
-                let success := staticcall(gas(), signer, add(m, 0x1c), size, 0x00, 0x20)
-
-                // MagicValue: bytes4(keccak256("isValidSignatureWithKeyHash(bytes32,bytes32,bytes)")
-                if and(success, eq(shr(224, mload(0x00)), 0x8afc93b4)) { isValid := true }
+                let success := staticcall(gas(), signer, add(m, 0x1c), size, m, 0x20)
+                isValid := and(eq(mload(m), shl(224, 0x1626ba7e)), success)
             }
         }
     }
