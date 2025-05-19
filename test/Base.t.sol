@@ -332,7 +332,6 @@ contract BaseTest is SoladyTest {
         gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
 
         vm.revertToStateAndDelete(snapshot);
-        i.combinedGas = gCombined;
 
         gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
     }
