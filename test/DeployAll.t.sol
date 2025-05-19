@@ -11,14 +11,16 @@ contract LibPREPTest is SoladyTest {
 
         address orchestrator = deployAll.orchestrator();
 
-        assertEq(Account(payable(deployAll.accountImplementation())).ORCHESTRATOR(), orchestrator);
+        assertEq(
+            PortoAccount(payable(deployAll.accountImplementation())).ORCHESTRATOR(), orchestrator
+        );
 
         address eoa = _randomUniqueHashedAddress();
 
         vm.etch(eoa, abi.encodePacked(hex"ef0100", deployAll.accountImplementation()));
-        assertEq(Account(payable(eoa)).ORCHESTRATOR(), orchestrator);
+        assertEq(PortoAccount(payable(eoa)).ORCHESTRATOR(), orchestrator);
 
         vm.etch(eoa, abi.encodePacked(hex"ef0100", deployAll.accountProxy()));
-        assertEq(Account(payable(eoa)).ORCHESTRATOR(), orchestrator);
+        assertEq(PortoAccount(payable(eoa)).ORCHESTRATOR(), orchestrator);
     }
 }

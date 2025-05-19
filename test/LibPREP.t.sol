@@ -37,7 +37,7 @@ contract LibPREPTest is BaseTest {
         k.k.isSuperAdmin = true;
 
         ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
-        initCalls[0].data = abi.encodeWithSelector(Account.authorize.selector, k.k);
+        initCalls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, k.k);
 
         (t.saltAndAccount, u.eoa) = _minePREP(_computePREPDigest(initCalls));
         u.initData = abi.encode(initCalls, abi.encodePacked(t.saltAndAccount));
@@ -60,11 +60,11 @@ contract LibPREPTest is BaseTest {
         paymentToken.mint(u.eoa, type(uint128).max);
 
         vm.etch(u.eoa, abi.encodePacked(hex"ef0100", account));
-        assertEq(ep.execute(abi.encode(u)), 0);
+        assertEq(oc.execute(abi.encode(u)), 0);
 
         assertEq(sampleTarget.x(), t.x);
 
-        assertTrue(LibPREP.isPREP(u.eoa, Account(payable(u.eoa)).rPREP()));
+        assertTrue(LibPREP.isPREP(u.eoa, PortoAccount(payable(u.eoa)).rPREP()));
     }
 
     function testEIP7702StructHash(address dele) public pure {

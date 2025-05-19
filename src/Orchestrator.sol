@@ -15,7 +15,7 @@ import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {LibPREP} from "./libraries/LibPREP.sol";
-import {IAccount} from "./interfaces/IAccount.sol";
+import {IPortoAccount} from "./interfaces/IPortoAccount.sol";
 import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
 import {PauseAuthority} from "./PauseAuthority.sol";
 
@@ -658,7 +658,7 @@ contract Orchestrator is
 
         // Call the pay function on the account contract
         // Equivalent Solidity code:
-        // IAccount(payer).pay(paymentAmount, keyHash, digest, abi.encode(i));
+        // IPortoAccount(payer).pay(paymentAmount, keyHash, digest, abi.encode(i));
         // Gas Savings:
         // Saves ~2k gas for normal use cases, by avoiding abi.encode and solidity external call overhead
         assembly ("memory-safe") {

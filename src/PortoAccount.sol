@@ -22,11 +22,16 @@ import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {LibNonce} from "./libraries/LibNonce.sol";
 import {LibPREP} from "./libraries/LibPREP.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
+<<<<<<< HEAD:src/Account.sol
 import {IAccount} from "./interfaces/IAccount.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
+=======
+import {IPortoAccount} from "./interfaces/IPortoAccount.sol";
+
+>>>>>>> 1e7b875 (chore: make it compile):src/PortoAccount.sol
 /// @title Account
 /// @notice A account contract for EOAs with EIP7702.
-contract Account is IAccount, EIP712, GuardedExecutor {
+contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for *;
     using LibBytes for LibBytes.BytesStorage;

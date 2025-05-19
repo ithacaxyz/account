@@ -88,12 +88,12 @@ contract AccountTest is BaseTest {
         bytes32 digest = bytes32(_randomUniform());
         bytes memory sig = _sig(k, digest);
         assertEq(
-            d.d.isValidSignature(digest, sig) == Account.isValidSignature.selector,
+            d.d.isValidSignature(digest, sig) == PortoAccount.isValidSignature.selector,
             k.k.isSuperAdmin
         );
 
         vm.prank(checkers[_randomUniform() % checkers.length]);
-        assertEq(d.d.isValidSignature(digest, sig), Account.isValidSignature.selector);
+        assertEq(d.d.isValidSignature(digest, sig), PortoAccount.isValidSignature.selector);
 
         vm.prank(d.eoa);
         d.d.revoke(_hash(k.k));
@@ -106,7 +106,7 @@ contract AccountTest is BaseTest {
         d.d.authorize(k.k);
 
         assertEq(
-            d.d.isValidSignature(digest, sig) == Account.isValidSignature.selector,
+            d.d.isValidSignature(digest, sig) == PortoAccount.isValidSignature.selector,
             k.k.isSuperAdmin
         );
         assertEq(d.d.approvedSignatureCheckers(k.keyHash).length, 0);
@@ -135,8 +135,7 @@ contract AccountTest is BaseTest {
         t.implementation = address(new MockSampleDelegateCallTarget(t.randomVersion));
 
         t.calls = new ERC7821.Call[](1);
-        t.calls[0].data =
-            abi.encodeWithSignature("upgradeProxyAccount(address)", t.implementation);
+        t.calls[0].data = abi.encodeWithSignature("upgradeProxyAccount(address)", t.implementation);
 
         t.nonce = d.d.getNonce(0);
         bytes memory signature = _sig(d, d.d.computeDigest(t.calls, t.nonce));
@@ -151,10 +150,10 @@ contract AccountTest is BaseTest {
 
     function testApproveAndRevokeKey(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        Account.Key memory k;
-        Account.Key memory kRetrieved;
+        PortoAccount.Key memory k;
+        PortoAccount.Key memory kRetrieved;
 
-        k.keyType = Account.KeyType(_randomUniform() & 1);
+        k.keyType = PortoAccount.KeyType(_randomUniform() & 1);
         k.expiry = uint40(_bound(_random(), 0, 2 ** 40 - 1));
         k.publicKey = _truncateBytes(_randomBytes(), 0x1ff);
 
@@ -201,8 +200,8 @@ contract AccountTest is BaseTest {
 
     function testManyKeys() public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        Account.Key memory k;
-        k.keyType = Account.KeyType(_randomUniform() & 1);
+        PortoAccount.Key memory k;
+        k.keyType = PortoAccount.KeyType(_randomUniform() & 1);
 
         for (uint40 i = 0; i < 20; i++) {
             k.expiry = i;
@@ -213,7 +212,7 @@ contract AccountTest is BaseTest {
 
         vm.warp(5);
 
-        (Account.Key[] memory keys, bytes32[] memory keyHashes) = d.d.getKeys();
+        (PortoAccount.Key[] memory keys, bytes32[] memory keyHashes) = d.d.getKeys();
 
         assert(keys.length == keyHashes.length);
         assert(keys.length == 16);
@@ -223,10 +222,9 @@ contract AccountTest is BaseTest {
     }
 
     function testAddDisallowedSuperAdminKeyTypeReverts() public {
-        address entryPoint = address(new EntryPoint(address(this)));
-        address accountImplementation = address(new Account(address(entryPoint)));
-        address accountProxy =
-            address(LibEIP7702.deployProxy(accountImplementation, address(0)));
+        address orchestrator = address(new Orchestrator(address(this)));
+        address accountImplementation = address(new PortoAccount(address(orchestrator)));
+        address accountProxy = address(LibEIP7702.deployProxy(accountImplementation, address(0)));
         account = MockAccount(payable(accountProxy));
 
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
@@ -250,10 +248,10 @@ contract AccountTest is BaseTest {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         vm.deal(d.eoa, 100 ether);
         address pauseAuthority = _randomAddress();
-        ep.setPauseAuthority(pauseAuthority);
+        oc.setPauseAuthority(pauseAuthority);
 
-        (address epPauseAuthority, uint40 lastPaused) = ep.getPauseConfig();
-        assertEq(epPauseAuthority, pauseAuthority);
+        (address ocPauseAuthority, uint40 lastPaused) = oc.getPauseConfig();
+        assertEq(ocPauseAuthority, pauseAuthority);
         assertEq(lastPaused, 0);
 
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
@@ -282,14 +280,14 @@ contract AccountTest is BaseTest {
 
         // Only the pause authority can pause.
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        ep.setPauseAuthority(pauseAuthority);
+        oc.setPauseAuthority(pauseAuthority);
 
         vm.startPrank(pauseAuthority);
-        ep.pause(true);
+        oc.pause(true);
 
-        assertEq(ep.pauseFlag(), 1);
-        (epPauseAuthority, lastPaused) = ep.getPauseConfig();
-        assertEq(epPauseAuthority, pauseAuthority);
+        assertEq(oc.pauseFlag(), 1);
+        (ocPauseAuthority, lastPaused) = oc.getPauseConfig();
+        assertEq(ocPauseAuthority, pauseAuthority);
         assertEq(lastPaused, block.timestamp);
         vm.stopPrank();
 
@@ -305,62 +303,62 @@ contract AccountTest is BaseTest {
         d.d.isValidSignature(digest, signature);
 
         // Check that intent fails
-        EntryPoint.Intent memory u;
+        Orchestrator.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = d.d.getNonce(0);
         u.combinedGas = 1000000;
         u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
         u.signature = _eoaSig(d.privateKey, u);
 
-        assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("VerificationError()")));
+        assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("VerificationError()")));
 
         vm.startPrank(pauseAuthority);
         // Try to pause already paused account.
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        ep.pause(true);
+        oc.pause(true);
 
-        ep.pause(false);
-        assertEq(ep.pauseFlag(), 0);
-        (epPauseAuthority, lastPaused) = ep.getPauseConfig();
-        assertEq(epPauseAuthority, pauseAuthority);
+        oc.pause(false);
+        assertEq(oc.pauseFlag(), 0);
+        (ocPauseAuthority, lastPaused) = oc.getPauseConfig();
+        assertEq(ocPauseAuthority, pauseAuthority);
         assertEq(lastPaused, block.timestamp);
 
         // Cannot immediately repause again.
         vm.warp(lastPaused + 4 weeks + 1 days);
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        ep.pause(true);
+        oc.pause(true);
         vm.stopPrank();
 
         // Intent should now succeed.
-        assertEq(ep.execute(abi.encode(u)), 0);
+        assertEq(oc.execute(abi.encode(u)), 0);
 
         // Can pause again, after the cooldown period.
         vm.warp(lastPaused + 5 weeks + 1);
         vm.startPrank(pauseAuthority);
-        ep.pause(true);
+        oc.pause(true);
         vm.stopPrank();
 
-        assertEq(ep.pauseFlag(), 1);
-        (epPauseAuthority, lastPaused) = ep.getPauseConfig();
-        assertEq(epPauseAuthority, pauseAuthority);
+        assertEq(oc.pauseFlag(), 1);
+        (ocPauseAuthority, lastPaused) = oc.getPauseConfig();
+        assertEq(ocPauseAuthority, pauseAuthority);
         assertEq(lastPaused, block.timestamp);
 
         // Anyone can unpause after 4 weeks.
         vm.warp(lastPaused + 4 weeks + 1);
-        ep.pause(false);
-        assertEq(ep.pauseFlag(), 0);
-        (epPauseAuthority, lastPaused) = ep.getPauseConfig();
-        assertEq(epPauseAuthority, pauseAuthority);
+        oc.pause(false);
+        assertEq(oc.pauseFlag(), 0);
+        (ocPauseAuthority, lastPaused) = oc.getPauseConfig();
+        assertEq(ocPauseAuthority, pauseAuthority);
         assertEq(lastPaused, block.timestamp - 4 weeks - 1);
 
-        address entryPointAddress = address(ep);
+        address orchestratorAddress = address(oc);
 
         // Try setting pauseAuthority with dirty bits.
         assembly ("memory-safe") {
             mstore(0x00, 0x4b90364f) // `setPauseAuthority(address)`
             mstore(0x20, 0xffffffffffffffffffffffffffffffffffffffff)
 
-            let success := call(gas(), entryPointAddress, 0x00, 0x1c, 0x24, 0x00, 0x00)
+            let success := call(gas(), orchestratorAddress, 0x00, 0x1c, 0x24, 0x00, 0x00)
             if success { revert(0, 0) }
         }
     }

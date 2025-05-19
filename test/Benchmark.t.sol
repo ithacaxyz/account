@@ -53,7 +53,7 @@ contract BenchmarkTest is BaseTest {
 
         // re-setup the EIP7702Proxy to have no admin, like in production, for efficiency.
         eip7702Proxy = EIP7702Proxy(
-            payable(LibEIP7702.deployProxy(address(new MockAccount(address(ep))), address(0)))
+            payable(LibEIP7702.deployProxy(address(new MockAccount(address(oc))), address(0)))
         );
         account = MockAccount(payable(eip7702Proxy));
 
@@ -177,7 +177,7 @@ contract BenchmarkTest is BaseTest {
 
         u.signature = _eoaSig(
             erc4337AccountEOAPrivateKey,
-            SignatureCheckerLib.toEthSignedMessageHash(erc4337EntryPoint.getIntentHash(u))
+            SignatureCheckerLib.toEthSignedMessageHash(erc4337EntryPoint.getUserOpHash(u))
         );
 
         PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
@@ -259,7 +259,7 @@ contract BenchmarkTest is BaseTest {
         u.paymentRecipient = address(1234);
         u.executionData = executionData;
         // To maintain parity with the old benchmarks.
-        u.paymentRecipient = address(ep);
+        u.paymentRecipient = address(oc);
         u.signature = _sig(d, u);
 
         bytes[] memory encodedIntents = new bytes[](1);
@@ -267,7 +267,7 @@ contract BenchmarkTest is BaseTest {
 
         vm.resumeGasMetering();
 
-        ep.execute(encodedIntents);
+        oc.execute(encodedIntents);
     }
 
     function testERC20TransferViaPortoOrchestratorWithSpendLimits() public {
@@ -299,7 +299,7 @@ contract BenchmarkTest is BaseTest {
         u.totalPaymentAmount = 0.01 ether;
         u.totalPaymentMaxAmount = 0.1 ether;
         // To maintain parity with the old benchmarks.
-        u.paymentRecipient = address(ep);
+        u.paymentRecipient = address(oc);
         u.executionData = _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
         u.signature = _sig(k, u);
 
@@ -308,7 +308,7 @@ contract BenchmarkTest is BaseTest {
 
         vm.resumeGasMetering();
 
-        ep.execute(encodedIntents);
+        oc.execute(encodedIntents);
 
         vm.pauseGasMetering();
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);

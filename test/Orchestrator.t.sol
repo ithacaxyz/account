@@ -8,7 +8,7 @@ import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCall
 import {MockPayerWithState} from "./utils/mocks/MockPayerWithState.sol";
 import {MockPayerWithSignature} from "./utils/mocks/MockPayerWithSignature.sol";
 import {IOrchestrator} from "../src/interfaces/IOrchestrator.sol";
-import {IAccount} from "../src/interfaces/IAccount.sol";
+import {IPortoAccount} from "../src/interfaces/IPortoAccount.sol";
 import {MultiSigSigner} from "../src/MultiSigSigner.sol";
 
 contract OrchestratorTest is BaseTest {
@@ -52,7 +52,7 @@ contract OrchestratorTest is BaseTest {
             t.encodedIntents[i] = abi.encode(u);
         }
 
-        bytes4[] memory errors = ep.execute(t.encodedIntents);
+        bytes4[] memory errors = oc.execute(t.encodedIntents);
         assertEq(errors.length, t.intents.length);
         for (uint256 i; i != errors.length; ++i) {
             assertEq(errors[i], 0);
@@ -90,7 +90,7 @@ contract OrchestratorTest is BaseTest {
 
         u.signature = _sig(alice, u);
 
-        assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("PaymentError()")));
+        assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("PaymentError()")));
     }
 
     function testExecuteWithSecp256k1PassKey() public {
@@ -116,7 +116,7 @@ contract OrchestratorTest is BaseTest {
         u.prePaymentMaxAmount = 0.5 ether;
         u.totalPaymentAmount = u.prePaymentAmount;
         u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
-        u.paymentRecipient = address(ep);
+        u.paymentRecipient = address(oc);
         u.combinedGas = 1000000;
         u.signature = _sig(k, u);
 
@@ -132,9 +132,9 @@ contract OrchestratorTest is BaseTest {
                 combinedGasVerificationOffset: 0
             })
         );
-        assertEq(ep.execute(abi.encode(u)), 0);
+        assertEq(oc.execute(abi.encode(u)), 0);
         uint256 actualAmount = 0.1 ether;
-        assertEq(paymentToken.balanceOf(address(ep)), actualAmount);
+        assertEq(paymentToken.balanceOf(address(oc)), actualAmount);
         assertEq(paymentToken.balanceOf(d.eoa), 50 ether - actualAmount - 1 ether);
     }
 
@@ -164,7 +164,7 @@ contract OrchestratorTest is BaseTest {
         u.signature = _sig(k, u);
 
         (bool success, bytes memory result) =
-            address(ep).call(abi.encodeWithSignature("simulateFailed(bytes)", abi.encode(u)));
+            address(oc).call(abi.encodeWithSignature("simulateFailed(bytes)", abi.encode(u)));
 
         assertFalse(success);
         assertEq(result, abi.encodeWithSignature("ErrorWithData(bytes)", data));
@@ -199,7 +199,7 @@ contract OrchestratorTest is BaseTest {
             })
         );
 
-        assertEq(ep.execute(abi.encode(u)), 0);
+        assertEq(oc.execute(abi.encode(u)), 0);
         uint256 actualAmount = 10 ether;
         assertEq(paymentToken.balanceOf(address(this)), actualAmount);
         assertEq(paymentToken.balanceOf(d.eoa), 500 ether - actualAmount - 1 ether);
@@ -233,7 +233,7 @@ contract OrchestratorTest is BaseTest {
             encodedIntents[i] = abi.encode(u);
         }
 
-        bytes4[] memory errs = ep.execute(encodedIntents);
+        bytes4[] memory errs = oc.execute(encodedIntents);
 
         for (uint256 i; i < n; ++i) {
             assertEq(errs[i], 0);
@@ -268,7 +268,7 @@ contract OrchestratorTest is BaseTest {
 
         (uint256 gExecute,,) = _estimateGas(u);
 
-        assertEq(ep.execute{gas: gExecute}(abi.encode(u)), 0);
+        assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether * n);
         assertEq(paymentToken.balanceOf(d.eoa), 100 ether - (u.prePaymentAmount + 0.5 ether * n));
         assertEq(d.d.getNonce(0), 1);
@@ -309,10 +309,10 @@ contract OrchestratorTest is BaseTest {
 
     function testWithdrawTokens() public {
         // Anyone can withdraw tokens from the orchestrator.
-        vm.deal(address(ep), 1 ether);
-        paymentToken.mint(address(ep), 10 ether);
-        ep.withdrawTokens(address(0), address(0xabcd), 1 ether);
-        ep.withdrawTokens(address(paymentToken), address(0xabcd), 10 ether);
+        vm.deal(address(oc), 1 ether);
+        paymentToken.mint(address(oc), 10 ether);
+        oc.withdrawTokens(address(0), address(0xabcd), 1 ether);
+        oc.withdrawTokens(address(paymentToken), address(0xabcd), 10 ether);
     }
 
     function testExceuteGasUsed() public {
@@ -346,7 +346,7 @@ contract OrchestratorTest is BaseTest {
         }
 
         bytes memory data = abi.encodeWithSignature("execute(bytes[])", encodeIntents);
-        address _ep = address(ep);
+        address _ep = address(oc);
         uint256 g;
         vm.resumeGasMetering();
 
@@ -380,7 +380,7 @@ contract OrchestratorTest is BaseTest {
         u.combinedGas = 20000000;
         u.signature = _sig(k, u);
 
-        ep.execute(abi.encode(u));
+        oc.execute(abi.encode(u));
     }
 
     function testInvalidateNonce(uint96 seqKey, uint64 seq, uint64 seq2) public {
@@ -427,9 +427,9 @@ contract OrchestratorTest is BaseTest {
         u.signature = _sig(d, u);
 
         if (seq > type(uint64).max - 2) {
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("InvalidNonce()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("InvalidNonce()")));
         } else {
-            assertEq(ep.execute(abi.encode(u)), 0);
+            assertEq(oc.execute(abi.encode(u)), 0);
         }
     }
 
@@ -443,7 +443,7 @@ contract OrchestratorTest is BaseTest {
         // This is meant to mimic an offchain state override.
         vm.deal(address(simulator), type(uint256).max);
         (gUsed, gCombined) = simulator.simulateV1Logs(
-            address(ep),
+            address(oc),
             p.isPrePayment,
             p.paymentPerGasPrecision,
             p.paymentPerGas,
@@ -484,7 +484,7 @@ contract OrchestratorTest is BaseTest {
         t.kPREP.k.isSuperAdmin = true;
 
         ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
-        initCalls[0].data = abi.encodeWithSelector(Account.authorize.selector, t.kPREP.k);
+        initCalls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, t.kPREP.k);
 
         bytes32 saltAndAccount;
         (saltAndAccount, t.eoa) = _minePREP(_computePREPDigest(initCalls));
@@ -504,7 +504,7 @@ contract OrchestratorTest is BaseTest {
         u.prePaymentMaxAmount = u.prePaymentAmount;
         u.totalPaymentAmount = u.prePaymentAmount;
         u.totalPaymentMaxAmount = u.prePaymentAmount;
-        u.paymentRecipient = address(ep);
+        u.paymentRecipient = address(oc);
         u.nonce = 0xc1d0 << 240;
 
         PassKey memory kSession = _randomSecp256r1PassKey();
@@ -516,7 +516,7 @@ contract OrchestratorTest is BaseTest {
         // Prepare session passkey authorization Intent.
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](5);
-            calls[0].data = abi.encodeWithSelector(Account.authorize.selector, kSession.k);
+            calls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, kSession.k);
             calls[1].data = abi.encodeWithSelector(
                 GuardedExecutor.setCanExecute.selector,
                 kSession.keyHash,
@@ -542,7 +542,7 @@ contract OrchestratorTest is BaseTest {
             // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
             pSession.nonce = (0xc1d0 << 240) | (2 << 64);
 
-            pSession.signature = _sig(t.kPREP, ep.computeDigest(pSession));
+            pSession.signature = _sig(t.kPREP, oc.computeDigest(pSession));
         }
 
         u.encodedPreOps = new bytes[](1);
@@ -561,7 +561,7 @@ contract OrchestratorTest is BaseTest {
         // Test without gas estimation.
         u.combinedGas = 10000000;
         u.signature = _sig(kSession, u);
-        assertEq(ep.execute(abi.encode(u)), 0);
+        assertEq(oc.execute(abi.encode(u)), 0);
 
         assertEq(_balanceOf(tokenToTransfer, address(0xabcd)), 0.5 ether);
     }
@@ -578,7 +578,7 @@ contract OrchestratorTest is BaseTest {
             t.kPREP.k.isSuperAdmin = true;
 
             ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
-            initCalls[0].data = abi.encodeWithSelector(Account.authorize.selector, t.kPREP.k);
+            initCalls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, t.kPREP.k);
 
             bytes32 saltAndAccount;
             (saltAndAccount, t.eoa) = _minePREP(_computePREPDigest(initCalls));
@@ -623,7 +623,7 @@ contract OrchestratorTest is BaseTest {
         // Prepare super admin passkey authorization Intent.
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
-            calls[0].data = abi.encodeWithSelector(Account.authorize.selector, kSuperAdmin.k);
+            calls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, kSuperAdmin.k);
 
             pSuperAdmin.executionData = abi.encode(calls);
             // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
@@ -634,16 +634,16 @@ contract OrchestratorTest is BaseTest {
             }
 
             if (t.testPREP) {
-                pSuperAdmin.signature = _sig(t.kPREP, ep.computeDigest(pSuperAdmin));
+                pSuperAdmin.signature = _sig(t.kPREP, oc.computeDigest(pSuperAdmin));
             } else {
-                pSuperAdmin.signature = _eoaSig(t.d.privateKey, ep.computeDigest(pSuperAdmin));
+                pSuperAdmin.signature = _eoaSig(t.d.privateKey, oc.computeDigest(pSuperAdmin));
             }
         }
 
         // Prepare session passkey authorization Intent.
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](3);
-            calls[0].data = abi.encodeWithSelector(Account.authorize.selector, kSession.k);
+            calls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, kSession.k);
             // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
             calls[1].data = abi.encodeWithSelector(
                 GuardedExecutor.setCanExecute.selector,
@@ -670,10 +670,10 @@ contract OrchestratorTest is BaseTest {
                 pSession.nonce = type(uint256).max;
             }
 
-            pSession.signature = _sig(kSuperAdmin, ep.computeDigest(pSession));
+            pSession.signature = _sig(kSuperAdmin, oc.computeDigest(pSession));
 
             if (_randomChance(64)) {
-                pSession.signature = _sig(_randomSecp256r1PassKey(), ep.computeDigest(pSession));
+                pSession.signature = _sig(_randomSecp256r1PassKey(), oc.computeDigest(pSession));
                 u.encodedPreOps[1] = abi.encode(pSession);
                 t.testPreOpVerificationError = true;
             }
@@ -694,21 +694,21 @@ contract OrchestratorTest is BaseTest {
         if (t.testInvalidPreOpEOA) {
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("InvalidPreOpEOA()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("InvalidPreOpEOA()")));
             return; // Skip the rest.
         }
 
         if (t.testPreOpVerificationError) {
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("PreOpVerificationError()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("PreOpVerificationError()")));
             return; // Skip the rest.
         }
 
         if (t.testPreOpCallError) {
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("PreOpCallError()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("PreOpCallError()")));
             return; // Skip the rest.
         }
 
@@ -724,17 +724,17 @@ contract OrchestratorTest is BaseTest {
             u.combinedGas = t.gCombined;
             u.signature = _sig(kSession, u);
 
-            assertEq(ep.execute{gas: t.gExecute}(abi.encode(u)), 0);
+            assertEq(oc.execute{gas: t.gExecute}(abi.encode(u)), 0);
         } else {
             // Otherwise, test without gas estimation.
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(ep.execute(abi.encode(u)), 0);
+            assertEq(oc.execute(abi.encode(u)), 0);
         }
 
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
-        t.retrievedSessionNonce = IAccount(t.eoa).getNonce(t.sessionNonceSeqKey);
-        t.retrievedSuperAdminNonce = IAccount(t.eoa).getNonce(t.superAdminNonceSeqKey);
+        t.retrievedSessionNonce = IPortoAccount(t.eoa).getNonce(t.sessionNonceSeqKey);
+        t.retrievedSuperAdminNonce = IPortoAccount(t.eoa).getNonce(t.superAdminNonceSeqKey);
         if (t.testSkipNonce) {
             assertEq(t.retrievedSessionNonce, uint256(t.sessionNonceSeqKey) << 64);
             assertEq(t.retrievedSuperAdminNonce, uint256(t.superAdminNonceSeqKey) << 64);
@@ -777,7 +777,7 @@ contract OrchestratorTest is BaseTest {
         u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
         u.paymentRecipient = address(0x12345);
 
-        bytes32 digest = ep.computeDigest(u);
+        bytes32 digest = oc.computeDigest(u);
 
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
         _simulateExecute(
@@ -793,17 +793,17 @@ contract OrchestratorTest is BaseTest {
 
         uint256 snapshot = vm.snapshotState();
         // To allow paymasters to be used in simulation mode.
-        vm.deal(address(ep), type(uint256).max);
+        vm.deal(address(oc), type(uint256).max);
         (uint256 gExecute, uint256 gCombined,) = _estimateGas(u);
         vm.revertToStateAndDelete(snapshot);
         u.combinedGas = gCombined;
 
-        digest = ep.computeDigest(u);
+        digest = oc.computeDigest(u);
         u.signature = _eoaSig(d.privateKey, digest);
         u.paymentSignature = _eoaSig(payer.privateKey, digest);
 
         uint256 payerBalanceBefore = _balanceOf(u.paymentToken, address(payer.d));
-        assertEq(ep.execute{gas: gExecute}(abi.encode(u)), 0);
+        assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
         assertEq(d.d.getNonce(0), u.nonce + 1);
         assertEq(_balanceOf(u.paymentToken, u.paymentRecipient), u.totalPaymentAmount);
         assertEq(
@@ -837,8 +837,8 @@ contract OrchestratorTest is BaseTest {
         _mint(address(paymentToken), address(t.withState), type(uint192).max);
         _mint(address(paymentToken), address(t.withSignature), type(uint192).max);
 
-        t.withState.setApprovedOrchestrator(address(ep), true);
-        t.withSignature.setApprovedOrchestrator(address(ep), true);
+        t.withState.setApprovedOrchestrator(address(oc), true);
+        t.withSignature.setApprovedOrchestrator(address(oc), true);
         t.withSignature.setSigner(t.withSignatureEOA.eoa);
 
         t.token = _randomChance(2) ? address(0) : address(paymentToken);
@@ -858,7 +858,7 @@ contract OrchestratorTest is BaseTest {
         u.totalPaymentAmount = _bound(_random(), u.prePaymentAmount, 5 ether);
         u.totalPaymentMaxAmount = _bound(_random(), u.totalPaymentAmount, 10 ether);
         u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
-        u.paymentRecipient = address(ep);
+        u.paymentRecipient = address(oc);
 
         if (u.prePaymentMaxAmount > u.totalPaymentMaxAmount) {
             u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
@@ -868,7 +868,7 @@ contract OrchestratorTest is BaseTest {
         if (t.isWithState) {
             t.withState.increaseFunds(u.paymentToken, u.eoa, t.funds);
         } else {
-            bytes32 digest = ep.computeDigest(u);
+            bytes32 digest = oc.computeDigest(u);
             digest = t.withSignature.computeSignatureDigest(digest);
             u.paymentSignature = _sig(t.withSignatureEOA, digest);
             t.corruptSignature = _randomChance(2);
@@ -882,11 +882,11 @@ contract OrchestratorTest is BaseTest {
 
         t.unapprovedOrchestrator = _randomChance(32);
         if (t.unapprovedOrchestrator) {
-            t.withState.setApprovedOrchestrator(address(ep), false);
-            t.withSignature.setApprovedOrchestrator(address(ep), false);
+            t.withState.setApprovedOrchestrator(address(oc), false);
+            t.withSignature.setApprovedOrchestrator(address(oc), false);
         }
         if ((t.unapprovedOrchestrator && u.totalPaymentAmount != 0)) {
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("Unauthorized()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("Unauthorized()")));
 
             if (u.prePaymentAmount != 0) {
                 assertEq(t.d.d.getNonce(0), u.nonce);
@@ -899,7 +899,7 @@ contract OrchestratorTest is BaseTest {
         } else if (t.isWithState && u.totalPaymentAmount > t.funds && u.totalPaymentAmount != 0) {
             // Arithmetic underflow error
             assertEq(
-                ep.execute(abi.encode(u)),
+                oc.execute(abi.encode(u)),
                 0x4e487b7100000000000000000000000000000000000000000000000000000000
             );
 
@@ -917,7 +917,7 @@ contract OrchestratorTest is BaseTest {
             }
         } else if ((!t.isWithState && t.corruptSignature && u.totalPaymentAmount != 0)) {
             // Pre payment will not happen
-            assertEq(ep.execute(abi.encode(u)), bytes4(keccak256("InvalidSignature()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("InvalidSignature()")));
             // If prePayment is 0, then nonce is incremented, because the prePayment doesn't fail.
             if (u.prePaymentAmount == 0) {
                 assertEq(t.d.d.getNonce(0), u.nonce + 1);
@@ -927,7 +927,7 @@ contract OrchestratorTest is BaseTest {
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
             assertEq(_balanceOf(address(0), address(0xabcd)), 0);
         } else {
-            assertEq(ep.execute(abi.encode(u)), 0);
+            assertEq(oc.execute(abi.encode(u)), 0);
             assertEq(t.d.d.getNonce(0), u.nonce + 1);
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.totalPaymentAmount);
             assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
@@ -959,19 +959,19 @@ contract OrchestratorTest is BaseTest {
             if (t.requireWrongImplementation) {
                 u.supportedAccountImplementation = _randomUniqueHashedAddress();
             } else {
-                u.supportedAccountImplementation = ep.accountImplementationOf(u.eoa);
+                u.supportedAccountImplementation = oc.accountImplementationOf(u.eoa);
                 assertEq(u.supportedAccountImplementation, accountImplementation);
             }
         }
 
         if (t.testImplementationCheck && t.requireWrongImplementation) {
             assertEq(
-                ep.execute(abi.encode(u)), bytes4(keccak256("UnsupportedAccountImplementation()"))
+                oc.execute(abi.encode(u)), bytes4(keccak256("UnsupportedAccountImplementation()"))
             );
             assertEq(t.d.d.getNonce(0), u.nonce);
             assertEq(_balanceOf(address(0), address(0xabcd)), 0);
         } else {
-            assertEq(ep.execute(abi.encode(u)), 0);
+            assertEq(oc.execute(abi.encode(u)), 0);
             assertEq(t.d.d.getNonce(0), u.nonce + 1);
             assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
         }
