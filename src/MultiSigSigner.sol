@@ -4,6 +4,7 @@ pragma solidity ^0.8.23;
 import {IDelegation} from "./interfaces/IDelegation.sol";
 import {ISigner} from "./interfaces/ISigner.sol";
 
+/// @notice A Signer contract, that extends multi-sig functionality to the Porto Account.
 contract MultiSigSigner is ISigner {
     ////////////////////////////////////////////////////////////////////////
     // Constants
@@ -36,6 +37,8 @@ contract MultiSigSigner is ISigner {
     // Storage
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev Threshold is the minimum number of owner signatures required for a verification.
+    /// @dev ownerKeyHashes is a list of keyHashes (refer the Porto Account) that own the multi-sig
     struct Config {
         uint256 threshold;
         bytes32[] ownerKeyHashes;
@@ -45,6 +48,7 @@ contract MultiSigSigner is ISigner {
     /// This allows a single account, to register multiple multi-sig configs.
     mapping(address => mapping(bytes32 => Config)) internal _configs;
 
+    /// @dev Returns the threshold and ownerKeyHashes for a given keyHash and account.
     function getConfig(address account, bytes32 keyHash)
         public
         view
@@ -58,11 +62,15 @@ contract MultiSigSigner is ISigner {
     // Config Functions
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev Checks the current context keyhash in the Account, against the requested keyHash.
     function _checkKeyHash(bytes32 expectedKeyHash) internal view {
         bytes32 keyHash = IDelegation(msg.sender).getContextKeyHash();
         if (keyHash != expectedKeyHash) revert InvalidKeyHash();
     }
 
+    /// @dev Initialize a new multi-sig config.
+    /// - This can only be called once per [keyHash][sender] tuple.
+    ///   enforced by making sure threshold for an initialized key is never returned to 0.
     function initConfig(bytes32 keyHash, uint256 threshold, bytes32[] memory ownerKeyHashes)
         public
     {
@@ -79,6 +87,8 @@ contract MultiSigSigner is ISigner {
             Config({threshold: threshold, ownerKeyHashes: ownerKeyHashes});
     }
 
+    /// @dev Adds a new owner keyhash to an existing multi-sig config.
+    /// - Allows duplicates to be added.
     function addOwner(bytes32 keyHash, bytes32 ownerKeyHash) public {
         _checkKeyHash(keyHash);
 
@@ -86,6 +96,9 @@ contract MultiSigSigner is ISigner {
         config.ownerKeyHashes.push(ownerKeyHash);
     }
 
+    /// @dev Removes an owner keyhash from an existing multi-sig config.
+    /// - Throws `OwnerNotFound` if the requested keyhash is not found.
+    /// - Throws `InvalidThreshold` if the number of owners goes below the threshold after removal.
     function removeOwner(bytes32 keyHash, bytes32 ownerKeyHash) public {
         _checkKeyHash(keyHash);
 
@@ -110,6 +123,8 @@ contract MultiSigSigner is ISigner {
         if (ownerKeyCount - 1 < config.threshold) revert InvalidThreshold();
     }
 
+    /// @dev Sets the threshold for an existing multi-sig config.
+    /// - Throws `InvalidThreshold` if the threshold is 0 or greater than the number of owners.
     function setThreshold(bytes32 keyHash, uint256 threshold) public {
         _checkKeyHash(keyHash);
 
@@ -140,7 +155,9 @@ contract MultiSigSigner is ISigner {
 
         uint256 validKeyNum;
 
+        // Iterate over signatures, until threshold is met.
         for (uint256 i; i < signatures.length; ++i) {
+            // Unwrap and validate the signature.
             (bool isValid, bytes32 ownerKeyHash) =
                 IDelegation(msg.sender).unwrapAndValidateSignature(digest, signatures[i]);
 
@@ -153,8 +170,10 @@ contract MultiSigSigner is ISigner {
                 if (config.ownerKeyHashes[j] == ownerKeyHash) {
                     // Incrementing validKeyNum
                     validKeyNum++;
+                    // Mark the ownerKeyHash as used.
                     config.ownerKeyHashes[j] = bytes32(0);
 
+                    // If threshold is met, return success.
                     if (validKeyNum == config.threshold) {
                         return _MAGIC_VALUE;
                     }
