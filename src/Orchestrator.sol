@@ -813,13 +813,8 @@ contract Orchestrator is
         override
         returns (string memory name, string memory version)
     {
-<<<<<<< HEAD:src/EntryPoint.sol
-        name = "EntryPoint";
-        version = "0.1.4";
-=======
         name = "Orchestrator";
-        version = "0.1.2";
->>>>>>> c207a80 (chore: rename main Entrypoint & Delegation contracts):src/Orchestrator.sol
+        version = "0.1.4";
     }
 
     ////////////////////////////////////////////////////////////////////////

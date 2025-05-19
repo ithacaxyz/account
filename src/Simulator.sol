@@ -225,7 +225,7 @@ contract Simulator {
             paymentPerGasPrecision,
             paymentPerGas,
             combinedGasIncrement,
-            encodedUserOp
+            encodedIntent
         );
 
         combinedGas += combinedGasVerificationOffset;

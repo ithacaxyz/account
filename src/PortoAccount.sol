@@ -794,7 +794,7 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
         override
         returns (string memory name, string memory version)
     {
-        name = "Delegation";
+        name = "PortoAccount";
         version = "0.1.4";
     }
 }
