@@ -15,27 +15,27 @@ library LibPREP {
     // Operations
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Validates if `digest` and `saltAndDelegation` results in `target`.
-    /// `saltAndDelegation` is `bytes32((uint256(salt) << 160) | uint160(delegation))`.
+    /// @dev Validates if `digest` and `saltAndAccount` results in `target`.
+    /// `saltAndAccount` is `bytes32((uint256(salt) << 160) | uint160(account))`.
     /// Returns a non-zero `r` for the PREP signature, if valid.
     /// Otherwise returns 0.
     /// `r` will be less than `2**160`, allowing for optional storage packing.
-    function rPREP(address target, bytes32 digest, bytes32 saltAndDelegation)
+    function rPREP(address target, bytes32 digest, bytes32 saltAndAccount)
         internal
         view
         returns (bytes32 r)
     {
-        r = (EfficientHashLib.hash(digest, saltAndDelegation >> 160) << 96) >> 96;
-        if (!isValid(target, r, address(uint160(uint256(saltAndDelegation))))) r = 0;
+        r = (EfficientHashLib.hash(digest, saltAndAccount >> 160) << 96) >> 96;
+        if (!isValid(target, r, address(uint160(uint256(saltAndAccount))))) r = 0;
     }
 
-    /// @dev Returns if `r` and `delegation` results in `target`.
-    function isValid(address target, bytes32 r, address delegation) internal view returns (bool) {
+    /// @dev Returns if `r` and `account` results in `target`.
+    function isValid(address target, bytes32 r, address account) internal view returns (bool) {
         bytes32 s = EfficientHashLib.hash(r);
-        bytes32 h; // `keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(delegation).p(0).encode()))`.
+        bytes32 h; // `keccak256(abi.encodePacked(hex"05", LibRLP.p(0).p(account).p(0).encode()))`.
         assembly ("memory-safe") {
             mstore(0x20, 0x80)
-            mstore(0x1f, delegation)
+            mstore(0x1f, account)
             mstore(0x0b, 0x05d78094)
             h := keccak256(0x27, 0x19)
         }
@@ -44,7 +44,7 @@ library LibPREP {
 
     /// @dev Returns if `target` is a PREP.
     function isPREP(address target, bytes32 r) internal view returns (bool) {
-        address delegation = LibEIP7702.delegationOf(target);
-        return !LibBit.or(delegation == address(0), r == 0) && isValid(target, r, delegation);
+        address account = LibEIP7702.delegationOf(target);
+        return !LibBit.or(account == address(0), r == 0) && isValid(target, r, account);
     }
 }

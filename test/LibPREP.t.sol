@@ -26,21 +26,21 @@ contract LibPREPTest is BaseTest {
     struct _TestTemps {
         bytes32 digest;
         uint256 x;
-        bytes32 saltAndDelegation;
+        bytes32 saltAndAccount;
     }
 
     function testPREP() public {
         _TestTemps memory t;
-        EntryPoint.UserOp memory u;
+        Orchestrator.Intent memory u;
 
         PassKey memory k = _randomSecp256r1PassKey();
         k.k.isSuperAdmin = true;
 
         ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
-        initCalls[0].data = abi.encodeWithSelector(Delegation.authorize.selector, k.k);
+        initCalls[0].data = abi.encodeWithSelector(Account.authorize.selector, k.k);
 
-        (t.saltAndDelegation, u.eoa) = _minePREP(_computePREPDigest(initCalls));
-        u.initData = abi.encode(initCalls, abi.encodePacked(t.saltAndDelegation));
+        (t.saltAndAccount, u.eoa) = _minePREP(_computePREPDigest(initCalls));
+        u.initData = abi.encode(initCalls, abi.encodePacked(t.saltAndAccount));
 
         t.x = _randomUniform();
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
@@ -59,12 +59,12 @@ contract LibPREPTest is BaseTest {
 
         paymentToken.mint(u.eoa, type(uint128).max);
 
-        vm.etch(u.eoa, abi.encodePacked(hex"ef0100", delegation));
+        vm.etch(u.eoa, abi.encodePacked(hex"ef0100", account));
         assertEq(ep.execute(abi.encode(u)), 0);
 
         assertEq(sampleTarget.x(), t.x);
 
-        assertTrue(LibPREP.isPREP(u.eoa, Delegation(payable(u.eoa)).rPREP()));
+        assertTrue(LibPREP.isPREP(u.eoa, Account(payable(u.eoa)).rPREP()));
     }
 
     function testEIP7702StructHash(address dele) public pure {
