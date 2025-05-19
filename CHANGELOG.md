@@ -11,6 +11,19 @@
   This has a variety of usecases like validating key operations, setting data in account registry etc.
 - Only adds features. Should not have breaking changes for the relay.
 
+## 0.2.0
+
+### Minor Changes
+
+- Rename contracts, to avoid confusion with 4337 concepts.
+- `Delegation` -> `PortoAccount` (`account` is also used internally in some places)
+- `EntryPoint` -> `Orchestrator`
+- `UserOp` -> `Intent`
+- In tests `ep` has been substituted with `oc`. 
+- `PortoAccount` is used for all external facing interactions. 
+  Internally and in some places in tests we prefer to use the shorter `account`
+- By following the replacement rules above, it should be easy for relay to upgrade.
+
 ## 0.1.4
 
 ### Patch Changes

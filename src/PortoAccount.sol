@@ -795,6 +795,6 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
         returns (string memory name, string memory version)
     {
         name = "PortoAccount";
-        version = "0.1.4";
+        version = "0.2.0";
     }
 }
