@@ -22,13 +22,9 @@ import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {LibNonce} from "./libraries/LibNonce.sol";
 import {LibPREP} from "./libraries/LibPREP.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
-<<<<<<< HEAD:src/Account.sol
-import {IAccount} from "./interfaces/IAccount.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
-=======
 import {IPortoAccount} from "./interfaces/IPortoAccount.sol";
 
->>>>>>> 1e7b875 (chore: make it compile):src/PortoAccount.sol
 /// @title Account
 /// @notice A account contract for EOAs with EIP7702.
 contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {

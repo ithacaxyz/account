@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {IDelegation} from "./interfaces/IDelegation.sol";
+import {IPortoAccount} from "./interfaces/IPortoAccount.sol";
 import {ISigner} from "./interfaces/ISigner.sol";
 
 /// @notice A Signer contract, that extends multi-sig functionality to the Porto Account.
@@ -64,7 +64,7 @@ contract MultiSigSigner is ISigner {
 
     /// @dev Checks the current context keyhash in the Account, against the requested keyHash.
     function _checkKeyHash(bytes32 expectedKeyHash) internal view {
-        bytes32 keyHash = IDelegation(msg.sender).getContextKeyHash();
+        bytes32 keyHash = IPortoAccount(msg.sender).getContextKeyHash();
         if (keyHash != expectedKeyHash) revert InvalidKeyHash();
     }
 
@@ -139,7 +139,7 @@ contract MultiSigSigner is ISigner {
     // Signature Validation
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev This function SHOULD only be called by valid Delegation porto accounts.
+    /// @dev This function SHOULD only be called by valid PortoAccounts.
     /// - This will iteratively make a call to the address(msg.sender).unwrapAndValidateSignature
     ///   for each owner key hash in the config.
     /// - Signature of a multi-sig should be encoded as abi.encode(bytes[] memory ownerSignatures)
@@ -159,7 +159,7 @@ contract MultiSigSigner is ISigner {
         for (uint256 i; i < signatures.length; ++i) {
             // Unwrap and validate the signature.
             (bool isValid, bytes32 ownerKeyHash) =
-                IDelegation(msg.sender).unwrapAndValidateSignature(digest, signatures[i]);
+                IPortoAccount(msg.sender).unwrapAndValidateSignature(digest, signatures[i]);
 
             if (!isValid) {
                 continue;

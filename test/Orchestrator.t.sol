@@ -991,9 +991,9 @@ contract OrchestratorTest is BaseTest {
         vm.deal(t.d.eoa, type(uint192).max);
 
         t.multiSigSigner = new MultiSigSigner();
-        t.multiSigKey.k = Delegation.Key({
+        t.multiSigKey.k = PortoAccount.Key({
             expiry: 0,
-            keyType: Delegation.KeyType.External,
+            keyType: PortoAccount.KeyType.External,
             isSuperAdmin: true,
             publicKey: abi.encodePacked(
                 address(t.multiSigSigner), bytes12(uint96(_bound(_random(), 0, type(uint96).max)))
@@ -1058,7 +1058,7 @@ contract OrchestratorTest is BaseTest {
         vm.expectRevert(bytes4(keccak256("InvalidKeyHash()")));
         t.d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, abi.encode(calls));
 
-        EntryPoint.UserOp memory u;
+        Orchestrator.Intent memory u;
         u.eoa = t.d.eoa;
         u.nonce = t.d.d.getNonce(0);
         u.executionData = abi.encode(calls);
@@ -1068,14 +1068,14 @@ contract OrchestratorTest is BaseTest {
         u.signature = _sig(t.multiSigKey, u);
 
         // Test unwrapAndValidateSignature
-        bytes32 digest = ep.computeDigest(u);
+        bytes32 digest = oc.computeDigest(u);
         (bool isValid, bytes32 keyHash) =
             t.d.d.unwrapAndValidateSignature(digest, _sig(t.multiSigKey, digest));
 
         assertEq(isValid, true);
         assertEq(keyHash, _hash(t.multiSigKey.k));
 
-        assertEq(ep.execute{gas: gExecute}(abi.encode(u)), 0);
+        assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
         (uint256 _threshold, bytes32[] memory o) =
             t.multiSigSigner.getConfig(address(t.d.d), _hash(t.multiSigKey.k));
 
@@ -1106,7 +1106,7 @@ contract OrchestratorTest is BaseTest {
             u.signature = _sig(t.multiSigKey, u);
 
             if (newThreshold > 0) {
-                assertEq(ep.execute{gas: gExecute}(abi.encode(u)), 0);
+                assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
                 (_threshold, o) = t.multiSigSigner.getConfig(address(t.d.d), _hash(t.multiSigKey.k));
 
                 assertEq(_threshold, newThreshold);
@@ -1134,7 +1134,7 @@ contract OrchestratorTest is BaseTest {
             u.combinedGas = gCombined;
             u.signature = _sig(t.multiSigKey, u);
 
-            assertEq(ep.execute{gas: gExecute}(abi.encode(u)), 0);
+            assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
             (_threshold, o) = t.multiSigSigner.getConfig(address(t.d.d), _hash(t.multiSigKey.k));
 
             assertEq(o.length, t.multiSigKey.owners.length);

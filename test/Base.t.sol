@@ -64,7 +64,7 @@ contract BaseTest is SoladyTest {
     }
 
     struct MultiSigKey {
-        Delegation.Key k;
+        PortoAccount.Key k;
         uint256 threshold;
         PassKey[] owners;
     }
@@ -126,18 +126,7 @@ contract BaseTest is SoladyTest {
         k.keyHash = _hash(k.k);
     }
 
-<<<<<<< HEAD
-    function _randomKey() internal returns (Delegation.Key memory k) {
-        k.keyType = Delegation.KeyType(uint8(_bound(_random(), 0, 3)));
-        k.isSuperAdmin = _randomChance(2);
-        k.publicKey = abi.encode(address(_randomUniqueHashedAddress()));
-        k.expiry = 0;
-    }
-
-    function _sig(DelegatedEOA memory d, EntryPoint.UserOp memory u)
-=======
     function _sig(DelegatedEOA memory d, Orchestrator.Intent memory i)
->>>>>>> ac06a2a (chore: rename basic tests)
         internal
         view
         returns (bytes memory)
@@ -192,12 +181,12 @@ contract BaseTest is SoladyTest {
         return _multiSig(k, _hash(k.k), false, digest);
     }
 
-    function _sig(MultiSigKey memory k, EntryPoint.UserOp memory u)
+    function _sig(MultiSigKey memory k, Orchestrator.Intent memory u)
         internal
         view
         returns (bytes memory)
     {
-        return _multiSig(k, _hash(k.k), false, ep.computeDigest(u));
+        return _multiSig(k, _hash(k.k), false, oc.computeDigest(u));
     }
 
     function _sig(MultiSigKey memory k, bool prehash, bytes32 digest)
@@ -298,8 +287,7 @@ contract BaseTest is SoladyTest {
         return _estimateGas(i);
     }
 
-<<<<<<< HEAD
-    function _estimateGasForMultiSigKey(MultiSigKey memory k, EntryPoint.UserOp memory u)
+    function _estimateGasForMultiSigKey(MultiSigKey memory k, Orchestrator.Intent memory u)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
@@ -315,10 +303,7 @@ contract BaseTest is SoladyTest {
         );
     }
 
-    function _estimateGas(EntryPoint.UserOp memory u)
-=======
     function _estimateGas(Orchestrator.Intent memory i)
->>>>>>> ac06a2a (chore: rename basic tests)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
@@ -336,26 +321,14 @@ contract BaseTest is SoladyTest {
         gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
     }
 
-<<<<<<< HEAD
     struct _EstimateGasParams {
-        EntryPoint.UserOp u;
+        Orchestrator.Intent u;
         bool isPrePayment;
         uint8 paymentPerGasPrecision;
         uint256 paymentPerGas;
         uint256 combinedGasIncrement;
         uint256 combinedGasVerificationOffset;
     }
-=======
-    function _estimateGas(
-        Orchestrator.Intent memory i,
-        bool isPrePayment,
-        uint8 paymentPerGasPrecision,
-        uint256 paymentPerGas,
-        uint256 combinedGasIncrement,
-        uint256 combinedGasVerificationOffset
-    ) internal returns (uint256 gExecute, uint256 gCombined, uint256 gUsed) {
-        uint256 snapshot = vm.snapshotState();
->>>>>>> ac06a2a (chore: rename basic tests)
 
     function _estimateGas(_EstimateGasParams memory p)
         internal
@@ -364,13 +337,12 @@ contract BaseTest is SoladyTest {
         {
             uint256 snapshot = vm.snapshotState();
 
-<<<<<<< HEAD
             // Set the simulator to have max balance, so that it can run in state override mode.
             // This is meant to mimic an offchain state override.
             vm.deal(address(simulator), type(uint256).max);
 
             (gUsed, gCombined) = simulator.simulateV1Logs(
-                address(ep),
+                address(oc),
                 p.isPrePayment,
                 p.paymentPerGasPrecision,
                 p.paymentPerGas,
@@ -380,17 +352,6 @@ contract BaseTest is SoladyTest {
             );
             vm.revertToStateAndDelete(snapshot);
         }
-=======
-        (gUsed, gCombined) = simulator.simulateV1Logs(
-            address(oc),
-            isPrePayment,
-            paymentPerGasPrecision,
-            paymentPerGas,
-            combinedGasIncrement,
-            combinedGasVerificationOffset,
-            abi.encode(i)
-        );
->>>>>>> ac06a2a (chore: rename basic tests)
 
         // gExecute > (100k + combinedGas) * 64/63
         gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
