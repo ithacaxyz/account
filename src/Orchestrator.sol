@@ -114,9 +114,9 @@ contract Orchestrator is
         "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls)Call(address to,uint256 value,bytes data)"
     );
 
-    /// @dev For EIP712 signature digest calculation for PreCalls in the `execute` functions.
-    bytes32 public constant PRE_OP_TYPEHASH = keccak256(
-        "PreCall(bool multichain,address eoa,Call[] calls,uint256 nonce)Call(address to,uint256 value,bytes data)"
+    /// @dev For EIP712 signature digest calculation for SignedCalls
+    bytes32 public constant SIGNED_CALL_TYPEHASH = keccak256(
+        "SignedCall(bool multichain,address eoa,Call[] calls,uint256 nonce)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
@@ -727,7 +727,7 @@ contract Orchestrator is
         bool isMultichain = p.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
         bytes32[] memory f = EfficientHashLib.malloc(5);
-        f.set(0, PRE_OP_TYPEHASH);
+        f.set(0, SIGNED_CALL_TYPEHASH);
         f.set(1, LibBit.toUint(isMultichain));
         f.set(2, uint160(p.eoa));
         f.set(3, _executionDataHash(p.executionData));
