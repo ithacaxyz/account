@@ -455,15 +455,15 @@ contract OrchestratorTest is BaseTest {
         vm.revertToStateAndDelete(snapshot);
     }
 
-    struct _TestAuthorizeWithPreOpsAndTransferTemps {
+    struct _TestAuthorizeWithPreCallsAndTransferTemps {
         uint256 gExecute;
         uint256 gCombined;
         uint256 gUsed;
         bool success;
         bytes result;
-        bool testInvalidPreOpEOA;
-        bool testPreOpVerificationError;
-        bool testPreOpCallError;
+        bool testInvalidPreCallEOA;
+        bool testPreCallVerificationError;
+        bool testPreCallError;
         bool testPREP;
         bool testEOACoalesce;
         bool testSkipNonce;
@@ -477,7 +477,7 @@ contract OrchestratorTest is BaseTest {
     }
 
     function testPREPAndTransferInOneShot(bytes32) public {
-        _TestAuthorizeWithPreOpsAndTransferTemps memory t;
+        _TestAuthorizeWithPreCallsAndTransferTemps memory t;
         Orchestrator.Intent memory u;
 
         t.kPREP = _randomSecp256r1PassKey(); // This would be WebAuthn in practice.
@@ -509,7 +509,7 @@ contract OrchestratorTest is BaseTest {
 
         PassKey memory kSession = _randomSecp256r1PassKey();
 
-        Orchestrator.PreOp memory pSession;
+        Orchestrator.SignedCall memory pSession;
 
         pSession.eoa = t.eoa;
 
@@ -545,7 +545,7 @@ contract OrchestratorTest is BaseTest {
             pSession.signature = _sig(t.kPREP, oc.computeDigest(pSession));
         }
 
-        u.encodedPreOps = new bytes[](1);
+        u.encodedPreCalls = new bytes[](1);
 
         // Prepare the enveloping Intent.
         {
@@ -555,7 +555,7 @@ contract OrchestratorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.nonce = 0;
 
-            u.encodedPreOps[0] = abi.encode(pSession);
+            u.encodedPreCalls[0] = abi.encode(pSession);
         }
 
         // Test without gas estimation.
@@ -566,8 +566,8 @@ contract OrchestratorTest is BaseTest {
         assertEq(_balanceOf(tokenToTransfer, address(0xabcd)), 0.5 ether);
     }
 
-    function testAuthorizeWithPreOpsAndTransfer(bytes32) public {
-        _TestAuthorizeWithPreOpsAndTransferTemps memory t;
+    function testAuthorizeWithPreCallsAndTransfer(bytes32) public {
+        _TestAuthorizeWithPreCallsAndTransferTemps memory t;
         Orchestrator.Intent memory u;
 
         if (_randomChance(2)) {
@@ -604,8 +604,8 @@ contract OrchestratorTest is BaseTest {
 
         kSuperAdmin.k.isSuperAdmin = true;
 
-        Orchestrator.PreOp memory pSuperAdmin;
-        Orchestrator.PreOp memory pSession;
+        Orchestrator.SignedCall memory pSuperAdmin;
+        Orchestrator.SignedCall memory pSession;
 
         if (_randomChance(2)) {
             t.testEOACoalesce = true;
@@ -616,10 +616,10 @@ contract OrchestratorTest is BaseTest {
 
         if (_randomChance(64) && !t.testEOACoalesce) {
             pSession.eoa = _randomUniqueHashedAddress();
-            t.testInvalidPreOpEOA = true;
+            t.testInvalidPreCallEOA = true;
         }
 
-        u.encodedPreOps = new bytes[](2);
+        u.encodedPreCalls = new bytes[](2);
         // Prepare super admin passkey authorization Intent.
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
@@ -659,7 +659,7 @@ contract OrchestratorTest is BaseTest {
 
             if (_randomChance(64)) {
                 calls[0].value = 1 ether;
-                t.testPreOpCallError = true;
+                t.testPreCallError = true;
             }
 
             pSession.executionData = abi.encode(calls);
@@ -674,8 +674,8 @@ contract OrchestratorTest is BaseTest {
 
             if (_randomChance(64)) {
                 pSession.signature = _sig(_randomSecp256r1PassKey(), oc.computeDigest(pSession));
-                u.encodedPreOps[1] = abi.encode(pSession);
-                t.testPreOpVerificationError = true;
+                u.encodedPreCalls[1] = abi.encode(pSession);
+                t.testPreCallVerificationError = true;
             }
         }
 
@@ -687,28 +687,28 @@ contract OrchestratorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.nonce = 0;
 
-            u.encodedPreOps[0] = abi.encode(pSuperAdmin);
-            u.encodedPreOps[1] = abi.encode(pSession);
+            u.encodedPreCalls[0] = abi.encode(pSuperAdmin);
+            u.encodedPreCalls[1] = abi.encode(pSession);
         }
 
-        if (t.testInvalidPreOpEOA) {
+        if (t.testInvalidPreCallEOA) {
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("InvalidPreOpEOA()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("InvalidPreCallEOA()")));
             return; // Skip the rest.
         }
 
-        if (t.testPreOpVerificationError) {
+        if (t.testPreCallVerificationError) {
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("PreOpVerificationError()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("PreCallVerificationError()")));
             return; // Skip the rest.
         }
 
-        if (t.testPreOpCallError) {
+        if (t.testPreCallError) {
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("PreOpCallError()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("PreCallError()")));
             return; // Skip the rest.
         }
 

@@ -37,18 +37,18 @@ interface ICommon {
         uint256 totalPaymentMaxAmount;
         /// @dev The combined gas limit for payment, verification, and calling the EOA.
         uint256 combinedGas;
-        /// @dev Optional array of encoded PreOps that will be verified and executed
+        /// @dev Optional array of encoded PreCalls that will be verified and executed
         /// after PREP (if any) and before the validation of the overall Intent.
-        /// A PreOp will NOT have its gas limit or payment applied.
-        /// The overall Intent's gas limit and payment will be applied, encompassing all its PreOps.
-        /// The execution of a PreOp will check and increment the nonce in the PreOp.
-        /// If at any point, any PreOp cannot be verified to be correct, or fails in execution,
+        /// A PreCall will NOT have its gas limit or payment applied.
+        /// The overall Intent's gas limit and payment will be applied, encompassing all its PreCalls.
+        /// The execution of a PreCall will check and increment the nonce in the PreCall.
+        /// If at any point, any PreCall cannot be verified to be correct, or fails in execution,
         /// the overall Intent will revert before validation, and execute will return a non-zero error.
-        /// A PreOp can contain PreOps, forming a tree structure.
+        /// A PreCall can contain PreCalls, forming a tree structure.
         /// The `executionData` tree will be executed in post-order (i.e. left -> right -> current).
-        /// The `encodedPreOps` are included in the EIP712 signature, which enables execution order
+        /// The `encodedPreCalls` are included in the EIP712 signature, which enables execution order
         /// to be enforced on-the-fly even if the nonces are from different sequences.
-        bytes[] encodedPreOps;
+        bytes[] encodedPreCalls;
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
         ////////////////////////////////////////////////////////////////////////
@@ -79,11 +79,10 @@ interface ICommon {
         address supportedAccountImplementation;
     }
 
-    /// @dev A struct to hold the fields for a PreOp.
-    /// A PreOp is a set of Signed Executions by a user, which can only do restricted operations on the account.
-    /// Like adding and removing keys. PreOps can be appended along with any intent, they are paid for by the intent,
-    /// and are executed before the intent verification happens.
-    struct PreOp {
+    /// @dev A struct to hold the fields for a SignedCall.
+    /// A SignedCall is a struct that contains a signed execution batch along with the nonce
+    // and address of the user.
+    struct SignedCall {
         /// @dev The user's address.
         /// This can be set to `address(0)`, which allows it to be
         /// coalesced to the parent Intent's EOA.

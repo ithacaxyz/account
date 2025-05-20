@@ -75,14 +75,14 @@ contract Orchestrator is
     /// @dev The simulate execute run has failed. Try passing in more gas to the simulation.
     error SimulateExecuteFailed();
 
-    /// @dev A PreOp's EOA must be the same as its parent Intent's.
-    error InvalidPreOpEOA();
+    /// @dev A PreCall's EOA must be the same as its parent Intent's.
+    error InvalidPreCallEOA();
 
-    /// @dev The PreOp cannot be verified to be correct.
-    error PreOpVerificationError();
+    /// @dev The PreCall cannot be verified to be correct.
+    error PreCallVerificationError();
 
     /// @dev Error calling the sub Intents `executionData`.
-    error PreOpCallError();
+    error PreCallError();
 
     /// @dev The EOA's account implementation is not supported.
     error UnsupportedAccountImplementation();
@@ -97,12 +97,12 @@ contract Orchestrator is
     // Events
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Emitted when an Intent (including PreOps) is executed.
+    /// @dev Emitted when an Intent (including PreCalls) is executed.
     /// This event is emitted in the `execute` function.
     /// - `incremented` denotes that `nonce`'s sequence has been incremented to invalidate `nonce`,
     /// - `err` denotes the resultant error selector.
     /// If `incremented` is true and `err` is non-zero, the Intent was successful.
-    /// For PreOps where the nonce is skipped, this event will NOT be emitted..
+    /// For PreCalls where the nonce is skipped, this event will NOT be emitted..
     event IntentExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
 
     ////////////////////////////////////////////////////////////////////////
@@ -111,12 +111,12 @@ contract Orchestrator is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreOps)Call(address to,uint256 value,bytes data)"
+        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls)Call(address to,uint256 value,bytes data)"
     );
 
-    /// @dev For EIP712 signature digest calculation for PreOps in the `execute` functions.
+    /// @dev For EIP712 signature digest calculation for PreCalls in the `execute` functions.
     bytes32 public constant PRE_OP_TYPEHASH = keccak256(
-        "PreOp(bool multichain,address eoa,Call[] calls,uint256 nonce)Call(address to,uint256 value,bytes data)"
+        "PreCall(bool multichain,address eoa,Call[] calls,uint256 nonce)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
@@ -245,14 +245,14 @@ contract Orchestrator is
             if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
         }
     }
-    /// @dev Extracts the PreOp from the calldata bytes, with minimal checks.
+    /// @dev Extracts the PreCall from the calldata bytes, with minimal checks.
 
-    function _extractPreOp(bytes calldata encodedPreOp)
+    function _extractPreCall(bytes calldata encodedPreCall)
         internal
         virtual
-        returns (PreOp calldata p)
+        returns (SignedCall calldata p)
     {
-        Intent calldata i = _extractIntent(encodedPreOp);
+        Intent calldata i = _extractIntent(encodedPreCall);
         assembly ("memory-safe") {
             p := i
         }
@@ -438,7 +438,7 @@ contract Orchestrator is
             }
         }
         // Handle the sub Intents after the PREP (if any), and before the `_verify`.
-        if (i.encodedPreOps.length != 0) _handlePreOps(eoa, simulationFlags, i.encodedPreOps);
+        if (i.encodedPreCalls.length != 0) _handlePreCalls(eoa, simulationFlags, i.encodedPreCalls);
 
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the account logic.
@@ -564,7 +564,7 @@ contract Orchestrator is
         }
     }
 
-    /// @dev Loops over the `encodedPreOps` and does the following for each:
+    /// @dev Loops over the `encodedPreCalls` and does the following for each:
     /// - If the `eoa == address(0)`, it will be coalesced to `parentEOA`.
     /// - Check if `eoa == parentEOA`.
     /// - Validate the signature.
@@ -572,24 +572,24 @@ contract Orchestrator is
     /// - Call the Account with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
     /// - Emit an {IntentExecuted} event.
-    function _handlePreOps(
+    function _handlePreCalls(
         address parentEOA,
         uint256 simulationFlags,
-        bytes[] calldata encodedPreOps
+        bytes[] calldata encodedPreCalls
     ) internal virtual {
-        for (uint256 j; j < encodedPreOps.length; ++j) {
-            PreOp calldata p = _extractPreOp(encodedPreOps[j]);
+        for (uint256 j; j < encodedPreCalls.length; ++j) {
+            SignedCall calldata p = _extractPreCall(encodedPreCalls[j]);
             address eoa = Math.coalesce(p.eoa, parentEOA);
             uint256 nonce = p.nonce;
 
-            if (eoa != parentEOA) revert InvalidPreOpEOA();
+            if (eoa != parentEOA) revert InvalidPreCallEOA();
 
             (bool isValid, bytes32 keyHash) = _verify(_computeDigest(p), eoa, p.signature);
 
             if (simulationFlags == 1) {
                 isValid = true;
             }
-            if (!isValid) revert PreOpVerificationError();
+            if (!isValid) revert PreCallVerificationError();
 
             // Call eoa.checkAndIncrementNonce(u.nonce);
             assembly ("memory-safe") {
@@ -618,13 +618,13 @@ contract Orchestrator is
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
-                    if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x253e076a)) } // `PreOpCallError()`.
+                    if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x2228d5db)) } // `PreCallError()`.
                     revert(0x00, 0x20) // Revert the `err` (NOT return).
                 }
             }
 
             // Event so that indexers can know that the nonce is used.
-            // Reaching here means there's no error in the PreOp.
+            // Reaching here means there's no error in the PreCall.
             emit IntentExecuted(eoa, p.nonce, true, 0); // `incremented = true`, `err = 0`.
         }
     }
@@ -722,8 +722,8 @@ contract Orchestrator is
         }
     }
 
-    /// @dev Computes the EIP712 digest for the PreOp.
-    function _computeDigest(PreOp calldata p) internal view virtual returns (bytes32) {
+    /// @dev Computes the EIP712 digest for the PreCall.
+    function _computeDigest(SignedCall calldata p) internal view virtual returns (bytes32) {
         bool isMultichain = p.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
         bytes32[] memory f = EfficientHashLib.malloc(5);
@@ -754,7 +754,7 @@ contract Orchestrator is
         f.set(7, i.prePaymentMaxAmount);
         f.set(8, i.totalPaymentMaxAmount);
         f.set(9, i.combinedGas);
-        f.set(10, _encodedPreOpsHash(i.encodedPreOps));
+        f.set(10, _encodedPreCallsHash(i.encodedPreCalls));
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
@@ -785,16 +785,16 @@ contract Orchestrator is
         return a.hash();
     }
 
-    /// @dev Helper function to return the hash of the `encodedPreOps`.
-    function _encodedPreOpsHash(bytes[] calldata encodedPreOps)
+    /// @dev Helper function to return the hash of the `encodedPreCalls`.
+    function _encodedPreCallsHash(bytes[] calldata encodedPreCalls)
         internal
         view
         virtual
         returns (bytes32)
     {
-        bytes32[] memory a = EfficientHashLib.malloc(encodedPreOps.length);
-        for (uint256 i; i < encodedPreOps.length; ++i) {
-            a.set(i, EfficientHashLib.hashCalldata(encodedPreOps[i]));
+        bytes32[] memory a = EfficientHashLib.malloc(encodedPreCalls.length);
+        for (uint256 i; i < encodedPreCalls.length; ++i) {
+            a.set(i, EfficientHashLib.hashCalldata(encodedPreCalls[i]));
         }
         return a.hash();
     }

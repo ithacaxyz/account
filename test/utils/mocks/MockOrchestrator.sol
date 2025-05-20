@@ -11,8 +11,8 @@ contract MockOrchestrator is Orchestrator, Brutalizer {
 
     constructor(address pauseAuthority) Orchestrator(pauseAuthority) {}
 
-    function computeDigest(PreOp calldata preOp) public view returns (bytes32) {
-        return _computeDigest(preOp);
+    function computeDigest(SignedCall calldata preCall) public view returns (bytes32) {
+        return _computeDigest(preCall);
     }
 
     function computeDigest(Intent calldata intent) public view returns (bytes32) {

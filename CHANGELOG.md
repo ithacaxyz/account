@@ -1,15 +1,4 @@
 # porto-account
-## 0.1.3
-
-### Patch Changes
-
-- Adds support for `External` keytype. Which allows external contracts that implement the `ISigner` 
-  to verify signatures.
-- Adds a `MultiSigSigner` which adds multi-sig support to the account, using `External` keytype.
-- Adds a stack of `context key hashes` to the account. External observers can check which key signed
-  the account's current execution, by calling the `getContextKeyHash` function on the msg.sender.
-  This has a variety of usecases like validating key operations, setting data in account registry etc.
-- Only adds features. Should not have breaking changes for the relay.
 
 ## 0.2.0
 
@@ -19,8 +8,9 @@
 - `Delegation` -> `PortoAccount` (`account` is also used internally in some places)
 - `EntryPoint` -> `Orchestrator`
 - `UserOp` -> `Intent`
-- In tests `ep` has been substituted with `oc`. 
-- `PortoAccount` is used for all external facing interactions. 
+- `PreOp` -> struct to `SignedCall`, implementations to `PreCall`
+- In tests `ep` has been substituted with `oc`.
+- `PortoAccount` is used for all external facing interactions.
   Internally and in some places in tests we prefer to use the shorter `account`
 - By following the replacement rules above, it should be easy for relay to upgrade.
 
@@ -29,6 +19,18 @@
 ### Patch Changes
 
 - Removes support for delegate call executions in the account.
+
+## 0.1.3
+
+### Patch Changes
+
+- Adds support for `External` keytype. Which allows external contracts that implement the `ISigner`
+  to verify signatures.
+- Adds a `MultiSigSigner` which adds multi-sig support to the account, using `External` keytype.
+- Adds a stack of `context key hashes` to the account. External observers can check which key signed
+  the account's current execution, by calling the `getContextKeyHash` function on the msg.sender.
+  This has a variety of usecases like validating key operations, setting data in account registry etc.
+- Only adds features. Should not have breaking changes for the relay.
 
 ## 0.1.2
 
@@ -49,7 +51,7 @@
 - Orchestrator is not ownable anymore, anyone can call the `withdrawTokens` function.
 - All fill related functions removed from EP.
 - EP is now completely stateless, also does not have a constructor.
-- PreOp with `nonce = type(uint256).max` is not replayable anymore.
+- PreCall with `nonce = type(uint256).max` is not replayable anymore.
 - `OpDataTooShort` error, udpated to `OpDataError`, to enforce tighter validation of opdata.
 - `checkAndIncrementNonce` function added to account. Can only be called by EP.
 - 6b3294a: Optimize `_isSuperAdmin`
@@ -58,7 +60,7 @@
 
 ### Minor Changes
 
-- b38a5af: Refactor PreOps to be a minimal call struct with extra nonce and EOA fields
+- b38a5af: Refactor PreCalls to be a minimal call struct with extra nonce and EOA fields
 - - `compensate` function is replaced with the `pay` function in the account.
   - `pay` can be called twice during a intent. Once before the execution, which we call prePayment, and once after the execution called postPayment.
 
