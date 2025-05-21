@@ -289,14 +289,6 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
         emit NonceInvalidated(nonce);
     }
 
-    /// @dev Checks current nonce and increments the sequence for the `seqKey`.
-    function checkAndIncrementNonce(uint256 nonce) public payable virtual {
-        if (msg.sender != ORCHESTRATOR) {
-            revert Unauthorized();
-        }
-        LibNonce.checkAndIncrement(_getAccountStorage().nonceSeqs, nonce);
-    }
-
     /// @dev Upgrades the proxy account.
     /// If this account is delegated directly without usage of EIP7702Proxy,
     /// this operation will not affect the logic until the authority is redelegated
@@ -469,105 +461,6 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
         return LibPREP.isPREP(address(this), _getAccountStorage().rPREP);
     }
 
-    ////////////////////////////////////////////////////////////////////////
-    // Internal Helpers
-    ////////////////////////////////////////////////////////////////////////
-
-    /// @dev Adds the key. If the key already exist, its expiry will be updated.
-    function _addKey(Key memory key) internal virtual returns (bytes32 keyHash) {
-        if (key.isSuperAdmin) {
-            if (!_keyTypeCanBeSuperAdmin(key.keyType)) revert KeyTypeCannotBeSuperAdmin();
-        }
-        // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
-        keyHash = hash(key);
-        AccountStorage storage $ = _getAccountStorage();
-        $.keyStorage[keyHash].set(
-            abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin)
-        );
-        $.keyHashes.add(keyHash);
-    }
-
-    /// @dev Returns if the `keyType` can be a super admin.
-    function _keyTypeCanBeSuperAdmin(KeyType keyType) internal view virtual returns (bool) {
-        return keyType != KeyType.P256;
-    }
-
-    /// @dev Removes the key corresponding to the `keyHash`. Reverts if the key does not exist.
-    function _removeKey(bytes32 keyHash) internal virtual {
-        AccountStorage storage $ = _getAccountStorage();
-        $.keyStorage[keyHash].clear();
-        $.keyExtraStorage[keyHash].invalidate();
-        if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
-    }
-
-    ////////////////////////////////////////////////////////////////////////
-    // Orchestrator Functions
-    ////////////////////////////////////////////////////////////////////////
-
-    /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
-    function pay(
-        uint256 paymentAmount,
-        bytes32 keyHash,
-        bytes32 intentDigest,
-        bytes calldata encodedIntent
-    ) public virtual {
-        Intent calldata intent;
-        // Equivalent Solidity Code: (In the assembly intent is stored in calldata, instead of memory)
-        // Intent memory intent = abi.decode(encodedIntent, (Intent));
-        // Gas Savings:
-        // ~2.5-3k gas for general cases, by avoiding duplicated bounds checks, and avoiding writing the intent to memory.
-        // Extracts the Intent from the calldata bytes, with minimal checks.
-        // NOTE: Only use this implementation if you are sure that the encodedIntent is coming from a trusted source.
-        // We can avoid standard bound checks here, because the Orchestrator already does these checks when it interacts with ALL the fields in the intent using solidity.
-        assembly ("memory-safe") {
-            let t := calldataload(encodedIntent.offset)
-            intent := add(t, encodedIntent.offset)
-            // Bounds check. We don't need to explicitly check the fields here.
-            // In the self call functions, we will use regular Solidity to access the
-            // dynamic fields like `signature`, which generate the implicit bounds checks.
-            if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
-        }
-
-        if (
-            !LibBit.and(
-                msg.sender == ORCHESTRATOR,
-                LibBit.or(intent.eoa == address(this), intent.payer == address(this))
-            )
-        ) {
-            revert Unauthorized();
-        }
-
-        // If this account is the paymaster, validate the paymaster signature.
-        if (intent.payer == address(this)) {
-            (bool isValid, bytes32 k) =
-                unwrapAndValidateSignature(intentDigest, intent.paymentSignature);
-
-            // Set the target key hash to the payer's.
-            keyHash = k;
-
-            // If this is a simulation, signature validation errors are skipped.
-            /// @dev to simulate a paymaster, state override the balance of the msg.sender
-            /// to type(uint256).max. In this case, the msg.sender is the ORCHESTRATOR.
-            if (address(ORCHESTRATOR).balance == type(uint256).max) {
-                isValid = true;
-            }
-
-            if (!isValid) {
-                revert Unauthorized();
-            }
-        }
-
-        TokenTransferLib.safeTransfer(intent.paymentToken, intent.paymentRecipient, paymentAmount);
-        // Increase spend.
-        if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
-            SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
-            _incrementSpent(spends.spends[intent.paymentToken], intent.paymentToken, paymentAmount);
-        }
-
-        // Done to avoid compiler warnings.
-        intentDigest = intentDigest;
-    }
-
     /// @dev Returns if the signature is valid, along with its `keyHash`.
     /// The `signature` is a wrapped signature, given by
     /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
@@ -659,6 +552,113 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
                 if and(success, eq(shr(224, mload(0x00)), 0x8afc93b4)) { isValid := true }
             }
         }
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // Internal Helpers
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Adds the key. If the key already exist, its expiry will be updated.
+    function _addKey(Key memory key) internal virtual returns (bytes32 keyHash) {
+        if (key.isSuperAdmin) {
+            if (!_keyTypeCanBeSuperAdmin(key.keyType)) revert KeyTypeCannotBeSuperAdmin();
+        }
+        // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
+        keyHash = hash(key);
+        AccountStorage storage $ = _getAccountStorage();
+        $.keyStorage[keyHash].set(
+            abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin)
+        );
+        $.keyHashes.add(keyHash);
+    }
+
+    /// @dev Returns if the `keyType` can be a super admin.
+    function _keyTypeCanBeSuperAdmin(KeyType keyType) internal view virtual returns (bool) {
+        return keyType != KeyType.P256;
+    }
+
+    /// @dev Removes the key corresponding to the `keyHash`. Reverts if the key does not exist.
+    function _removeKey(bytes32 keyHash) internal virtual {
+        AccountStorage storage $ = _getAccountStorage();
+        $.keyStorage[keyHash].clear();
+        $.keyExtraStorage[keyHash].invalidate();
+        if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // Orchestrator Functions
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Checks current nonce and increments the sequence for the `seqKey`.
+    function checkAndIncrementNonce(uint256 nonce) public payable virtual {
+        if (msg.sender != ORCHESTRATOR) {
+            revert Unauthorized();
+        }
+        LibNonce.checkAndIncrement(_getAccountStorage().nonceSeqs, nonce);
+    }
+
+    /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
+    function pay(
+        uint256 paymentAmount,
+        bytes32 keyHash,
+        bytes32 intentDigest,
+        bytes calldata encodedIntent
+    ) public virtual {
+        Intent calldata intent;
+        // Equivalent Solidity Code: (In the assembly intent is stored in calldata, instead of memory)
+        // Intent memory intent = abi.decode(encodedIntent, (Intent));
+        // Gas Savings:
+        // ~2.5-3k gas for general cases, by avoiding duplicated bounds checks, and avoiding writing the intent to memory.
+        // Extracts the Intent from the calldata bytes, with minimal checks.
+        // NOTE: Only use this implementation if you are sure that the encodedIntent is coming from a trusted source.
+        // We can avoid standard bound checks here, because the Orchestrator already does these checks when it interacts with ALL the fields in the intent using solidity.
+        assembly ("memory-safe") {
+            let t := calldataload(encodedIntent.offset)
+            intent := add(t, encodedIntent.offset)
+            // Bounds check. We don't need to explicitly check the fields here.
+            // In the self call functions, we will use regular Solidity to access the
+            // dynamic fields like `signature`, which generate the implicit bounds checks.
+            if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
+        }
+
+        if (
+            !LibBit.and(
+                msg.sender == ORCHESTRATOR,
+                LibBit.or(intent.eoa == address(this), intent.payer == address(this))
+            )
+        ) {
+            revert Unauthorized();
+        }
+
+        // If this account is the paymaster, validate the paymaster signature.
+        if (intent.payer == address(this)) {
+            (bool isValid, bytes32 k) =
+                unwrapAndValidateSignature(intentDigest, intent.paymentSignature);
+
+            // Set the target key hash to the payer's.
+            keyHash = k;
+
+            // If this is a simulation, signature validation errors are skipped.
+            /// @dev to simulate a paymaster, state override the balance of the msg.sender
+            /// to type(uint256).max. In this case, the msg.sender is the ORCHESTRATOR.
+            if (address(ORCHESTRATOR).balance == type(uint256).max) {
+                isValid = true;
+            }
+
+            if (!isValid) {
+                revert Unauthorized();
+            }
+        }
+
+        TokenTransferLib.safeTransfer(intent.paymentToken, intent.paymentRecipient, paymentAmount);
+        // Increase spend.
+        if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
+            SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
+            _incrementSpent(spends.spends[intent.paymentToken], intent.paymentToken, paymentAmount);
+        }
+
+        // Done to avoid compiler warnings.
+        intentDigest = intentDigest;
     }
 
     /// @dev Initializes the PREP.
