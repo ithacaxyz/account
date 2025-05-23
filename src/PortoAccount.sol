@@ -78,8 +78,9 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
     struct AccountStorage {
         /// @dev The label.
         LibBytes.BytesStorage label;
-        /// @dev The `r` value for the secp256k1 curve to show that this contract is a PREP.
-        bytes32 rPREP;
+        /// @dev 32 byte slot to store arbitrary initData.
+        /// Must be non zero to indicate that the account has been initialized.
+        bytes32 initSlot;
         /// @dev Mapping for 4337-style 2D nonce sequences.
         /// Each nonce has the following bit layout:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
@@ -126,14 +127,14 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
     /// @dev The `opData` is too short.
     error OpDataError();
 
-    /// @dev The PREP `initData` is invalid.
-    error InvalidPREP();
-
     /// @dev The `keyType` cannot be super admin.
     error KeyTypeCannotBeSuperAdmin();
 
     /// @dev The public key is invalid.
     error InvalidPublicKey();
+
+    /// @dev The init slot is invalid.
+    error InvalidInitSlot();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -661,52 +662,16 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
         }
     }
 
-    /// @dev Initializes the PREP.
-    /// If already initialized, early returns true.
-    /// `initData` is encoded using ERC7821 style batch execution encoding.
-    /// (ERC7821 is a variant of ERC7579).
-    /// `abi.encode(calls, abi.encodePacked(bytes32(saltAndAccount)))`,
-    /// where `calls` is of type `Call[]`,
-    /// and `saltAndAccount` is `bytes32((uint256(salt) << 160) | uint160(account))`.
-    function initializePREP(bytes calldata initData) public virtual returns (bool) {
-        // We can omit the check for `msg.sender == ORCHESTRATOR`,
-        // having a correct `initData` will be sufficient.
+    /// @dev Initialize the account
+    function initialize(bytes32 initSlot, bytes calldata initData) public virtual returns (bool) {
+        if (msg.sender != address(this)) revert Unauthorized();
+
         AccountStorage storage $ = _getAccountStorage();
-        if ($.rPREP != 0) return true;
+        if ($.initSlot != 0 || initSlot == 0) return true;
+        $.initSlot = initSlot;
 
-        // Compute the digest of the calls in `initData`.
-        (bytes32[] calldata pointers, bytes calldata opData) =
-            LibERC7579.decodeBatchAndOpData(initData);
-        bytes32[] memory a = EfficientHashLib.malloc(pointers.length);
-        for (uint256 i; i < pointers.length; ++i) {
-            (address target, uint256 value, bytes calldata data) =
-                LibERC7579.getExecution(pointers, i);
-            a.set(
-                i,
-                EfficientHashLib.hash(
-                    CALL_TYPEHASH,
-                    bytes32(uint256(uint160(target))),
-                    bytes32(value),
-                    EfficientHashLib.hashCalldata(data)
-                )
-            );
-        }
-        // Arguments are `(address target, bytes32 digest, bytes32 saltAndAccount)`.
-        bytes32 r = LibPREP.rPREP(address(this), a.hash(), LibBytes.loadCalldata(opData, 0x00));
-        // If `r == 0`, it means that `address(this)` is not a valid PREP address.
-        // Also, add in a bounds check just to be extra safe.
-        if (LibBit.or(opData.length < 0x20, r == 0)) revert InvalidPREP();
-        $.rPREP = r;
-
-        // Use assembly to reinterpret cast into `Call[]`.
-        Call[] calldata calls;
-        assembly ("memory-safe") {
-            calls.length := pointers.length
-            calls.offset := pointers.offset
-        }
+        Call[] memory calls = abi.decode(initData, (Call[]));
         _execute(calls, bytes32(0));
-
-        return true;
     }
 
     ////////////////////////////////////////////////////////////////////////
