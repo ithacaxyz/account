@@ -13,7 +13,7 @@ We believe that unstoppable crypto-powered accounts should be excellent througho
 
 - **Onboarding**: No key management using WebAuthn and Passkeys. KYC-less fiat onramping. No kicking of the user to 3rd party applications, fully embedded experience with headless wallet.
 - **Verifying their identity**: Privacy-preserving identity verification with [ZK Passport](https://www.openpassport.app/) or other techniques.
-- **Transacting safely**: Access [control policies](b/main/src/GuardedExecutor.sol) baked in with sensible defaults in smart contracts.
+- **Transacting safely**: Access [control policies](src/GuardedExecutor.sol) baked in with sensible defaults in smart contracts.
 - **Transacting privately**: Built-in privacy using [stealth addresses](https://vitalik.eth.limo/general/2023/01/20/stealth.html) and [confidential transactions](https://eips.ethereum.org/EIPS/eip-4491).
 - **Transacting seamlessly across chains**: Single address with automatic gas handling across chains using [ERC7683](https://eips.ethereum.org/EIPS/eip-7683).
 - **Recovering their account**: Multi-path recovery via social, [email](https://github.com/zkemail), [OAuth](https://github.com/olehmisar/zklogin/pull/2), or other identity providers.
