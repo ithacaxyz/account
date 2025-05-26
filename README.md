@@ -1,4 +1,5 @@
 # <h1 align="center"> Account </h1>
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ithacaxyz/account)
 
 > 🚧 **Work In Progress**
 > This repository is under active development.
@@ -31,3 +32,4 @@ We believe that unstoppable crypto-powered accounts should be excellent througho
 - [ ] Chain Abstraction: Transaction on any chain invisibly. Powered by ERC7683. WIP
 - [ ] Privacy: Using stealth addresses and confidential transactions.
 - [ ] Account Recovery & Identity: Using ZK {Email, OAUth, Passport} and more.
+
