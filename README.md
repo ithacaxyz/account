@@ -34,3 +34,6 @@ We believe that unstoppable crypto-powered accounts should be excellent througho
 - [ ] Privacy: Using stealth addresses and confidential transactions.
 - [ ] Account Recovery & Identity: Using ZK {Email, OAUth, Passport} and more.
 
+## Getting Help
+Have questions or building something cool with Porto Accounts?  
+Join the Telegram group to chat with the team and other devs: [@porto_devs](https://t.me/porto_devs)
