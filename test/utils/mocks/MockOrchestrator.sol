@@ -19,9 +19,6 @@ contract MockOrchestrator is Orchestrator, Brutalizer {
         return _computeDigest(intent);
     }
 
-    /// @dev This function is provided for debugging purposes.
-    /// This function bubbles up the full revert for the calls
-    /// to `initializePREP` (if any) and `execute` on the eoa.
     function simulateFailed(bytes calldata encodedIntent) public payable virtual {
         _execute(encodedIntent, type(uint256).max, 1);
         revert NoRevertEncountered();

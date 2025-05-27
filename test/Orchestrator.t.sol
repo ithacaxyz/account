@@ -86,7 +86,6 @@ contract OrchestratorTest is BaseTest {
         u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
         u.combinedGas = 10000000;
         u.signature = "";
-        u.initData = "";
 
         u.signature = _sig(alice, u);
 
@@ -464,35 +463,44 @@ contract OrchestratorTest is BaseTest {
         bool testInvalidPreCallEOA;
         bool testPreCallVerificationError;
         bool testPreCallError;
-        bool testPREP;
+        bool testInit;
         bool testEOACoalesce;
         bool testSkipNonce;
         uint192 superAdminNonceSeqKey;
         uint192 sessionNonceSeqKey;
         uint256 retrievedSuperAdminNonce;
         uint256 retrievedSessionNonce;
-        PassKey kPREP;
+        PassKey kInit;
         DelegatedEOA d;
         address eoa;
     }
 
-    function testPREPAndTransferInOneShot(bytes32) public {
+    function testInitAndTransferInOneShot(bytes32) public {
         _TestAuthorizeWithPreCallsAndTransferTemps memory t;
         Orchestrator.Intent memory u;
 
-        t.kPREP = _randomSecp256r1PassKey(); // This would be WebAuthn in practice.
-        t.kPREP.k.isSuperAdmin = true;
-
-        ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
-        initCalls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, t.kPREP.k);
-
-        bytes32 saltAndAccount;
-        (saltAndAccount, t.eoa) = _minePREP(_computePREPDigest(initCalls));
-        u.initData = abi.encode(initCalls, abi.encodePacked(saltAndAccount));
+        uint256 ephemeralPK = _randomPrivateKey();
+        t.eoa = vm.addr(ephemeralPK);
 
         vm.etch(t.eoa, abi.encodePacked(hex"ef0100", account));
 
         u.eoa = t.eoa;
+        Orchestrator.SignedCall memory pInit;
+
+        // Prepare Ephemeral Key Authorization
+        {
+            t.kInit = _randomSecp256r1PassKey(); // This would be WebAuthn in practice.
+            t.kInit.k.isSuperAdmin = true;
+
+            ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
+            initCalls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, t.kInit.k);
+            pInit.eoa = t.eoa;
+
+            pInit.executionData = abi.encode(initCalls);
+            pInit.nonce = (0xc1d0 << 240);
+
+            pInit.signature = _eoaSig(ephemeralPK, oc.computeDigest(pInit));
+        }
 
         address tokenToTransfer =
             _randomChance(2) ? address(0) : LibClone.clone(address(paymentToken));
@@ -505,7 +513,6 @@ contract OrchestratorTest is BaseTest {
         u.totalPaymentAmount = u.prePaymentAmount;
         u.totalPaymentMaxAmount = u.prePaymentAmount;
         u.paymentRecipient = address(oc);
-        u.nonce = 0xc1d0 << 240;
 
         PassKey memory kSession = _randomSecp256r1PassKey();
 
@@ -539,13 +546,12 @@ contract OrchestratorTest is BaseTest {
             }
 
             pSession.executionData = abi.encode(calls);
-            // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
-            pSession.nonce = (0xc1d0 << 240) | (2 << 64);
+            pSession.nonce = (0xc1d0 << 240) + 1;
 
-            pSession.signature = _sig(t.kPREP, oc.computeDigest(pSession));
+            pSession.signature = _sig(t.kInit, oc.computeDigest(pSession));
         }
 
-        u.encodedPreCalls = new bytes[](1);
+        u.encodedPreCalls = new bytes[](2);
 
         // Prepare the enveloping Intent.
         {
@@ -555,7 +561,8 @@ contract OrchestratorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.nonce = 0;
 
-            u.encodedPreCalls[0] = abi.encode(pSession);
+            u.encodedPreCalls[0] = abi.encode(pInit);
+            u.encodedPreCalls[1] = abi.encode(pSession);
         }
 
         // Test without gas estimation.
@@ -569,24 +576,39 @@ contract OrchestratorTest is BaseTest {
     function testAuthorizeWithPreCallsAndTransfer(bytes32) public {
         _TestAuthorizeWithPreCallsAndTransferTemps memory t;
         Orchestrator.Intent memory u;
+        Orchestrator.SignedCall memory pInit;
 
         if (_randomChance(2)) {
             t.d = _randomEIP7702DelegatedEOA();
             t.eoa = t.d.eoa;
         } else {
-            t.kPREP = _randomSecp256r1PassKey();
-            t.kPREP.k.isSuperAdmin = true;
+            t.kInit = _randomSecp256r1PassKey();
+            t.kInit.k.isSuperAdmin = true;
 
-            ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
-            initCalls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, t.kPREP.k);
-
-            bytes32 saltAndAccount;
-            (saltAndAccount, t.eoa) = _minePREP(_computePREPDigest(initCalls));
-            u.initData = abi.encode(initCalls, abi.encodePacked(saltAndAccount));
+            uint256 ephemeralPK = _randomPrivateKey();
+            t.eoa = vm.addr(ephemeralPK);
 
             vm.etch(t.eoa, abi.encodePacked(hex"ef0100", account));
 
-            t.testPREP = true;
+            u.eoa = t.eoa;
+
+            // Prepare Ephemeral Key Authorization
+            {
+                t.kInit = _randomSecp256r1PassKey(); // This would be WebAuthn in practice.
+                t.kInit.k.isSuperAdmin = true;
+
+                ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
+                initCalls[0].data =
+                    abi.encodeWithSelector(PortoAccount.authorize.selector, t.kInit.k);
+                pInit.eoa = t.eoa;
+
+                pInit.executionData = abi.encode(initCalls);
+                pInit.nonce = (0xc1d0 << 240);
+
+                pInit.signature = _eoaSig(ephemeralPK, oc.computeDigest(pInit));
+            }
+
+            t.testInit = true;
         }
 
         u.eoa = t.eoa;
@@ -619,7 +641,12 @@ contract OrchestratorTest is BaseTest {
             t.testInvalidPreCallEOA = true;
         }
 
-        u.encodedPreCalls = new bytes[](2);
+        if (t.testInit) {
+            u.encodedPreCalls = new bytes[](3);
+        } else {
+            u.encodedPreCalls = new bytes[](2);
+        }
+
         // Prepare super admin passkey authorization Intent.
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
@@ -633,8 +660,8 @@ contract OrchestratorTest is BaseTest {
                 pSuperAdmin.nonce = type(uint256).max;
             }
 
-            if (t.testPREP) {
-                pSuperAdmin.signature = _sig(t.kPREP, oc.computeDigest(pSuperAdmin));
+            if (t.testInit) {
+                pSuperAdmin.signature = _sig(t.kInit, oc.computeDigest(pSuperAdmin));
             } else {
                 pSuperAdmin.signature = _eoaSig(t.d.privateKey, oc.computeDigest(pSuperAdmin));
             }
@@ -687,8 +714,14 @@ contract OrchestratorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.nonce = 0;
 
-            u.encodedPreCalls[0] = abi.encode(pSuperAdmin);
-            u.encodedPreCalls[1] = abi.encode(pSession);
+            if (t.testInit) {
+                u.encodedPreCalls[0] = abi.encode(pInit);
+                u.encodedPreCalls[1] = abi.encode(pSuperAdmin);
+                u.encodedPreCalls[2] = abi.encode(pSession);
+            } else {
+                u.encodedPreCalls[0] = abi.encode(pSuperAdmin);
+                u.encodedPreCalls[1] = abi.encode(pSession);
+            }
         }
 
         if (t.testInvalidPreCallEOA) {
