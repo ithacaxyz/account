@@ -14,7 +14,6 @@ import {LibStorage} from "solady/utils/LibStorage.sol";
 import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
-import {LibPREP} from "./libraries/LibPREP.sol";
 import {IPortoAccount} from "./interfaces/IPortoAccount.sol";
 import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
 import {PauseAuthority} from "./PauseAuthority.sol";
@@ -413,31 +412,7 @@ contract Orchestrator is
         // This is why ERC4337 has all those weird storage and opcode restrictions for
         // simulation, and suggests banning users that intentionally grief the simulation.
 
-        // If `initializePREP` fails, just revert.
-        // Off-chain simulation can ensure that the eoa is indeed a PREP address.
-        // If the eoa is a PREP address, this means the account cannot be altered
-        // while the Intent is in-flight, which means off-chain simulation success
-        // guarantees on-chain execution success.
-        if (i.initData.length != 0) {
-            bytes calldata initData = i.initData;
-            assembly ("memory-safe") {
-                let m := mload(0x40)
-                mstore(m, 0x36745d10) // `initializePREP(bytes)`.
-                mstore(add(m, 0x20), 0x20)
-                mstore(add(m, 0x40), initData.length)
-                calldatacopy(add(m, 0x60), initData.offset, initData.length)
-                let success :=
-                    call(gas(), eoa, 0, add(m, 0x1c), add(0x64, initData.length), m, 0x20)
-                if iszero(and(eq(mload(m), 1), success)) {
-                    if simulationFlags {
-                        returndatacopy(mload(0x40), 0x00, returndatasize())
-                        revert(mload(0x40), returndatasize())
-                    }
-                    revert(0x00, 0x20)
-                }
-            }
-        }
-        // Handle the sub Intents after the PREP (if any), and before the `_verify`.
+        // Handle the sub Intents after initialize (if any), and before the `_verify`.
         if (i.encodedPreCalls.length != 0) _handlePreCalls(eoa, simulationFlags, i.encodedPreCalls);
 
         // If `_verify` is invalid, just revert.

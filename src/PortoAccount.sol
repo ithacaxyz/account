@@ -20,7 +20,6 @@ import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {LibNonce} from "./libraries/LibNonce.sol";
-import {LibPREP} from "./libraries/LibPREP.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
 import {IPortoAccount} from "./interfaces/IPortoAccount.sol";
@@ -78,8 +77,6 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
     struct AccountStorage {
         /// @dev The label.
         LibBytes.BytesStorage label;
-        /// @dev The `r` value for the secp256k1 curve to show that this contract is a PREP.
-        bytes32 rPREP;
         /// @dev Mapping for 4337-style 2D nonce sequences.
         /// Each nonce has the following bit layout:
         /// - Upper 192 bits are used for the `seqKey` (sequence key).
@@ -125,9 +122,6 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
 
     /// @dev The `opData` is too short.
     error OpDataError();
-
-    /// @dev The PREP `initData` is invalid.
-    error InvalidPREP();
 
     /// @dev The `keyType` cannot be super admin.
     error KeyTypeCannotBeSuperAdmin();
@@ -451,14 +445,103 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
         return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
 
-    /// @dev Returns the `r` value for initializing the PREP.
-    function rPREP() public view virtual returns (bytes32) {
-        return _getAccountStorage().rPREP;
+    ////////////////////////////////////////////////////////////////////////
+    // Internal Helpers
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Adds the key. If the key already exist, its expiry will be updated.
+    function _addKey(Key memory key) internal virtual returns (bytes32 keyHash) {
+        if (key.isSuperAdmin) {
+            if (!_keyTypeCanBeSuperAdmin(key.keyType)) revert KeyTypeCannotBeSuperAdmin();
+        }
+        // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
+        keyHash = hash(key);
+        AccountStorage storage $ = _getAccountStorage();
+        $.keyStorage[keyHash].set(
+            abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin)
+        );
+        $.keyHashes.add(keyHash);
     }
 
-    /// @dev Returns if the compact PREP signature is valid.
-    function isPREP() public view virtual returns (bool) {
-        return LibPREP.isPREP(address(this), _getAccountStorage().rPREP);
+    /// @dev Returns if the `keyType` can be a super admin.
+    function _keyTypeCanBeSuperAdmin(KeyType keyType) internal view virtual returns (bool) {
+        return keyType != KeyType.P256;
+    }
+
+    /// @dev Removes the key corresponding to the `keyHash`. Reverts if the key does not exist.
+    function _removeKey(bytes32 keyHash) internal virtual {
+        AccountStorage storage $ = _getAccountStorage();
+        $.keyStorage[keyHash].clear();
+        $.keyExtraStorage[keyHash].invalidate();
+        if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // Orchestrator Functions
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
+    function pay(
+        uint256 paymentAmount,
+        bytes32 keyHash,
+        bytes32 intentDigest,
+        bytes calldata encodedIntent
+    ) public virtual {
+        Intent calldata intent;
+        // Equivalent Solidity Code: (In the assembly intent is stored in calldata, instead of memory)
+        // Intent memory intent = abi.decode(encodedIntent, (Intent));
+        // Gas Savings:
+        // ~2.5-3k gas for general cases, by avoiding duplicated bounds checks, and avoiding writing the intent to memory.
+        // Extracts the Intent from the calldata bytes, with minimal checks.
+        // NOTE: Only use this implementation if you are sure that the encodedIntent is coming from a trusted source.
+        // We can avoid standard bound checks here, because the Orchestrator already does these checks when it interacts with ALL the fields in the intent using solidity.
+        assembly ("memory-safe") {
+            let t := calldataload(encodedIntent.offset)
+            intent := add(t, encodedIntent.offset)
+            // Bounds check. We don't need to explicitly check the fields here.
+            // In the self call functions, we will use regular Solidity to access the
+            // dynamic fields like `signature`, which generate the implicit bounds checks.
+            if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
+        }
+
+        if (
+            !LibBit.and(
+                msg.sender == ORCHESTRATOR,
+                LibBit.or(intent.eoa == address(this), intent.payer == address(this))
+            )
+        ) {
+            revert Unauthorized();
+        }
+
+        // If this account is the paymaster, validate the paymaster signature.
+        if (intent.payer == address(this)) {
+            (bool isValid, bytes32 k) =
+                unwrapAndValidateSignature(intentDigest, intent.paymentSignature);
+
+            // Set the target key hash to the payer's.
+            keyHash = k;
+
+            // If this is a simulation, signature validation errors are skipped.
+            /// @dev to simulate a paymaster, state override the balance of the msg.sender
+            /// to type(uint256).max. In this case, the msg.sender is the ORCHESTRATOR.
+            if (address(ORCHESTRATOR).balance == type(uint256).max) {
+                isValid = true;
+            }
+
+            if (!isValid) {
+                revert Unauthorized();
+            }
+        }
+
+        TokenTransferLib.safeTransfer(intent.paymentToken, intent.paymentRecipient, paymentAmount);
+        // Increase spend.
+        if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
+            SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
+            _incrementSpent(spends.spends[intent.paymentToken], intent.paymentToken, paymentAmount);
+        }
+
+        // Done to avoid compiler warnings.
+        intentDigest = intentDigest;
     }
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.
@@ -552,161 +635,6 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
                 if and(success, eq(shr(224, mload(0x00)), 0x8afc93b4)) { isValid := true }
             }
         }
-    }
-
-    ////////////////////////////////////////////////////////////////////////
-    // Internal Helpers
-    ////////////////////////////////////////////////////////////////////////
-
-    /// @dev Adds the key. If the key already exist, its expiry will be updated.
-    function _addKey(Key memory key) internal virtual returns (bytes32 keyHash) {
-        if (key.isSuperAdmin) {
-            if (!_keyTypeCanBeSuperAdmin(key.keyType)) revert KeyTypeCannotBeSuperAdmin();
-        }
-        // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
-        keyHash = hash(key);
-        AccountStorage storage $ = _getAccountStorage();
-        $.keyStorage[keyHash].set(
-            abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin)
-        );
-        $.keyHashes.add(keyHash);
-    }
-
-    /// @dev Returns if the `keyType` can be a super admin.
-    function _keyTypeCanBeSuperAdmin(KeyType keyType) internal view virtual returns (bool) {
-        return keyType != KeyType.P256;
-    }
-
-    /// @dev Removes the key corresponding to the `keyHash`. Reverts if the key does not exist.
-    function _removeKey(bytes32 keyHash) internal virtual {
-        AccountStorage storage $ = _getAccountStorage();
-        $.keyStorage[keyHash].clear();
-        $.keyExtraStorage[keyHash].invalidate();
-        if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
-    }
-
-    ////////////////////////////////////////////////////////////////////////
-    // Orchestrator Functions
-    ////////////////////////////////////////////////////////////////////////
-
-    /// @dev Checks current nonce and increments the sequence for the `seqKey`.
-    function checkAndIncrementNonce(uint256 nonce) public payable virtual {
-        if (msg.sender != ORCHESTRATOR) {
-            revert Unauthorized();
-        }
-        LibNonce.checkAndIncrement(_getAccountStorage().nonceSeqs, nonce);
-    }
-
-    /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
-    function pay(
-        uint256 paymentAmount,
-        bytes32 keyHash,
-        bytes32 intentDigest,
-        bytes calldata encodedIntent
-    ) public virtual {
-        Intent calldata intent;
-        // Equivalent Solidity Code: (In the assembly intent is stored in calldata, instead of memory)
-        // Intent memory intent = abi.decode(encodedIntent, (Intent));
-        // Gas Savings:
-        // ~2.5-3k gas for general cases, by avoiding duplicated bounds checks, and avoiding writing the intent to memory.
-        // Extracts the Intent from the calldata bytes, with minimal checks.
-        // NOTE: Only use this implementation if you are sure that the encodedIntent is coming from a trusted source.
-        // We can avoid standard bound checks here, because the Orchestrator already does these checks when it interacts with ALL the fields in the intent using solidity.
-        assembly ("memory-safe") {
-            let t := calldataload(encodedIntent.offset)
-            intent := add(t, encodedIntent.offset)
-            // Bounds check. We don't need to explicitly check the fields here.
-            // In the self call functions, we will use regular Solidity to access the
-            // dynamic fields like `signature`, which generate the implicit bounds checks.
-            if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
-        }
-
-        if (
-            !LibBit.and(
-                msg.sender == ORCHESTRATOR,
-                LibBit.or(intent.eoa == address(this), intent.payer == address(this))
-            )
-        ) {
-            revert Unauthorized();
-        }
-
-        // If this account is the paymaster, validate the paymaster signature.
-        if (intent.payer == address(this)) {
-            (bool isValid, bytes32 k) =
-                unwrapAndValidateSignature(intentDigest, intent.paymentSignature);
-
-            // Set the target key hash to the payer's.
-            keyHash = k;
-
-            // If this is a simulation, signature validation errors are skipped.
-            /// @dev to simulate a paymaster, state override the balance of the msg.sender
-            /// to type(uint256).max. In this case, the msg.sender is the ORCHESTRATOR.
-            if (address(ORCHESTRATOR).balance == type(uint256).max) {
-                isValid = true;
-            }
-
-            if (!isValid) {
-                revert Unauthorized();
-            }
-        }
-
-        TokenTransferLib.safeTransfer(intent.paymentToken, intent.paymentRecipient, paymentAmount);
-        // Increase spend.
-        if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
-            SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
-            _incrementSpent(spends.spends[intent.paymentToken], intent.paymentToken, paymentAmount);
-        }
-
-        // Done to avoid compiler warnings.
-        intentDigest = intentDigest;
-    }
-
-    /// @dev Initializes the PREP.
-    /// If already initialized, early returns true.
-    /// `initData` is encoded using ERC7821 style batch execution encoding.
-    /// (ERC7821 is a variant of ERC7579).
-    /// `abi.encode(calls, abi.encodePacked(bytes32(saltAndAccount)))`,
-    /// where `calls` is of type `Call[]`,
-    /// and `saltAndAccount` is `bytes32((uint256(salt) << 160) | uint160(account))`.
-    function initializePREP(bytes calldata initData) public virtual returns (bool) {
-        // We can omit the check for `msg.sender == ORCHESTRATOR`,
-        // having a correct `initData` will be sufficient.
-        AccountStorage storage $ = _getAccountStorage();
-        if ($.rPREP != 0) return true;
-
-        // Compute the digest of the calls in `initData`.
-        (bytes32[] calldata pointers, bytes calldata opData) =
-            LibERC7579.decodeBatchAndOpData(initData);
-        bytes32[] memory a = EfficientHashLib.malloc(pointers.length);
-        for (uint256 i; i < pointers.length; ++i) {
-            (address target, uint256 value, bytes calldata data) =
-                LibERC7579.getExecution(pointers, i);
-            a.set(
-                i,
-                EfficientHashLib.hash(
-                    CALL_TYPEHASH,
-                    bytes32(uint256(uint160(target))),
-                    bytes32(value),
-                    EfficientHashLib.hashCalldata(data)
-                )
-            );
-        }
-        // Arguments are `(address target, bytes32 digest, bytes32 saltAndAccount)`.
-        bytes32 r = LibPREP.rPREP(address(this), a.hash(), LibBytes.loadCalldata(opData, 0x00));
-        // If `r == 0`, it means that `address(this)` is not a valid PREP address.
-        // Also, add in a bounds check just to be extra safe.
-        if (LibBit.or(opData.length < 0x20, r == 0)) revert InvalidPREP();
-        $.rPREP = r;
-
-        // Use assembly to reinterpret cast into `Call[]`.
-        Call[] calldata calls;
-        assembly ("memory-safe") {
-            calls.length := pointers.length
-            calls.offset := pointers.offset
-        }
-        _execute(calls, bytes32(0));
-
-        return true;
     }
 
     ////////////////////////////////////////////////////////////////////////

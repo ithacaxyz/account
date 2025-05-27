@@ -25,10 +25,6 @@ interface IPortoAccount is ICommon {
         view
         returns (bool isValid, bytes32 keyHash);
 
-    /// @dev Initializes the PREP.
-    /// @param initData The initialization data
-    function initializePREP(bytes calldata initData) external returns (bool);
-
     /// @dev Return current nonce with sequence key.
     function getNonce(uint192 seqKey) external view returns (uint256 nonce);
 
