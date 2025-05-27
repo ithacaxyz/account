@@ -2,9 +2,9 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ithacaxyz/account)
 
-> 🚧 **Work In Progress**
-> This repository is under active development.
-> Contracts are **unaudited**, and the codebase may have **breaking changes** without notice.
+> 🚧 **Work In Progress**  
+> This repository is under active development. Contracts are **unaudited**, and the codebase may have **breaking changes** without notice.  
+> A bug bounty is live on Base Mainnet — [details here](docs/bug-bounty.md). 
 
 **All-in-one EIP-7702 powered account contract, coupled with [Porto](https://github.com/ithacaxyz/porto)**
 
