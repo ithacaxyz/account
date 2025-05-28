@@ -6,8 +6,9 @@ import "../src/DeployAll.sol";
 
 contract DeployAllScript is Script {
     function run() external {
+        address pauseAuthority = vm.envOr("PAUSE_AUTHORITY", msg.sender);
         vm.startBroadcast();
-        new DeployAll();
+        new DeployAll(pauseAuthority);
         vm.stopBroadcast();
     }
 }

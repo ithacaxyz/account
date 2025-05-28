@@ -15,8 +15,8 @@ contract DeployAll {
     address public immutable accountRegistry;
     address public immutable simulator;
 
-    constructor() payable {
-        orchestrator = address(new Orchestrator(msg.sender));
+    constructor(address pauseAuthority) payable {
+        orchestrator = address(new Orchestrator(pauseAuthority));
         accountImplementation = address(new PortoAccount(address(orchestrator)));
         accountProxy = LibEIP7702.deployProxy(accountImplementation, address(0));
         accountRegistry = address(new AccountRegistry());

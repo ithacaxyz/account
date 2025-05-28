@@ -7,7 +7,7 @@ import "../src/DeployAll.sol";
 
 contract LibPREPTest is SoladyTest {
     function testDeployAll() public {
-        DeployAll deployAll = new DeployAll();
+        DeployAll deployAll = new DeployAll(address(this));
 
         address orchestrator = deployAll.orchestrator();
 
