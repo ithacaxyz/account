@@ -1,6 +1,13 @@
 # porto-account
 
+## 0.3.1
+
+### Patch Changes
+
+- Remove Account Registry, we don't need it with ephemeral private key deployments.
+
 ## 0.3.0
+
 ### Minor Changes
 
 - Removes all PREP related fields from account storage.
