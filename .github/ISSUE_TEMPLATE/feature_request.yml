@@ -19,9 +19,9 @@ body:
       required: true
 
   - type: dropdown
-    id: priority
+    id: timeline 
     attributes:
-      label: Priority
+      label: Timeline
       description: How concrete is this feature?
       options:
         - Idea (long term)

@@ -37,7 +37,7 @@ body:
     attributes:
       label: Proof of Concept
       description: A POC, test, or pseudocode of the attack vector.
-      placeholder: What should have happened?
+      placeholder: Concrete steps to do the attack. ONLY for non-critical bugs, any issue that could affect live funds should be reported privately to the team at [security@ithaca.xyz](mailto:security@porto.xyz).
     validations:
       required: true
 
