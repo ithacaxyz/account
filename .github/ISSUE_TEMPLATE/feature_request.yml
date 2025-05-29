@@ -1,0 +1,77 @@
+name: Feature Request
+description: Suggest an idea or enhancement for the contracts.
+title: "[FEATURE]: "
+labels: ["enhancement", "needs-triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! Please provide as much detail as possible to help us understand and evaluate your request.
+
+  - type: textarea
+    id: feature-summary
+    attributes:
+      label: Feature Summary
+      description: A brief summary of the feature you'd like to see
+      placeholder: Summarize the feature concisely, why is it needed, who would benefit from it, etc.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How concrete is this feature?
+      options:
+        - Idea (long term)
+        - Feature (medium term)
+        - Improvement (short term)
+    validations:
+      required: true
+
+  - type: textarea
+    id: security-considerations
+    attributes:
+      label: Security Considerations
+      description: How does this feature affect the security of the contracts?
+      placeholder: |
+        What are the security implications of this feature?
+        What are the potential risks?
+        What are the mitigations?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like to see implemented
+      placeholder: |
+        A clear and concise description of what you want to happen.
+        How should this feature work? What would the API/interface look like?
+
+  - type: textarea
+    id: gas-considerations
+    attributes:
+      label: Gas Considerations
+      description: How does this effect the efficiency of the contracts?
+      placeholder: |
+        How much gas is added/removed from general user flows...
+
+  - type: textarea
+    id: implementation-notes
+    attributes:
+      label: Implementation Notes
+      description: Do you have any thoughts on how this should be implemented?
+      placeholder: |
+        Any technical considerations, potential approaches, or implementation ideas...
+        (This is optional - we appreciate any insights you might have!)
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, reserach, examples, or references about the feature request here
+      placeholder: |
+        Links to research, existing documents, mockups, etc.
