@@ -1,16 +1,13 @@
 # porto-account
 
-## 0.2.1
-
-### Patch Changes
+## 0.3.0
+### Minor Changes
 
 - Removes all PREP related fields from account storage.
 - Removes`initializePREP` from contracts, porto will now use ephemeral private keys instead.
 - `initCalls` now need to be sent as preCalls signed by the EOA key.
 - Removes the ability to force execution of initialization calls, before executing anything else.
 - Breaks storage structure for account.
-
-
 
 ## 0.2.0
 
