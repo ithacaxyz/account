@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {AccountRegistry} from "./AccountRegistry.sol";
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
