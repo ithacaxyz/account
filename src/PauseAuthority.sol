@@ -5,49 +5,67 @@ abstract contract PauseAuthority {
     /// @dev Unauthorized to perform this action.
     error Unauthorized();
 
+    /// @dev Timelock delay has not passed yet.
+    error TimelockNotExpired();
+
     /// @dev The pause flag has been updated.
     event PauseSet(bool indexed isPaused);
 
     /// @dev The pause authority has been set to `pauseAuthority`.
     event PauseAuthoritySet(address indexed pauseAuthority);
 
+    /// @dev A new pause authority change has been proposed.
+    event PauseAuthorityChangeProposed(address indexed newPauseAuthority, uint256 indexed effectiveTime);
+
     /// @dev Time period after which the contract can be unpaused by anyone.
     uint256 public constant PAUSE_TIMEOUT = 4 weeks;
+
+    /// @dev Cooldown period before the contract can be paused again (reduced from 1 week to 48 hours).
+    uint256 public constant PAUSE_COOLDOWN = 48 hours;
+
+    /// @dev Timelock delay for changing pause authority (48 hours).
+    uint256 public constant PAUSE_AUTHORITY_TIMELOCK = 48 hours;
 
     /// @dev The pause flag.
     uint256 public pauseFlag;
 
     /// @dev The pause configuration.
     /// - The lower 160 bits store the pause authority.
-    /// - The 40 bits after that store the last paused timestamp.
+    /// - The 40 bits after that store the last unpaused timestamp.
     uint256 internal _pauseConfig;
+
+    /// @dev Proposed pause authority change.
+    /// - The lower 160 bits store the proposed pause authority.
+    /// - The 40 bits after that store the effective timestamp.
+    uint256 internal _proposedPauseAuthorityChange;
 
     /// @dev Can be used to pause/unpause the contract, in case of emergencies.
     /// - Pausing the contract will make all signature validations fail,
     ///   effectively blocking all pay, execute, isValidSignature attempts.
     /// - The `pauseAuthority` can unpause the contract at any time.
     /// - Anyone can unpause the contract after the PAUSE_TIMEOUT has passed.
-    /// - Note: Contracts CANNOT be paused again until PAUSE_TIMEOUT + 1 week has passed.
+    /// - Note: Contracts CANNOT be paused again until PAUSE_COOLDOWN (48 hours) has passed.
     ///   This is done to prevent griefing attacks, where a malicious pauseAuthority,
     ///   keeps censoring the user.
     function pause(bool isPause) public virtual {
-        (address authority, uint40 lastPaused) = getPauseConfig();
-        uint256 timeout = lastPaused + PAUSE_TIMEOUT;
+        (address authority, uint40 lastUnpaused) = getPauseConfig();
+        uint256 timeout = lastUnpaused + PAUSE_TIMEOUT;
 
         if (isPause) {
-            // Account owners, can use this 1 week buffer, to migrate,
+            // Account owners can use this 48 hour buffer to migrate,
             // if they don't trust the pauseAuthority.
-            if (msg.sender != authority || block.timestamp < timeout + 1 weeks || pauseFlag == 1) {
+            if (msg.sender != authority || block.timestamp < lastUnpaused + PAUSE_COOLDOWN || pauseFlag == 1) {
                 revert Unauthorized();
             }
 
             // Set the pause flag.
             pauseFlag = 1;
-            _pauseConfig = (block.timestamp << 160) | uint256(uint160(authority));
+            // Don't update lastUnpaused timestamp when pausing
         } else {
             if (msg.sender == authority || block.timestamp > timeout) {
-                // Unpause the contract.
+                // Unpause the contract and update lastUnpaused timestamp.
                 pauseFlag = 0;
+                _pauseConfig = (block.timestamp << 160) | uint256(uint160(authority));
             } else {
                 revert Unauthorized();
             }
@@ -56,19 +74,53 @@ abstract contract PauseAuthority {
         emit PauseSet(isPause);
     }
 
-    /// @dev Returns the pause authority and the last pause timestamp.
+    /// @dev Returns the pause authority and the last unpaused timestamp.
     function getPauseConfig() public view virtual returns (address, uint40) {
         return (address(uint160(_pauseConfig)), uint40(_pauseConfig >> 160));
     }
 
-    function setPauseAuthority(address newPauseAuthority) public virtual {
-        (address authority, uint40 lastPaused) = getPauseConfig();
+    /// @dev Returns the proposed pause authority change details.
+    function getProposedPauseAuthorityChange() public view virtual returns (address, uint40) {
+        return (address(uint160(_proposedPauseAuthorityChange)), uint40(_proposedPauseAuthorityChange >> 160));
+    }
+
+    /// @dev Proposes a new pause authority with a timelock delay.
+    function proposePauseAuthorityChange(address newPauseAuthority) public virtual {
+        (address authority,) = getPauseConfig();
         if (msg.sender != authority) {
             revert Unauthorized();
         }
 
-        _pauseConfig = (uint256(lastPaused) << 160) | uint160(newPauseAuthority);
+        uint256 effectiveTime = block.timestamp + PAUSE_AUTHORITY_TIMELOCK;
+        _proposedPauseAuthorityChange = (effectiveTime << 160) | uint160(newPauseAuthority);
 
-        emit PauseAuthoritySet(newPauseAuthority);
+        emit PauseAuthorityChangeProposed(newPauseAuthority, effectiveTime);
+    }
+
+    /// @dev Executes a previously proposed pause authority change after the timelock has expired.
+    function executePauseAuthorityChange() public virtual {
+        (address currentAuthority, uint40 lastUnpaused) = getPauseConfig();
+        if (msg.sender != currentAuthority) {
+            revert Unauthorized();
+        }
+
+        (address proposedAuthority, uint40 effectiveTime) = getProposedPauseAuthorityChange();
+        
+        if (proposedAuthority == address(0) || block.timestamp < effectiveTime) {
+            revert TimelockNotExpired();
+        }
+
+        // Update the pause authority
+        _pauseConfig = (uint256(lastUnpaused) << 160) | uint160(proposedAuthority);
+        
+        // Clear the proposed change
+        _proposedPauseAuthorityChange = 0;
+
+        emit PauseAuthoritySet(proposedAuthority);
+    }
+
+    /// @dev Legacy function for backward compatibility - now initiates the timelock process.
+    function setPauseAuthority(address newPauseAuthority) public virtual {
+        proposePauseAuthorityChange(newPauseAuthority);
     }
 }
