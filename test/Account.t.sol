@@ -292,8 +292,8 @@ contract AccountTest is BaseTest {
         assertEq(oc.pauseFlag(), 1);
         (ocPauseAuthority, lastUnpaused) = oc.getPauseConfig();
         assertEq(ocPauseAuthority, pauseAuthority);
-        // lastUnpaused should still be the old value since we only update it on unpause
-        assertEq(lastUnpaused, 0); // Should still be 0 since we haven't unpaused yet
+        // When paused, getPauseConfig returns lastPaused timestamp
+        assertEq(lastUnpaused, block.timestamp); // This is now lastPaused timestamp
         vm.stopPrank();
 
         // Check that execute fails
@@ -326,7 +326,7 @@ contract AccountTest is BaseTest {
         assertEq(oc.pauseFlag(), 0);
         (ocPauseAuthority, lastUnpaused) = oc.getPauseConfig();
         assertEq(ocPauseAuthority, pauseAuthority);
-        assertEq(lastUnpaused, block.timestamp); // Now lastUnpaused gets updated
+        assertEq(lastUnpaused, block.timestamp); // Now this is lastUnpaused timestamp
 
         // Cannot immediately repause again - need to wait 48 hours from lastUnpaused
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
@@ -345,11 +345,11 @@ contract AccountTest is BaseTest {
         assertEq(oc.pauseFlag(), 1);
         (ocPauseAuthority, lastUnpaused) = oc.getPauseConfig();
         assertEq(ocPauseAuthority, pauseAuthority);
-        // lastUnpaused should still be the previous unpause time
-        assertEq(lastUnpaused, block.timestamp - 48 hours - 1);
+        // When paused, this returns lastPaused timestamp
+        assertEq(lastUnpaused, block.timestamp); // This is now lastPaused timestamp
 
-        // Anyone can unpause after 4 weeks from lastUnpaused.
-        vm.warp(lastUnpaused + 4 weeks + 1);
+        // Anyone can unpause after 4 weeks from when it was paused.
+        vm.warp(block.timestamp + 4 weeks + 1); // 4 weeks from pause time
         oc.pause(false);
         assertEq(oc.pauseFlag(), 0);
         (ocPauseAuthority, lastUnpaused) = oc.getPauseConfig();

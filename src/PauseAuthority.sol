@@ -31,7 +31,8 @@ abstract contract PauseAuthority {
 
     /// @dev The pause configuration.
     /// - The lower 160 bits store the pause authority.
-    /// - The 40 bits after that store the last unpaused timestamp.
+    /// - The 40 bits after that store the last paused timestamp when pauseFlag = 1,
+    ///   or the last unpaused timestamp when pauseFlag = 0.
     uint256 internal _pauseConfig;
 
     /// @dev Proposed pause authority change.
@@ -48,22 +49,27 @@ abstract contract PauseAuthority {
     ///   This is done to prevent griefing attacks, where a malicious pauseAuthority,
     ///   keeps censoring the user.
     function pause(bool isPause) public virtual {
-        (address authority, uint40 lastUnpaused) = getPauseConfig();
-        uint256 timeout = lastUnpaused + PAUSE_TIMEOUT;
-
+        (address authority, uint40 lastTimestamp) = getPauseConfig();
+        
         if (isPause) {
             // Account owners can use this buffer to migrate,
             // if they don't trust the pauseAuthority.
+            // Check cooldown based on lastUnpaused timestamp
+            uint40 lastUnpaused = pauseFlag == 0 ? lastTimestamp : 0;
             if (msg.sender != authority || block.timestamp < lastUnpaused + PAUSE_COOLDOWN || pauseFlag == 1) {
                 revert Unauthorized();
             }
 
-            // Set the pause flag.
+            // Set the pause flag and update to lastPaused timestamp
             pauseFlag = 1;
-            // Don't update lastUnpaused timestamp when pausing
+            _pauseConfig = (block.timestamp << 160) | uint256(uint160(authority));
         } else {
+            // For unpause timeout, use lastPaused timestamp
+            uint40 lastPaused = pauseFlag == 1 ? lastTimestamp : 0;
+            uint256 timeout = lastPaused + PAUSE_TIMEOUT;
+            
             if (msg.sender == authority || block.timestamp > timeout) {
-                // Unpause the contract and update lastUnpaused timestamp.
+                // Unpause the contract and update to lastUnpaused timestamp.
                 pauseFlag = 0;
                 _pauseConfig = (block.timestamp << 160) | uint256(uint160(authority));
             } else {
@@ -74,7 +80,9 @@ abstract contract PauseAuthority {
         emit PauseSet(isPause);
     }
 
-    /// @dev Returns the pause authority and the last unpaused timestamp.
+    /// @dev Returns the pause authority and the timestamp.
+    /// When pauseFlag = 1, returns lastPaused timestamp.
+    /// When pauseFlag = 0, returns lastUnpaused timestamp.
     function getPauseConfig() public view virtual returns (address, uint40) {
         return (address(uint160(_pauseConfig)), uint40(_pauseConfig >> 160));
     }
@@ -99,7 +107,7 @@ abstract contract PauseAuthority {
 
     /// @dev Executes a previously proposed pause authority change after the timelock has expired.
     function executeNewAuthority() public virtual {
-        (address currentAuthority, uint40 lastUnpaused) = getPauseConfig();
+        (address currentAuthority, uint40 lastTimestamp) = getPauseConfig();
         if (msg.sender != currentAuthority) {
             revert Unauthorized();
         }
@@ -110,8 +118,8 @@ abstract contract PauseAuthority {
             revert TimelockNotExpired();
         }
 
-        // Update the pause authority
-        _pauseConfig = (uint256(lastUnpaused) << 160) | uint160(proposedAuthority);
+        // Update the pause authority while preserving the timestamp
+        _pauseConfig = (uint256(lastTimestamp) << 160) | uint160(proposedAuthority);
         
         // Clear the proposed change
         _proposedPauseAuthorityChange = 0;
