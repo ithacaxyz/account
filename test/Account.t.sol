@@ -249,21 +249,21 @@ contract AccountTest is BaseTest {
         vm.deal(d.eoa, 100 ether);
         address pauseAuthority = _randomAddress();
         
+        // Test the new timelock mechanism for setting pause authority
+        oc.proposeNewAuthority(pauseAuthority);
 
-        oc.setPauseAuthority(pauseAuthority);
-        
         // Check that the change is proposed but not yet effective
-        (address proposedAuthority, uint40 effectiveTime) = oc.getProposedPauseAuthorityChange();
+        (address proposedAuthority, uint40 effectiveTime) = oc.getProposedAuthority();
         assertEq(proposedAuthority, pauseAuthority);
         assertEq(effectiveTime, block.timestamp + 48 hours);
         
         // Try to execute before timelock expires
         vm.expectRevert(bytes4(keccak256("TimelockNotExpired()")));
-        oc.executePauseAuthorityChange();
+        oc.executeNewAuthority();
         
         // Warp to after timelock expires and execute the change
         vm.warp(block.timestamp + 48 hours + 1);
-        oc.executePauseAuthorityChange();
+        oc.executeNewAuthority();
 
         (address ocPauseAuthority, uint40 lastUnpaused) = oc.getPauseConfig();
         assertEq(ocPauseAuthority, pauseAuthority);
@@ -363,7 +363,7 @@ contract AccountTest is BaseTest {
             mstore(0x00, 0x4b90364f) // `setPauseAuthority(address)`
             mstore(0x20, 0xffffffffffffffffffffffffffffffffffffffff)
 
-            let success := call(gas(), orchestratorAddress, 0x00, 0x1c, 0x24, 0x00, 0x00)
+            let success := call(gas(), orchestratorAddress, 0, 0x1c, 0x24, 0x00, 0x00)
             if success { revert(0, 0) }
         }
     }
@@ -373,9 +373,9 @@ contract AccountTest is BaseTest {
         address newAuthority = _randomAddress();
         
         // Set initial pause authority using timelock
-        oc.setPauseAuthority(currentAuthority);
+        oc.proposeNewAuthority(currentAuthority);
         vm.warp(block.timestamp + 48 hours + 1);
-        oc.executePauseAuthorityChange();
+        oc.executeNewAuthority();
         
         // Verify current authority is set
         (address authority,) = oc.getPauseConfig();
@@ -384,32 +384,32 @@ contract AccountTest is BaseTest {
         vm.startPrank(currentAuthority);
         
         // Propose a new pause authority change
-        oc.proposePauseAuthorityChange(newAuthority);
+        oc.proposeNewAuthority(newAuthority);
         
         // Check that the change is proposed
-        (address proposedAuthority, uint40 effectiveTime) = oc.getProposedPauseAuthorityChange();
+        (address proposedAuthority, uint40 effectiveTime) = oc.getProposedAuthority();
         assertEq(proposedAuthority, newAuthority);
         assertEq(effectiveTime, block.timestamp + 48 hours);
         
         // Try to execute before timelock expires
         vm.expectRevert(bytes4(keccak256("TimelockNotExpired()")));
-        oc.executePauseAuthorityChange();
+        oc.executeNewAuthority();
         
         // Warp to just before timelock expires
         vm.warp(block.timestamp + 48 hours - 1);
         vm.expectRevert(bytes4(keccak256("TimelockNotExpired()")));
-        oc.executePauseAuthorityChange();
+        oc.executeNewAuthority();
         
         // Warp to exactly when timelock expires
         vm.warp(block.timestamp + 1);
-        oc.executePauseAuthorityChange();
+        oc.executeNewAuthority();
         
         // Verify the authority has been changed
         (authority,) = oc.getPauseConfig();
         assertEq(authority, newAuthority);
         
         // Verify the proposed change has been cleared
-        (proposedAuthority, effectiveTime) = oc.getProposedPauseAuthorityChange();
+        (proposedAuthority, effectiveTime) = oc.getProposedAuthority();
         assertEq(proposedAuthority, address(0));
         assertEq(effectiveTime, 0);
         
@@ -417,15 +417,15 @@ contract AccountTest is BaseTest {
         
         // Test that only current authority can propose changes
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        oc.proposePauseAuthorityChange(_randomAddress());
+        oc.proposeNewAuthority(_randomAddress());
         
         // Test that only current authority can execute changes
         vm.startPrank(newAuthority);
-        oc.proposePauseAuthorityChange(_randomAddress());
+        oc.proposeNewAuthority(_randomAddress());
         vm.warp(block.timestamp + 48 hours + 1);
         vm.stopPrank();
         
         vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        oc.executePauseAuthorityChange();
+        oc.executeNewAuthority();
     }
 }
