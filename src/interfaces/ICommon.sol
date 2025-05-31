@@ -34,9 +34,13 @@ interface ICommon {
         bytes[] encodedPreCalls;
         /// Use the encoded structs, to save gas.
         /// @dev Origin Chain Inputs
+        /// Pull funds using the executions in the payload.
+        /// Allows filler to use any settlement layer, by allowing arbitrary function calls.
         Payload[] inputs;
         /// @dev Destination Chain Output
         Payload output;
+        /// <token,value> pairs to pull/push for successful execution
+        Transfer[] fundTransfers;
         address eoa;
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
@@ -67,7 +71,7 @@ interface ICommon {
         address supportedAccountImplementation;
     }
 
-    /// TODO: SignedCall is just the payload without tokenTransfers, with a signature.
+    /// TODO: SignedCall is just the payload without eoa, and with a signature.
     /// Maybe we just remove this?
     /// @dev A struct to hold the fields for a SignedCall.
     /// A SignedCall is a struct that contains a signed execution batch along with the nonce
@@ -102,7 +106,5 @@ interface ICommon {
         /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
         /// This allows for more efficient safe forwarding to the EOA.
         bytes executionData;
-        /// <token,value> pairs to pull/push for successful execution
-        Transfer[] transfers;
     }
 }

@@ -622,8 +622,10 @@ contract Orchestrator is
 
     /// @dev Transfers all the output tokens of an intent, to the account, before `execute`
     function _fund(Intent calldata i) internal virtual {
-        for (uint256 i; i < i.output.transfers.length; ++i) {
-            TokenTransferLib.safeTransfer(transfers[i].token, i.eoa, transfers[i].amount);
+        for (uint256 j; j < j.fundTransfers.length; ++j) {
+            TokenTransferLib.safeTransfer(
+                i.fundTransfers[j].token, i.eoa, i.fundTransfers[j].amount
+            );
         }
     }
 
