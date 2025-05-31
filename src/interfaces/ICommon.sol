@@ -12,19 +12,6 @@ interface ICommon {
         ////////////////////////////////////////////////////////////////////////
         // EIP-712 Fields
         ////////////////////////////////////////////////////////////////////////
-        /// @dev The user's address.
-        address eoa;
-        /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
-        /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
-        /// This allows for more efficient safe forwarding to the EOA.
-        bytes executionData;
-        /// @dev Per delegated EOA.
-        /// This nonce is a 4337-style 2D nonce with some specializations:
-        /// - Upper 192 bits are used for the `seqKey` (sequence key).
-        ///   The upper 16 bits of the `seqKey` is `MULTICHAIN_NONCE_PREFIX`,
-        ///   then the Intent EIP712 hash will exclude the chain ID.
-        /// - Lower 64 bits are used for the sequential nonce corresponding to the `seqKey`.
-        uint256 nonce;
         /// @dev The account paying the payment token.
         /// If this is `address(0)`, it defaults to the `eoa`.
         address payer;
@@ -45,6 +32,10 @@ interface ICommon {
         /// If at any point, any PreCall cannot be verified to be correct, or fails in execution,
         /// the overall Intent will revert before validation, and execute will return a non-zero error.
         bytes[] encodedPreCalls;
+        /// @dev Origin Chain Inputs
+        Payload[] inputs;
+        /// @dev Destination Chain Output
+        Payload output;
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
         ////////////////////////////////////////////////////////////////////////
@@ -58,6 +49,12 @@ interface ICommon {
         address paymentRecipient;
         /// @dev The wrapped signature.
         /// `abi.encodePacked(innerSignature, keyHash, prehash)`.
+        /// TODO: Having only one signature, means that all chains must have a synced key.
+        /// Other options -
+        /// 1. Each payload has a signature. Leads to duplicated calldata
+        /// if all accounts are synced across chains.
+        /// 2. Update signature encoding to <chainId,signature,keyHash,preHash> (RECOMMENDED),
+        /// This prevents duplication of calldata in synced cases, as chainId can be set to 0.
         bytes signature;
         /// @dev Optional payment signature to be passed into the `compensate` function
         /// on the `payer`. This signature is NOT included in the EIP712 signature.
@@ -68,22 +65,46 @@ interface ICommon {
         address supportedAccountImplementation;
     }
 
+    /// TODO: SignedCall is just the payload without tokenTransfers, with a signature.
+    /// Maybe we just remove this?
     /// @dev A struct to hold the fields for a SignedCall.
     /// A SignedCall is a struct that contains a signed execution batch along with the nonce
     // and address of the user.
     struct SignedCall {
+        /// @dev Chain ID for the SignedCall. Use 0 for multichain.
+        uint256 chainId;
         /// @dev The user's address.
         /// This can be set to `address(0)`, which allows it to be
         /// coalesced to the parent Intent's EOA.
         address eoa;
+        uint256 nonce;
         /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
         /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
         /// This allows for more efficient safe forwarding to the EOA.
         bytes executionData;
-        /// @dev Per delegated EOA. Same logic as the `nonce` in Intent.
-        uint256 nonce;
         /// @dev The wrapped signature.
         /// `abi.encodePacked(innerSignature, keyHash, prehash)`.
         bytes signature;
+    }
+
+    struct Transfer {
+        address token;
+        uint256 amount;
+    }
+
+    struct Payload {
+        /// @dev Chain ID for the SignedCall. Use 0 for multichain.
+        uint256 chainId;
+        /// @dev The user's address.
+        /// This can be set to `address(0)`, which allows it to be
+        /// coalesced to the parent Intent's EOA.
+        address eoa;
+        uint256 nonce;
+        /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
+        /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
+        /// This allows for more efficient safe forwarding to the EOA.
+        bytes executionData;
+        /// <token,value> pairs to pull/push for successful execution
+        Transfer[] transfers;
     }
 }
