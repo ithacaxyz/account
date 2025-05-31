@@ -506,6 +506,8 @@ contract Orchestrator is
         }
         address eoa = i.eoa;
 
+        _fund(i);
+
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
         // We expect that the account supports ERC7821
         // (an extension of ERC7579 tailored for 7702 accounts).
@@ -617,6 +619,13 @@ contract Orchestrator is
     ////////////////////////////////////////////////////////////////////////
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Transfers all the output tokens of an intent, to the account, before `execute`
+    function _fund(Intent calldata i) internal virtual {
+        for (uint256 i; i < i.output.transfers.length; ++i) {
+            TokenTransferLib.safeTransfer(transfers[i].token, i.eoa, transfers[i].amount);
+        }
+    }
 
     /// @dev Makes the `eoa` perform a payment to the `paymentRecipient` directly.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.

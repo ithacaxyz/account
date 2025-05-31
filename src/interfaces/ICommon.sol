@@ -32,10 +32,12 @@ interface ICommon {
         /// If at any point, any PreCall cannot be verified to be correct, or fails in execution,
         /// the overall Intent will revert before validation, and execute will return a non-zero error.
         bytes[] encodedPreCalls;
+        /// Use the encoded structs, to save gas.
         /// @dev Origin Chain Inputs
         Payload[] inputs;
         /// @dev Destination Chain Output
         Payload output;
+        address eoa;
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
         ////////////////////////////////////////////////////////////////////////
@@ -95,10 +97,6 @@ interface ICommon {
     struct Payload {
         /// @dev Chain ID for the SignedCall. Use 0 for multichain.
         uint256 chainId;
-        /// @dev The user's address.
-        /// This can be set to `address(0)`, which allows it to be
-        /// coalesced to the parent Intent's EOA.
-        address eoa;
         uint256 nonce;
         /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
         /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
