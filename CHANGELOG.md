@@ -1,5 +1,11 @@
 # porto-account
 
+## 0.3.2
+
+### Patch Changes
+
+- Rename PortoAccount to IthacaAccount
+
 ## 0.3.1
 
 ### Patch Changes
