@@ -22,11 +22,11 @@ import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {LibNonce} from "./libraries/LibNonce.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
-import {IPortoAccount} from "./interfaces/IPortoAccount.sol";
+import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 
 /// @title Account
 /// @notice A account contract for EOAs with EIP7702.
-contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
+contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for *;
     using LibBytes for LibBytes.BytesStorage;
@@ -727,7 +727,7 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
         override
         returns (string memory name, string memory version)
     {
-        name = "PortoAccount";
+        name = "IthacaAccount";
         version = "0.3.1";
     }
 }

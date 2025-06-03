@@ -88,12 +88,12 @@ contract AccountTest is BaseTest {
         bytes32 digest = bytes32(_randomUniform());
         bytes memory sig = _sig(k, digest);
         assertEq(
-            d.d.isValidSignature(digest, sig) == PortoAccount.isValidSignature.selector,
+            d.d.isValidSignature(digest, sig) == IthacaAccount.isValidSignature.selector,
             k.k.isSuperAdmin
         );
 
         vm.prank(checkers[_randomUniform() % checkers.length]);
-        assertEq(d.d.isValidSignature(digest, sig), PortoAccount.isValidSignature.selector);
+        assertEq(d.d.isValidSignature(digest, sig), IthacaAccount.isValidSignature.selector);
 
         vm.prank(d.eoa);
         d.d.revoke(_hash(k.k));
@@ -106,7 +106,7 @@ contract AccountTest is BaseTest {
         d.d.authorize(k.k);
 
         assertEq(
-            d.d.isValidSignature(digest, sig) == PortoAccount.isValidSignature.selector,
+            d.d.isValidSignature(digest, sig) == IthacaAccount.isValidSignature.selector,
             k.k.isSuperAdmin
         );
         assertEq(d.d.approvedSignatureCheckers(k.keyHash).length, 0);
@@ -150,10 +150,10 @@ contract AccountTest is BaseTest {
 
     function testApproveAndRevokeKey(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        PortoAccount.Key memory k;
-        PortoAccount.Key memory kRetrieved;
+        IthacaAccount.Key memory k;
+        IthacaAccount.Key memory kRetrieved;
 
-        k.keyType = PortoAccount.KeyType(_randomUniform() & 1);
+        k.keyType = IthacaAccount.KeyType(_randomUniform() & 1);
         k.expiry = uint40(_bound(_random(), 0, 2 ** 40 - 1));
         k.publicKey = _truncateBytes(_randomBytes(), 0x1ff);
 
@@ -200,8 +200,8 @@ contract AccountTest is BaseTest {
 
     function testManyKeys() public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        PortoAccount.Key memory k;
-        k.keyType = PortoAccount.KeyType(_randomUniform() & 1);
+        IthacaAccount.Key memory k;
+        k.keyType = IthacaAccount.KeyType(_randomUniform() & 1);
 
         for (uint40 i = 0; i < 20; i++) {
             k.expiry = i;
@@ -212,7 +212,7 @@ contract AccountTest is BaseTest {
 
         vm.warp(5);
 
-        (PortoAccount.Key[] memory keys, bytes32[] memory keyHashes) = d.d.getKeys();
+        (IthacaAccount.Key[] memory keys, bytes32[] memory keyHashes) = d.d.getKeys();
 
         assert(keys.length == keyHashes.length);
         assert(keys.length == 16);
@@ -223,7 +223,7 @@ contract AccountTest is BaseTest {
 
     function testAddDisallowedSuperAdminKeyTypeReverts() public {
         address orchestrator = address(new Orchestrator(address(this)));
-        address accountImplementation = address(new PortoAccount(address(orchestrator)));
+        address accountImplementation = address(new IthacaAccount(address(orchestrator)));
         address accountProxy = address(LibEIP7702.deployProxy(accountImplementation, address(0)));
         account = MockAccount(payable(accountProxy));
 
