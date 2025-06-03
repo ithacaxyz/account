@@ -95,7 +95,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev Returns the storage pointer.
     function _getAccountStorage() internal pure returns (AccountStorage storage $) {
         // Truncate to 9 bytes to reduce bytecode size.
-        uint256 s = uint72(bytes9(keccak256("PORTO_ACCOUNT_STORAGE")));
+        uint256 s = uint72(bytes9(keccak256("ITHACA_ACCOUNT_STORAGE")));
         assembly ("memory-safe") {
             $.slot := s
         }
@@ -190,7 +190,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
     /// @dev A unique identifier to be passed into `upgradeHook(bytes32 previousVersion)`
     /// via the transient storage slot at `_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT`.
-    bytes32 internal constant _UPGRADE_HOOK_ID = keccak256("PORTO_ACCOUNT_UPGRADE_HOOK_ID");
+    bytes32 internal constant _UPGRADE_HOOK_ID = keccak256("ITHACA_ACCOUNT_UPGRADE_HOOK_ID");
 
     /// @dev This transient slot must be set to `_UPGRADE_HOOK_ID` before `upgradeHook` can be processed.
     bytes32 internal constant _UPGRADE_HOOK_GUARD_TRANSIENT_SLOT =

@@ -10,7 +10,7 @@ contract MockSampleDelegateCallTarget {
 
     uint256 public immutable version;
 
-    bytes32 internal constant _UPGRADE_HOOK_ID = keccak256("PORTO_ACCOUNT_UPGRADE_HOOK_ID");
+    bytes32 internal constant _UPGRADE_HOOK_ID = keccak256("ITHACA_ACCOUNT_UPGRADE_HOOK_ID");
 
     bytes32 internal constant _UPGRADE_HOOK_GUARD_TRANSIENT_SLOT =
         bytes32(uint256(keccak256("_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT")) - 1);
