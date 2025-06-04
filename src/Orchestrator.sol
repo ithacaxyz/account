@@ -339,7 +339,7 @@ contract Orchestrator is
                 // and the sequence for `nonce` has been incremented.
                 // For more information, see `selfCallPayVerifyCall537021665()`.
                 selfCallSuccess :=
-                    call(g, address(), 0, add(m, 0x1c), add(encodedIntent.length, 0x44), 0x00, 0x20)
+                    call(g, address(), 0, add(m, 0x1c), add(encodedIntent.length, 0x24), 0x00, 0x20)
                 err := mload(0x00) // The self call will do another self call to execute.
 
                 if iszero(selfCallSuccess) {
@@ -475,7 +475,7 @@ contract Orchestrator is
             // Because we don't want to return the prePayment, since the relay has already paid for the gas.
             // TODO: Should we add some identifier here, either using a return flag, or an event, that informs the caller that execute/post-payment has failed.
             if iszero(
-                call(gas(), address(), 0, add(m, 0x1c), add(0x44, encodedIntentLength), m, 0x20)
+                call(gas(), address(), 0, add(m, 0x1c), add(0x64, encodedIntentLength), m, 0x20)
             ) {
                 if simulationFlags {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
