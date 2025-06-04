@@ -108,7 +108,10 @@ contract Orchestrator is
     event IntentExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
 
     /// @dev Destination event for multi chain intents.
-    event MultiChainIntentExecuted(bytes32 indexed digest);
+    event OutputExecuted(bytes32 indexed digest);
+
+    /// @dev Origin event for multi chain intents.
+    event InputExecuted(bytes32 indexed digest);
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
@@ -185,38 +188,57 @@ contract Orchestrator is
         }
     }
 
-    function executeMultiIntent(MultiChainIntent calldata multiIntent, bytes calldata signature)
+    // TODO: We also need to add preCalls support here, to enable cases where the user is going
+    // to a new chain for the first time.
+    function executeMultiChainIntent(MultiChainIntent calldata mIntent, bytes calldata signature)
         public
         virtual
     {
-        address eoa = multiIntent.eoa;
-        // Fund the user's account. Relay needs to approve funds to the orchestrator.
-        _fund(multiIntent);
+        address eoa = mIntent.eoa;
 
         // Verify the signature.
-        bytes32 digest = _computeDigest(multiIntent);
+        bytes32 digest = _computeDigest(mIntent);
         (bool isValid, bytes32 keyHash) = _verify(digest, eoa, signature);
 
         if (!isValid) {
             revert VerificationError();
         }
 
-        if (multiIntent.output.chainId != block.chainid) {
-            revert InvalidChainId();
+        bytes memory data;
+
+        if (mIntent.output.chainId == block.chainid) {
+            // This is the destination chain.
+            // Fund the user's account. Relay needs to approve funds to the orchestrator.
+            _fund(mIntent);
+
+            data = LibERC7579.reencodeBatchAsExecuteCalldata(
+                hex"01000000000078210001", // ERC7821 batch execution mode.
+                mIntent.output.executionData,
+                abi.encode(keyHash) // `opData`.
+            );
+
+            /// This event can be taken as an onchain guarantee that the relay funded and executed the user's intent correctly.
+            emit OutputExecuted(digest);
+        } else {
+            // This is the origin chain.
+            for (uint256 p; p < mIntent.inputs.length; ++p) {
+                if (mIntent.inputs[p].chainId == block.chainid) {
+                    data = LibERC7579.reencodeBatchAsExecuteCalldata(
+                        hex"01000000000078210001", // ERC7821 batch execution mode.
+                        mIntent.inputs[p].executionData,
+                        abi.encode(keyHash) // `opData`.
+                    );
+
+                    emit InputExecuted(digest);
+                }
+            }
         }
 
         // Execute the output payload.
-        IIthacaAccount(eoa).checkAndIncrementNonce(multiIntent.output.nonce);
+        IIthacaAccount(eoa).checkAndIncrementNonce(mIntent.output.nonce);
 
-        // This re-encodes the ERC7579 `executionData` with the optional `opData`.
-        // We expect that the account supports ERC7821
-        // (an extension of ERC7579 tailored for 7702 accounts).
-        bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
-            hex"01000000000078210001", // ERC7821 batch execution mode.
-            multiIntent.output.executionData,
-            abi.encode(keyHash) // `opData`.
-        );
-
+        // Solidity Equivalent:
+        // IIthacaAccount(eoa).execute(mode, executionData);
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
             if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
@@ -224,9 +246,6 @@ contract Orchestrator is
                 revert(0x00, 0x20) // Revert with the `err`.
             }
         }
-
-        /// This event can be taken as an onchain guarantee that the relay funded and executed the user's intent correctly.
-        emit MultiChainIntentExecuted(digest);
     }
 
     /// @dev Executes a single encoded intent.
