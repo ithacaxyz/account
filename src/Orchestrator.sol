@@ -234,6 +234,11 @@ contract Orchestrator is
             }
         }
 
+        // If this is not the input/output chain, then data will be empty.
+        if (data.length == 0) {
+            revert InvalidChainId();
+        }
+
         // Execute the output payload.
         IIthacaAccount(eoa).checkAndIncrementNonce(mIntent.output.nonce);
 
