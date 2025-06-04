@@ -10,6 +10,7 @@ import {MockPayerWithSignature} from "./utils/mocks/MockPayerWithSignature.sol";
 import {IOrchestrator} from "../src/interfaces/IOrchestrator.sol";
 import {IIthacaAccount} from "../src/interfaces/IIthacaAccount.sol";
 import {MultiSigSigner} from "../src/MultiSigSigner.sol";
+import {ICommon} from "../src/interfaces/ICommon.sol";
 
 contract OrchestratorTest is BaseTest {
     struct _TestFullFlowTemps {
@@ -1173,5 +1174,96 @@ contract OrchestratorTest is BaseTest {
             assertEq(o.length, t.multiSigKey.owners.length);
             assertEq(_threshold, t.multiSigKey.threshold);
         }
+    }
+
+    function testMultiChainIntent() public {
+        // USDC has different address on all chains
+        MockPaymentToken usdcMainnet = new MockPaymentToken();
+        MockPaymentToken usdcArb = new MockPaymentToken();
+        MockPaymentToken usdcBase = new MockPaymentToken();
+
+        // Deploy the account on all chains
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 10 ether);
+
+        // Authorize the passskey on all chains
+        PassKey memory k = _randomPassKey();
+        k.k.isSuperAdmin = true;
+        vm.prank(d.eoa);
+        d.d.authorize(k.k);
+
+        // Test Scenario:
+        // Send 1000 USDC to a friend on Mainnet. By pulling funds from Base and Arb.
+        // User has 0 USDC on Mainnet.
+        // Relay fees (Bridging + gas on all chains included) is 100 USDC.
+
+        // 1. Relay prepares the MultiChainIntent and get it signed by the user.
+        // Note: This assumes user has the same synced passkey on all chains,
+        // so only 1 signature is needed.
+        ICommon.MultiChainIntent memory mIntent;
+        mIntent.eoa = d.eoa;
+        mIntent.inputs = new ICommon.Payload[](2);
+        mIntent.inputs[0] = ICommon.Payload({
+            chainId: 8453,
+            nonce: d.d.getNonce(0),
+            executionData: _transferExecutionData(
+                address(usdcBase), makeAddr("SETTLEMENT_ADDRESS"), 600
+            )
+        });
+        mIntent.inputs[1] = ICommon.Payload({
+            chainId: 42161,
+            nonce: d.d.getNonce(0),
+            executionData: _transferExecutionData(address(usdcArb), makeAddr("SETTLEMENT_ADDRESS"), 500)
+        });
+
+        mIntent.output = ICommon.Payload({
+            chainId: 1,
+            nonce: d.d.getNonce(0),
+            executionData: _transferExecutionData(address(usdcMainnet), makeAddr("FRIEND"), 1000)
+        });
+        mIntent.fundTransfers = new ICommon.Transfer[](1);
+        mIntent.fundTransfers[0] = ICommon.Transfer({token: address(usdcMainnet), amount: 1000});
+
+        // 2. User signs the MultiChainIntent in a single click.
+        bytes32 digest = oc.computeDigest(mIntent);
+        bytes memory signature = _sig(k, digest);
+
+        // Setup complete.
+        uint256 snapshot = vm.snapshotState();
+        // 3. Actions on Base
+        vm.chainId(8453);
+        // User has 600 USDC on base
+        usdcBase.mint(d.eoa, 600);
+        // Relay/Settlement system pulls user funds on Base.
+        oc.executeMultiChainIntent(mIntent, signature);
+        vm.assertEq(usdcBase.balanceOf(makeAddr("SETTLEMENT_ADDRESS")), 600);
+
+        // 4. Action on Arb
+        vm.revertToState(snapshot);
+        vm.chainId(42161);
+        // User has 500 USDC on arb
+        usdcArb.mint(d.eoa, 500);
+        // Relay/Settlement system pulls user funds on Arb.
+        oc.executeMultiChainIntent(mIntent, signature);
+        vm.assertEq(usdcArb.balanceOf(makeAddr("SETTLEMENT_ADDRESS")), 500);
+
+        // 5. Action on Mainnet (Destination Chain)
+        vm.revertToState(snapshot);
+        vm.chainId(1);
+        // Relay/Settlement system has funds on mainnet. User has no funds.
+        usdcMainnet.mint(makeAddr("SETTLEMENT_ADDRESS"), 1000);
+
+        // Approve the orchestrator to send funds to the user.
+        vm.startPrank(makeAddr("SETTLEMENT_ADDRESS"));
+        usdcMainnet.approve(address(oc), 1000);
+        // Relay/Settlement system funds the user acccount, and the intended execution happens.
+        oc.executeMultiChainIntent(mIntent, signature);
+        vm.stopPrank();
+
+        vm.assertEq(usdcMainnet.balanceOf(makeAddr("FRIEND")), 1000);
+
+        // At the end of the flow, relay is left with 100 USDC as fees.
+        // If we use a proper settlement system, then there is additional claim step for the relay.
+        // Where they provide a cross chain proof, to pull funds from the settlement system's escrow.
     }
 }

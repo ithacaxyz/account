@@ -915,7 +915,7 @@ contract Orchestrator is
     /// This is the `hashStruct` part of the EIP-712 digest.
     /// @param intent The MultiChainIntent struct to hash, as defined in ICommon.sol.
     /// @return The EIP-712 struct hash.
-    function _computeDigest(MultiChainIntent calldata intent) public view returns (bytes32) {
+    function _computeDigest(MultiChainIntent calldata intent) internal view returns (bytes32) {
         return _hashTypedDataSansChainId(
             keccak256(
                 abi.encodePacked(

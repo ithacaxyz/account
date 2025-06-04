@@ -19,6 +19,10 @@ contract MockOrchestrator is Orchestrator, Brutalizer {
         return _computeDigest(intent);
     }
 
+    function computeDigest(MultiChainIntent calldata mIntent) public view returns (bytes32) {
+        return _computeDigest(mIntent);
+    }
+
     function simulateFailed(bytes calldata encodedIntent) public payable virtual {
         _execute(encodedIntent, type(uint256).max, 1);
         revert NoRevertEncountered();
