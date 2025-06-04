@@ -86,4 +86,26 @@ interface ICommon {
         /// `abi.encodePacked(innerSignature, keyHash, prehash)`.
         bytes signature;
     }
+
+    struct Transfer {
+        address token;
+        uint256 amount;
+    }
+
+    struct Payload {
+        uint256 chainId;
+        uint256 nonce;
+        /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
+        /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
+        /// This allows for more efficient safe forwarding to the EOA.
+        bytes executionData;
+    }
+    // Send payload to all chains
+
+    struct MultiChainIntent {
+        address eoa;
+        Payload[] inputs; // [Base: 5 USDC, OP: 5 USDC] transfer to escrow
+        Payload output; // [Mainnet: 8 USDC] + Buy a sneaker + 2 USDC fees paid to the relay
+        Transfer[] fundTransfers;
+    }
 }
