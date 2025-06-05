@@ -430,4 +430,67 @@ contract AccountTest is BaseTest {
         uint256 keysAfter137 = account137.keyCount();
         assertEq(keysBefore137, keysAfter137, "Replay on chain 137 must not add a key");
     }
+
+    function testPaymasterPay() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        DelegatedEOA memory payer = _randomEIP7702DelegatedEOA();
+
+        bool isNative = _randomChance(2);
+
+        // Fund the payer account
+        if (isNative) {
+            vm.deal(address(payer.d), type(uint192).max);
+        } else {
+            _mint(address(paymentToken), address(payer.d), type(uint192).max);
+        }
+
+        // Setup intent for paymaster flow
+        Orchestrator.Intent memory u;
+        u.eoa = d.eoa;
+        u.payer = address(payer.d); // This is the key - payer is different from eoa
+        u.nonce = d.d.getNonce(0);
+        u.paymentToken = isNative ? address(0) : address(paymentToken);
+        u.totalPaymentAmount = _bound(_random(), 0.1 ether, 1 ether);
+        u.totalPaymentMaxAmount = u.totalPaymentAmount;
+        u.prePaymentAmount = 0; // For simplicity, test only post-payment
+        u.prePaymentMaxAmount = 0;
+        u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
+        u.paymentRecipient = address(0x12345);
+
+        // Create proper digest and signatures
+        bytes32 digest = oc.computeDigest(u);
+        u.signature = _eoaSig(d.privateKey, digest);
+        u.paymentSignature = _eoaSig(payer.privateKey, digest); // paymaster signs with their key
+
+        // Record initial balances
+        uint256 payerBalanceBefore = _balanceOf(u.paymentToken, address(payer.d));
+        uint256 recipientBalanceBefore = _balanceOf(u.paymentToken, u.paymentRecipient);
+
+        vm.deal(address(oc), type(uint256).max);
+
+        // Call pay function directly (only testing payment logic)
+        vm.prank(address(oc));
+        payer.d.pay(u.totalPaymentAmount, bytes32(0), digest, abi.encode(u));
+
+        // Verify ONLY the payment functionality:
+        assertEq(
+            _balanceOf(u.paymentToken, u.paymentRecipient),
+            recipientBalanceBefore + u.totalPaymentAmount,
+            "Payment recipient should receive the payment amount"
+        );
+        assertEq(
+            _balanceOf(u.paymentToken, address(payer.d)),
+            payerBalanceBefore - u.totalPaymentAmount,
+            "Payer balance should decrease by payment amount"
+        );
+
+        // Verify that EOA state is unchanged (since we only called pay, not execute):
+        assertEq(d.d.getNonce(0), u.nonce, "EOA nonce should be unchanged");
+        assertEq(address(d.d).balance, 0, "EOA should have no ether (we didn't fund it)");
+        assertEq(
+            address(0xabcd).balance,
+            0,
+            "Transfer recipient should have no ether (execution didn't happen)"
+        );
+    }
 }
