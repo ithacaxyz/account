@@ -362,4 +362,72 @@ contract AccountTest is BaseTest {
             if success { revert(0, 0) }
         }
     }
+
+    function testCrossChainKeyAuthorization() public {
+        // 1. Setup Keys
+        PassKey memory adminKey = _randomSecp256k1PassKey();
+        adminKey.k.isSuperAdmin = true;
+
+        PassKey memory newKey = _randomPassKey();
+        newKey.k.isSuperAdmin = false;
+
+        // 2. Create the authorization call
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].to = address(0); // Becomes address(this)
+        calls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, newKey.k);
+
+        // 3. Use a multichain nonce (prefix 0xc1d0)
+        uint256 multichainNonce = uint256(0xc1d0) << 240 | 0;
+        assertEq(multichainNonce >> 240, 0xc1d0, "Nonce prefix must match multichain pattern");
+
+        // 4. Setup shared EOA address and implementation
+        address eoaAddress = address(0x1234567890123456789012345678901234567890);
+        address impl = accountImplementation;
+
+        // === Chain 1 Execution ===
+        vm.chainId(1);
+        vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
+        MockAccount account1 = MockAccount(payable(eoaAddress));
+
+        // Add admin key on chain 1
+        vm.prank(eoaAddress);
+        account1.authorize(adminKey.k);
+
+        // Compute digest and sign
+        bytes32 digest1 = account1.computeDigest(calls, multichainNonce);
+        bytes memory signature = _sig(adminKey, digest1);
+        bytes memory executionData = abi.encode(calls, abi.encodePacked(multichainNonce, signature));
+
+        // Execute
+        uint256 keysBefore1 = account1.keyCount();
+        account1.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
+        uint256 keysAfter1 = account1.keyCount();
+
+        assertTrue(keysAfter1 > keysBefore1, "Key should be added on chain 1");
+
+        // === Chain 137 Execution ===
+        vm.chainId(137);
+        vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
+        MockAccount account137 = MockAccount(payable(eoaAddress));
+
+        // Add admin key again
+        vm.prank(eoaAddress);
+        account137.authorize(adminKey.k);
+
+        // Compute digest again and confirm match
+        bytes32 digest137 = account137.computeDigest(calls, multichainNonce);
+        assertEq(digest1, digest137, "Digests should match");
+
+        // Use same signature for replay (should fail due to used nonce)
+        signature = _sig(adminKey, digest137);
+        executionData = abi.encode(calls, abi.encodePacked(multichainNonce, signature));
+        uint256 keysBefore137 = account137.keyCount();
+
+        vm.expectRevert(bytes4(keccak256("InvalidNonce()")));
+        account137.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
+
+        // Ensure no key was added after failed replay
+        uint256 keysAfter137 = account137.keyCount();
+        assertEq(keysBefore137, keysAfter137, "Replay on chain 137 must not add a key");
+    }
 }
