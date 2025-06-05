@@ -364,19 +364,19 @@ contract AccountTest is BaseTest {
     }
 
     function testCrossChainKeyAuthorization() public {
-        // 1. Setup Keys
+        //Setup Keys
         PassKey memory adminKey = _randomSecp256k1PassKey();
         adminKey.k.isSuperAdmin = true;
 
         PassKey memory newKey = _randomPassKey();
         newKey.k.isSuperAdmin = false;
 
-        // 2. Create the authorization call
+        //Create the authorization call
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
         calls[0].to = address(0); // Becomes address(this)
         calls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, newKey.k);
 
-        // 3. Use a multichain nonce (prefix 0xc1d0)
+        //Use a multichain nonce (prefix 0xc1d0)
         uint256 multichainNonce = uint256(0xc1d0) << 240 | 0;
         assertEq(multichainNonce >> 240, 0xc1d0, "Nonce prefix must match multichain pattern");
 
