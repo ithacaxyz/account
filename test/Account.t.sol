@@ -362,4 +362,142 @@ contract AccountTest is BaseTest {
             if success { revert(0, 0) }
         }
     }
+
+    function testCrossChainKeyAuthorization() public {
+        //Setup Keys
+        PassKey memory adminKey = _randomSecp256k1PassKey();
+        adminKey.k.isSuperAdmin = true;
+
+        PassKey memory newKey = _randomPassKey();
+        newKey.k.isSuperAdmin = false;
+
+        //Create the authorization call
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].to = address(0); // Becomes address(this)
+        calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, newKey.k);
+
+        //Use a multichain nonce (prefix 0xc1d0)
+        uint256 multichainNonce = uint256(0xc1d0) << 240 | 0;
+        assertEq(multichainNonce >> 240, 0xc1d0, "Nonce prefix must match multichain pattern");
+
+        // Setup shared EOA address and implementation
+        address eoaAddress = _randomAddress();
+        address impl = accountImplementation;
+
+        // Take a snapshot before any chain-specific operations
+        uint256 initialSnapshot = vm.snapshot();
+
+        // === Chain 1 Execution ===
+        vm.chainId(1);
+        vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
+        MockAccount account1 = MockAccount(payable(eoaAddress));
+
+        // Add admin key on chain 1
+        vm.prank(eoaAddress);
+        account1.authorize(adminKey.k);
+
+        // Compute digest and sign
+        bytes32 digest1 = account1.computeDigest(calls, multichainNonce);
+        bytes memory signature = _sig(adminKey, digest1);
+        bytes memory executionData = abi.encode(calls, abi.encodePacked(multichainNonce, signature));
+
+        // Execute
+        account1.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
+        uint256 keysCount1 = account1.keyCount();
+
+        assertEq(keysCount1, 2, "Key should be added on chain 1");
+
+        // === Reset State and Switch to Chain 137 ===
+        // Revert to initial snapshot to reset all state
+        vm.revertTo(initialSnapshot);
+
+        // Clear any remaining mock calls or state
+        vm.clearMockedCalls();
+
+        // === Chain 137 Execution ===
+        vm.chainId(137);
+        vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
+        MockAccount account137 = MockAccount(payable(eoaAddress));
+
+        // Add admin key again (fresh state)
+        vm.prank(eoaAddress);
+        account137.authorize(adminKey.k);
+
+        // Compute digest again and confirm match
+        bytes32 digest137 = account137.computeDigest(calls, multichainNonce);
+        assertEq(digest1, digest137, "Digests should match");
+
+        // Use same signature for replay
+        signature = _sig(adminKey, digest137);
+        executionData = abi.encode(calls, abi.encodePacked(multichainNonce, signature));
+
+        account137.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
+
+        // Ensure no key was added after failed replay
+        uint256 keyCount = account137.keyCount();
+        assertEq(keyCount, 2, "Key should be added on chain 137");
+    }
+
+    function testPaymasterPay() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        DelegatedEOA memory payer = _randomEIP7702DelegatedEOA();
+
+        bool isNative = _randomChance(2);
+
+        // Fund the payer account
+        if (isNative) {
+            vm.deal(address(payer.d), type(uint192).max);
+        } else {
+            _mint(address(paymentToken), address(payer.d), type(uint192).max);
+        }
+
+        // Setup intent for paymaster flow
+        Orchestrator.Intent memory u;
+        u.eoa = d.eoa;
+        u.payer = address(payer.d); // This is the key - payer is different from eoa
+        u.nonce = d.d.getNonce(0);
+        u.paymentToken = isNative ? address(0) : address(paymentToken);
+        u.totalPaymentAmount = _bound(_random(), 0.1 ether, 1 ether);
+        u.totalPaymentMaxAmount = u.totalPaymentAmount;
+        u.prePaymentAmount = 0; // For simplicity, test only post-payment
+        u.prePaymentMaxAmount = 0;
+        u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
+        u.paymentRecipient = address(0x12345);
+
+        // Create proper digest and signatures
+        bytes32 digest = oc.computeDigest(u);
+        u.signature = _eoaSig(d.privateKey, digest);
+        u.paymentSignature = _eoaSig(payer.privateKey, digest); // paymaster signs with their key
+
+        // Record initial balances
+        uint256 payerBalanceBefore = _balanceOf(u.paymentToken, address(payer.d));
+        uint256 recipientBalanceBefore = _balanceOf(u.paymentToken, u.paymentRecipient);
+
+        vm.deal(address(oc), type(uint256).max);
+
+        // Call pay function directly (only testing payment logic)
+        vm.prank(address(oc));
+        payer.d.pay(u.totalPaymentAmount, bytes32(0), digest, abi.encode(u));
+
+        // Verify ONLY the payment functionality:
+        assertEq(
+            _balanceOf(u.paymentToken, u.paymentRecipient),
+            recipientBalanceBefore + u.totalPaymentAmount,
+            "Payment recipient should receive the payment amount"
+        );
+        assertEq(
+            _balanceOf(u.paymentToken, address(payer.d)),
+            payerBalanceBefore - u.totalPaymentAmount,
+            "Payer balance should decrease by payment amount"
+        );
+
+        // Verify that EOA state is unchanged (since we only called pay, not execute):
+        assertEq(d.d.getNonce(0), u.nonce, "EOA nonce should be unchanged");
+        assertEq(address(d.d).balance, 0, "EOA should have no ether (we didn't fund it)");
+        assertEq(
+            address(0xabcd).balance,
+            0,
+            "Transfer recipient should have no ether (execution didn't happen)"
+        );
+    }
 }
