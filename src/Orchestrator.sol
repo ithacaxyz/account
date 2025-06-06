@@ -15,6 +15,7 @@ import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
+import {ICommon} from "./interfaces/ICommon.sol";
 import {PauseAuthority} from "./PauseAuthority.sol";
 
 /// @title Orchestrator
@@ -91,6 +92,9 @@ contract Orchestrator is
     /// @dev The state override has not happened.
     error StateOverrideError();
 
+    /// @dev The chain ID is invalid.
+    error InvalidChainId();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -102,6 +106,12 @@ contract Orchestrator is
     /// If `incremented` is true and `err` is non-zero, the Intent was successful.
     /// For PreCalls where the nonce is skipped, this event will NOT be emitted..
     event IntentExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
+
+    /// @dev Destination event for multi chain intents.
+    event OutputExecuted(bytes32 indexed digest);
+
+    /// @dev Origin event for multi chain intents.
+    event InputExecuted(bytes32 indexed digest);
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
@@ -119,6 +129,16 @@ contract Orchestrator is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant CALL_TYPEHASH = keccak256("Call(address to,uint256 value,bytes data)");
+
+    /// @dev EIP-712 typehash for ICommon.Payload struct.
+    bytes32 public constant PAYLOAD_TYPEHASH =
+        keccak256("Payload(uint256 chainId,uint256 nonce,bytes executionData)");
+    /// @dev EIP-712 typehash for ICommon.Transfer struct.
+    bytes32 public constant TRANSFER_TYPEHASH = keccak256("Transfer(address token,uint256 amount)");
+    /// @dev EIP-712 typehash for ICommon.MultiChainIntent struct (including dependent types).
+    bytes32 public constant MULTICHAIN_INTENT_TYPEHASH = keccak256(
+        "MultiChainIntent(address eoa,Payload[] inputs,Payload output,Transfer[] fundTransfers)Payload(uint256 chainId,uint256 nonce,bytes executionData)Transfer(address token,uint256 amount)"
+    );
 
     /// @dev For EIP712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
@@ -155,6 +175,82 @@ contract Orchestrator is
     /// If `token` is `address(0)`, withdraws the native gas token.
     function withdrawTokens(address token, address recipient, uint256 amount) public virtual {
         TokenTransferLib.safeTransfer(token, recipient, amount);
+    }
+
+    function _fund(MultiChainIntent calldata multiIntent) internal virtual {
+        for (uint256 i; i < multiIntent.fundTransfers.length; ++i) {
+            TokenTransferLib.safeTransferFrom(
+                multiIntent.fundTransfers[i].token,
+                msg.sender,
+                multiIntent.eoa,
+                multiIntent.fundTransfers[i].amount
+            );
+        }
+    }
+
+    // TODO: We also need to add preCalls support here, to enable cases where the user is going
+    // to a new chain for the first time.
+    function executeMultiChainIntent(MultiChainIntent calldata mIntent, bytes calldata signature)
+        public
+        virtual
+    {
+        address eoa = mIntent.eoa;
+
+        // Verify the signature.
+        bytes32 digest = _computeDigest(mIntent);
+        (bool isValid, bytes32 keyHash) = _verify(digest, eoa, signature);
+
+        if (!isValid) {
+            revert VerificationError();
+        }
+
+        bytes memory data;
+
+        if (mIntent.output.chainId == block.chainid) {
+            // This is the destination chain.
+            // Fund the user's account. Relay needs to approve funds to the orchestrator.
+            _fund(mIntent);
+
+            data = LibERC7579.reencodeBatchAsExecuteCalldata(
+                hex"01000000000078210001", // ERC7821 batch execution mode.
+                mIntent.output.executionData,
+                abi.encode(keyHash) // `opData`.
+            );
+
+            /// This event can be taken as an onchain guarantee that the relay funded and executed the user's intent correctly.
+            emit OutputExecuted(digest);
+        } else {
+            // This is the origin chain.
+            for (uint256 p; p < mIntent.inputs.length; ++p) {
+                if (mIntent.inputs[p].chainId == block.chainid) {
+                    data = LibERC7579.reencodeBatchAsExecuteCalldata(
+                        hex"01000000000078210001", // ERC7821 batch execution mode.
+                        mIntent.inputs[p].executionData,
+                        abi.encode(keyHash) // `opData`.
+                    );
+
+                    emit InputExecuted(digest);
+                }
+            }
+        }
+
+        // If this is not the input/output chain, then data will be empty.
+        if (data.length == 0) {
+            revert InvalidChainId();
+        }
+
+        // Execute the output payload.
+        IIthacaAccount(eoa).checkAndIncrementNonce(mIntent.output.nonce);
+
+        // Solidity Equivalent:
+        // IIthacaAccount(eoa).execute(mode, executionData);
+        assembly ("memory-safe") {
+            mstore(0x00, 0) // Zeroize the return slot.
+            if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
+                if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x6c9d47e8)) } // `CallError()`.
+                revert(0x00, 0x20) // Revert with the `err`.
+            }
+        }
     }
 
     /// @dev Executes a single encoded intent.
@@ -771,6 +867,71 @@ contract Orchestrator is
             a.set(i, EfficientHashLib.hashCalldata(encodedPreCalls[i]));
         }
         return a.hash();
+    }
+
+    /// @dev Computes the EIP-712 struct hash for an ICommon.Payload.
+    function _hashPayload(ICommon.Payload calldata payload) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encodePacked(
+                PAYLOAD_TYPEHASH, payload.chainId, payload.nonce, keccak256(payload.executionData)
+            )
+        );
+    }
+
+    /// @dev Computes the EIP-712 hash for an array of ICommon.Payload structs.
+    function _hashPayloadArray(ICommon.Payload[] calldata payloads)
+        internal
+        pure
+        returns (bytes32)
+    {
+        if (payloads.length == 0) {
+            return keccak256(abi.encodePacked()); // Standard hash for empty array of dynamic types
+        }
+        bytes32[] memory hashes = new bytes32[](payloads.length);
+        for (uint256 i = 0; i < payloads.length; i++) {
+            hashes[i] = _hashPayload(payloads[i]);
+        }
+        return keccak256(abi.encodePacked(hashes));
+    }
+
+    /// @dev Computes the EIP-712 struct hash for an ICommon.Transfer.
+    function _hashTransfer(ICommon.Transfer calldata transfer) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(TRANSFER_TYPEHASH, transfer.token, transfer.amount));
+    }
+
+    /// @dev Computes the EIP-712 hash for an array of ICommon.Transfer structs.
+    function _hashTransferArray(ICommon.Transfer[] calldata transfers)
+        internal
+        pure
+        returns (bytes32)
+    {
+        if (transfers.length == 0) {
+            return keccak256(abi.encodePacked()); // Standard hash for empty array of dynamic types
+        }
+        bytes32[] memory hashes = new bytes32[](transfers.length);
+        for (uint256 i = 0; i < transfers.length; i++) {
+            hashes[i] = _hashTransfer(transfers[i]);
+        }
+        return keccak256(abi.encodePacked(hashes));
+    }
+
+    /// @notice Computes the EIP-712 struct hash for a MultiChainIntent.
+    /// @dev Implements the hashing logic as specified in ICommon.sol.
+    /// This is the `hashStruct` part of the EIP-712 digest.
+    /// @param intent The MultiChainIntent struct to hash, as defined in ICommon.sol.
+    /// @return The EIP-712 struct hash.
+    function _computeDigest(MultiChainIntent calldata intent) internal view returns (bytes32) {
+        return _hashTypedDataSansChainId(
+            keccak256(
+                abi.encodePacked(
+                    MULTICHAIN_INTENT_TYPEHASH,
+                    intent.eoa,
+                    _hashPayloadArray(intent.inputs),
+                    _hashPayload(intent.output),
+                    _hashTransferArray(intent.fundTransfers)
+                )
+            )
+        );
     }
 
     receive() external payable virtual {}

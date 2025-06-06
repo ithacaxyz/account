@@ -31,4 +31,7 @@ interface IIthacaAccount is ICommon {
     /// @dev Return the key hash that signed the latest execution context.
     /// @dev Returns bytes32(0) if the EOA key was used.
     function getContextKeyHash() external view returns (bytes32);
+
+    /// @dev Check and increment the nonce.
+    function checkAndIncrementNonce(uint256 nonce) external payable;
 }
