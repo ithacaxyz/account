@@ -374,7 +374,7 @@ contract AccountTest is BaseTest {
         //Create the authorization call
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
         calls[0].to = address(0); // Becomes address(this)
-        calls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, newKey.k);
+        calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, newKey.k);
 
         //Use a multichain nonce (prefix 0xc1d0)
         uint256 multichainNonce = uint256(0xc1d0) << 240 | 0;
@@ -431,12 +431,11 @@ contract AccountTest is BaseTest {
         signature = _sig(adminKey, digest137);
         executionData = abi.encode(calls, abi.encodePacked(multichainNonce, signature));
 
-        // vm.expectRevert(bytes4(keccak256("InvalidNonce()")));
         account137.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
 
         // Ensure no key was added after failed replay
         uint256 keyCount = account137.keyCount();
-        assertEq(keyCount, 2, "Relay on chain 137 must not add a key");
+        assertEq(keyCount, 2, "Key should be added on chain 137");
     }
 
     function testPaymasterPay() public {
