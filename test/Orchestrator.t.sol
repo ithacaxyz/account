@@ -8,7 +8,7 @@ import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCall
 import {MockPayerWithState} from "./utils/mocks/MockPayerWithState.sol";
 import {MockPayerWithSignature} from "./utils/mocks/MockPayerWithSignature.sol";
 import {IOrchestrator} from "../src/interfaces/IOrchestrator.sol";
-import {IPortoAccount} from "../src/interfaces/IPortoAccount.sol";
+import {IIthacaAccount} from "../src/interfaces/IIthacaAccount.sol";
 import {MultiSigSigner} from "../src/MultiSigSigner.sol";
 
 contract OrchestratorTest is BaseTest {
@@ -493,7 +493,7 @@ contract OrchestratorTest is BaseTest {
             t.kInit.k.isSuperAdmin = true;
 
             ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
-            initCalls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, t.kInit.k);
+            initCalls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, t.kInit.k);
             pInit.eoa = t.eoa;
 
             pInit.executionData = abi.encode(initCalls);
@@ -523,7 +523,7 @@ contract OrchestratorTest is BaseTest {
         // Prepare session passkey authorization Intent.
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](5);
-            calls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, kSession.k);
+            calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, kSession.k);
             calls[1].data = abi.encodeWithSelector(
                 GuardedExecutor.setCanExecute.selector,
                 kSession.keyHash,
@@ -599,7 +599,7 @@ contract OrchestratorTest is BaseTest {
 
                 ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
                 initCalls[0].data =
-                    abi.encodeWithSelector(PortoAccount.authorize.selector, t.kInit.k);
+                    abi.encodeWithSelector(IthacaAccount.authorize.selector, t.kInit.k);
                 pInit.eoa = t.eoa;
 
                 pInit.executionData = abi.encode(initCalls);
@@ -650,7 +650,7 @@ contract OrchestratorTest is BaseTest {
         // Prepare super admin passkey authorization Intent.
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
-            calls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, kSuperAdmin.k);
+            calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, kSuperAdmin.k);
 
             pSuperAdmin.executionData = abi.encode(calls);
             // Change this formula accordingly. We just need a non-colliding out-of-order nonce here.
@@ -670,7 +670,7 @@ contract OrchestratorTest is BaseTest {
         // Prepare session passkey authorization Intent.
         {
             ERC7821.Call[] memory calls = new ERC7821.Call[](3);
-            calls[0].data = abi.encodeWithSelector(PortoAccount.authorize.selector, kSession.k);
+            calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, kSession.k);
             // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
             calls[1].data = abi.encodeWithSelector(
                 GuardedExecutor.setCanExecute.selector,
@@ -766,8 +766,8 @@ contract OrchestratorTest is BaseTest {
         }
 
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
-        t.retrievedSessionNonce = IPortoAccount(t.eoa).getNonce(t.sessionNonceSeqKey);
-        t.retrievedSuperAdminNonce = IPortoAccount(t.eoa).getNonce(t.superAdminNonceSeqKey);
+        t.retrievedSessionNonce = IIthacaAccount(t.eoa).getNonce(t.sessionNonceSeqKey);
+        t.retrievedSuperAdminNonce = IIthacaAccount(t.eoa).getNonce(t.superAdminNonceSeqKey);
         if (t.testSkipNonce) {
             assertEq(t.retrievedSessionNonce, uint256(t.sessionNonceSeqKey) << 64);
             assertEq(t.retrievedSuperAdminNonce, uint256(t.superAdminNonceSeqKey) << 64);
@@ -1024,9 +1024,9 @@ contract OrchestratorTest is BaseTest {
         vm.deal(t.d.eoa, type(uint192).max);
 
         t.multiSigSigner = new MultiSigSigner();
-        t.multiSigKey.k = PortoAccount.Key({
+        t.multiSigKey.k = IthacaAccount.Key({
             expiry: 0,
-            keyType: PortoAccount.KeyType.External,
+            keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
             publicKey: abi.encodePacked(
                 address(t.multiSigSigner), bytes12(uint96(_bound(_random(), 0, type(uint96).max)))

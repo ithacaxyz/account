@@ -15,10 +15,10 @@ import {GasBurnerLib} from "solady/utils/GasBurnerLib.sol";
 import {P256} from "solady/utils/P256.sol";
 import {LibSort} from "solady/utils/LibSort.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
-import {PortoAccount, MockAccount} from "./utils/mocks/MockAccount.sol";
+import {IthacaAccount, MockAccount} from "./utils/mocks/MockAccount.sol";
 import {Orchestrator, MockOrchestrator} from "./utils/mocks/MockOrchestrator.sol";
 import {ERC20, MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
-import {GuardedExecutor} from "../src/PortoAccount.sol";
+import {GuardedExecutor} from "../src/IthacaAccount.sol";
 
 import {IOrchestrator} from "../src/interfaces/IOrchestrator.sol";
 import {Simulator} from "../src/Simulator.sol";
@@ -58,13 +58,13 @@ contract BaseTest is SoladyTest {
         0xff00000000000000000000000000000000000000000000000000000000000000;
 
     struct PassKey {
-        PortoAccount.Key k;
+        IthacaAccount.Key k;
         uint256 privateKey;
         bytes32 keyHash;
     }
 
     struct MultiSigKey {
-        PortoAccount.Key k;
+        IthacaAccount.Key k;
         uint256 threshold;
         PassKey[] owners;
     }
@@ -101,7 +101,7 @@ contract BaseTest is SoladyTest {
         d.d = MockAccount(payable(d.eoa));
     }
 
-    function _hash(PortoAccount.Key memory k) internal pure returns (bytes32) {
+    function _hash(IthacaAccount.Key memory k) internal pure returns (bytes32) {
         return keccak256(abi.encode(uint8(k.keyType), keccak256(k.publicKey)));
     }
 
@@ -111,7 +111,7 @@ contract BaseTest is SoladyTest {
     }
 
     function _randomSecp256r1PassKey() internal returns (PassKey memory k) {
-        k.k.keyType = PortoAccount.KeyType.P256;
+        k.k.keyType = IthacaAccount.KeyType.P256;
         k.privateKey = _randomUniform() & type(uint192).max;
         (uint256 x, uint256 y) = vm.publicKeyP256(k.privateKey);
         k.k.publicKey = abi.encode(x, y);
@@ -119,7 +119,7 @@ contract BaseTest is SoladyTest {
     }
 
     function _randomSecp256k1PassKey() internal returns (PassKey memory k) {
-        k.k.keyType = PortoAccount.KeyType.Secp256k1;
+        k.k.keyType = IthacaAccount.KeyType.Secp256k1;
         address addr;
         (addr, k.privateKey) = _randomUniqueSigner();
         k.k.publicKey = abi.encode(addr);
@@ -168,10 +168,10 @@ contract BaseTest is SoladyTest {
         pure
         returns (bytes memory)
     {
-        if (k.k.keyType == PortoAccount.KeyType.P256) {
+        if (k.k.keyType == IthacaAccount.KeyType.P256) {
             return _secp256r1Sig(k.privateKey, k.keyHash, prehash, digest);
         }
-        if (k.k.keyType == PortoAccount.KeyType.Secp256k1) {
+        if (k.k.keyType == IthacaAccount.KeyType.Secp256k1) {
             return _secp256k1Sig(k.privateKey, k.keyHash, prehash, digest);
         }
         revert("Unsupported");
@@ -259,10 +259,10 @@ contract BaseTest is SoladyTest {
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
-        if (k.k.keyType == PortoAccount.KeyType.P256) {
+        if (k.k.keyType == IthacaAccount.KeyType.P256) {
             return _estimateGasForSecp256r1Key(k.keyHash, i);
         }
-        if (k.k.keyType == PortoAccount.KeyType.Secp256k1) {
+        if (k.k.keyType == IthacaAccount.KeyType.Secp256k1) {
             return _estimateGasForSecp256k1Key(k.keyHash, i);
         }
         revert("Unsupported");

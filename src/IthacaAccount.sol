@@ -22,11 +22,11 @@ import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {LibNonce} from "./libraries/LibNonce.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
-import {IPortoAccount} from "./interfaces/IPortoAccount.sol";
+import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 
 /// @title Account
 /// @notice A account contract for EOAs with EIP7702.
-contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
+contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     using EfficientHashLib for bytes32[];
     using EnumerableSetLib for *;
     using LibBytes for LibBytes.BytesStorage;
@@ -95,7 +95,7 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
     /// @dev Returns the storage pointer.
     function _getAccountStorage() internal pure returns (AccountStorage storage $) {
         // Truncate to 9 bytes to reduce bytecode size.
-        uint256 s = uint72(bytes9(keccak256("PORTO_ACCOUNT_STORAGE")));
+        uint256 s = uint72(bytes9(keccak256("ITHACA_ACCOUNT_STORAGE")));
         assembly ("memory-safe") {
             $.slot := s
         }
@@ -190,7 +190,7 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
 
     /// @dev A unique identifier to be passed into `upgradeHook(bytes32 previousVersion)`
     /// via the transient storage slot at `_UPGRADE_HOOK_GUARD_TRANSIENT_SLOT`.
-    bytes32 internal constant _UPGRADE_HOOK_ID = keccak256("PORTO_ACCOUNT_UPGRADE_HOOK_ID");
+    bytes32 internal constant _UPGRADE_HOOK_ID = keccak256("ITHACA_ACCOUNT_UPGRADE_HOOK_ID");
 
     /// @dev This transient slot must be set to `_UPGRADE_HOOK_ID` before `upgradeHook` can be processed.
     bytes32 internal constant _UPGRADE_HOOK_GUARD_TRANSIENT_SLOT =
@@ -727,7 +727,7 @@ contract PortoAccount is IPortoAccount, EIP712, GuardedExecutor {
         override
         returns (string memory name, string memory version)
     {
-        name = "PortoAccount";
-        version = "0.3.1";
+        name = "IthacaAccount";
+        version = "0.3.2";
     }
 }

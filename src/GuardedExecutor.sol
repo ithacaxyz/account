@@ -174,7 +174,7 @@ abstract contract GuardedExecutor is ERC7821 {
     {
         bytes32 seed =
             keyHash == ANY_KEYHASH ? ANY_KEYHASH : _getGuardedExecutorKeyStorageSeed(keyHash);
-        uint256 namespaceHash = uint72(bytes9(keccak256("PORTO_GUARDED_EXECUTOR_KEY_STORAGE")));
+        uint256 namespaceHash = uint72(bytes9(keccak256("ITHACA_GUARDED_EXECUTOR_KEY_STORAGE")));
         assembly ("memory-safe") {
             // Non-standard hashing scheme to reduce chance of conflict with regular Solidity.
             mstore(0x09, namespaceHash)

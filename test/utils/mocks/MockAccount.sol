@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import {PortoAccount} from "../../../src/PortoAccount.sol";
+import {IthacaAccount} from "../../../src/IthacaAccount.sol";
 import {Brutalizer} from "../Brutalizer.sol";
 
 /// @dev WARNING! This mock is strictly intended for testing purposes only.
 /// Do NOT copy anything here into production code unless you really know what you are doing.
-contract MockAccount is PortoAccount, Brutalizer {
+contract MockAccount is IthacaAccount, Brutalizer {
     uint256 public x;
 
-    constructor(address orchestrator) payable PortoAccount(orchestrator) {}
+    constructor(address orchestrator) payable IthacaAccount(orchestrator) {}
 
     function _keyTypeCanBeSuperAdmin(KeyType) internal pure override returns (bool) {
         return true;
