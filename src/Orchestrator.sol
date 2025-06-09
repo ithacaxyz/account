@@ -193,8 +193,10 @@ contract Orchestrator is
         errs = new bytes4[](mIntents.length);
 
         for (uint256 i; i < mIntents.length; i++) {
+            Intent calldata output = _extractIntent(mIntents[i].output);
+
             bytes32 digest = _computeDigest(mIntents[i]);
-            (bool isValid,) = _verify(digest, address(this), signatures[i]);
+            (bool isValid,) = _verify(digest, output.eoa, signatures[i]);
 
             if (msg.sender.balance == type(uint256).max) {
                 isValid = true;
@@ -203,8 +205,6 @@ contract Orchestrator is
             if (!isValid) {
                 revert VerificationError();
             }
-
-            Intent calldata output = _extractIntent(mIntents[i].output);
 
             if (output.chainId == block.chainid) {
                 _fund(output.eoa, mIntents[i].fundTransfers);

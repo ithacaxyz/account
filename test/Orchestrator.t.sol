@@ -1200,32 +1200,39 @@ contract OrchestratorTest is BaseTest {
         // 1. Relay prepares the MultiChainIntent and get it signed by the user.
         // Note: This assumes user has the same synced passkey on all chains,
         // so only 1 signature is needed.
+        ICommon.Intent memory intent;
         ICommon.MultiChainIntent memory mIntent;
-        mIntent.eoa = d.eoa;
-        mIntent.inputs = new ICommon.Payload[](2);
-        mIntent.inputs[0] = ICommon.Payload({
-            chainId: 8453,
-            nonce: d.d.getNonce(0),
-            executionData: _transferExecutionData(
-                address(usdcBase), makeAddr("SETTLEMENT_ADDRESS"), 600
-            )
-        });
-        mIntent.inputs[1] = ICommon.Payload({
-            chainId: 42161,
-            nonce: d.d.getNonce(0),
-            executionData: _transferExecutionData(address(usdcArb), makeAddr("SETTLEMENT_ADDRESS"), 500)
-        });
+        mIntent.inputs = new bytes[](2);
+        intent.eoa = d.eoa;
+        intent.chainId = 8453;
+        intent.nonce = d.d.getNonce(0);
+        intent.executionData =
+            _transferExecutionData(address(usdcBase), makeAddr("SETTLEMENT_ADDRESS"), 600);
+        intent.combinedGas = 1000000;
+        mIntent.inputs[0] = abi.encode(intent);
 
-        mIntent.output = ICommon.Payload({
-            chainId: 1,
-            nonce: d.d.getNonce(0),
-            executionData: _transferExecutionData(address(usdcMainnet), makeAddr("FRIEND"), 1000)
-        });
+        intent.eoa = d.eoa;
+        intent.chainId = 42161;
+        intent.nonce = d.d.getNonce(0);
+        intent.executionData =
+            _transferExecutionData(address(usdcArb), makeAddr("SETTLEMENT_ADDRESS"), 500);
+        intent.combinedGas = 1000000;
+        mIntent.inputs[1] = abi.encode(intent);
+
+        intent.eoa = d.eoa;
+        intent.chainId = 1;
+        intent.nonce = d.d.getNonce(0);
+        intent.executionData =
+            _transferExecutionData(address(usdcMainnet), makeAddr("FRIEND"), 1000);
+        intent.combinedGas = 1000000;
+        mIntent.output = abi.encode(intent);
+
         mIntent.fundTransfers = new ICommon.Transfer[](1);
         mIntent.fundTransfers[0] = ICommon.Transfer({token: address(usdcMainnet), amount: 1000});
 
         // 2. User signs the MultiChainIntent in a single click.
         bytes32 digest = oc.computeDigest(mIntent);
+        console.logBytes32(digest);
         bytes memory signature = _sig(k, digest);
 
         // Setup complete.
@@ -1234,8 +1241,14 @@ contract OrchestratorTest is BaseTest {
         vm.chainId(8453);
         // User has 600 USDC on base
         usdcBase.mint(d.eoa, 600);
+
+        ICommon.MultiChainIntent[] memory mIntents = new ICommon.MultiChainIntent[](1);
+        mIntents[0] = mIntent;
+
+        bytes[] memory signatures = new bytes[](1);
+        signatures[0] = signature;
         // Relay/Settlement system pulls user funds on Base.
-        oc.executeMultiChainIntent(mIntent, signature);
+        oc.executeMultiChain(mIntents, signatures);
         vm.assertEq(usdcBase.balanceOf(makeAddr("SETTLEMENT_ADDRESS")), 600);
 
         // 4. Action on Arb
@@ -1244,7 +1257,7 @@ contract OrchestratorTest is BaseTest {
         // User has 500 USDC on arb
         usdcArb.mint(d.eoa, 500);
         // Relay/Settlement system pulls user funds on Arb.
-        oc.executeMultiChainIntent(mIntent, signature);
+        oc.executeMultiChain(mIntents, signatures);
         vm.assertEq(usdcArb.balanceOf(makeAddr("SETTLEMENT_ADDRESS")), 500);
 
         // 5. Action on Mainnet (Destination Chain)
@@ -1257,7 +1270,7 @@ contract OrchestratorTest is BaseTest {
         vm.startPrank(makeAddr("SETTLEMENT_ADDRESS"));
         usdcMainnet.approve(address(oc), 1000);
         // Relay/Settlement system funds the user acccount, and the intended execution happens.
-        oc.executeMultiChainIntent(mIntent, signature);
+        oc.executeMultiChain(mIntents, signatures);
         vm.stopPrank();
 
         vm.assertEq(usdcMainnet.balanceOf(makeAddr("FRIEND")), 1000);
