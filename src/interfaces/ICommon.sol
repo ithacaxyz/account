@@ -92,20 +92,9 @@ interface ICommon {
         uint256 amount;
     }
 
-    struct Payload {
-        uint256 chainId;
-        uint256 nonce;
-        bytes[] encodedPreCalls;
-        /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
-        /// `abi.encode(calls)`, where `calls` is of type `Call[]`.
-        /// This allows for more efficient safe forwarding to the EOA.
-        bytes executionData;
-    }
-
     struct MultiChainIntent {
-        address eoa;
-        bytes[] inputs;
-        bytes output;
-        bytes[] fundTransfers;
+        Intent[] inputs;
+        Intent output;
+        Transfer[] fundTransfers;
     }
 }
