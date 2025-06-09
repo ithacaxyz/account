@@ -261,7 +261,7 @@ contract Orchestrator is
     }
 
     /// @dev Minimal function, to allow hooking into the _execute function with the simulation flags set to true.
-    /// When simulationFlags is set to true, all errors are bubbled up. Also signature verification always returns true.
+    /// When flags is set to true, all errors are bubbled up. Also signature verification always returns true.
     /// But the codepaths for signature verification are still hit, for correct gas measurement.
     /// @dev If `isStateOverride` is false, then this function will always revert. If the simulation is successful, then it reverts with `SimulationPassed` error.
     /// If `isStateOverride` is true, then this function will not revert if the simulation is successful.
@@ -327,16 +327,16 @@ contract Orchestrator is
     }
 
     /// @dev Executes a single encoded intent.
-    /// @dev If simulationFlags is non-zero, then all errors are bubbled up.
+    /// @dev If flags is non-zero, then all errors are bubbled up.
     /// Currently there can only be 2 modes - simulation mode, and execution mode.
     /// But we use a uint256 for efficient stack operations, and more flexiblity in the future.
-    /// Note: We keep the simulationFlags in the stack/memory (TSTORE doesn't work) to make sure they are reset in each new call context,
+    /// Note: We keep the flags in the stack/memory (TSTORE doesn't work) to make sure they are reset in each new call context,
     /// to provide protection against attacks which could spoof the execute function to believe it is in simulation mode.
-    function _execute(
-        bytes calldata encodedIntent,
-        uint256 combinedGasOverride,
-        uint256 simulationFlags
-    ) internal virtual returns (uint256 gUsed, bytes4 err) {
+    function _execute(bytes calldata encodedIntent, uint256 combinedGasOverride, uint256 flags)
+        internal
+        virtual
+        returns (uint256 gUsed, bytes4 err)
+    {
         Intent calldata i = _extractIntent(encodedIntent);
 
         uint256 g = Math.coalesce(uint96(combinedGasOverride), i.combinedGas);
@@ -353,7 +353,7 @@ contract Orchestrator is
         ) {
             err = PaymentError.selector;
 
-            if (simulationFlags == 1) {
+            if (flags == 1) {
                 revert PaymentError();
             }
         }
@@ -363,7 +363,7 @@ contract Orchestrator is
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
             if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
-                if (simulationFlags != 1) {
+                if (flags != 1) {
                     revert InsufficientGas();
                 }
             }
@@ -372,7 +372,7 @@ contract Orchestrator is
         if (i.supportedAccountImplementation != address(0)) {
             if (accountImplementationOf(i.eoa) != i.supportedAccountImplementation) {
                 err = UnsupportedAccountImplementation.selector;
-                if (simulationFlags == 1) {
+                if (flags == 1) {
                     revert UnsupportedAccountImplementation();
                 }
             }
@@ -386,7 +386,7 @@ contract Orchestrator is
             if (TokenTransferLib.balanceOf(i.paymentToken, payer) < i.prePaymentAmount) {
                 err = PaymentError.selector;
 
-                if (simulationFlags == 1) {
+                if (flags == 1) {
                     revert PaymentError();
                 }
             }
@@ -401,7 +401,7 @@ contract Orchestrator is
                 calldatacopy(add(m, 0x40), encodedIntent.offset, encodedIntent.length)
                 mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
                 // The word after the function selector contains the simulation flags.
-                mstore(add(m, 0x20), simulationFlags)
+                mstore(add(m, 0x20), flags)
                 mstore(0x00, 0) // Zeroize the return slot.
 
                 // To prevent griefing, we need to do a non-reverting gas-limited self call.
@@ -414,7 +414,7 @@ contract Orchestrator is
 
                 if iszero(selfCallSuccess) {
                     // If it is a simulation, we simply revert with the full error.
-                    if simulationFlags {
+                    if flags {
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
@@ -459,10 +459,10 @@ contract Orchestrator is
         require(msg.sender == address(this));
 
         Intent calldata i;
-        uint256 simulationFlags;
+        uint256 flags;
         assembly ("memory-safe") {
             i := add(0x24, calldataload(0x24))
-            simulationFlags := calldataload(0x04)
+            flags := calldataload(0x04)
         }
         address eoa = i.eoa;
         uint256 nonce = i.nonce;
@@ -482,7 +482,7 @@ contract Orchestrator is
         // simulation, and suggests banning users that intentionally grief the simulation.
 
         // Handle the sub Intents after initialize (if any), and before the `_verify`.
-        if (i.encodedPreCalls.length != 0) _handlePreCalls(eoa, simulationFlags, i.encodedPreCalls);
+        if (i.encodedPreCalls.length != 0) _handlePreCalls(eoa, flags, i.encodedPreCalls);
 
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the account logic.
@@ -491,12 +491,18 @@ contract Orchestrator is
         // in the window between off-chain simulation and on-chain execution.
         bytes32 digest = _computeDigest(i);
 
-        (bool isValid, bytes32 keyHash) = _verify(digest, eoa, i.signature);
-        // TODO: Just keeping the >0 here for now for sanity, will remove later.
-        if (simulationFlags > 0) {
-            isValid = true;
+        bool isValid;
+        bytes32 keyHash;
+        // We don't have to verify individual intent signatures for multi chain intents.
+        if (flags != 2) {
+            (isValid, keyHash) = _verify(digest, eoa, i.signature);
+
+            if (flags == 1) {
+                isValid = true;
+            }
+
+            if (!isValid) revert VerificationError();
         }
-        if (!isValid) revert VerificationError();
 
         // Call eoa.checkAndIncrementNonce(i.nonce);
         assembly ("memory-safe") {
@@ -517,7 +523,7 @@ contract Orchestrator is
         if (i.prePaymentAmount != 0) _pay(i.prePaymentAmount, keyHash, digest, i);
 
         // Equivalent Solidity code:
-        // try this.selfCallExecutePay(simulationFlags, keyHash, i) {}
+        // try this.selfCallExecutePay(flags, keyHash, i) {}
         // catch {
         //     assembly ("memory-safe") {
         //         returndatacopy(0x00, 0x00, 0x20)
@@ -530,7 +536,7 @@ contract Orchestrator is
             let m := mload(0x40) // Load the free memory pointer
             mstore(0x00, 0) // Zeroize the return slot.
             mstore(m, 0x00000001) // `selfCallExecutePay1395256087()`
-            mstore(add(m, 0x20), simulationFlags) // Add simulationFlags as first param
+            mstore(add(m, 0x20), flags) // Add flags as first param
             mstore(add(m, 0x40), keyHash) // Add keyHash as second param
             mstore(add(m, 0x60), digest) // Add digest as third param
 
@@ -548,7 +554,7 @@ contract Orchestrator is
             if iszero(
                 call(gas(), address(), 0, add(m, 0x1c), add(0x44, encodedIntentLength), m, 0x20)
             ) {
-                if simulationFlags {
+                if flags {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
                 }
@@ -563,13 +569,13 @@ contract Orchestrator is
     function selfCallExecutePay1395256087() public payable {
         require(msg.sender == address(this));
 
-        uint256 simulationFlags;
+        uint256 flags;
         bytes32 keyHash;
         bytes32 digest;
         Intent calldata i;
 
         assembly ("memory-safe") {
-            simulationFlags := calldataload(0x04)
+            flags := calldataload(0x04)
             keyHash := calldataload(0x24)
             digest := calldataload(0x44)
             // Non standard decoding of the intent.
@@ -589,7 +595,7 @@ contract Orchestrator is
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
             if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
-                if simulationFlags {
+                if flags {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
                 }
@@ -617,11 +623,10 @@ contract Orchestrator is
     /// - Call the Account with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
     /// - Emit an {IntentExecuted} event.
-    function _handlePreCalls(
-        address parentEOA,
-        uint256 simulationFlags,
-        bytes[] calldata encodedPreCalls
-    ) internal virtual {
+    function _handlePreCalls(address parentEOA, uint256 flags, bytes[] calldata encodedPreCalls)
+        internal
+        virtual
+    {
         for (uint256 j; j < encodedPreCalls.length; ++j) {
             SignedCall calldata p = _extractPreCall(encodedPreCalls[j]);
             address eoa = Math.coalesce(p.eoa, parentEOA);
@@ -631,7 +636,7 @@ contract Orchestrator is
 
             (bool isValid, bytes32 keyHash) = _verify(_computeDigest(p), eoa, p.signature);
 
-            if (simulationFlags == 1) {
+            if (flags == 1) {
                 isValid = true;
             }
             if (!isValid) revert PreCallVerificationError();
@@ -659,7 +664,7 @@ contract Orchestrator is
                 mstore(0x00, 0) // Zeroize the return slot.
                 if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
                     // If this is a simulation via `simulateFailed`, bubble up the whole revert.
-                    if simulationFlags {
+                    if flags {
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
