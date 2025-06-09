@@ -49,6 +49,12 @@ contract Orchestrator is
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
 
+    enum Flags {
+        NORMAL_MODE,
+        SIMULATION_MODE,
+        MULTICHAIN_INTENT_MODE
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
@@ -159,6 +165,12 @@ contract Orchestrator is
     /// Should be enough for a cold zero to non-zero SSTORE + a warm SSTORE + a few SLOADs.
     uint256 internal constant _REFUND_GAS = 50000;
 
+    /// @dev The flag for simulation mode.
+    uint256 internal constant _SIMULATION_FLAG = 1;
+
+    /// @dev The flag for multi chain intents.
+    uint256 internal constant _MULTICHAIN_INTENT_FLAG = 2;
+
     ////////////////////////////////////////////////////////////////////////
     // Constructor
     ////////////////////////////////////////////////////////////////////////
@@ -208,7 +220,7 @@ contract Orchestrator is
 
             if (output.chainId == block.chainid) {
                 _fund(output.eoa, mIntents[i].fundTransfers);
-                (, errs[i]) = _execute(mIntents[i].output, 0, 2);
+                (, errs[i]) = _execute(mIntents[i].output, 0, uint256(Flags.MULTICHAIN_INTENT_MODE));
 
                 emit OutputExecuted(digest);
             }
@@ -216,7 +228,8 @@ contract Orchestrator is
             for (uint256 j; j < mIntents[i].inputs.length; j++) {
                 Intent calldata input = _extractIntent(mIntents[i].inputs[j]);
                 if (input.chainId == block.chainid) {
-                    (, errs[i]) = _execute(mIntents[i].inputs[j], 0, 2);
+                    (, errs[i]) =
+                        _execute(mIntents[i].inputs[j], 0, uint256(Flags.MULTICHAIN_INTENT_MODE));
 
                     emit InputExecuted(digest);
 
@@ -237,7 +250,7 @@ contract Orchestrator is
         nonReentrant
         returns (bytes4 err)
     {
-        (, err) = _execute(encodedIntent, 0, 0);
+        (, err) = _execute(encodedIntent, 0, uint256(Flags.NORMAL_MODE));
     }
 
     /// @dev Executes the array of encoded intents.
@@ -256,7 +269,7 @@ contract Orchestrator is
             // We reluctantly use regular Solidity to access `encodedIntents[i]`.
             // This generates an unnecessary check for `i < encodedIntents.length`, but helps
             // generate all the implicit calldata bound checks on `encodedIntents[i]`.
-            (, errs[i]) = _execute(encodedIntents[i], 0, 0);
+            (, errs[i]) = _execute(encodedIntents[i], 0, uint256(Flags.NORMAL_MODE));
         }
     }
 
@@ -274,7 +287,8 @@ contract Orchestrator is
         bytes calldata encodedIntent
     ) external payable returns (uint256) {
         // If Simulation Fails, then it will revert here.
-        (uint256 gUsed, bytes4 err) = _execute(encodedIntent, combinedGasOverride, 1);
+        (uint256 gUsed, bytes4 err) =
+            _execute(encodedIntent, combinedGasOverride, uint256(Flags.SIMULATION_MODE));
 
         if (err != 0) {
             assembly ("memory-safe") {
