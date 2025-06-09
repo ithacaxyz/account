@@ -12,6 +12,8 @@ interface ICommon {
         ////////////////////////////////////////////////////////////////////////
         // EIP-712 Fields
         ////////////////////////////////////////////////////////////////////////
+        /// @dev The chain ID of the intent. Use chainId 0 for multichain intents.
+        uint256 chainId;
         /// @dev The user's address.
         address eoa;
         /// @dev An encoded array of calls, using ERC7579 batch execution encoding.
@@ -93,8 +95,8 @@ interface ICommon {
     }
 
     struct MultiChainIntent {
-        Intent[] inputs;
-        Intent output;
+        bytes[] inputs;
+        bytes output;
         Transfer[] fundTransfers;
     }
 }
