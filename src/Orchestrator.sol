@@ -177,39 +177,40 @@ contract Orchestrator is
         TokenTransferLib.safeTransfer(token, recipient, amount);
     }
 
-    function _fund(MultiChainIntent calldata multiIntent) internal virtual {
-        for (uint256 i; i < multiIntent.fundTransfers.length; ++i) {
-            TokenTransferLib.safeTransferFrom(
-                multiIntent.fundTransfers[i].token,
-                msg.sender,
-                multiIntent.eoa,
-                multiIntent.fundTransfers[i].amount
-            );
+    function _fund(address eoa, bytes[] calldata fundTransfers) internal virtual {
+        for (uint256 i; i < fundTransfers.length; ++i) {
+            Transfer calldata transfer = _extractFundTransfer(fundTransfers[i]);
+            TokenTransferLib.safeTransferFrom(transfer.token, msg.sender, eoa, transfer.amount);
+        }
+    }
+
+    function executeMultiChain(bytes[] calldata encodedIntents) public virtual nonReentrant {
+        for (uint256 i; i < encodedIntents.length; i++) {
+            _executeMultiChainIntent(_extractMultiChainIntent(encodedIntents[i]), signature);
         }
     }
 
     // TODO: We also need to add preCalls support here, to enable cases where the user is going
     // to a new chain for the first time.
-    function executeMultiChainIntent(MultiChainIntent calldata mIntent, bytes calldata signature)
-        public
+    function _executeMultiChainIntent(MultiChainIntent calldata mIntent, bytes calldata signature)
+        internal
         virtual
     {
         address eoa = mIntent.eoa;
-
+        uint256 nonce;
         // Verify the signature.
         bytes32 digest = _computeDigest(mIntent);
-        (bool isValid, bytes32 keyHash) = _verify(digest, eoa, signature);
-
-        if (!isValid) {
-            revert VerificationError();
-        }
 
         bytes memory data;
 
-        if (mIntent.output.chainId == block.chainid) {
+        Payload calldata output = _extractPayload(mIntent.output);
+
+        if (output.chainId == block.chainid) {
+            _handlePreCalls(eoa, simulationFlags, output.encodedPreCalls);
+            nonce = output.nonce;
             // This is the destination chain.
             // Fund the user's account. Relay needs to approve funds to the orchestrator.
-            _fund(mIntent);
+            _fund(eoa, mIntent.fundTransfers);
 
             data = LibERC7579.reencodeBatchAsExecuteCalldata(
                 hex"01000000000078210001", // ERC7821 batch execution mode.
@@ -222,14 +223,22 @@ contract Orchestrator is
         } else {
             // This is the origin chain.
             for (uint256 p; p < mIntent.inputs.length; ++p) {
-                if (mIntent.inputs[p].chainId == block.chainid) {
+                Payload calldata input = _extractPayload(mIntent.inputs[p]);
+                _handlePreCalls(eoa, simulationFlags, input.encodedPreCalls);
+
+                if (input.chainId == block.chainid) {
+                    nonce = input.nonce;
+
                     data = LibERC7579.reencodeBatchAsExecuteCalldata(
                         hex"01000000000078210001", // ERC7821 batch execution mode.
-                        mIntent.inputs[p].executionData,
+                        input.executionData,
                         abi.encode(keyHash) // `opData`.
                     );
 
                     emit InputExecuted(digest);
+
+                    // Each chain should only have one input payload.
+                    break;
                 }
             }
         }
@@ -239,8 +248,18 @@ contract Orchestrator is
             revert InvalidChainId();
         }
 
-        // Execute the output payload.
-        IIthacaAccount(eoa).checkAndIncrementNonce(mIntent.output.nonce);
+        (bool isValid, bytes32 keyHash) = _verify(digest, eoa, signature);
+
+        // To simulate multichain intents, state override the balance to type(uint256).max.
+        if (msg.sender.balance == type(uint256).max) {
+            isValid = true;
+        }
+
+        if (!isValid) {
+            revert VerificationError();
+        }
+
+        IIthacaAccount(eoa).checkAndIncrementNonce(nonce);
 
         // Solidity Equivalent:
         // IIthacaAccount(eoa).execute(mode, executionData);
@@ -349,6 +368,28 @@ contract Orchestrator is
         Intent calldata i = _extractIntent(encodedPreCall);
         assembly ("memory-safe") {
             p := i
+        }
+    }
+
+    function _extractPayload(bytes calldata payload)
+        internal
+        virtual
+        returns (Payload calldata pl)
+    {
+        Intent calldata i = _extractIntent(payload);
+        assembly ("memory-safe") {
+            pl := i
+        }
+    }
+
+    function _extractFundTransfer(bytes calldata fundTransfer)
+        internal
+        virtual
+        returns (Transfer calldata t)
+    {
+        Intent calldata i = _extractIntent(fundTransfer);
+        assembly ("memory-safe") {
+            t := i
         }
     }
 
