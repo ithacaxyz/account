@@ -119,7 +119,7 @@ contract Orchestrator is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls)Call(address to,uint256 value,bytes data)"
+        "Intent(uint256 chainId,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for SignedCalls
@@ -137,7 +137,7 @@ contract Orchestrator is
     bytes32 public constant TRANSFER_TYPEHASH = keccak256("Transfer(address token,uint256 amount)");
     /// @dev EIP-712 typehash for ICommon.MultiChainIntent struct (including dependent types).
     bytes32 public constant MULTICHAIN_INTENT_TYPEHASH = keccak256(
-        "MultiChainIntent(address eoa,Payload[] inputs,Payload output,Transfer[] fundTransfers)Payload(uint256 chainId,uint256 nonce,bytes executionData)Transfer(address token,uint256 amount)"
+        "MultiChainIntent(Intent[] inputs,Intent output,Transfer[] fundTransfers)Intent(uint256 chainId,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls)Call(address to,uint256 value,bytes data)Transfer(address token,uint256 amount)"
     );
 
     /// @dev For EIP712 signature digest calculation.
@@ -177,97 +177,51 @@ contract Orchestrator is
         TokenTransferLib.safeTransfer(token, recipient, amount);
     }
 
-    function _fund(address eoa, bytes[] calldata fundTransfers) internal virtual {
-        for (uint256 i; i < fundTransfers.length; ++i) {
-            Transfer calldata transfer = _extractFundTransfer(fundTransfers[i]);
+    function _fund(address eoa, Transfer[] calldata transfers) internal virtual {
+        for (uint256 i; i < transfers.length; ++i) {
+            Transfer calldata transfer = transfers[i];
             TokenTransferLib.safeTransferFrom(transfer.token, msg.sender, eoa, transfer.amount);
         }
     }
 
-    function executeMultiChain(bytes[] calldata encodedIntents) public virtual nonReentrant {
-        for (uint256 i; i < encodedIntents.length; i++) {
-            _executeMultiChainIntent(_extractMultiChainIntent(encodedIntents[i]), signature);
-        }
-    }
-
-    // TODO: We also need to add preCalls support here, to enable cases where the user is going
-    // to a new chain for the first time.
-    function _executeMultiChainIntent(MultiChainIntent calldata mIntent, bytes calldata signature)
-        internal
+    function executeMultiChain(MultiChainIntent[] calldata mIntents, bytes[] calldata signatures)
+        public
         virtual
+        nonReentrant
+        returns (bytes4[] memory errs)
     {
-        address eoa = mIntent.eoa;
-        uint256 nonce;
-        // Verify the signature.
-        bytes32 digest = _computeDigest(mIntent);
+        errs = new bytes4[](mIntents.length);
 
-        bytes memory data;
+        for (uint256 i; i < mIntents.length; i++) {
+            bytes32 digest = _computeDigest(mIntents[i]);
+            (bool isValid,) = _verify(digest, address(this), signatures[i]);
 
-        Payload calldata output = _extractPayload(mIntent.output);
+            if (msg.sender.balance == type(uint256).max) {
+                isValid = true;
+            }
 
-        if (output.chainId == block.chainid) {
-            _handlePreCalls(eoa, simulationFlags, output.encodedPreCalls);
-            nonce = output.nonce;
-            // This is the destination chain.
-            // Fund the user's account. Relay needs to approve funds to the orchestrator.
-            _fund(eoa, mIntent.fundTransfers);
+            if (!isValid) {
+                revert VerificationError();
+            }
 
-            data = LibERC7579.reencodeBatchAsExecuteCalldata(
-                hex"01000000000078210001", // ERC7821 batch execution mode.
-                mIntent.output.executionData,
-                abi.encode(keyHash) // `opData`.
-            );
+            Intent calldata output = _extractIntent(mIntents[i].output);
 
-            /// This event can be taken as an onchain guarantee that the relay funded and executed the user's intent correctly.
-            emit OutputExecuted(digest);
-        } else {
-            // This is the origin chain.
-            for (uint256 p; p < mIntent.inputs.length; ++p) {
-                Payload calldata input = _extractPayload(mIntent.inputs[p]);
-                _handlePreCalls(eoa, simulationFlags, input.encodedPreCalls);
+            if (output.chainId == block.chainid) {
+                _fund(output.eoa, mIntents[i].fundTransfers);
+                (, errs[i]) = _execute(mIntents[i].output, 0, 2);
 
+                emit OutputExecuted(digest);
+            }
+
+            for (uint256 j; j < mIntents[i].inputs.length; j++) {
+                Intent calldata input = _extractIntent(mIntents[i].inputs[j]);
                 if (input.chainId == block.chainid) {
-                    nonce = input.nonce;
-
-                    data = LibERC7579.reencodeBatchAsExecuteCalldata(
-                        hex"01000000000078210001", // ERC7821 batch execution mode.
-                        input.executionData,
-                        abi.encode(keyHash) // `opData`.
-                    );
+                    (, errs[i]) = _execute(mIntents[i].inputs[j], 0, 2);
 
                     emit InputExecuted(digest);
 
-                    // Each chain should only have one input payload.
                     break;
                 }
-            }
-        }
-
-        // If this is not the input/output chain, then data will be empty.
-        if (data.length == 0) {
-            revert InvalidChainId();
-        }
-
-        (bool isValid, bytes32 keyHash) = _verify(digest, eoa, signature);
-
-        // To simulate multichain intents, state override the balance to type(uint256).max.
-        if (msg.sender.balance == type(uint256).max) {
-            isValid = true;
-        }
-
-        if (!isValid) {
-            revert VerificationError();
-        }
-
-        IIthacaAccount(eoa).checkAndIncrementNonce(nonce);
-
-        // Solidity Equivalent:
-        // IIthacaAccount(eoa).execute(mode, executionData);
-        assembly ("memory-safe") {
-            mstore(0x00, 0) // Zeroize the return slot.
-            if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
-                if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x6c9d47e8)) } // `CallError()`.
-                revert(0x00, 0x20) // Revert with the `err`.
             }
         }
     }
@@ -344,6 +298,7 @@ contract Orchestrator is
     /// @dev Extracts the Intent from the calldata bytes, with minimal checks.
     function _extractIntent(bytes calldata encodedIntent)
         internal
+        view
         virtual
         returns (Intent calldata i)
     {
@@ -368,28 +323,6 @@ contract Orchestrator is
         Intent calldata i = _extractIntent(encodedPreCall);
         assembly ("memory-safe") {
             p := i
-        }
-    }
-
-    function _extractPayload(bytes calldata payload)
-        internal
-        virtual
-        returns (Payload calldata pl)
-    {
-        Intent calldata i = _extractIntent(payload);
-        assembly ("memory-safe") {
-            pl := i
-        }
-    }
-
-    function _extractFundTransfer(bytes calldata fundTransfer)
-        internal
-        virtual
-        returns (Transfer calldata t)
-    {
-        Intent calldata i = _extractIntent(fundTransfer);
-        assembly ("memory-safe") {
-            t := i
         }
     }
 
@@ -557,9 +490,10 @@ contract Orchestrator is
         // account is not changed, and the `keyHash` is not revoked
         // in the window between off-chain simulation and on-chain execution.
         bytes32 digest = _computeDigest(i);
-        (bool isValid, bytes32 keyHash) = _verify(digest, eoa, i.signature);
 
-        if (simulationFlags == 1) {
+        (bool isValid, bytes32 keyHash) = _verify(digest, eoa, i.signature);
+        // TODO: Just keeping the >0 here for now for sanity, will remove later.
+        if (simulationFlags > 0) {
             isValid = true;
         }
         if (!isValid) revert VerificationError();
@@ -852,11 +786,15 @@ contract Orchestrator is
     /// the digest will be computed without the chain ID.
     /// Otherwise, the digest will be computed with the chain ID.
     function _computeDigest(Intent calldata i) internal view virtual returns (bytes32) {
-        bool isMultichain = i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
+        bytes32 intentHash = _intentHash(i);
+        return i.chainId == 0 ? _hashTypedDataSansChainId(intentHash) : _hashTypedData(intentHash);
+    }
+
+    function _intentHash(Intent calldata i) internal view returns (bytes32) {
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
         bytes32[] memory f = EfficientHashLib.malloc(11);
         f.set(0, INTENT_TYPEHASH);
-        f.set(1, LibBit.toUint(isMultichain));
+        f.set(1, i.chainId);
         f.set(2, uint160(i.eoa));
         f.set(3, _executionDataHash(i.executionData));
         f.set(4, i.nonce);
@@ -867,7 +805,15 @@ contract Orchestrator is
         f.set(9, i.combinedGas);
         f.set(10, _encodedPreCallsHash(i.encodedPreCalls));
 
-        return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
+        return f.hash();
+    }
+
+    function _intentArrayHash(bytes[] calldata encodedIntents) internal view returns (bytes32) {
+        bytes32[] memory hashes = new bytes32[](encodedIntents.length);
+        for (uint256 i; i < encodedIntents.length; ++i) {
+            hashes[i] = _intentHash(_extractIntent(encodedIntents[i]));
+        }
+        return keccak256(abi.encodePacked(hashes));
     }
 
     /// @dev Helper function to return the hash of the `execuctionData`.
@@ -910,31 +856,6 @@ contract Orchestrator is
         return a.hash();
     }
 
-    /// @dev Computes the EIP-712 struct hash for an ICommon.Payload.
-    function _hashPayload(ICommon.Payload calldata payload) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                PAYLOAD_TYPEHASH, payload.chainId, payload.nonce, keccak256(payload.executionData)
-            )
-        );
-    }
-
-    /// @dev Computes the EIP-712 hash for an array of ICommon.Payload structs.
-    function _hashPayloadArray(ICommon.Payload[] calldata payloads)
-        internal
-        pure
-        returns (bytes32)
-    {
-        if (payloads.length == 0) {
-            return keccak256(abi.encodePacked()); // Standard hash for empty array of dynamic types
-        }
-        bytes32[] memory hashes = new bytes32[](payloads.length);
-        for (uint256 i = 0; i < payloads.length; i++) {
-            hashes[i] = _hashPayload(payloads[i]);
-        }
-        return keccak256(abi.encodePacked(hashes));
-    }
-
     /// @dev Computes the EIP-712 struct hash for an ICommon.Transfer.
     function _hashTransfer(ICommon.Transfer calldata transfer) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(TRANSFER_TYPEHASH, transfer.token, transfer.amount));
@@ -962,13 +883,14 @@ contract Orchestrator is
     /// @param intent The MultiChainIntent struct to hash, as defined in ICommon.sol.
     /// @return The EIP-712 struct hash.
     function _computeDigest(MultiChainIntent calldata intent) internal view returns (bytes32) {
+        // Since this uses the verifying contract address, this automatically checks that the EOA
+        // address should be the same on all chains.
         return _hashTypedDataSansChainId(
             keccak256(
                 abi.encodePacked(
                     MULTICHAIN_INTENT_TYPEHASH,
-                    intent.eoa,
-                    _hashPayloadArray(intent.inputs),
-                    _hashPayload(intent.output),
+                    _intentArrayHash(intent.inputs),
+                    _intentHash(_extractIntent(intent.output)),
                     _hashTransferArray(intent.fundTransfers)
                 )
             )
