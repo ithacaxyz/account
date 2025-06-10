@@ -11,7 +11,7 @@ contract MultiSigSigner is ISigner {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev The magic value returned by `isValidSignatureWithKeyHash` when the signature is valid.
-    /// - Calcualated as: bytes4(keccak256("isValidSignatureWithKeyHash(bytes32,bytes32,bytes)")
+    /// - Calculated as: bytes4(keccak256("isValidSignatureWithKeyHash(bytes32,bytes32,bytes)")
     bytes4 internal constant _MAGIC_VALUE = 0x8afc93b4;
 
     /// @dev The magic value returned by `isValidSignatureWithKeyHash` when the signature is invalid.
@@ -144,7 +144,7 @@ contract MultiSigSigner is ISigner {
     ///   for each owner key hash in the config.
     /// - Signature of a multi-sig should be encoded as abi.encode(bytes[] memory ownerSignatures)
     /// - For efficiency, place the signatures in the same order as the ownerKeyHashes in the config.
-    /// - Failing owner signatures are ignored, as long as valid signaturs > threshold.
+    /// - Failing owner signatures are ignored, as long as valid signatures > threshold.
     function isValidSignatureWithKeyHash(bytes32 digest, bytes32 keyHash, bytes memory signature)
         public
         view
