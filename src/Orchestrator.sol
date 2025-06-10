@@ -114,19 +114,13 @@ contract Orchestrator is
     /// For PreCalls where the nonce is skipped, this event will NOT be emitted..
     event IntentExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
 
-    /// @dev Destination event for multi chain intents.
-    event OutputExecuted(bytes32 indexed digest);
-
-    /// @dev Origin event for multi chain intents.
-    event InputExecuted(bytes32 indexed digest);
-
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(uint256 chainId,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes encodedFundTransfers)Call(address to,uint256 value,bytes data)"
+        "Intent(bool multichain, address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes encodedFundTransfers)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for SignedCalls
@@ -154,12 +148,6 @@ contract Orchestrator is
     /// @dev The amount of expected gas for refunds.
     /// Should be enough for a cold zero to non-zero SSTORE + a warm SSTORE + a few SLOADs.
     uint256 internal constant _REFUND_GAS = 50000;
-
-    /// @dev The flag for simulation mode.
-    uint256 internal constant _SIMULATION_FLAG = 1;
-
-    /// @dev The flag for multi chain intents.
-    uint256 internal constant _MULTICHAIN_INTENT_FLAG = 2;
 
     ////////////////////////////////////////////////////////////////////////
     // Constructor
@@ -809,20 +797,12 @@ contract Orchestrator is
     /// the digest will be computed without the chain ID.
     /// Otherwise, the digest will be computed with the chain ID.
     function _computeDigest(Intent calldata i) internal view virtual returns (bytes32) {
-        // TODO VERY IMPORTANT: Add this chainId check somewhere properly.
-        // Or revert back to old multi chain nonce way.
-        if (i.chainId != 0 && i.chainId != block.chainid) {
-            revert InvalidChainId();
-        }
+        bool isMultichain = i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
 
-        return _hashTypedDataSansChainId(_intentHash(i));
-    }
-
-    function _intentHash(Intent calldata i) internal view returns (bytes32) {
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
         bytes32[] memory f = EfficientHashLib.malloc(12);
         f.set(0, INTENT_TYPEHASH);
-        f.set(1, i.chainId);
+        f.set(1, LibBit.toUint(isMultichain));
         f.set(2, uint160(i.eoa));
         f.set(3, _executionDataHash(i.executionData));
         f.set(4, i.nonce);
@@ -834,7 +814,7 @@ contract Orchestrator is
         f.set(10, _encodedArrHash(i.encodedPreCalls));
         f.set(11, EfficientHashLib.hashCalldata(i.encodedFundTransfers));
 
-        return f.hash();
+        return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
 
     /// @dev Helper function to return the hash of the `execuctionData`.

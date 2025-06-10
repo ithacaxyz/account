@@ -1206,7 +1206,6 @@ contract OrchestratorTest is BaseTest {
         // so only 1 signature is needed.
         ICommon.Intent memory baseIntent;
         baseIntent.eoa = d.eoa;
-        baseIntent.chainId = 8453;
         baseIntent.nonce = d.d.getNonce(0);
         baseIntent.executionData =
             _transferExecutionData(address(usdcBase), makeAddr("SETTLEMENT_ADDRESS"), 600);
@@ -1214,7 +1213,6 @@ contract OrchestratorTest is BaseTest {
 
         ICommon.Intent memory arbIntent;
         arbIntent.eoa = d.eoa;
-        arbIntent.chainId = 42161;
         arbIntent.nonce = d.d.getNonce(0);
         arbIntent.executionData =
             _transferExecutionData(address(usdcArb), makeAddr("SETTLEMENT_ADDRESS"), 500);
@@ -1222,7 +1220,6 @@ contract OrchestratorTest is BaseTest {
 
         ICommon.Intent memory outputIntent;
         outputIntent.eoa = d.eoa;
-        outputIntent.chainId = 1;
         outputIntent.nonce = d.d.getNonce(0);
         outputIntent.executionData =
             _transferExecutionData(address(usdcMainnet), makeAddr("FRIEND"), 1000);
