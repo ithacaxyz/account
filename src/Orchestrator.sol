@@ -99,9 +99,6 @@ contract Orchestrator is
     /// @dev The state override has not happened.
     error StateOverrideError();
 
-    /// @dev The chain ID is invalid.
-    error InvalidChainId();
-
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -353,7 +350,7 @@ contract Orchestrator is
         ) {
             err = PaymentError.selector;
 
-            if (flags == 1) {
+            if (flags == uint256(Flags.SIMULATION_MODE)) {
                 revert PaymentError();
             }
         }
@@ -363,7 +360,7 @@ contract Orchestrator is
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
             if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
-                if (flags != 1) {
+                if (flags != uint256(Flags.SIMULATION_MODE)) {
                     revert InsufficientGas();
                 }
             }
@@ -372,7 +369,7 @@ contract Orchestrator is
         if (i.supportedAccountImplementation != address(0)) {
             if (accountImplementationOf(i.eoa) != i.supportedAccountImplementation) {
                 err = UnsupportedAccountImplementation.selector;
-                if (flags == 1) {
+                if (flags == uint256(Flags.SIMULATION_MODE)) {
                     revert UnsupportedAccountImplementation();
                 }
             }
@@ -386,7 +383,7 @@ contract Orchestrator is
             if (TokenTransferLib.balanceOf(i.paymentToken, payer) < i.prePaymentAmount) {
                 err = PaymentError.selector;
 
-                if (flags == 1) {
+                if (flags == uint256(Flags.SIMULATION_MODE)) {
                     revert PaymentError();
                 }
             }
@@ -639,7 +636,7 @@ contract Orchestrator is
 
             (bool isValid, bytes32 keyHash) = _verify(_computeDigest(p), eoa, p.signature);
 
-            if (flags == 1) {
+            if (flags == uint256(Flags.SIMULATION_MODE)) {
                 isValid = true;
             }
             if (!isValid) revert PreCallVerificationError();
