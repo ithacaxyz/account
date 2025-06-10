@@ -167,21 +167,21 @@ contract Orchestrator is
         TokenTransferLib.safeTransfer(token, recipient, amount);
     }
 
-    function verifyMerkleSig(address eoa, bytes32 digest, bytes memory signature)
+    function _verifyMerkleSig(bytes32 digest, address eoa, bytes memory signature)
         internal
         view
-        returns (bool)
+        returns (bool isValid, bytes32 keyHash)
     {
         (bytes32[] memory proof, bytes32 root, bytes memory rootSig) =
             abi.decode(signature, (bytes32[], bytes32, bytes));
 
         if (MerkleProofLib.verify(proof, root, digest)) {
-            (bool isValid,) = IIthacaAccount(eoa).unwrapAndValidateSignature(root, rootSig);
+            (isValid, keyHash) = IIthacaAccount(eoa).unwrapAndValidateSignature(root, rootSig);
 
-            return isValid;
+            return (isValid, keyHash);
         }
 
-        return false;
+        return (false, bytes32(0));
     }
 
     function _fund(address eoa, bytes memory encodedFundTransfers) internal virtual {
@@ -207,12 +207,6 @@ contract Orchestrator is
 
         for (uint256 i; i < intents.length; i++) {
             Intent calldata intent = _extractIntent(intents[i]);
-
-            bytes32 digest = _computeDigest(intent);
-
-            if (!verifyMerkleSig(intent.eoa, digest, intent.signature)) {
-                revert VerificationError();
-            }
 
             _fund(intent.eoa, intent.encodedFundTransfers);
 
@@ -500,15 +494,18 @@ contract Orchestrator is
         bool isValid;
         bytes32 keyHash;
         // We don't have to verify individual intent signatures for multi chain intents.
-        if (flags != 2) {
+
+        if (flags == uint256(Flags.MULTICHAIN_INTENT_MODE)) {
+            (isValid, keyHash) = _verifyMerkleSig(digest, eoa, i.signature);
+        } else {
             (isValid, keyHash) = _verify(digest, eoa, i.signature);
-
-            if (flags == 1) {
-                isValid = true;
-            }
-
-            if (!isValid) revert VerificationError();
         }
+
+        if (flags == uint256(Flags.SIMULATION_MODE)) {
+            isValid = true;
+        }
+
+        if (!isValid) revert VerificationError();
 
         // Call eoa.checkAndIncrementNonce(i.nonce);
         assembly ("memory-safe") {
