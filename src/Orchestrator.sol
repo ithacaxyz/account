@@ -490,9 +490,9 @@ contract Orchestrator is
 
         bool isValid;
         bytes32 keyHash;
-        // We don't have to verify individual intent signatures for multi chain intents.
 
         if (flags == uint256(Flags.MULTICHAIN_INTENT_MODE)) {
+            // For multi chain intents, we have to verify using merkle sigs.
             (isValid, keyHash) = _verifyMerkleSig(digest, eoa, i.signature);
         } else {
             (isValid, keyHash) = _verify(digest, eoa, i.signature);
