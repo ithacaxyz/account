@@ -411,7 +411,7 @@ contract Orchestrator is
 
                 if iszero(selfCallSuccess) {
                     // If it is a simulation, we simply revert with the full error.
-                    if flags {
+                    if eq(flags, 1) {
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
@@ -554,7 +554,7 @@ contract Orchestrator is
             if iszero(
                 call(gas(), address(), 0, add(m, 0x1c), add(0x44, encodedIntentLength), m, 0x20)
             ) {
-                if flags {
+                if eq(flags, 1) {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
                 }
@@ -595,7 +595,7 @@ contract Orchestrator is
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
             if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
-                if flags {
+                if eq(flags, 1) {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
                 }
@@ -664,7 +664,7 @@ contract Orchestrator is
                 mstore(0x00, 0) // Zeroize the return slot.
                 if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
                     // If this is a simulation via `simulateFailed`, bubble up the whole revert.
-                    if flags {
+                    if eq(flags, 1) {
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
