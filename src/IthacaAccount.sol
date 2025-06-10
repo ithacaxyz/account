@@ -481,7 +481,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             keyHash = LibBytes.loadCalldata(signature, n);
             signature = LibBytes.truncatedCalldata(signature, n);
             // Do the prehash if last byte is non-zero.
-            // TODO: When do we use this?
             if (uint256(LibBytes.loadCalldata(signature, n + 1)) & 0xff != 0) {
                 digest = EfficientHashLib.sha2(digest); // `sha256(abi.encode(digest))`.
             }

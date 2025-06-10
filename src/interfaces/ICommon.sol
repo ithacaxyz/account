@@ -47,6 +47,8 @@ interface ICommon {
         /// If at any point, any PreCall cannot be verified to be correct, or fails in execution,
         /// the overall Intent will revert before validation, and execute will return a non-zero error.
         bytes[] encodedPreCalls;
+        /// @dev Only relevant for multi chain intents.
+        bytes[] encodedFundTransfers;
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
         ////////////////////////////////////////////////////////////////////////
@@ -92,11 +94,5 @@ interface ICommon {
     struct Transfer {
         address token;
         uint256 amount;
-    }
-
-    struct MultiChainIntent {
-        bytes[] inputs;
-        bytes output;
-        Transfer[] fundTransfers;
     }
 }
