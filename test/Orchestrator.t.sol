@@ -11,6 +11,7 @@ import {IOrchestrator} from "../src/interfaces/IOrchestrator.sol";
 import {IIthacaAccount} from "../src/interfaces/IIthacaAccount.sol";
 import {MultiSigSigner} from "../src/MultiSigSigner.sol";
 import {ICommon} from "../src/interfaces/ICommon.sol";
+import {Merkle} from "murky/Merkle.sol";
 
 contract OrchestratorTest is BaseTest {
     struct _TestFullFlowTemps {
@@ -1176,7 +1177,10 @@ contract OrchestratorTest is BaseTest {
         }
     }
 
+    Merkle merkleHelper;
+
     function testMultiChainIntent() public {
+        merkleHelper = new Merkle();
         // USDC has different address on all chains
         MockPaymentToken usdcMainnet = new MockPaymentToken();
         MockPaymentToken usdcArb = new MockPaymentToken();
@@ -1200,40 +1204,55 @@ contract OrchestratorTest is BaseTest {
         // 1. Relay prepares the MultiChainIntent and get it signed by the user.
         // Note: This assumes user has the same synced passkey on all chains,
         // so only 1 signature is needed.
-        ICommon.Intent memory intent;
-        ICommon.MultiChainIntent memory mIntent;
-        mIntent.inputs = new bytes[](2);
-        intent.eoa = d.eoa;
-        intent.chainId = 8453;
-        intent.nonce = d.d.getNonce(0);
-        intent.executionData =
+        ICommon.Intent memory baseIntent;
+        baseIntent.eoa = d.eoa;
+        baseIntent.chainId = 8453;
+        baseIntent.nonce = d.d.getNonce(0);
+        baseIntent.executionData =
             _transferExecutionData(address(usdcBase), makeAddr("SETTLEMENT_ADDRESS"), 600);
-        intent.combinedGas = 1000000;
-        mIntent.inputs[0] = abi.encode(intent);
+        baseIntent.combinedGas = 1000000;
 
-        intent.eoa = d.eoa;
-        intent.chainId = 42161;
-        intent.nonce = d.d.getNonce(0);
-        intent.executionData =
+        ICommon.Intent memory arbIntent;
+        arbIntent.eoa = d.eoa;
+        arbIntent.chainId = 42161;
+        arbIntent.nonce = d.d.getNonce(0);
+        arbIntent.executionData =
             _transferExecutionData(address(usdcArb), makeAddr("SETTLEMENT_ADDRESS"), 500);
-        intent.combinedGas = 1000000;
-        mIntent.inputs[1] = abi.encode(intent);
+        arbIntent.combinedGas = 1000000;
 
-        intent.eoa = d.eoa;
-        intent.chainId = 1;
-        intent.nonce = d.d.getNonce(0);
-        intent.executionData =
+        ICommon.Intent memory outputIntent;
+        outputIntent.eoa = d.eoa;
+        outputIntent.chainId = 1;
+        outputIntent.nonce = d.d.getNonce(0);
+        outputIntent.executionData =
             _transferExecutionData(address(usdcMainnet), makeAddr("FRIEND"), 1000);
-        intent.combinedGas = 1000000;
-        mIntent.output = abi.encode(intent);
+        outputIntent.combinedGas = 1000000;
+        ICommon.Transfer[] memory fundTransfers = new ICommon.Transfer[](1);
+        fundTransfers[0] = ICommon.Transfer({token: address(usdcMainnet), amount: 1000});
 
-        mIntent.fundTransfers = new ICommon.Transfer[](1);
-        mIntent.fundTransfers[0] = ICommon.Transfer({token: address(usdcMainnet), amount: 1000});
+        outputIntent.encodedFundTransfers = abi.encode(fundTransfers);
 
-        // 2. User signs the MultiChainIntent in a single click.
-        bytes32 digest = oc.computeDigest(mIntent);
-        console.logBytes32(digest);
-        bytes memory signature = _sig(k, digest);
+        bytes32 root;
+        bytes memory rootSig;
+
+        {
+            bytes32[] memory leafs = new bytes32[](3);
+            vm.chainId(8453);
+            leafs[0] = oc.computeDigest(baseIntent);
+            vm.chainId(42161);
+            leafs[1] = oc.computeDigest(arbIntent);
+            vm.chainId(1);
+            leafs[2] = oc.computeDigest(outputIntent);
+
+            root = merkleHelper.getRoot(leafs);
+
+            // 2. User signs the root in a single click.
+            rootSig = _sig(k, root);
+
+            baseIntent.signature = abi.encode(merkleHelper.getProof(leafs, 0), root, rootSig);
+            arbIntent.signature = abi.encode(merkleHelper.getProof(leafs, 1), root, rootSig);
+            outputIntent.signature = abi.encode(merkleHelper.getProof(leafs, 2), root, rootSig);
+        }
 
         // Setup complete.
         uint256 snapshot = vm.snapshotState();
@@ -1242,13 +1261,10 @@ contract OrchestratorTest is BaseTest {
         // User has 600 USDC on base
         usdcBase.mint(d.eoa, 600);
 
-        ICommon.MultiChainIntent[] memory mIntents = new ICommon.MultiChainIntent[](1);
-        mIntents[0] = mIntent;
-
-        bytes[] memory signatures = new bytes[](1);
-        signatures[0] = signature;
+        bytes[] memory encodedIntents = new bytes[](1);
+        encodedIntents[0] = abi.encode(baseIntent);
         // Relay/Settlement system pulls user funds on Base.
-        oc.executeMultiChain(mIntents, signatures);
+        oc.executeMultiChain(encodedIntents);
         vm.assertEq(usdcBase.balanceOf(makeAddr("SETTLEMENT_ADDRESS")), 600);
 
         // 4. Action on Arb
@@ -1257,7 +1273,8 @@ contract OrchestratorTest is BaseTest {
         // User has 500 USDC on arb
         usdcArb.mint(d.eoa, 500);
         // Relay/Settlement system pulls user funds on Arb.
-        oc.executeMultiChain(mIntents, signatures);
+        encodedIntents[0] = abi.encode(arbIntent);
+        oc.executeMultiChain(encodedIntents);
         vm.assertEq(usdcArb.balanceOf(makeAddr("SETTLEMENT_ADDRESS")), 500);
 
         // 5. Action on Mainnet (Destination Chain)
@@ -1270,7 +1287,8 @@ contract OrchestratorTest is BaseTest {
         vm.startPrank(makeAddr("SETTLEMENT_ADDRESS"));
         usdcMainnet.approve(address(oc), 1000);
         // Relay/Settlement system funds the user acccount, and the intended execution happens.
-        oc.executeMultiChain(mIntents, signatures);
+        encodedIntents[0] = abi.encode(outputIntent);
+        oc.executeMultiChain(encodedIntents);
         vm.stopPrank();
 
         vm.assertEq(usdcMainnet.balanceOf(makeAddr("FRIEND")), 1000);

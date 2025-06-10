@@ -126,7 +126,7 @@ contract Orchestrator is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(uint256 chainId,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers)Call(address to,uint256 value,bytes data)"
+        "Intent(uint256 chainId,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes encodedFundTransfers)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for SignedCalls
@@ -184,12 +184,11 @@ contract Orchestrator is
         view
         returns (bool)
     {
-        (bytes32[] memory proof, bytes32 root, bytes memory intentSignature) =
+        (bytes32[] memory proof, bytes32 root, bytes memory rootSig) =
             abi.decode(signature, (bytes32[], bytes32, bytes));
 
         if (MerkleProofLib.verify(proof, root, digest)) {
-            (bool isValid,) =
-                IIthacaAccount(eoa).unwrapAndValidateSignature(digest, intentSignature);
+            (bool isValid,) = IIthacaAccount(eoa).unwrapAndValidateSignature(root, rootSig);
 
             return isValid;
         }
@@ -197,10 +196,16 @@ contract Orchestrator is
         return false;
     }
 
-    function _fund(address eoa, bytes[] calldata transfers) internal virtual {
+    function _fund(address eoa, bytes memory encodedFundTransfers) internal virtual {
+        if (encodedFundTransfers.length == 0) {
+            return;
+        }
+
+        Transfer[] memory transfers = abi.decode(encodedFundTransfers, (Transfer[]));
         for (uint256 i; i < transfers.length; ++i) {
-            Transfer calldata transfer = _extractTransfer(transfers[i]);
-            TokenTransferLib.safeTransferFrom(transfer.token, msg.sender, eoa, transfer.amount);
+            TokenTransferLib.safeTransferFrom(
+                transfers[i].token, msg.sender, eoa, transfers[i].amount
+            );
         }
     }
 
@@ -804,8 +809,13 @@ contract Orchestrator is
     /// the digest will be computed without the chain ID.
     /// Otherwise, the digest will be computed with the chain ID.
     function _computeDigest(Intent calldata i) internal view virtual returns (bytes32) {
-        bytes32 intentHash = _intentHash(i);
-        return i.chainId == 0 ? _hashTypedDataSansChainId(intentHash) : _hashTypedData(intentHash);
+        // TODO VERY IMPORTANT: Add this chainId check somewhere properly.
+        // Or revert back to old multi chain nonce way.
+        if (i.chainId != 0 && i.chainId != block.chainid) {
+            revert InvalidChainId();
+        }
+
+        return _hashTypedDataSansChainId(_intentHash(i));
     }
 
     function _intentHash(Intent calldata i) internal view returns (bytes32) {
@@ -822,7 +832,7 @@ contract Orchestrator is
         f.set(8, i.totalPaymentMaxAmount);
         f.set(9, i.combinedGas);
         f.set(10, _encodedArrHash(i.encodedPreCalls));
-        f.set(11, _encodedArrHash(i.encodedFundTransfers));
+        f.set(11, EfficientHashLib.hashCalldata(i.encodedFundTransfers));
 
         return f.hash();
     }

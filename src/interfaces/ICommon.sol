@@ -48,7 +48,7 @@ interface ICommon {
         /// the overall Intent will revert before validation, and execute will return a non-zero error.
         bytes[] encodedPreCalls;
         /// @dev Only relevant for multi chain intents.
-        bytes[] encodedFundTransfers;
+        bytes encodedFundTransfers;
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
         ////////////////////////////////////////////////////////////////////////
