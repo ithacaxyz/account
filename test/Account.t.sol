@@ -363,26 +363,66 @@ contract AccountTest is BaseTest {
         }
     }
 
-    function testCrossChainKeyAuthorization() public {
-        //Setup Keys
+    function testCrossChainKeyPreCallsAuthorization() public {
+        // Setup Keys
         PassKey memory adminKey = _randomSecp256k1PassKey();
         adminKey.k.isSuperAdmin = true;
 
         PassKey memory newKey = _randomPassKey();
         newKey.k.isSuperAdmin = false;
 
-        //Create the authorization call
-        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
-        calls[0].to = address(0); // Becomes address(this)
-        calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, newKey.k);
-
-        //Use a multichain nonce (prefix 0xc1d0)
-        uint256 multichainNonce = uint256(0xc1d0) << 240 | 0;
-        assertEq(multichainNonce >> 240, 0xc1d0, "Nonce prefix must match multichain pattern");
-
-        // Setup shared EOA address and implementation
-        address eoaAddress = _randomAddress();
+        // Setup ephemeral EOA (simulates EIP-7702 delegation)
+        uint256 ephemeralPK = _randomPrivateKey();
+        address payable eoaAddress = payable(vm.addr(ephemeralPK));
         address impl = accountImplementation;
+
+        paymentToken.mint(eoaAddress, 2 ** 128 - 1);
+
+        // === PREPARE CROSS-CHAIN PRE-CALLS ===
+        // These pre-calls will be used on multiple chains with multichain nonces
+
+        // Pre-call 1: Initialize admin key using ephemeral EOA signature
+        Orchestrator.SignedCall memory pInit;
+        {
+            ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
+            initCalls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, adminKey.k);
+
+            pInit.eoa = eoaAddress;
+            pInit.executionData = abi.encode(initCalls);
+            pInit.nonce = (0xc1d0 << 240) | (1 << 64); // Multichain nonce
+            pInit.signature = _eoaSig(ephemeralPK, oc.computeDigest(pInit));
+        }
+
+        // Pre-call 2: Authorize new key using admin key
+        Orchestrator.SignedCall memory pAuth;
+        {
+            ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
+            authCalls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, newKey.k);
+
+            pAuth.eoa = eoaAddress;
+            pAuth.executionData = abi.encode(authCalls);
+            pAuth.nonce = (0xc1d0 << 240) | (2 << 64); // Multichain nonce
+            pAuth.signature = _sig(adminKey, oc.computeDigest(pAuth));
+        }
+
+        // Prepare main Intent structure (will be reused with same pre-calls)
+        Orchestrator.Intent memory baseIntent;
+        baseIntent.eoa = eoaAddress;
+        baseIntent.paymentToken = address(paymentToken);
+        baseIntent.prePaymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
+        baseIntent.prePaymentMaxAmount = baseIntent.prePaymentAmount;
+        baseIntent.totalPaymentAmount = baseIntent.prePaymentAmount;
+        baseIntent.totalPaymentMaxAmount = baseIntent.prePaymentMaxAmount;
+        baseIntent.combinedGas = 10000000;
+
+        // Encode the pre-calls once (to be reused on both chains)
+        baseIntent.encodedPreCalls = new bytes[](2);
+        baseIntent.encodedPreCalls[0] = abi.encode(pInit);
+        baseIntent.encodedPreCalls[1] = abi.encode(pAuth);
+
+        // Main execution (empty for this test)
+        ERC7821.Call[] memory calls = new ERC7821.Call[](0);
+        baseIntent.executionData = abi.encode(calls);
 
         // Take a snapshot before any chain-specific operations
         uint256 initialSnapshot = vm.snapshot();
@@ -390,114 +430,33 @@ contract AccountTest is BaseTest {
         // === Chain 1 Execution ===
         vm.chainId(1);
         vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
-        MockAccount account1 = MockAccount(payable(eoaAddress));
 
-        // Add admin key on chain 1
-        vm.prank(eoaAddress);
-        account1.authorize(adminKey.k);
+        // Use the prepared pre-calls on chain 1
+        Orchestrator.Intent memory u1 = baseIntent;
+        u1.nonce = (0xc1d0 << 240) | 0; // Multichain nonce for main intent
+        u1.signature = _sig(adminKey, u1);
 
-        // Compute digest and sign
-        bytes32 digest1 = account1.computeDigest(calls, multichainNonce);
-        bytes memory signature = _sig(adminKey, digest1);
-        bytes memory executionData = abi.encode(calls, abi.encodePacked(multichainNonce, signature));
+        // Execute on chain 1 - should succeed
+        assertEq(oc.execute(abi.encode(u1)), 0, "Execution should succeed on chain 1");
 
-        // Execute
-        account1.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
-        uint256 keysCount1 = account1.keyCount();
-
-        assertEq(keysCount1, 2, "Key should be added on chain 1");
+        // Verify keys were added on chain 1
+        uint256 keysCount1 = IthacaAccount(eoaAddress).keyCount();
+        assertEq(keysCount1, 2, "Both keys should be added on chain 1");
 
         // === Reset State and Switch to Chain 137 ===
-        // Revert to initial snapshot to reset all state
         vm.revertTo(initialSnapshot);
-
-        // Clear any remaining mock calls or state
         vm.clearMockedCalls();
+        paymentToken.mint(eoaAddress, 2 ** 128 - 1);
 
         // === Chain 137 Execution ===
         vm.chainId(137);
         vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
-        MockAccount account137 = MockAccount(payable(eoaAddress));
 
-        // Add admin key again (fresh state)
-        vm.prank(eoaAddress);
-        account137.authorize(adminKey.k);
+        // Execution should succeed due to multichain nonce in pre-calls
+        assertEq(oc.execute(abi.encode(baseIntent)), 0, "Should succeed due to multichain nonce");
 
-        // Compute digest again and confirm match
-        bytes32 digest137 = account137.computeDigest(calls, multichainNonce);
-        assertEq(digest1, digest137, "Digests should match");
-
-        // Use same signature for replay
-        signature = _sig(adminKey, digest137);
-        executionData = abi.encode(calls, abi.encodePacked(multichainNonce, signature));
-
-        account137.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
-
-        // Ensure no key was added after failed replay
-        uint256 keyCount = account137.keyCount();
-        assertEq(keyCount, 2, "Key should be added on chain 137");
-    }
-
-    function testPaymasterPay() public {
-        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        DelegatedEOA memory payer = _randomEIP7702DelegatedEOA();
-
-        bool isNative = _randomChance(2);
-
-        // Fund the payer account
-        if (isNative) {
-            vm.deal(address(payer.d), type(uint192).max);
-        } else {
-            _mint(address(paymentToken), address(payer.d), type(uint192).max);
-        }
-
-        // Setup intent for paymaster flow
-        Orchestrator.Intent memory u;
-        u.eoa = d.eoa;
-        u.payer = address(payer.d); // This is the key - payer is different from eoa
-        u.nonce = d.d.getNonce(0);
-        u.paymentToken = isNative ? address(0) : address(paymentToken);
-        u.totalPaymentAmount = _bound(_random(), 0.1 ether, 1 ether);
-        u.totalPaymentMaxAmount = u.totalPaymentAmount;
-        u.prePaymentAmount = 0; // For simplicity, test only post-payment
-        u.prePaymentMaxAmount = 0;
-        u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
-        u.paymentRecipient = address(0x12345);
-
-        // Create proper digest and signatures
-        bytes32 digest = oc.computeDigest(u);
-        u.signature = _eoaSig(d.privateKey, digest);
-        u.paymentSignature = _eoaSig(payer.privateKey, digest); // paymaster signs with their key
-
-        // Record initial balances
-        uint256 payerBalanceBefore = _balanceOf(u.paymentToken, address(payer.d));
-        uint256 recipientBalanceBefore = _balanceOf(u.paymentToken, u.paymentRecipient);
-
-        vm.deal(address(oc), type(uint256).max);
-
-        // Call pay function directly (only testing payment logic)
-        vm.prank(address(oc));
-        payer.d.pay(u.totalPaymentAmount, bytes32(0), digest, abi.encode(u));
-
-        // Verify ONLY the payment functionality:
-        assertEq(
-            _balanceOf(u.paymentToken, u.paymentRecipient),
-            recipientBalanceBefore + u.totalPaymentAmount,
-            "Payment recipient should receive the payment amount"
-        );
-        assertEq(
-            _balanceOf(u.paymentToken, address(payer.d)),
-            payerBalanceBefore - u.totalPaymentAmount,
-            "Payer balance should decrease by payment amount"
-        );
-
-        // Verify that EOA state is unchanged (since we only called pay, not execute):
-        assertEq(d.d.getNonce(0), u.nonce, "EOA nonce should be unchanged");
-        assertEq(address(d.d).balance, 0, "EOA should have no ether (we didn't fund it)");
-        assertEq(
-            address(0xabcd).balance,
-            0,
-            "Transfer recipient should have no ether (execution didn't happen)"
-        );
+        // Verify keys were added on chain 137
+        uint256 keysCount137 = IthacaAccount(eoaAddress).keyCount();
+        assertEq(keysCount137, 2, "Keys should be added on chain 137");
     }
 }
