@@ -1279,6 +1279,29 @@ contract OrchestratorTest is BaseTest {
             uint256(bytes32(errs[0])), uint256(bytes32(bytes4(keccak256("VerificationError()"))))
         );
 
+        // Try to send wrong proof
+        {
+            bytes32[] memory leafs = new bytes32[](3);
+
+            // Some randome leaf
+            leafs[0] = oc.computeDigest(arbIntent);
+            leafs[1] = oc.computeDigest(arbIntent);
+            leafs[2] = oc.computeDigest(outputIntent);
+
+            bytes memory correctSig = arbIntent.signature;
+
+            arbIntent.signature = abi.encode(merkleHelper.getProof(leafs, 1), root, rootSig);
+            encodedIntents[0] = abi.encode(arbIntent);
+            errs = oc.executeMultiChain(encodedIntents);
+            assertEq(
+                uint256(bytes32(errs[0])),
+                uint256(bytes32(bytes4(keccak256("VerificationError()"))))
+            );
+
+            // Restore correct sig
+            arbIntent.signature = correctSig;
+        }
+
         // Relay/Settlement system pulls user funds on Arb.
         encodedIntents[0] = abi.encode(arbIntent);
         errs = oc.executeMultiChain(encodedIntents);
