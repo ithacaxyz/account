@@ -207,7 +207,7 @@ contract Orchestrator is
 
             _fund(intent.eoa, intent.encodedFundTransfers);
 
-            _execute(intents[i], 0, uint256(Flags.MULTICHAIN_INTENT_MODE));
+            (, errs[i]) = _execute(intents[i], 0, uint256(Flags.MULTICHAIN_INTENT_MODE));
         }
     }
 
