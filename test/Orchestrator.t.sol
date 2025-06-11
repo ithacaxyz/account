@@ -1251,6 +1251,8 @@ contract OrchestratorTest is BaseTest {
             outputIntent.signature = abi.encode(merkleHelper.getProof(leafs, 2), root, rootSig);
         }
 
+        bytes4[] memory errs;
+
         // Setup complete.
         uint256 snapshot = vm.snapshotState();
         // 3. Actions on Base
@@ -1261,7 +1263,8 @@ contract OrchestratorTest is BaseTest {
         bytes[] memory encodedIntents = new bytes[](1);
         encodedIntents[0] = abi.encode(baseIntent);
         // Relay/Settlement system pulls user funds on Base.
-        oc.executeMultiChain(encodedIntents);
+        errs = oc.executeMultiChain(encodedIntents);
+        assertEq(uint256(bytes32(errs[0])), 0);
         vm.assertEq(usdcBase.balanceOf(makeAddr("SETTLEMENT_ADDRESS")), 600);
 
         // 4. Action on Arb
@@ -1269,9 +1272,17 @@ contract OrchestratorTest is BaseTest {
         vm.chainId(42161);
         // User has 500 USDC on arb
         usdcArb.mint(d.eoa, 500);
+        // Unhappy case, try to send base intent to arb
+        encodedIntents[0] = abi.encode(baseIntent);
+        errs = oc.executeMultiChain(encodedIntents);
+        assertEq(
+            uint256(bytes32(errs[0])), uint256(bytes32(bytes4(keccak256("VerificationError()"))))
+        );
+
         // Relay/Settlement system pulls user funds on Arb.
         encodedIntents[0] = abi.encode(arbIntent);
-        oc.executeMultiChain(encodedIntents);
+        errs = oc.executeMultiChain(encodedIntents);
+        assertEq(uint256(bytes32(errs[0])), 0);
         vm.assertEq(usdcArb.balanceOf(makeAddr("SETTLEMENT_ADDRESS")), 500);
 
         // 5. Action on Mainnet (Destination Chain)
@@ -1285,7 +1296,8 @@ contract OrchestratorTest is BaseTest {
         usdcMainnet.approve(address(oc), 1000);
         // Relay/Settlement system funds the user acccount, and the intended execution happens.
         encodedIntents[0] = abi.encode(outputIntent);
-        oc.executeMultiChain(encodedIntents);
+        errs = oc.executeMultiChain(encodedIntents);
+        assertEq(uint256(bytes32(errs[0])), 0);
         vm.stopPrank();
 
         vm.assertEq(usdcMainnet.balanceOf(makeAddr("FRIEND")), 1000);
