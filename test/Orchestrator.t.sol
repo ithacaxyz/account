@@ -12,6 +12,7 @@ import {IIthacaAccount} from "../src/interfaces/IIthacaAccount.sol";
 import {MultiSigSigner} from "../src/MultiSigSigner.sol";
 import {ICommon} from "../src/interfaces/ICommon.sol";
 import {Merkle} from "murky/Merkle.sol";
+import {SimpleFunder} from "../src/SimpleFunder.sol";
 
 contract OrchestratorTest is BaseTest {
     struct _TestFullFlowTemps {
@@ -1183,6 +1184,9 @@ contract OrchestratorTest is BaseTest {
     Merkle merkleHelper;
 
     function testMultiChainIntent() public {
+        uint256 funderPrivateKey = _randomPrivateKey();
+        SimpleFunder funder = new SimpleFunder(vm.addr(funderPrivateKey), address(this));
+
         merkleHelper = new Merkle();
         // USDC has different address on all chains
         MockPaymentToken usdcMainnet = new MockPaymentToken();
@@ -1227,11 +1231,15 @@ contract OrchestratorTest is BaseTest {
         outputIntent.executionData =
             _transferExecutionData(address(usdcMainnet), makeAddr("FRIEND"), 1000);
         outputIntent.combinedGas = 1000000;
-        outputIntent.funder = makeAddr("SETTLEMENT_ADDRESS");
-        ICommon.Transfer[] memory fundTransfers = new ICommon.Transfer[](1);
-        fundTransfers[0] = ICommon.Transfer({token: address(usdcMainnet), amount: 1000});
 
-        outputIntent.encodedFundTransfers = abi.encode(fundTransfers);
+        {
+            bytes[] memory encodedFundTransfers = new bytes[](1);
+            encodedFundTransfers[0] =
+                abi.encode(ICommon.Transfer({token: address(usdcMainnet), amount: 1000}));
+
+            outputIntent.encodedFundTransfers = encodedFundTransfers;
+            outputIntent.funder = address(funder);
+        }
 
         bytes32 root;
         bytes memory rootSig;
@@ -1249,6 +1257,8 @@ contract OrchestratorTest is BaseTest {
 
             // 2. User signs the root in a single click.
             rootSig = _sig(k, root);
+
+            outputIntent.funderSignature = _eoaSig(funderPrivateKey, leafs[2]);
 
             baseIntent.signature = abi.encode(merkleHelper.getProof(leafs, 0), root, rootSig);
             arbIntent.signature = abi.encode(merkleHelper.getProof(leafs, 1), root, rootSig);
@@ -1287,7 +1297,7 @@ contract OrchestratorTest is BaseTest {
         {
             bytes32[] memory leafs = new bytes32[](3);
 
-            // Some randome leaf
+            // Some random leaf
             leafs[0] = oc.computeDigest(arbIntent);
             leafs[1] = oc.computeDigest(arbIntent);
             leafs[2] = oc.computeDigest(outputIntent);
@@ -1318,9 +1328,8 @@ contract OrchestratorTest is BaseTest {
         // Relay/Settlement system has funds on mainnet. User has no funds.
         usdcMainnet.mint(makeAddr("SETTLEMENT_ADDRESS"), 1000);
 
-        // Approve the orchestrator to send funds to the user.
-        vm.startPrank(makeAddr("SETTLEMENT_ADDRESS"));
-        usdcMainnet.approve(address(oc), 1000);
+        vm.startPrank(makeAddr("RANDOM_RELAY_ADDRESS"));
+        usdcMainnet.mint(address(funder), 1000);
         // Relay/Settlement system funds the user acccount, and the intended execution happens.
         encodedIntents[0] = abi.encode(outputIntent);
         errs = oc.execute(true, encodedIntents);

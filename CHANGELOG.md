@@ -8,7 +8,7 @@
 - Adds `encodedFundTransfers` field to the `Intent` 712 struct.
 - Add `multichain` flag which tells the execute function to use merkle sig verification instead of vanilla verification.
 - Add `isMultiChain` bool to the execute function.
-- Adds `funder` field to the intent (non EIP 712), which allows caller to specify where to pull the funds from.
+- Add `IFunder` interface, along with `funder` and `funderSignature` address in the non EIP 712 part of the intent.
 ## 0.3.2
 
 ### Patch Changes

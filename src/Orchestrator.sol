@@ -17,6 +17,7 @@ import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
 import {ICommon} from "./interfaces/ICommon.sol";
 import {PauseAuthority} from "./PauseAuthority.sol";
+import {IFunder} from "./interfaces/IFunder.sol";
 
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 
@@ -100,6 +101,9 @@ contract Orchestrator is
     /// @dev The state override has not happened.
     error StateOverrideError();
 
+    /// @dev The funding has failed.
+    error FundingError();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -118,7 +122,7 @@ contract Orchestrator is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes encodedFundTransfers)Call(address to,uint256 value,bytes data)"
+        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for SignedCalls
@@ -418,14 +422,9 @@ contract Orchestrator is
         }
         address eoa = i.eoa;
         uint256 nonce = i.nonce;
+        bytes32 digest = _computeDigest(i);
 
-        // For ERC20, the caller needs to approve the orchestrator to pull funds.
-        // For native assets like ETH, they need to transfer the funds to the orchestrator
-        // before calling this function.
-        // Note: The fund function is mostly only used in the multi chain mode.
-        // For single chain intents the encodedFundTransfers field is empty
-        // so this function does nothing.
-        _fund(eoa, i.funder, i.encodedFundTransfers);
+        _fund(eoa, i.funder, digest, i.encodedFundTransfers, i.funderSignature);
 
         // The chicken and egg problem:
         // A off-chain simulation of a successful Intent may not guarantee on-chain success.
@@ -449,7 +448,6 @@ contract Orchestrator is
         // Off-chain simulation of `_verify` should suffice, provided that the eoa's
         // account is not changed, and the `keyHash` is not revoked
         // in the window between off-chain simulation and on-chain execution.
-        bytes32 digest = _computeDigest(i);
 
         bool isValid;
         bytes32 keyHash;
@@ -683,17 +681,39 @@ contract Orchestrator is
     /// - For ERC20 tokens, the funder needs to approve the orchestrator to pull funds.
     /// - For native assets like ETH, the funder needs to transfer the funds to the orchestrator
     ///   before calling execute.
-    function _fund(address eoa, address funder, bytes memory encodedFundTransfers)
-        internal
-        virtual
-    {
+    /// - The funder address should implement the IFunder interface.
+    function _fund(
+        address eoa,
+        address funder,
+        bytes32 digest,
+        bytes[] memory encodedFundTransfers,
+        bytes memory funderSignature
+    ) internal virtual {
+        // Note: The fund function is mostly only used in the multi chain mode.
+        // For single chain intents the encodedFundTransfers field would be empty.
         if (encodedFundTransfers.length == 0) {
             return;
         }
 
-        Transfer[] memory transfers = abi.decode(encodedFundTransfers, (Transfer[]));
-        for (uint256 i; i < transfers.length; ++i) {
-            TokenTransferLib.safeTransferFrom(transfers[i].token, funder, eoa, transfers[i].amount);
+        Transfer[] memory transfers = new Transfer[](encodedFundTransfers.length);
+
+        uint256[] memory preBalances = new uint256[](encodedFundTransfers.length);
+        for (uint256 i; i < encodedFundTransfers.length; ++i) {
+            transfers[i] = abi.decode(encodedFundTransfers[i], (Transfer));
+            // TODO: Optimize
+            preBalances[i] = TokenTransferLib.balanceOf(transfers[i].token, eoa);
+        }
+
+        IFunder(funder).fund(eoa, digest, transfers, funderSignature);
+
+        for (uint256 i; i < encodedFundTransfers.length; ++i) {
+            // TODO: Optimize
+            if (
+                TokenTransferLib.balanceOf(transfers[i].token, eoa) - preBalances[i]
+                    < transfers[i].amount
+            ) {
+                revert FundingError();
+            }
         }
     }
 
@@ -813,7 +833,7 @@ contract Orchestrator is
         f.set(8, i.totalPaymentMaxAmount);
         f.set(9, i.combinedGas);
         f.set(10, _encodedArrHash(i.encodedPreCalls));
-        f.set(11, EfficientHashLib.hashCalldata(i.encodedFundTransfers));
+        f.set(11, _encodedArrHash(i.encodedFundTransfers));
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }

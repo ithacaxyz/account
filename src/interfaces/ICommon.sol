@@ -46,17 +46,18 @@ interface ICommon {
         /// the overall Intent will revert before validation, and execute will return a non-zero error.
         bytes[] encodedPreCalls;
         /// @dev Only relevant for multi chain intents.
-        bytes encodedFundTransfers;
+        bytes[] encodedFundTransfers;
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
         ////////////////////////////////////////////////////////////////////////
+        /// @dev The funder address.
+        address funder;
+        /// @dev The funder signature.
+        bytes funderSignature;
         /// @dev The actual pre payment amount, requested by the filler. MUST be less than or equal to `prePaymentMaxAmount`
         uint256 prePaymentAmount;
         /// @dev The actual total payment amount, requested by the filler. MUST be less than or equal to `totalPaymentMaxAmount`
         uint256 totalPaymentAmount;
-        /// @dev If the encodedFundTransfers is non-empty,
-        /// the orchestrator will `transferFrom` from this address, to fund the user.
-        address funder;
         /// @dev The payment recipient for the ERC20 token.
         /// Excluded from signature. The filler can replace this with their own address.
         /// This enables multiple fillers, allowing for competitive filling, better uptime.
