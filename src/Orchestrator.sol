@@ -274,17 +274,6 @@ contract Orchestrator is
         }
     }
 
-    function _extractTransfer(bytes calldata encodedTransfer)
-        internal
-        virtual
-        returns (Transfer calldata t)
-    {
-        Intent calldata i = _extractIntent(encodedTransfer);
-        assembly ("memory-safe") {
-            t := i
-        }
-    }
-
     /// @dev Executes a single encoded intent.
     /// @dev If flags is non-zero, then all errors are bubbled up.
     /// Currently there can only be 2 modes - simulation mode, and execution mode.
