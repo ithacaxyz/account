@@ -1,5 +1,14 @@
 # porto-account
 
+## 0.4.0
+
+### Minor Changes
+
+- Adds interop features to the account, using native merkle sigs.
+- Adds `encodedFundTransfers` field to the `Intent` 712 struct.
+- Add `multichain` flag which tells the execute function to use merkle sig verification instead of vanilla verification.
+- Add `isMultiChain` bool to the execute function.
+- Adds `funder` field to the intent (non EIP 712), which allows caller to specify where to pull the funds from.
 ## 0.3.2
 
 ### Patch Changes
