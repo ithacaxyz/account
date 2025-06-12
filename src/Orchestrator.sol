@@ -19,6 +19,7 @@ import {ICommon} from "./interfaces/ICommon.sol";
 import {PauseAuthority} from "./PauseAuthority.sol";
 
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
+
 /// @title Orchestrator
 /// @notice Enables atomic verification, gas compensation and execution across eoas.
 /// @dev
@@ -164,71 +165,28 @@ contract Orchestrator is
         TokenTransferLib.safeTransfer(token, recipient, amount);
     }
 
-    function _verifyMerkleSig(bytes32 digest, address eoa, bytes memory signature)
-        internal
-        view
-        returns (bool isValid, bytes32 keyHash)
-    {
-        (bytes32[] memory proof, bytes32 root, bytes memory rootSig) =
-            abi.decode(signature, (bytes32[], bytes32, bytes));
-
-        if (MerkleProofLib.verify(proof, root, digest)) {
-            (isValid, keyHash) = IIthacaAccount(eoa).unwrapAndValidateSignature(root, rootSig);
-
-            return (isValid, keyHash);
-        }
-
-        return (false, bytes32(0));
-    }
-
-    function _fund(address eoa, bytes memory encodedFundTransfers) internal virtual {
-        if (encodedFundTransfers.length == 0) {
-            return;
-        }
-
-        Transfer[] memory transfers = abi.decode(encodedFundTransfers, (Transfer[]));
-        for (uint256 i; i < transfers.length; ++i) {
-            TokenTransferLib.safeTransferFrom(
-                transfers[i].token, msg.sender, eoa, transfers[i].amount
-            );
-        }
-    }
-
-    function executeMultiChain(bytes[] calldata intents)
-        public
-        virtual
-        nonReentrant
-        returns (bytes4[] memory errs)
-    {
-        errs = new bytes4[](intents.length);
-
-        for (uint256 i; i < intents.length; i++) {
-            Intent calldata intent = _extractIntent(intents[i]);
-
-            _fund(intent.eoa, intent.encodedFundTransfers);
-
-            (, errs[i]) = _execute(intents[i], 0, uint256(Flags.MULTICHAIN_INTENT_MODE));
-        }
-    }
-
     /// @dev Executes a single encoded intent.
     /// `encodedIntent` is given by `abi.encode(intent)`, where `intent` is a struct of type `Intent`.
     /// If sufficient gas is provided, returns an error selector that is non-zero
     /// if there is an error during the payment, verification, and call execution.
-    function execute(bytes calldata encodedIntent)
+    function execute(bool isMultichain, bytes calldata encodedIntent)
         public
         payable
         virtual
         nonReentrant
         returns (bytes4 err)
     {
-        (, err) = _execute(encodedIntent, 0, uint256(Flags.NORMAL_MODE));
+        (, err) = _execute(
+            encodedIntent,
+            0,
+            uint256(isMultichain ? Flags.MULTICHAIN_INTENT_MODE : Flags.NORMAL_MODE)
+        );
     }
 
     /// @dev Executes the array of encoded intents.
     /// Each element in `encodedIntents` is given by `abi.encode(intent)`,
     /// where `intent` is a struct of type `Intent`.
-    function execute(bytes[] calldata encodedIntents)
+    function execute(bool isMultichain, bytes[] calldata encodedIntents)
         public
         payable
         virtual
@@ -241,7 +199,11 @@ contract Orchestrator is
             // We reluctantly use regular Solidity to access `encodedIntents[i]`.
             // This generates an unnecessary check for `i < encodedIntents.length`, but helps
             // generate all the implicit calldata bound checks on `encodedIntents[i]`.
-            (, errs[i]) = _execute(encodedIntents[i], 0, uint256(Flags.NORMAL_MODE));
+            (, errs[i]) = _execute(
+                encodedIntents[i],
+                0,
+                uint256(isMultichain ? Flags.MULTICHAIN_INTENT_MODE : Flags.NORMAL_MODE)
+            );
         }
     }
 
@@ -379,7 +341,11 @@ contract Orchestrator is
 
         // Early skip the entire pay-verify-call workflow if the payer lacks tokens,
         // so that less gas is wasted when the Intent fails.
-        if (LibBit.and(i.prePaymentAmount != 0, err == 0)) {
+        // For multi chain mode, we skip this check, as the funding happens inside the self call.
+        if (
+            flags != uint256(Flags.MULTICHAIN_INTENT_MODE)
+                && LibBit.and(i.prePaymentAmount != 0, err == 0)
+        ) {
             if (TokenTransferLib.balanceOf(i.paymentToken, payer) < i.prePaymentAmount) {
                 err = PaymentError.selector;
 
@@ -463,6 +429,14 @@ contract Orchestrator is
         }
         address eoa = i.eoa;
         uint256 nonce = i.nonce;
+
+        // For ERC20, the caller needs to approve the orchestrator to pull funds.
+        // For native assets like ETH, they need to transfer the funds to the orchestrator
+        // before calling this function.
+        // Note: The fund function is mostly only used in the multi chain mode.
+        // For single chain intents the encodedFundTransfers field is empty
+        // so this function does nothing.
+        _fund(eoa, i.funder, i.encodedFundTransfers);
 
         // The chicken and egg problem:
         // A off-chain simulation of a successful Intent may not guarantee on-chain success.
@@ -688,6 +662,50 @@ contract Orchestrator is
     /// This function is provided as a public helper for easier integration.
     function accountImplementationOf(address eoa) public view virtual returns (address result) {
         (, result) = LibEIP7702.delegationAndImplementationOf(eoa);
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // Multi Chain Functions
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Verifies the merkle sig for the multi chain intents.
+    /// - Note: Each leaf of the merkle tree should be a standard intent digest, computed with chainId.
+    /// - Leaf intents do NOT need to have the multichain nonce prefix.
+    /// - The signature for multi chain intents using merkle verification is encoded as:
+    /// - bytes signature = abi.encode(bytes32[] memory proof, bytes32 root, bytes memory rootSig)
+    function _verifyMerkleSig(bytes32 digest, address eoa, bytes memory signature)
+        internal
+        view
+        returns (bool isValid, bytes32 keyHash)
+    {
+        (bytes32[] memory proof, bytes32 root, bytes memory rootSig) =
+            abi.decode(signature, (bytes32[], bytes32, bytes));
+
+        if (MerkleProofLib.verify(proof, root, digest)) {
+            (isValid, keyHash) = IIthacaAccount(eoa).unwrapAndValidateSignature(root, rootSig);
+
+            return (isValid, keyHash);
+        }
+
+        return (false, bytes32(0));
+    }
+
+    /// @dev Funds the eoa with with the encoded fund transfers, before executing the intent.
+    /// - For ERC20 tokens, the funder needs to approve the orchestrator to pull funds.
+    /// - For native assets like ETH, the funder needs to transfer the funds to the orchestrator
+    ///   before calling execute.
+    function _fund(address eoa, address funder, bytes memory encodedFundTransfers)
+        internal
+        virtual
+    {
+        if (encodedFundTransfers.length == 0) {
+            return;
+        }
+
+        Transfer[] memory transfers = abi.decode(encodedFundTransfers, (Transfer[]));
+        for (uint256 i; i < transfers.length; ++i) {
+            TokenTransferLib.safeTransferFrom(transfers[i].token, funder, eoa, transfers[i].amount);
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////

@@ -54,6 +54,9 @@ interface ICommon {
         uint256 prePaymentAmount;
         /// @dev The actual total payment amount, requested by the filler. MUST be less than or equal to `totalPaymentMaxAmount`
         uint256 totalPaymentAmount;
+        /// @dev If the encodedFundTransfers is non-empty,
+        /// the orchestrator will `transferFrom` from this address, to fund the user.
+        address funder;
         /// @dev The payment recipient for the ERC20 token.
         /// Excluded from signature. The filler can replace this with their own address.
         /// This enables multiple fillers, allowing for competitive filling, better uptime.
