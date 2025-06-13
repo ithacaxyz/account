@@ -46,6 +46,8 @@ interface ICommon {
         /// the overall Intent will revert before validation, and execute will return a non-zero error.
         bytes[] encodedPreCalls;
         /// @dev Only relevant for multi chain intents.
+        /// All the fund transfers HAVE To be in ascending order of the token address.
+        /// There also cannot be any duplicate token addresses. Use address(0) for native token.
         bytes[] encodedFundTransfers;
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)

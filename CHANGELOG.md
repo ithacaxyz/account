@@ -5,7 +5,7 @@
 ### Minor Changes
 
 - Adds interop features to the account, using native merkle sigs.
-- Adds `encodedFundTransfers` field to the `Intent` 712 struct.
+- Adds `encodedFundTransfers` field to the `Intent` 712 struct. Transfers should be placed in strictly increasing order of token addresses.
 - Add `multichain` flag which tells the execute function to use merkle sig verification instead of vanilla verification.
 - Add `isMultiChain` bool to the execute function.
 - Add `IFunder` interface, along with `funder` and `funderSignature` address in the non EIP 712 part of the intent.

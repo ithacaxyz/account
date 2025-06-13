@@ -104,6 +104,9 @@ contract Orchestrator is
     /// @dev The funding has failed.
     error FundingError();
 
+    /// @dev The encoded fund transfers are not striclty increasing.
+    error InvalidTransferOrder();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -698,16 +701,21 @@ contract Orchestrator is
         Transfer[] memory transfers = new Transfer[](encodedFundTransfers.length);
 
         uint256[] memory preBalances = new uint256[](encodedFundTransfers.length);
+        address lastToken;
         for (uint256 i; i < encodedFundTransfers.length; ++i) {
             transfers[i] = abi.decode(encodedFundTransfers[i], (Transfer));
-            // TODO: Optimize
-            preBalances[i] = TokenTransferLib.balanceOf(transfers[i].token, eoa);
+            address tokenAddr = transfers[i].token;
+
+            // Ensure strictly ascending order by token address without duplicates.
+            if (i != 0 && tokenAddr <= lastToken) revert InvalidTransferOrder();
+
+            lastToken = tokenAddr;
+            preBalances[i] = TokenTransferLib.balanceOf(tokenAddr, eoa);
         }
 
         IFunder(funder).fund(eoa, digest, transfers, funderSignature);
 
         for (uint256 i; i < encodedFundTransfers.length; ++i) {
-            // TODO: Optimize
             if (
                 TokenTransferLib.balanceOf(transfers[i].token, eoa) - preBalances[i]
                     < transfers[i].amount
