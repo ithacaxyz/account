@@ -1188,6 +1188,28 @@ contract OrchestratorTest is BaseTest {
         SimpleFunder funder =
             new SimpleFunder(vm.addr(funderPrivateKey), address(oc), address(this));
 
+        // ------------------------------------------------------------------
+        // SimpleFunder ‑ gas wallet set-up & basic functionality checks
+        // ------------------------------------------------------------------
+        {
+            address gasWallet = makeAddr("GAS_WALLET");
+            address[] memory gasWallets = new address[](1);
+            gasWallets[0] = gasWallet;
+            // Owner (this test contract) whitelists the gas wallet.
+            funder.setGasWallet(gasWallets, true);
+
+            // Fund the SimpleFunder with native tokens so the gas wallet can pull gas.
+            vm.deal(address(funder), 2 ether);
+            uint256 gasBalanceBefore = gasWallet.balance;
+
+            // Gas wallet successfully pulls 1 ether.
+            vm.prank(gasWallet);
+            funder.pullGas(1 ether);
+            assertEq(gasWallet.balance, gasBalanceBefore + 1 ether);
+            assertEq(address(funder).balance, 1 ether);
+        }
+        // ------------------------------------------------------------------
+
         merkleHelper = new Merkle();
         // USDC has different address on all chains
         MockPaymentToken usdcMainnet = new MockPaymentToken();
@@ -1278,6 +1300,7 @@ contract OrchestratorTest is BaseTest {
         bytes[] memory encodedIntents = new bytes[](1);
         encodedIntents[0] = abi.encode(baseIntent);
         // Relay/Settlement system pulls user funds on Base.
+        vm.prank(makeAddr("GAS_WALLET"));
         errs = oc.execute(true, encodedIntents);
         assertEq(uint256(bytes32(errs[0])), 0);
         vm.assertEq(usdcBase.balanceOf(makeAddr("SETTLEMENT_ADDRESS")), 600);
@@ -1289,6 +1312,7 @@ contract OrchestratorTest is BaseTest {
         usdcArb.mint(d.eoa, 500);
         // Unhappy case, try to send base intent to arb
         encodedIntents[0] = abi.encode(baseIntent);
+        vm.prank(makeAddr("GAS_WALLET"));
         errs = oc.execute(true, encodedIntents);
         assertEq(
             uint256(bytes32(errs[0])), uint256(bytes32(bytes4(keccak256("VerificationError()"))))
@@ -1307,6 +1331,7 @@ contract OrchestratorTest is BaseTest {
 
             arbIntent.signature = abi.encode(merkleHelper.getProof(leafs, 1), root, rootSig);
             encodedIntents[0] = abi.encode(arbIntent);
+            vm.prank(makeAddr("GAS_WALLET"));
             errs = oc.execute(true, encodedIntents);
             assertEq(
                 uint256(bytes32(errs[0])),
@@ -1319,6 +1344,7 @@ contract OrchestratorTest is BaseTest {
 
         // Relay/Settlement system pulls user funds on Arb.
         encodedIntents[0] = abi.encode(arbIntent);
+        vm.prank(makeAddr("GAS_WALLET"));
         errs = oc.execute(true, encodedIntents);
         assertEq(uint256(bytes32(errs[0])), 0);
         vm.assertEq(usdcArb.balanceOf(makeAddr("SETTLEMENT_ADDRESS")), 500);
@@ -1329,18 +1355,24 @@ contract OrchestratorTest is BaseTest {
         // Relay/Settlement system has funds on mainnet. User has no funds.
         usdcMainnet.mint(makeAddr("SETTLEMENT_ADDRESS"), 1000);
 
-        vm.startPrank(makeAddr("RANDOM_RELAY_ADDRESS"));
+        vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
         usdcMainnet.mint(address(funder), 1000);
-        // Relay/Settlement system funds the user acccount, and the intended execution happens.
+        // Relay/Settlement system funds the user account, and the intended execution happens.
         encodedIntents[0] = abi.encode(outputIntent);
+        vm.prank(makeAddr("GAS_WALLET"));
         errs = oc.execute(true, encodedIntents);
         assertEq(uint256(bytes32(errs[0])), 0);
-        vm.stopPrank();
-
         vm.assertEq(usdcMainnet.balanceOf(makeAddr("FRIEND")), 1000);
 
-        // At the end of the flow, relay is left with 100 USDC as fees.
-        // If we use a proper settlement system, then there is additional claim step for the relay.
-        // Where they provide a cross chain proof, to pull funds from the settlement system's escrow.
+        // ------------------------------------------------------------------
+        // Gas wallet blacklist check – after removal it should no longer pull gas.
+        // ------------------------------------------------------------------
+        address[] memory removeGasWallets = new address[](1);
+        removeGasWallets[0] = makeAddr("GAS_WALLET");
+        funder.setGasWallet(removeGasWallets, false);
+        vm.prank(makeAddr("GAS_WALLET"));
+        vm.expectRevert(bytes4(keccak256("OnlyGasWallet()")));
+        funder.pullGas(0.1 ether);
+        // ------------------------------------------------------------------
     }
 }
