@@ -80,6 +80,6 @@ contract SimpleFunder is Ownable, IFunder {
             revert OnlyGasWallet();
         }
 
-        payable(msg.sender).transfer(amount);
+        TokenTransferLib.safeTransfer(address(0), msg.sender, amount);
     }
 }
