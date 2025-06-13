@@ -8,10 +8,14 @@ import {Ownable} from "solady/auth/Ownable.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 
 contract SimpleFunder is Ownable, IFunder {
-    address public funder;
+    error onlyOrchestrator();
 
-    constructor(address _funder, address _owner) {
+    address public funder;
+    address public orchestrator;
+
+    constructor(address _funder, address _orchestrator, address _owner) {
         funder = _funder;
+        orchestrator = _orchestrator;
         _initializeOwner(_owner);
     }
 
@@ -21,6 +25,10 @@ contract SimpleFunder is Ownable, IFunder {
         ICommon.Transfer[] memory transfers,
         bytes memory funderSignature
     ) external {
+        if (msg.sender != orchestrator) {
+            revert onlyOrchestrator();
+        }
+
         SignatureCheckerLib.isValidSignatureNow(funder, digest, funderSignature);
 
         for (uint256 i; i < transfers.length; ++i) {
@@ -30,5 +38,9 @@ contract SimpleFunder is Ownable, IFunder {
 
     function setFunder(address newFunder) external onlyOwner {
         funder = newFunder;
+    }
+
+    function setOrchestrator(address newOrchestrator) external onlyOwner {
+        orchestrator = newOrchestrator;
     }
 }

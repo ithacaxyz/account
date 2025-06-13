@@ -1185,7 +1185,8 @@ contract OrchestratorTest is BaseTest {
 
     function testMultiChainIntent() public {
         uint256 funderPrivateKey = _randomPrivateKey();
-        SimpleFunder funder = new SimpleFunder(vm.addr(funderPrivateKey), address(this));
+        SimpleFunder funder =
+            new SimpleFunder(vm.addr(funderPrivateKey), address(oc), address(this));
 
         merkleHelper = new Merkle();
         // USDC has different address on all chains
