@@ -8,25 +8,58 @@ import {Ownable} from "solady/auth/Ownable.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 
 contract SimpleFunder is Ownable, IFunder {
-    error onlyOrchestrator();
+    error OnlyOrchestrator();
+    error OnlyGasWallet();
+
+    address public immutable ORCHESTRATOR;
 
     address public funder;
-    address public orchestrator;
+    mapping(address => bool) public gasWallets;
+
+    ////////////////////////////////////////////////////////////////////////
+    // Constructor
+    ////////////////////////////////////////////////////////////////////////
 
     constructor(address _funder, address _orchestrator, address _owner) {
         funder = _funder;
-        orchestrator = _orchestrator;
+        ORCHESTRATOR = _orchestrator;
         _initializeOwner(_owner);
     }
 
+    ////////////////////////////////////////////////////////////////////////
+    // Admin Functions
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Allows the owner to withdraw tokens from the funder.
+    function withdrawTokens(address token, address recipient, uint256 amount) external onlyOwner {
+        TokenTransferLib.safeTransfer(token, recipient, amount);
+    }
+
+    /// @dev Allows the owner to set the funder address.
+    function setFunder(address newFunder) external onlyOwner {
+        funder = newFunder;
+    }
+
+    /// @dev Allows the owner to set the gas wallets.
+    function setGasWallet(address[] memory wallets, bool isGasWallet) external onlyOwner {
+        for (uint256 i; i < wallets.length; ++i) {
+            gasWallets[wallets[i]] = isGasWallet;
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // Orchestrator Functions
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Allows the orchestrator to fund an account.
     function fund(
         address account,
         bytes32 digest,
         ICommon.Transfer[] memory transfers,
         bytes memory funderSignature
     ) external {
-        if (msg.sender != orchestrator) {
-            revert onlyOrchestrator();
+        if (msg.sender != ORCHESTRATOR) {
+            revert OnlyOrchestrator();
         }
 
         SignatureCheckerLib.isValidSignatureNow(funder, digest, funderSignature);
@@ -36,11 +69,17 @@ contract SimpleFunder is Ownable, IFunder {
         }
     }
 
-    function setFunder(address newFunder) external onlyOwner {
-        funder = newFunder;
-    }
+    ////////////////////////////////////////////////////////////////////////
+    // Gas Wallet Functions
+    ////////////////////////////////////////////////////////////////////////
 
-    function setOrchestrator(address newOrchestrator) external onlyOwner {
-        orchestrator = newOrchestrator;
+    /// @dev Gas Wallet can only pull the native gas token from the funder.
+    /// This limits the impact of a gas wallet being compromised.
+    function pullGas(uint256 amount) external {
+        if (!gasWallets[msg.sender]) {
+            revert OnlyGasWallet();
+        }
+
+        payable(msg.sender).transfer(amount);
     }
 }
