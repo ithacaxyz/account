@@ -1364,6 +1364,50 @@ contract OrchestratorTest is BaseTest {
         assertEq(uint256(bytes32(errs[0])), 0);
         vm.assertEq(usdcMainnet.balanceOf(makeAddr("FRIEND")), 1000);
 
+        // 6. Attempt execution with duplicated or unordered `encodedFundTransfers` (should fail).
+        vm.revertToState(snapshot);
+        vm.chainId(1);
+        {
+            // Relay/Settlement system funds setup on Mainnet again.
+            usdcMainnet.mint(makeAddr("SETTLEMENT_ADDRESS"), 1000);
+            vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
+            usdcMainnet.mint(address(funder), 1000);
+
+            {
+                // Construct a duplicated transfers array to violate the strictly ascending order check.
+                bytes[] memory dupTransfers = new bytes[](2);
+                dupTransfers[0] = outputIntent.encodedFundTransfers[0];
+                dupTransfers[1] = outputIntent.encodedFundTransfers[0];
+                outputIntent.encodedFundTransfers = dupTransfers;
+            }
+
+            encodedIntents[0] = abi.encode(outputIntent);
+            vm.prank(makeAddr("GAS_WALLET"));
+            errs = oc.execute(true, encodedIntents);
+            assertEq(
+                uint256(bytes32(errs[0])),
+                uint256(bytes32(bytes4(keccak256("InvalidTransferOrder()"))))
+            );
+
+            // Try to send unordered transfers
+            {
+                bytes[] memory unorderedTransfers = new bytes[](2);
+                unorderedTransfers[0] =
+                    abi.encode(ICommon.Transfer({token: address(usdcMainnet), amount: 500}));
+                unorderedTransfers[1] =
+                    abi.encode(ICommon.Transfer({token: address(0), amount: 0.5 ether}));
+                outputIntent.encodedFundTransfers = unorderedTransfers;
+            }
+
+            encodedIntents[0] = abi.encode(outputIntent);
+            vm.prank(makeAddr("GAS_WALLET"));
+            errs = oc.execute(true, encodedIntents);
+            assertEq(
+                uint256(bytes32(errs[0])),
+                uint256(bytes32(bytes4(keccak256("InvalidTransferOrder()"))))
+            );
+        }
+
         // ------------------------------------------------------------------
         // Gas wallet blacklist check – after removal it should no longer pull gas.
         // ------------------------------------------------------------------
