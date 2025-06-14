@@ -453,7 +453,9 @@ contract AccountTest is BaseTest {
         vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
 
         // Execution should succeed due to multichain nonce in pre-calls
-        assertEq(oc.execute(false, abi.encode(baseIntent)), 0, "Should succeed due to multichain nonce");
+        assertEq(
+            oc.execute(false, abi.encode(baseIntent)), 0, "Should succeed due to multichain nonce"
+        );
 
         // Verify keys were added on chain 137
         uint256 keysCount137 = IthacaAccount(eoaAddress).keyCount();
