@@ -144,7 +144,7 @@ contract Simulator {
     /// @return gasUsed The gas used in the successful simulation
     /// @return combinedGas The first combined gas value that gives a successful simulation.
     /// This function reverts if the primary simulation run with max combinedGas fails.
-    /// If the primary run is successful, it itertively increases u.combinedGas by `combinedGasIncrement` until the simulation passes.
+    /// If the primary run is successful, it iteratively increases u.combinedGas by `combinedGasIncrement` until the simulation passes.
     /// All failing simulations during this run are ignored.
     function simulateCombinedGas(
         address oc,
@@ -206,7 +206,7 @@ contract Simulator {
     /// @dev Same as simulateCombinedGas, but with an additional verification run
     /// that generates a successful non reverting state override simulation.
     /// Which can be used in eth_simulateV1 to get the trace.\
-    /// @param combinedGasVerificationOffset is a static value that is added after a succesful combinedGas is found.
+    /// @param combinedGasVerificationOffset is a static value that is added after a successful combinedGas is found.
     /// This can be used to account for variations in sig verification gas, for keytypes like P256.
     /// @param paymentPerGasPrecision The precision of the payment per gas value.
     /// paymentAmount = gas * paymentPerGas / (10 ** paymentPerGasPrecision)
