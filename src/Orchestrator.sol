@@ -15,7 +15,11 @@ import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
+import {ICommon} from "./interfaces/ICommon.sol";
 import {PauseAuthority} from "./PauseAuthority.sol";
+import {IFunder} from "./interfaces/IFunder.sol";
+
+import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 
 /// @title Orchestrator
 /// @notice Enables atomic verification, gas compensation and execution across eoas.
@@ -47,6 +51,12 @@ contract Orchestrator is
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
+
+    enum Flags {
+        NORMAL_MODE,
+        SIMULATION_MODE,
+        MULTICHAIN_INTENT_MODE
+    }
 
     ////////////////////////////////////////////////////////////////////////
     // Errors
@@ -91,6 +101,12 @@ contract Orchestrator is
     /// @dev The state override has not happened.
     error StateOverrideError();
 
+    /// @dev The funding has failed.
+    error FundingError();
+
+    /// @dev The encoded fund transfers are not striclty increasing.
+    error InvalidTransferOrder();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -109,7 +125,7 @@ contract Orchestrator is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls)Call(address to,uint256 value,bytes data)"
+        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for SignedCalls
@@ -120,7 +136,6 @@ contract Orchestrator is
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant CALL_TYPEHASH = keccak256("Call(address to,uint256 value,bytes data)");
 
-    /// @dev For EIP712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
 
     /// @dev Nonce prefix to signal that the payload is to be signed with EIP712 without the chain ID.
@@ -161,20 +176,24 @@ contract Orchestrator is
     /// `encodedIntent` is given by `abi.encode(intent)`, where `intent` is a struct of type `Intent`.
     /// If sufficient gas is provided, returns an error selector that is non-zero
     /// if there is an error during the payment, verification, and call execution.
-    function execute(bytes calldata encodedIntent)
+    function execute(bool isMultichain, bytes calldata encodedIntent)
         public
         payable
         virtual
         nonReentrant
         returns (bytes4 err)
     {
-        (, err) = _execute(encodedIntent, 0, 0);
+        (, err) = _execute(
+            encodedIntent,
+            0,
+            uint256(isMultichain ? Flags.MULTICHAIN_INTENT_MODE : Flags.NORMAL_MODE)
+        );
     }
 
     /// @dev Executes the array of encoded intents.
     /// Each element in `encodedIntents` is given by `abi.encode(intent)`,
     /// where `intent` is a struct of type `Intent`.
-    function execute(bytes[] calldata encodedIntents)
+    function execute(bool isMultichain, bytes[] calldata encodedIntents)
         public
         payable
         virtual
@@ -187,12 +206,16 @@ contract Orchestrator is
             // We reluctantly use regular Solidity to access `encodedIntents[i]`.
             // This generates an unnecessary check for `i < encodedIntents.length`, but helps
             // generate all the implicit calldata bound checks on `encodedIntents[i]`.
-            (, errs[i]) = _execute(encodedIntents[i], 0, 0);
+            (, errs[i]) = _execute(
+                encodedIntents[i],
+                0,
+                uint256(isMultichain ? Flags.MULTICHAIN_INTENT_MODE : Flags.NORMAL_MODE)
+            );
         }
     }
 
     /// @dev Minimal function, to allow hooking into the _execute function with the simulation flags set to true.
-    /// When simulationFlags is set to true, all errors are bubbled up. Also signature verification always returns true.
+    /// When flags is set to true, all errors are bubbled up. Also signature verification always returns true.
     /// But the codepaths for signature verification are still hit, for correct gas measurement.
     /// @dev If `isStateOverride` is false, then this function will always revert. If the simulation is successful, then it reverts with `SimulationPassed` error.
     /// If `isStateOverride` is true, then this function will not revert if the simulation is successful.
@@ -205,7 +228,8 @@ contract Orchestrator is
         bytes calldata encodedIntent
     ) external payable returns (uint256) {
         // If Simulation Fails, then it will revert here.
-        (uint256 gUsed, bytes4 err) = _execute(encodedIntent, combinedGasOverride, 1);
+        (uint256 gUsed, bytes4 err) =
+            _execute(encodedIntent, combinedGasOverride, uint256(Flags.SIMULATION_MODE));
 
         if (err != 0) {
             assembly ("memory-safe") {
@@ -229,6 +253,7 @@ contract Orchestrator is
     /// @dev Extracts the Intent from the calldata bytes, with minimal checks.
     function _extractIntent(bytes calldata encodedIntent)
         internal
+        view
         virtual
         returns (Intent calldata i)
     {
@@ -257,16 +282,16 @@ contract Orchestrator is
     }
 
     /// @dev Executes a single encoded intent.
-    /// @dev If simulationFlags is non-zero, then all errors are bubbled up.
+    /// @dev If flags is non-zero, then all errors are bubbled up.
     /// Currently there can only be 2 modes - simulation mode, and execution mode.
     /// But we use a uint256 for efficient stack operations, and more flexiblity in the future.
-    /// Note: We keep the simulationFlags in the stack/memory (TSTORE doesn't work) to make sure they are reset in each new call context,
+    /// Note: We keep the flags in the stack/memory (TSTORE doesn't work) to make sure they are reset in each new call context,
     /// to provide protection against attacks which could spoof the execute function to believe it is in simulation mode.
-    function _execute(
-        bytes calldata encodedIntent,
-        uint256 combinedGasOverride,
-        uint256 simulationFlags
-    ) internal virtual returns (uint256 gUsed, bytes4 err) {
+    function _execute(bytes calldata encodedIntent, uint256 combinedGasOverride, uint256 flags)
+        internal
+        virtual
+        returns (uint256 gUsed, bytes4 err)
+    {
         Intent calldata i = _extractIntent(encodedIntent);
 
         uint256 g = Math.coalesce(uint96(combinedGasOverride), i.combinedGas);
@@ -283,7 +308,7 @@ contract Orchestrator is
         ) {
             err = PaymentError.selector;
 
-            if (simulationFlags == 1) {
+            if (flags == uint256(Flags.SIMULATION_MODE)) {
                 revert PaymentError();
             }
         }
@@ -293,7 +318,7 @@ contract Orchestrator is
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
             if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
-                if (simulationFlags != 1) {
+                if (flags != uint256(Flags.SIMULATION_MODE)) {
                     revert InsufficientGas();
                 }
             }
@@ -302,7 +327,7 @@ contract Orchestrator is
         if (i.supportedAccountImplementation != address(0)) {
             if (accountImplementationOf(i.eoa) != i.supportedAccountImplementation) {
                 err = UnsupportedAccountImplementation.selector;
-                if (simulationFlags == 1) {
+                if (flags == uint256(Flags.SIMULATION_MODE)) {
                     revert UnsupportedAccountImplementation();
                 }
             }
@@ -312,11 +337,15 @@ contract Orchestrator is
 
         // Early skip the entire pay-verify-call workflow if the payer lacks tokens,
         // so that less gas is wasted when the Intent fails.
-        if (LibBit.and(i.prePaymentAmount != 0, err == 0)) {
+        // For multi chain mode, we skip this check, as the funding happens inside the self call.
+        if (
+            flags != uint256(Flags.MULTICHAIN_INTENT_MODE)
+                && LibBit.and(i.prePaymentAmount != 0, err == 0)
+        ) {
             if (TokenTransferLib.balanceOf(i.paymentToken, payer) < i.prePaymentAmount) {
                 err = PaymentError.selector;
 
-                if (simulationFlags == 1) {
+                if (flags == uint256(Flags.SIMULATION_MODE)) {
                     revert PaymentError();
                 }
             }
@@ -331,7 +360,7 @@ contract Orchestrator is
                 calldatacopy(add(m, 0x40), encodedIntent.offset, encodedIntent.length)
                 mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
                 // The word after the function selector contains the simulation flags.
-                mstore(add(m, 0x20), simulationFlags)
+                mstore(add(m, 0x20), flags)
                 mstore(0x00, 0) // Zeroize the return slot.
 
                 // To prevent griefing, we need to do a non-reverting gas-limited self call.
@@ -339,12 +368,12 @@ contract Orchestrator is
                 // and the sequence for `nonce` has been incremented.
                 // For more information, see `selfCallPayVerifyCall537021665()`.
                 selfCallSuccess :=
-                    call(g, address(), 0, add(m, 0x1c), add(encodedIntent.length, 0x44), 0x00, 0x20)
+                    call(g, address(), 0, add(m, 0x1c), add(encodedIntent.length, 0x24), 0x00, 0x20)
                 err := mload(0x00) // The self call will do another self call to execute.
 
                 if iszero(selfCallSuccess) {
                     // If it is a simulation, we simply revert with the full error.
-                    if simulationFlags {
+                    if eq(flags, 1) {
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
@@ -389,13 +418,16 @@ contract Orchestrator is
         require(msg.sender == address(this));
 
         Intent calldata i;
-        uint256 simulationFlags;
+        uint256 flags;
         assembly ("memory-safe") {
             i := add(0x24, calldataload(0x24))
-            simulationFlags := calldataload(0x04)
+            flags := calldataload(0x04)
         }
         address eoa = i.eoa;
         uint256 nonce = i.nonce;
+        bytes32 digest = _computeDigest(i);
+
+        _fund(eoa, i.funder, digest, i.encodedFundTransfers, i.funderSignature);
 
         // The chicken and egg problem:
         // A off-chain simulation of a successful Intent may not guarantee on-chain success.
@@ -412,19 +444,28 @@ contract Orchestrator is
         // simulation, and suggests banning users that intentionally grief the simulation.
 
         // Handle the sub Intents after initialize (if any), and before the `_verify`.
-        if (i.encodedPreCalls.length != 0) _handlePreCalls(eoa, simulationFlags, i.encodedPreCalls);
+        if (i.encodedPreCalls.length != 0) _handlePreCalls(eoa, flags, i.encodedPreCalls);
 
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the account logic.
         // Off-chain simulation of `_verify` should suffice, provided that the eoa's
         // account is not changed, and the `keyHash` is not revoked
         // in the window between off-chain simulation and on-chain execution.
-        bytes32 digest = _computeDigest(i);
-        (bool isValid, bytes32 keyHash) = _verify(digest, eoa, i.signature);
 
-        if (simulationFlags == 1) {
+        bool isValid;
+        bytes32 keyHash;
+
+        if (flags == uint256(Flags.MULTICHAIN_INTENT_MODE)) {
+            // For multi chain intents, we have to verify using merkle sigs.
+            (isValid, keyHash) = _verifyMerkleSig(digest, eoa, i.signature);
+        } else {
+            (isValid, keyHash) = _verify(digest, eoa, i.signature);
+        }
+
+        if (flags == uint256(Flags.SIMULATION_MODE)) {
             isValid = true;
         }
+
         if (!isValid) revert VerificationError();
 
         // Call eoa.checkAndIncrementNonce(i.nonce);
@@ -446,7 +487,7 @@ contract Orchestrator is
         if (i.prePaymentAmount != 0) _pay(i.prePaymentAmount, keyHash, digest, i);
 
         // Equivalent Solidity code:
-        // try this.selfCallExecutePay(simulationFlags, keyHash, i) {}
+        // try this.selfCallExecutePay(flags, keyHash, i) {}
         // catch {
         //     assembly ("memory-safe") {
         //         returndatacopy(0x00, 0x00, 0x20)
@@ -459,7 +500,7 @@ contract Orchestrator is
             let m := mload(0x40) // Load the free memory pointer
             mstore(0x00, 0) // Zeroize the return slot.
             mstore(m, 0x00000001) // `selfCallExecutePay1395256087()`
-            mstore(add(m, 0x20), simulationFlags) // Add simulationFlags as first param
+            mstore(add(m, 0x20), flags) // Add flags as first param
             mstore(add(m, 0x40), keyHash) // Add keyHash as second param
             mstore(add(m, 0x60), digest) // Add digest as third param
 
@@ -475,9 +516,9 @@ contract Orchestrator is
             // Because we don't want to return the prePayment, since the relay has already paid for the gas.
             // TODO: Should we add some identifier here, either using a return flag, or an event, that informs the caller that execute/post-payment has failed.
             if iszero(
-                call(gas(), address(), 0, add(m, 0x1c), add(0x44, encodedIntentLength), m, 0x20)
+                call(gas(), address(), 0, add(m, 0x1c), add(0x64, encodedIntentLength), m, 0x20)
             ) {
-                if simulationFlags {
+                if eq(flags, 1) {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
                 }
@@ -492,13 +533,13 @@ contract Orchestrator is
     function selfCallExecutePay1395256087() public payable {
         require(msg.sender == address(this));
 
-        uint256 simulationFlags;
+        uint256 flags;
         bytes32 keyHash;
         bytes32 digest;
         Intent calldata i;
 
         assembly ("memory-safe") {
-            simulationFlags := calldataload(0x04)
+            flags := calldataload(0x04)
             keyHash := calldataload(0x24)
             digest := calldataload(0x44)
             // Non standard decoding of the intent.
@@ -518,7 +559,7 @@ contract Orchestrator is
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
             if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
-                if simulationFlags {
+                if eq(flags, 1) {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
                 }
@@ -546,11 +587,10 @@ contract Orchestrator is
     /// - Call the Account with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
     /// - Emit an {IntentExecuted} event.
-    function _handlePreCalls(
-        address parentEOA,
-        uint256 simulationFlags,
-        bytes[] calldata encodedPreCalls
-    ) internal virtual {
+    function _handlePreCalls(address parentEOA, uint256 flags, bytes[] calldata encodedPreCalls)
+        internal
+        virtual
+    {
         for (uint256 j; j < encodedPreCalls.length; ++j) {
             SignedCall calldata p = _extractPreCall(encodedPreCalls[j]);
             address eoa = Math.coalesce(p.eoa, parentEOA);
@@ -560,7 +600,7 @@ contract Orchestrator is
 
             (bool isValid, bytes32 keyHash) = _verify(_computeDigest(p), eoa, p.signature);
 
-            if (simulationFlags == 1) {
+            if (flags == uint256(Flags.SIMULATION_MODE)) {
                 isValid = true;
             }
             if (!isValid) revert PreCallVerificationError();
@@ -588,7 +628,7 @@ contract Orchestrator is
                 mstore(0x00, 0) // Zeroize the return slot.
                 if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
                     // If this is a simulation via `simulateFailed`, bubble up the whole revert.
-                    if simulationFlags {
+                    if eq(flags, 1) {
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
@@ -612,6 +652,77 @@ contract Orchestrator is
     /// This function is provided as a public helper for easier integration.
     function accountImplementationOf(address eoa) public view virtual returns (address result) {
         (, result) = LibEIP7702.delegationAndImplementationOf(eoa);
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // Multi Chain Functions
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Verifies the merkle sig for the multi chain intents.
+    /// - Note: Each leaf of the merkle tree should be a standard intent digest, computed with chainId.
+    /// - Leaf intents do NOT need to have the multichain nonce prefix.
+    /// - The signature for multi chain intents using merkle verification is encoded as:
+    /// - bytes signature = abi.encode(bytes32[] memory proof, bytes32 root, bytes memory rootSig)
+    function _verifyMerkleSig(bytes32 digest, address eoa, bytes memory signature)
+        internal
+        view
+        returns (bool isValid, bytes32 keyHash)
+    {
+        (bytes32[] memory proof, bytes32 root, bytes memory rootSig) =
+            abi.decode(signature, (bytes32[], bytes32, bytes));
+
+        if (MerkleProofLib.verify(proof, root, digest)) {
+            (isValid, keyHash) = IIthacaAccount(eoa).unwrapAndValidateSignature(root, rootSig);
+
+            return (isValid, keyHash);
+        }
+
+        return (false, bytes32(0));
+    }
+
+    /// @dev Funds the eoa with with the encoded fund transfers, before executing the intent.
+    /// - For ERC20 tokens, the funder needs to approve the orchestrator to pull funds.
+    /// - For native assets like ETH, the funder needs to transfer the funds to the orchestrator
+    ///   before calling execute.
+    /// - The funder address should implement the IFunder interface.
+    function _fund(
+        address eoa,
+        address funder,
+        bytes32 digest,
+        bytes[] memory encodedFundTransfers,
+        bytes memory funderSignature
+    ) internal virtual {
+        // Note: The fund function is mostly only used in the multi chain mode.
+        // For single chain intents the encodedFundTransfers field would be empty.
+        if (encodedFundTransfers.length == 0) {
+            return;
+        }
+
+        Transfer[] memory transfers = new Transfer[](encodedFundTransfers.length);
+
+        uint256[] memory preBalances = new uint256[](encodedFundTransfers.length);
+        address lastToken;
+        for (uint256 i; i < encodedFundTransfers.length; ++i) {
+            transfers[i] = abi.decode(encodedFundTransfers[i], (Transfer));
+            address tokenAddr = transfers[i].token;
+
+            // Ensure strictly ascending order by token address without duplicates.
+            if (i != 0 && tokenAddr <= lastToken) revert InvalidTransferOrder();
+
+            lastToken = tokenAddr;
+            preBalances[i] = TokenTransferLib.balanceOf(tokenAddr, eoa);
+        }
+
+        IFunder(funder).fund(eoa, digest, transfers, funderSignature);
+
+        for (uint256 i; i < encodedFundTransfers.length; ++i) {
+            if (
+                TokenTransferLib.balanceOf(transfers[i].token, eoa) - preBalances[i]
+                    < transfers[i].amount
+            ) {
+                revert FundingError();
+            }
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -716,8 +827,9 @@ contract Orchestrator is
     /// Otherwise, the digest will be computed with the chain ID.
     function _computeDigest(Intent calldata i) internal view virtual returns (bytes32) {
         bool isMultichain = i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
+
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(11);
+        bytes32[] memory f = EfficientHashLib.malloc(12);
         f.set(0, INTENT_TYPEHASH);
         f.set(1, LibBit.toUint(isMultichain));
         f.set(2, uint160(i.eoa));
@@ -728,7 +840,8 @@ contract Orchestrator is
         f.set(7, i.prePaymentMaxAmount);
         f.set(8, i.totalPaymentMaxAmount);
         f.set(9, i.combinedGas);
-        f.set(10, _encodedPreCallsHash(i.encodedPreCalls));
+        f.set(10, _encodedArrHash(i.encodedPreCalls));
+        f.set(11, _encodedArrHash(i.encodedFundTransfers));
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
@@ -760,15 +873,10 @@ contract Orchestrator is
     }
 
     /// @dev Helper function to return the hash of the `encodedPreCalls`.
-    function _encodedPreCallsHash(bytes[] calldata encodedPreCalls)
-        internal
-        view
-        virtual
-        returns (bytes32)
-    {
-        bytes32[] memory a = EfficientHashLib.malloc(encodedPreCalls.length);
-        for (uint256 i; i < encodedPreCalls.length; ++i) {
-            a.set(i, EfficientHashLib.hashCalldata(encodedPreCalls[i]));
+    function _encodedArrHash(bytes[] calldata encodedArr) internal view virtual returns (bytes32) {
+        bytes32[] memory a = EfficientHashLib.malloc(encodedArr.length);
+        for (uint256 i; i < encodedArr.length; ++i) {
+            a.set(i, EfficientHashLib.hashCalldata(encodedArr[i]));
         }
         return a.hash();
     }
@@ -788,7 +896,7 @@ contract Orchestrator is
         returns (string memory name, string memory version)
     {
         name = "Orchestrator";
-        version = "0.3.2";
+        version = "0.4.0";
     }
 
     ////////////////////////////////////////////////////////////////////////

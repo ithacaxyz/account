@@ -310,7 +310,7 @@ contract AccountTest is BaseTest {
         u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
         u.signature = _eoaSig(d.privateKey, u);
 
-        assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("VerificationError()")));
+        assertEq(oc.execute(false, abi.encode(u)), bytes4(keccak256("VerificationError()")));
 
         vm.startPrank(pauseAuthority);
         // Try to pause already paused account.
@@ -330,7 +330,7 @@ contract AccountTest is BaseTest {
         vm.stopPrank();
 
         // Intent should now succeed.
-        assertEq(oc.execute(abi.encode(u)), 0);
+        assertEq(oc.execute(false, abi.encode(u)), 0);
 
         // Can pause again, after the cooldown period.
         vm.warp(lastPaused + 5 weeks + 1);
