@@ -468,16 +468,7 @@ contract Orchestrator is
 
         if (!isValid) revert VerificationError();
 
-        // Call eoa.checkAndIncrementNonce(i.nonce);
-        assembly ("memory-safe") {
-            mstore(0x00, 0x9e49fbf1) // `checkAndIncrementNonce(uint256)`.
-            mstore(0x20, nonce)
-
-            if iszero(call(gas(), eoa, 0, 0x1c, 0x24, 0x00, 0x00)) {
-                mstore(0x00, 0x756688fe) // `InvalidNonce()`.
-                revert(0x1c, 0x04)
-            }
-        }
+        _checkAndIncrementNonce(eoa, nonce);
 
         // PrePayment
         // If `_pay` fails, just revert.
@@ -605,16 +596,7 @@ contract Orchestrator is
             }
             if (!isValid) revert PreCallVerificationError();
 
-            // Call eoa.checkAndIncrementNonce(u.nonce);
-            assembly ("memory-safe") {
-                mstore(0x00, 0x9e49fbf1) // `checkAndIncrementNonce(uint256)`.
-                mstore(0x20, nonce)
-
-                if iszero(call(gas(), eoa, 0, 0x1c, 0x24, 0x00, 0x00)) {
-                    mstore(0x00, 0x756688fe) // `InvalidNonce()`.
-                    revert(0x1c, 0x04)
-                }
-            }
+            _checkAndIncrementNonce(eoa, nonce);
 
             // This part is same as `selfCallPayVerifyCall537021665`. We simply inline to save gas.
             bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
@@ -804,6 +786,19 @@ contract Orchestrator is
             isValid := staticcall(gas(), eoa, add(m, 0x1c), add(sig.length, 0x64), 0x00, 0x40)
             isValid := and(eq(mload(0x00), 1), and(gt(returndatasize(), 0x3f), isValid))
             keyHash := mload(0x20)
+        }
+    }
+
+    /// @dev calls `checkAndIncrementNonce` on the eoa.
+    function _checkAndIncrementNonce(address eoa, uint256 nonce) internal virtual {
+        assembly ("memory-safe") {
+            mstore(0x00, 0x9e49fbf1) // `checkAndIncrementNonce(uint256)`.
+            mstore(0x20, nonce)
+
+            if iszero(call(gas(), eoa, 0, 0x1c, 0x24, 0x00, 0x00)) {
+                mstore(0x00, 0x756688fe) // `InvalidNonce()`.
+                revert(0x1c, 0x04)
+            }
         }
     }
 
