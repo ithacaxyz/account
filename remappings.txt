@@ -1,3 +1,4 @@
 forge-std/=lib/forge-std/src/
 solady/=lib/solady/src/
 murky/=lib/murky/src/
+safe-singleton-deployer-sol/=lib/safe-singleton-deployer-sol/src/
