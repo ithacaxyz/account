@@ -126,10 +126,6 @@ contract IthacaFactoryTest is Test {
     }
 
     function testCannotDeployProxyWithoutImplementation() public {
-        // Try to deploy proxy with zero address - should revert
-        vm.expectRevert(IthacaFactory.ImplementationCannotBeZeroAddress.selector);
-        factory.deployAccountProxy(address(0), TEST_SALT);
-
         // Try to deploy proxy with non-existent implementation - should revert
         address fakeImplementation = address(0x1234);
         vm.expectRevert(IthacaFactory.ImplementationNotDeployed.selector);
@@ -137,10 +133,6 @@ contract IthacaFactoryTest is Test {
     }
 
     function testCannotDeployAccountWithoutOrchestrator() public {
-        // Try to deploy account with zero address - should revert
-        vm.expectRevert(IthacaFactory.OrchestratorCannotBeZeroAddress.selector);
-        factory.deployAccountImplementation(address(0), TEST_SALT);
-
         // Try to deploy account with non-existent orchestrator - should revert
         address fakeOrchestrator = address(0x5678);
         vm.expectRevert(IthacaFactory.OrchestratorNotDeployed.selector);

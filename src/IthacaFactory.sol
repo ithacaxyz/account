@@ -8,9 +8,7 @@ import {Simulator} from "./Simulator.sol";
 
 contract IthacaFactory {
     // Custom errors
-    error OrchestratorCannotBeZeroAddress();
     error OrchestratorNotDeployed();
-    error ImplementationCannotBeZeroAddress();
     error ImplementationNotDeployed();
     error DeploymentFailed();
 
@@ -24,7 +22,6 @@ contract IthacaFactory {
         public
         returns (address)
     {
-        if (orchestrator == address(0)) revert OrchestratorCannotBeZeroAddress();
         if (orchestrator.code.length == 0) revert OrchestratorNotDeployed();
 
         bytes memory bytecode =
@@ -33,7 +30,6 @@ contract IthacaFactory {
     }
 
     function deployAccountProxy(address implementation, bytes32 salt) public returns (address) {
-        if (implementation == address(0)) revert ImplementationCannotBeZeroAddress();
         if (implementation.code.length == 0) revert ImplementationNotDeployed();
 
         bytes memory bytecode = LibEIP7702.proxyInitCode(implementation, address(0));
