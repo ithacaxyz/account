@@ -3,6 +3,9 @@ pragma solidity ^0.8.27;
 
 import {Script, console} from "forge-std/Script.sol";
 import {IthacaFactory} from "../src/IthacaFactory.sol";
+import {Orchestrator} from "../src/Orchestrator.sol";
+import {IthacaAccount} from "../src/IthacaAccount.sol";
+import {Simulator} from "../src/Simulator.sol";
 
 contract DeployAllViaFactoryScript is Script {
     // Custom errors
@@ -36,13 +39,24 @@ contract DeployAllViaFactoryScript is Script {
         address pauseAuthority = vm.envAddress("PAUSE_AUTHORITY");
         if (pauseAuthority == address(0)) revert PauseAuthorityNotSet();
 
+        // Get creation codes
+        bytes memory orchestratorCreationCode = type(Orchestrator).creationCode;
+        bytes memory accountCreationCode = type(IthacaAccount).creationCode;
+        bytes memory simulatorCreationCode = type(Simulator).creationCode;
+
         // Predict addresses before deployment
         (
             address predictedOrchestrator,
             address predictedAccountImpl,
             address predictedAccountProxy,
             address predictedSimulator
-        ) = factory.predictAddresses(pauseAuthority, DEPLOYMENT_SALT);
+        ) = factory.predictAddresses(
+            pauseAuthority,
+            DEPLOYMENT_SALT,
+            orchestratorCreationCode,
+            accountCreationCode,
+            simulatorCreationCode
+        );
 
         console.log("Predicted addresses:");
         console.log("  Orchestrator:", predictedOrchestrator);
@@ -51,8 +65,13 @@ contract DeployAllViaFactoryScript is Script {
         console.log("  Simulator:", predictedSimulator);
 
         // Deploy all contracts using the factory
-        (orchestrator, accountImplementation, accountProxy, simulator) =
-            factory.deployAll(pauseAuthority, DEPLOYMENT_SALT);
+        (orchestrator, accountImplementation, accountProxy, simulator) = factory.deployAll(
+            pauseAuthority,
+            DEPLOYMENT_SALT,
+            orchestratorCreationCode,
+            accountCreationCode,
+            simulatorCreationCode
+        );
 
         // Verify deployments match predictions
         if (orchestrator != predictedOrchestrator) revert OrchestratorAddressMismatch();

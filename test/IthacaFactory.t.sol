@@ -12,13 +12,24 @@ contract IthacaFactoryTest is Test {
     address constant PAUSE_AUTHORITY = address(0xdead);
     bytes32 constant TEST_SALT = keccak256("test.salt.v1");
 
+    // Store creation codes for testing
+    bytes orchestratorCreationCode;
+    bytes accountCreationCode;
+    bytes simulatorCreationCode;
+
     function setUp() public {
         // Deploy the factory
         factory = new IthacaFactory();
+
+        // Store creation codes
+        orchestratorCreationCode = type(Orchestrator).creationCode;
+        accountCreationCode = type(IthacaAccount).creationCode;
+        simulatorCreationCode = type(Simulator).creationCode;
     }
 
     function testDeployOrchestrator() public {
-        address deployed = factory.deployOrchestrator(PAUSE_AUTHORITY, TEST_SALT);
+        address deployed =
+            factory.deployOrchestrator(PAUSE_AUTHORITY, TEST_SALT, orchestratorCreationCode);
 
         // Verify contract was deployed
         assertTrue(deployed.code.length > 0, "Orchestrator not deployed");
@@ -31,11 +42,13 @@ contract IthacaFactoryTest is Test {
 
     function testDeployAccountImplementation() public {
         // First deploy orchestrator
-        address orchestrator = factory.deployOrchestrator(PAUSE_AUTHORITY, TEST_SALT);
+        address orchestrator =
+            factory.deployOrchestrator(PAUSE_AUTHORITY, TEST_SALT, orchestratorCreationCode);
 
         // Deploy account implementation
         bytes32 accountSalt = keccak256("account.salt");
-        address deployed = factory.deployAccountImplementation(orchestrator, accountSalt);
+        address deployed =
+            factory.deployAccountImplementation(orchestrator, accountSalt, accountCreationCode);
 
         // Verify contract was deployed
         assertTrue(deployed.code.length > 0, "Account implementation not deployed");
@@ -47,7 +60,13 @@ contract IthacaFactoryTest is Test {
 
     function testDeployAll() public {
         (address orchestrator, address accountImpl, address accountProxy, address simulator) =
-            factory.deployAll(PAUSE_AUTHORITY, TEST_SALT);
+        factory.deployAll(
+            PAUSE_AUTHORITY,
+            TEST_SALT,
+            orchestratorCreationCode,
+            accountCreationCode,
+            simulatorCreationCode
+        );
 
         // Verify all contracts deployed
         assertTrue(orchestrator.code.length > 0, "Orchestrator not deployed");
@@ -74,7 +93,13 @@ contract IthacaFactoryTest is Test {
             address predictedAccountImpl,
             address predictedAccountProxy,
             address predictedSimulator
-        ) = factory.predictAddresses(PAUSE_AUTHORITY, TEST_SALT);
+        ) = factory.predictAddresses(
+            PAUSE_AUTHORITY,
+            TEST_SALT,
+            orchestratorCreationCode,
+            accountCreationCode,
+            simulatorCreationCode
+        );
 
         // Deploy contracts
         (
@@ -82,7 +107,13 @@ contract IthacaFactoryTest is Test {
             address deployedAccountImpl,
             address deployedAccountProxy,
             address deployedSimulator
-        ) = factory.deployAll(PAUSE_AUTHORITY, TEST_SALT);
+        ) = factory.deployAll(
+            PAUSE_AUTHORITY,
+            TEST_SALT,
+            orchestratorCreationCode,
+            accountCreationCode,
+            simulatorCreationCode
+        );
 
         // Verify predictions match deployments
         assertEq(deployedOrchestrator, predictedOrchestrator, "Orchestrator address mismatch");
@@ -98,44 +129,86 @@ contract IthacaFactoryTest is Test {
         bytes32 salt = keccak256("deterministic.test");
 
         (address orchestrator1, address accountImpl1, address accountProxy1, address simulator1) =
-            factory.deployAll(PAUSE_AUTHORITY, salt);
+        factory.deployAll(
+            PAUSE_AUTHORITY,
+            salt,
+            orchestratorCreationCode,
+            accountCreationCode,
+            simulatorCreationCode
+        );
 
-        // Simulate deployment on "chain 2" with same salt
-        // In reality, the addresses should be the same due to CREATE2
+        // Deploy another factory (simulating different chain)
+        IthacaFactory factory2 = new IthacaFactory();
+
+        // Get predicted addresses from factory2
         (
             address predictedOrchestrator2,
             address predictedAccountImpl2,
             address predictedAccountProxy2,
             address predictedSimulator2
-        ) = factory.predictAddresses(PAUSE_AUTHORITY, salt);
+        ) = factory2.predictAddresses(
+            PAUSE_AUTHORITY,
+            salt,
+            orchestratorCreationCode,
+            accountCreationCode,
+            simulatorCreationCode
+        );
 
-        // Since we're on the same chain in test, predictions should match deployed
-        assertEq(orchestrator1, predictedOrchestrator2, "Orchestrator not deterministic");
-        assertEq(accountImpl1, predictedAccountImpl2, "Account implementation not deterministic");
-        assertEq(accountProxy1, predictedAccountProxy2, "Account proxy not deterministic");
-        assertEq(simulator1, predictedSimulator2, "Simulator not deterministic");
-    }
-
-    function testCannotDeployToSameAddressTwice() public {
-        // Deploy once
-        factory.deployOrchestrator(PAUSE_AUTHORITY, TEST_SALT);
-
-        // Try to deploy again with same salt - should revert
-        vm.expectRevert();
-        factory.deployOrchestrator(PAUSE_AUTHORITY, TEST_SALT);
-    }
-
-    function testCannotDeployProxyWithoutImplementation() public {
-        // Try to deploy proxy with non-existent implementation - should revert
-        address fakeImplementation = address(0x1234);
-        vm.expectRevert(IthacaFactory.ImplementationNotDeployed.selector);
-        factory.deployAccountProxy(fakeImplementation, TEST_SALT);
+        // The predicted addresses should be different because factories have different addresses
+        assertTrue(
+            orchestrator1 != predictedOrchestrator2, "Addresses should differ across factories"
+        );
     }
 
     function testCannotDeployAccountWithoutOrchestrator() public {
-        // Try to deploy account with non-existent orchestrator - should revert
-        address fakeOrchestrator = address(0x5678);
         vm.expectRevert(IthacaFactory.OrchestratorNotDeployed.selector);
-        factory.deployAccountImplementation(fakeOrchestrator, TEST_SALT);
+        factory.deployAccountImplementation(
+            address(0x1234), // non-existent orchestrator
+            TEST_SALT,
+            accountCreationCode
+        );
+    }
+
+    function testCannotDeployProxyWithoutImplementation() public {
+        vm.expectRevert(IthacaFactory.ImplementationNotDeployed.selector);
+        factory.deployAccountProxy(address(0x1234), TEST_SALT); // non-existent implementation
+    }
+
+    function testCannotDeployWithSameSaltTwice() public {
+        // Deploy once
+        factory.deployOrchestrator(PAUSE_AUTHORITY, TEST_SALT, orchestratorCreationCode);
+
+        // Try to deploy again with same salt - should revert with DeploymentFailed
+        vm.expectRevert(IthacaFactory.DeploymentFailed.selector);
+        factory.deployOrchestrator(PAUSE_AUTHORITY, TEST_SALT, orchestratorCreationCode);
+    }
+
+    function testInvalidCreationCode() public {
+        // Test with wrong creation code for Orchestrator
+        bytes memory wrongCode = hex"deadbeef";
+
+        vm.expectRevert(IthacaFactory.InvalidCreationCode.selector);
+        factory.deployOrchestrator(PAUSE_AUTHORITY, TEST_SALT, wrongCode);
+
+        // Test with wrong creation code for Account
+        address orchestrator =
+            factory.deployOrchestrator(PAUSE_AUTHORITY, TEST_SALT, orchestratorCreationCode);
+
+        vm.expectRevert(IthacaFactory.InvalidCreationCode.selector);
+        factory.deployAccountImplementation(orchestrator, TEST_SALT, wrongCode);
+
+        // Test with wrong creation code for Simulator
+        vm.expectRevert(IthacaFactory.InvalidCreationCode.selector);
+        factory.deploySimulator(TEST_SALT, wrongCode);
+    }
+
+    function testGetCreationCodeHashes() public {
+        (bytes32 orchestratorHash, bytes32 accountHash, bytes32 simulatorHash) =
+            factory.getCreationCodeHashes();
+
+        // Verify hashes match
+        assertEq(orchestratorHash, keccak256(orchestratorCreationCode), "Wrong orchestrator hash");
+        assertEq(accountHash, keccak256(accountCreationCode), "Wrong account hash");
+        assertEq(simulatorHash, keccak256(simulatorCreationCode), "Wrong simulator hash");
     }
 }
