@@ -1,6 +1,5 @@
-# Claude Code Agent Guide for Ithaca Team
-
-This guide provides comprehensive instructions for Claude Code agents working with team members on development projects. It synthesizes best practices, workflows, and critical guidelines to ensure effective and safe code contributions.
+# Claude Code Agent Guide for Ithaca Account Repository
+It is important for all claude agents to follow these instructions.
 
 ## Directory Structure and Purpose
 
@@ -478,6 +477,111 @@ When analyzing code or PRs:
 2. **Suggest alternatives with code** - Don't just identify issues
 3. **Consider performance implications** - Question allocations and algorithms
 4. **Focus on what matters** - Correctness > Performance > Style
+
+## Solidity Contribution Guidelines
+
+### 1. General Principles
+
+- **Think first, code second**: Minimize the number of lines changed and consider ripple effects across the codebase.
+- **Prefer simplicity**: Fewer moving parts ➜ fewer bugs and lower audit overhead.
+
+### 2. Assembly Usage
+
+| Rule | Rationale |
+|------|-----------|
+| Use assembly only when essential. | Keeps code readable and auditable. |
+| Assembly is mandatory for low-level external calls. | Gives full control over call parameters & return data, and saves gas. |
+| Precede every assembly block with: • A brief justification (1-2 lines). • Equivalent Solidity pseudocode. | Documents intent for reviewers. |
+| Mark assembly blocks memory-safe when the Solidity docs' criteria are met. | Enables compiler optimizations. |
+
+### 3. Gas Optimization
+
+- Keep a dedicated **Gas Optimization** section in the PR description; justify any measurable gas deltas.
+- Prefer `calldata` over `memory`.
+- Limit storage (`sstore`, `sload`) operations; cache in memory wherever possible.
+- Use forge snapshot, forge test --match-test "benchmark", and npm scripts:
+  ```bash
+  npm run snapshot:main   # captures gas baseline from main
+  npm run diff:main       # compares your branch vs. main
+  ```
+- Large regressions must be explained.
+
+### 4. Handling "Stack Too Deep"
+
+- **Struct hack (tests only)**: Bundle local variables into a temporary struct declared above the test.
+- **Scoped blocks**: Wrap code in `{ ... }` to drop unused vars from the stack.
+- **Internal helper functions**: Encapsulate logic to shorten call frames.
+- **Refactor / delete unnecessary variables before other tricks**.
+
+### 5. Security Checklist
+
+- Review every change with an adversarial mindset.
+- Favor the simplest design that meets requirements.
+- After coding, ask: "What new attack surface did I introduce?"
+- Reject any change that raises security risk without strong justification.
+
+### 6. Verification Workflow
+
+```bash
+forge build                    # compile
+forge test                     # full test suite
+forge snapshot                 # gas snapshot (local)
+forge test --match-test bench  # run benchmarks
+npm run snapshot:main          # baseline gas (main)
+npm run diff:main              # gas diff vs. main
+```
+
+### 7. Continuous Learning
+
+- Consult official Solidity docs and relevant project references when uncertain.
+- Borrow battle-tested patterns from audited codebases.
+
+Apply these rules rigorously before opening a PR.
+
+## Project-Specific Tools and Configuration
+
+### Ithaca Account Repository Details
+
+This is an EIP-7702 powered account contract repository for the Ithaca Porto system, focusing on secure, user-friendly crypto accounts with features like:
+- WebAuthn/PassKey authentication
+- Call batching and gas sponsorship
+- Access control and session keys
+- Multi-factor authentication (planned)
+- Chain abstraction (planned)
+
+### Foundry Configuration
+You can always refer to the `foundry.toml` file to understand the environment the tests are running in.
+
+### Available NPM Scripts
+
+```bash
+# Gas snapshot commands
+npm run snapshot:main  # Capture gas baseline from main branch
+npm run diff:main      # Compare current branch gas vs main
+```
+
+### Project Structure
+
+- `src/`: Smart contract source files
+  - Core contracts: `IthacaAccount.sol`, `Orchestrator.sol`, `GuardedExecutor.sol`
+  - Supporting contracts: `MultiSigSigner.sol`, `PauseAuthority.sol`, `SimpleFunder.sol`, `Simulator.sol`
+  - `interfaces/`: Contract interfaces
+  - `libraries/`: Utility libraries (`LibNonce.sol`, `LibTStack.sol`, `TokenTransferLib.sol`)
+- `test/`: Test files including benchmarks (`Benchmark.t.sol`)
+- `script/`: Deployment scripts (`DeployAll.s.sol`)
+- `lib/`: Dependencies (forge-std, solady, murky, openzeppelin)
+
+### Testing and Benchmarks
+
+- Run all tests: `forge test`
+- Run specific test: `forge test --match-test testName`
+- Run benchmarks: `forge test --match-contract Benchmark`
+- Gas snapshots: Use npm scripts above
+- Coverage: `forge coverage`
+
+### Code Formatting
+
+Use `forge fmt` to format Solidity code according to project standards.
 
 ## Common commands
 
