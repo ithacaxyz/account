@@ -7,31 +7,29 @@ import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 import {Simulator} from "./Simulator.sol";
 
 contract IthacaFactory {
-    address private constant SAFE_SINGLETON_FACTORY = 0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7;
-
     function deployOrchestrator(address pauseAuthority, bytes32 salt) public returns (address) {
-        bytes memory creationCode = type(Orchestrator).creationCode;
-        bytes memory args = abi.encode(pauseAuthority);
-        return _deploy(creationCode, args, salt);
+        bytes memory bytecode =
+            abi.encodePacked(type(Orchestrator).creationCode, abi.encode(pauseAuthority));
+        return _deploy(bytecode, salt);
     }
 
     function deployAccountImplementation(address orchestrator, bytes32 salt)
         public
         returns (address)
     {
-        bytes memory creationCode = type(IthacaAccount).creationCode;
-        bytes memory args = abi.encode(orchestrator);
-        return _deploy(creationCode, args, salt);
+        bytes memory bytecode =
+            abi.encodePacked(type(IthacaAccount).creationCode, abi.encode(orchestrator));
+        return _deploy(bytecode, salt);
     }
 
     function deployAccountProxy(address implementation, bytes32 salt) public returns (address) {
-        bytes memory proxyCode = LibEIP7702.proxyInitCode(implementation, address(0));
-        return _deploy(proxyCode, "", salt);
+        bytes memory bytecode = LibEIP7702.proxyInitCode(implementation, address(0));
+        return _deploy(bytecode, salt);
     }
 
     function deploySimulator(bytes32 salt) public returns (address) {
-        bytes memory creationCode = type(Simulator).creationCode;
-        return _deploy(creationCode, "", salt);
+        bytes memory bytecode = type(Simulator).creationCode;
+        return _deploy(bytecode, salt);
     }
 
     function deployAll(address pauseAuthority, bytes32 salt)
@@ -51,36 +49,36 @@ contract IthacaFactory {
 
     function predictOrchestratorAddress(address pauseAuthority, bytes32 salt)
         external
-        pure
+        view
         returns (address)
     {
-        bytes memory creationCode = type(Orchestrator).creationCode;
-        bytes memory args = abi.encode(pauseAuthority);
-        return _computeAddress(creationCode, args, salt);
+        bytes memory bytecode =
+            abi.encodePacked(type(Orchestrator).creationCode, abi.encode(pauseAuthority));
+        return _computeAddress(bytecode, salt);
     }
 
     function predictAccountImplementationAddress(address orchestrator, bytes32 salt)
         external
-        pure
+        view
         returns (address)
     {
-        bytes memory creationCode = type(IthacaAccount).creationCode;
-        bytes memory args = abi.encode(orchestrator);
-        return _computeAddress(creationCode, args, salt);
+        bytes memory bytecode =
+            abi.encodePacked(type(IthacaAccount).creationCode, abi.encode(orchestrator));
+        return _computeAddress(bytecode, salt);
     }
 
     function predictAccountProxyAddress(address implementation, bytes32 salt)
         external
-        pure
+        view
         returns (address)
     {
-        bytes memory proxyCode = LibEIP7702.proxyInitCode(implementation, address(0));
-        return _computeAddress(proxyCode, "", salt);
+        bytes memory bytecode = LibEIP7702.proxyInitCode(implementation, address(0));
+        return _computeAddress(bytecode, salt);
     }
 
-    function predictSimulatorAddress(bytes32 salt) external pure returns (address) {
-        bytes memory creationCode = type(Simulator).creationCode;
-        return _computeAddress(creationCode, "", salt);
+    function predictSimulatorAddress(bytes32 salt) external view returns (address) {
+        bytes memory bytecode = type(Simulator).creationCode;
+        return _computeAddress(bytecode, salt);
     }
 
     function predictAddresses(address pauseAuthority, bytes32 salt)
@@ -99,32 +97,16 @@ contract IthacaFactory {
         simulator = this.predictSimulatorAddress(salt);
     }
 
-    function _deploy(bytes memory creationCode, bytes memory args, bytes32 salt)
-        private
-        returns (address deployed)
-    {
-        bytes memory callData = abi.encodePacked(salt, creationCode, args);
-
-        (bool success, bytes memory result) = SAFE_SINGLETON_FACTORY.call(callData);
-        require(success, "IthacaFactory: deployment failed");
-
-        deployed = address(bytes20(result));
-        require(deployed != address(0), "IthacaFactory: deployment returned zero address");
+    function _deploy(bytes memory bytecode, bytes32 salt) private returns (address deployed) {
+        assembly {
+            deployed := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
+        }
+        require(deployed != address(0), "IthacaFactory: deployment failed");
     }
 
-    function _computeAddress(bytes memory creationCode, bytes memory args, bytes32 salt)
-        private
-        pure
-        returns (address)
-    {
-        bytes32 hash = keccak256(
-            abi.encodePacked(
-                bytes1(0xff),
-                SAFE_SINGLETON_FACTORY,
-                salt,
-                keccak256(abi.encodePacked(creationCode, args))
-            )
-        );
+    function _computeAddress(bytes memory bytecode, bytes32 salt) private view returns (address) {
+        bytes32 hash =
+            keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, keccak256(bytecode)));
         return address(uint160(uint256(hash)));
     }
 }

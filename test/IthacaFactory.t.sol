@@ -12,19 +12,7 @@ contract IthacaFactoryTest is Test {
     address constant PAUSE_AUTHORITY = address(0xdead);
     bytes32 constant TEST_SALT = keccak256("test.salt.v1");
 
-    // Mock Safe Singleton Factory for testing
-    address constant SAFE_SINGLETON_FACTORY = 0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7;
-
     function setUp() public {
-        // Deploy mock Safe Singleton Factory if not on a supported network
-        if (SAFE_SINGLETON_FACTORY.code.length == 0) {
-            // Deploy a more complete mock that implements CREATE2 properly
-            // This is the actual bytecode for a minimal CREATE2 deployer
-            bytes memory deployerBytecode =
-                hex"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3";
-            vm.etch(SAFE_SINGLETON_FACTORY, deployerBytecode);
-        }
-
         // Deploy the factory
         factory = new IthacaFactory();
     }

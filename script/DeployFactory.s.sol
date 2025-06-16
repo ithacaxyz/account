@@ -8,9 +8,8 @@ import {IthacaFactory} from "../src/IthacaFactory.sol";
 contract DeployFactoryScript is Script {
     using SafeSingletonDeployer for bytes;
 
-    address constant expectedFactoryAddress = 0x0000000000FFe8B47B3e2130213B802212439497;
-    bytes32 constant factorySalt =
-        0x0000000000000000000000000000000000000000000000000000000000000001;
+    // Use a deterministic salt for the factory deployment
+    bytes32 constant FACTORY_SALT = keccak256("ithaca.factory.v1");
 
     function run() external returns (address factory) {
         vm.startBroadcast();
@@ -19,18 +18,24 @@ contract DeployFactoryScript is Script {
         bytes memory factoryCreationCode = type(IthacaFactory).creationCode;
 
         // Compute expected address
-        address predicted = factoryCreationCode.computeAddress(factorySalt);
+        address predicted = factoryCreationCode.computeAddress(FACTORY_SALT);
 
-        // Deploy factory
-        factory = factoryCreationCode.broadcastDeploy(factorySalt);
+        console.log("Predicted factory address:", predicted);
+
+        // Check if factory is already deployed
+        if (predicted.code.length > 0) {
+            console.log("Factory already deployed at:", predicted);
+            factory = predicted;
+        } else {
+            // Deploy factory via Safe Singleton Factory
+            factory = factoryCreationCode.broadcastDeploy(FACTORY_SALT);
+            console.log("Factory deployed to:", factory);
+        }
 
         // Verify deployment
         require(factory == predicted, "Factory deployed to unexpected address");
         require(factory.code.length > 0, "Factory deployment failed");
 
         vm.stopBroadcast();
-
-        // Log the deployed factory address
-        console.log("IthacaFactory deployed to:", factory);
     }
 }

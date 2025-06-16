@@ -5,9 +5,6 @@ import {Script, console} from "forge-std/Script.sol";
 import {IthacaFactory} from "../src/IthacaFactory.sol";
 
 contract DeployAllViaFactoryScript is Script {
-    // Default factory address (can be overridden by env variable)
-    address constant DEFAULT_FACTORY = 0x0000000000FFe8B47B3e2130213B802212439497;
-
     // Salt for deterministic deployments
     bytes32 constant DEPLOYMENT_SALT = keccak256("ithaca.account.v1");
 
@@ -19,9 +16,10 @@ contract DeployAllViaFactoryScript is Script {
     function run() external {
         vm.startBroadcast();
 
-        // Get factory address from env or use default
-        address factoryAddress = vm.envOr("ITHACA_FACTORY", DEFAULT_FACTORY);
-        require(factoryAddress.code.length > 0, "Factory not deployed");
+        // Get factory address from env
+        address factoryAddress = vm.envAddress("ITHACA_FACTORY");
+        require(factoryAddress != address(0), "ITHACA_FACTORY not set");
+        require(factoryAddress.code.length > 0, "Factory not deployed at specified address");
 
         IthacaFactory factory = IthacaFactory(factoryAddress);
 
