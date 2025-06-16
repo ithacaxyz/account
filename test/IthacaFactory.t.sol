@@ -124,4 +124,26 @@ contract IthacaFactoryTest is Test {
         vm.expectRevert();
         factory.deployOrchestrator(PAUSE_AUTHORITY, TEST_SALT);
     }
+
+    function testCannotDeployProxyWithoutImplementation() public {
+        // Try to deploy proxy with zero address - should revert
+        vm.expectRevert("IthacaFactory: implementation cannot be zero address");
+        factory.deployAccountProxy(address(0), TEST_SALT);
+
+        // Try to deploy proxy with non-existent implementation - should revert
+        address fakeImplementation = address(0x1234);
+        vm.expectRevert("IthacaFactory: implementation not deployed");
+        factory.deployAccountProxy(fakeImplementation, TEST_SALT);
+    }
+
+    function testCannotDeployAccountWithoutOrchestrator() public {
+        // Try to deploy account with zero address - should revert
+        vm.expectRevert("IthacaFactory: orchestrator cannot be zero address");
+        factory.deployAccountImplementation(address(0), TEST_SALT);
+
+        // Try to deploy account with non-existent orchestrator - should revert
+        address fakeOrchestrator = address(0x5678);
+        vm.expectRevert("IthacaFactory: orchestrator not deployed");
+        factory.deployAccountImplementation(fakeOrchestrator, TEST_SALT);
+    }
 }

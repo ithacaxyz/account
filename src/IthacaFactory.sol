@@ -17,12 +17,20 @@ contract IthacaFactory {
         public
         returns (address)
     {
+        require(orchestrator != address(0), "IthacaFactory: orchestrator cannot be zero address");
+        require(orchestrator.code.length > 0, "IthacaFactory: orchestrator not deployed");
+
         bytes memory bytecode =
             abi.encodePacked(type(IthacaAccount).creationCode, abi.encode(orchestrator));
         return _deploy(bytecode, salt);
     }
 
     function deployAccountProxy(address implementation, bytes32 salt) public returns (address) {
+        require(
+            implementation != address(0), "IthacaFactory: implementation cannot be zero address"
+        );
+        require(implementation.code.length > 0, "IthacaFactory: implementation not deployed");
+
         bytes memory bytecode = LibEIP7702.proxyInitCode(implementation, address(0));
         return _deploy(bytecode, salt);
     }
