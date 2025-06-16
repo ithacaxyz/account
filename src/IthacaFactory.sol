@@ -7,6 +7,13 @@ import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 import {Simulator} from "./Simulator.sol";
 
 contract IthacaFactory {
+    // Custom errors
+    error OrchestratorCannotBeZeroAddress();
+    error OrchestratorNotDeployed();
+    error ImplementationCannotBeZeroAddress();
+    error ImplementationNotDeployed();
+    error DeploymentFailed();
+
     function deployOrchestrator(address pauseAuthority, bytes32 salt) public returns (address) {
         bytes memory bytecode =
             abi.encodePacked(type(Orchestrator).creationCode, abi.encode(pauseAuthority));
@@ -17,8 +24,8 @@ contract IthacaFactory {
         public
         returns (address)
     {
-        require(orchestrator != address(0), "IthacaFactory: orchestrator cannot be zero address");
-        require(orchestrator.code.length > 0, "IthacaFactory: orchestrator not deployed");
+        if (orchestrator == address(0)) revert OrchestratorCannotBeZeroAddress();
+        if (orchestrator.code.length == 0) revert OrchestratorNotDeployed();
 
         bytes memory bytecode =
             abi.encodePacked(type(IthacaAccount).creationCode, abi.encode(orchestrator));
@@ -26,10 +33,8 @@ contract IthacaFactory {
     }
 
     function deployAccountProxy(address implementation, bytes32 salt) public returns (address) {
-        require(
-            implementation != address(0), "IthacaFactory: implementation cannot be zero address"
-        );
-        require(implementation.code.length > 0, "IthacaFactory: implementation not deployed");
+        if (implementation == address(0)) revert ImplementationCannotBeZeroAddress();
+        if (implementation.code.length == 0) revert ImplementationNotDeployed();
 
         bytes memory bytecode = LibEIP7702.proxyInitCode(implementation, address(0));
         return _deploy(bytecode, salt);
@@ -109,7 +114,7 @@ contract IthacaFactory {
         assembly {
             deployed := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
         }
-        require(deployed != address(0), "IthacaFactory: deployment failed");
+        if (deployed == address(0)) revert DeploymentFailed();
     }
 
     function _computeAddress(bytes memory bytecode, bytes32 salt) private view returns (address) {

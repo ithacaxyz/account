@@ -8,6 +8,10 @@ import {IthacaFactory} from "../src/IthacaFactory.sol";
 contract DeployFactoryScript is Script {
     using SafeSingletonDeployer for bytes;
 
+    // Custom errors
+    error FactoryDeployedToUnexpectedAddress();
+    error FactoryDeploymentFailed();
+
     // Use a deterministic salt for the factory deployment
     bytes32 constant FACTORY_SALT = keccak256("ithaca.factory.v1");
 
@@ -33,8 +37,8 @@ contract DeployFactoryScript is Script {
         }
 
         // Verify deployment
-        require(factory == predicted, "Factory deployed to unexpected address");
-        require(factory.code.length > 0, "Factory deployment failed");
+        if (factory != predicted) revert FactoryDeployedToUnexpectedAddress();
+        if (factory.code.length == 0) revert FactoryDeploymentFailed();
 
         vm.stopBroadcast();
     }

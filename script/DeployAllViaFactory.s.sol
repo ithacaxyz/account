@@ -5,6 +5,15 @@ import {Script, console} from "forge-std/Script.sol";
 import {IthacaFactory} from "../src/IthacaFactory.sol";
 
 contract DeployAllViaFactoryScript is Script {
+    // Custom errors
+    error FactoryAddressNotSet();
+    error FactoryNotDeployed();
+    error PauseAuthorityNotSet();
+    error OrchestratorAddressMismatch();
+    error AccountImplementationAddressMismatch();
+    error AccountProxyAddressMismatch();
+    error SimulatorAddressMismatch();
+
     // Salt for deterministic deployments
     bytes32 constant DEPLOYMENT_SALT = keccak256("ithaca.account.v1");
 
@@ -18,14 +27,14 @@ contract DeployAllViaFactoryScript is Script {
 
         // Get factory address from env
         address factoryAddress = vm.envAddress("ITHACA_FACTORY");
-        require(factoryAddress != address(0), "ITHACA_FACTORY not set");
-        require(factoryAddress.code.length > 0, "Factory not deployed at specified address");
+        if (factoryAddress == address(0)) revert FactoryAddressNotSet();
+        if (factoryAddress.code.length == 0) revert FactoryNotDeployed();
 
         IthacaFactory factory = IthacaFactory(factoryAddress);
 
         // Get pause authority from env
         address pauseAuthority = vm.envAddress("PAUSE_AUTHORITY");
-        require(pauseAuthority != address(0), "PAUSE_AUTHORITY not set");
+        if (pauseAuthority == address(0)) revert PauseAuthorityNotSet();
 
         // Predict addresses before deployment
         (
@@ -46,12 +55,12 @@ contract DeployAllViaFactoryScript is Script {
             factory.deployAll(pauseAuthority, DEPLOYMENT_SALT);
 
         // Verify deployments match predictions
-        require(orchestrator == predictedOrchestrator, "Orchestrator address mismatch");
-        require(
-            accountImplementation == predictedAccountImpl, "Account implementation address mismatch"
-        );
-        require(accountProxy == predictedAccountProxy, "Account proxy address mismatch");
-        require(simulator == predictedSimulator, "Simulator address mismatch");
+        if (orchestrator != predictedOrchestrator) revert OrchestratorAddressMismatch();
+        if (accountImplementation != predictedAccountImpl) {
+            revert AccountImplementationAddressMismatch();
+        }
+        if (accountProxy != predictedAccountProxy) revert AccountProxyAddressMismatch();
+        if (simulator != predictedSimulator) revert SimulatorAddressMismatch();
 
         vm.stopBroadcast();
 
