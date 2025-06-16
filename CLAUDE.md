@@ -538,6 +538,75 @@ npm run diff:main              # gas diff vs. main
 
 Apply these rules rigorously before opening a PR.
 
+## Testing Guidelines
+
+### Core Testing Principles
+
+**Every feature or change MUST have comprehensive tests before creating a PR**. This is non-negotiable for maintaining code quality and preventing regressions.
+
+### 1. When to Write Tests
+
+- **New Features**: Write tests that demonstrate the complete flow and all edge cases
+- **Bug Fixes**: Add tests that reproduce the bug and verify the fix
+- **Refactoring**: Ensure existing tests still pass; add new ones if behavior changes
+- **Gas Optimizations**: Include benchmark tests showing before/after comparisons
+
+### 2. Types of Required Tests
+
+#### Unit Tests
+- Write clear unit tests that demonstrate the general flow of your feature/change
+- Test both happy paths and failure cases
+- Include edge cases and boundary conditions
+- Test revert conditions with specific error messages
+
+#### Fuzz Tests
+- **Fuzz tests are highly encouraged** for all new functionality
+- Use Foundry's built-in fuzzing capabilities
+- Apply random arguments to thoroughly test your implementation
+- Use Solady's random library for composable randomness when needed
+
+Example fuzz test pattern:
+```solidity
+function testFuzz_myFeature(uint256 amount, address user) public {
+    // Bound inputs to reasonable ranges
+    amount = bound(amount, 1, type(uint128).max);
+    vm.assume(user != address(0));
+    
+    // Test your feature with random inputs
+    myContract.myFeature(amount, user);
+    
+    // Assert expected outcomes
+    assertEq(myContract.balanceOf(user), amount);
+}
+```
+
+### 3. Testing Best Practices
+
+- **Don't write redundant tests**: If something is already sufficiently tested, don't duplicate
+- **Focus on what changed**: Ensure tests encapsulate your specific changes
+- **Test downstream consequences**: Consider ripple effects of your changes
+- **Update broken tests**: If your change breaks existing tests, update them thoughtfully
+- **Use descriptive test names**: `test_FeatureName_SpecificScenario_ExpectedOutcome()`
+
+### 4. Testing Checklist Before PR
+
+Before opening any PR, ensure:
+- [ ] All new functions have unit tests
+- [ ] Critical paths have fuzz tests with random inputs
+- [ ] Edge cases and revert scenarios are tested
+- [ ] Gas benchmarks are included for optimizations
+- [ ] All tests pass: `forge test`
+- [ ] No test coverage regression: `forge coverage`
+
+### 5. Using Test Utilities
+
+The project includes helpful testing utilities:
+- Solady's test utils for advanced testing patterns
+- Forge-std's test helpers and cheat codes
+- Project-specific mocks in `test/utils/mocks/`
+
+Remember: **Well-tested code is trusted code**. Take the time to write thorough tests - they're an investment in the project's reliability and your peace of mind.
+
 ## Project-Specific Tools and Configuration
 
 ### Ithaca Account Repository Details
