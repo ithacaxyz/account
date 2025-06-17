@@ -1183,48 +1183,79 @@ contract OrchestratorTest is BaseTest {
 
     Merkle merkleHelper;
 
+    struct _TestMultiChainIntentTemps {
+        // Core test data
+        SimpleFunder funder;
+        uint256 funderPrivateKey;
+        MockPaymentToken usdcMainnet;
+        MockPaymentToken usdcArb;
+        MockPaymentToken usdcBase;
+        DelegatedEOA d;
+        PassKey k;
+        // Intent data
+        ICommon.Intent baseIntent;
+        ICommon.Intent arbIntent;
+        ICommon.Intent outputIntent;
+        // Merkle data
+        bytes32[] leafs;
+        bytes32 root;
+        bytes rootSig;
+        // Common addresses
+        address gasWallet;
+        address settlementAddress;
+        address friend;
+        // Other common data
+        bytes[] encodedIntents;
+        bytes4[] errs;
+        uint256 snapshot;
+    }
+
     function testMultiChainIntent() public {
-        uint256 funderPrivateKey = _randomPrivateKey();
-        SimpleFunder funder =
-            new SimpleFunder(vm.addr(funderPrivateKey), address(oc), address(this));
+        _TestMultiChainIntentTemps memory t;
+
+        // Initialize core test data
+        t.funderPrivateKey = _randomPrivateKey();
+        t.funder = new SimpleFunder(vm.addr(t.funderPrivateKey), address(oc), address(this));
+        t.gasWallet = makeAddr("GAS_WALLET");
+        t.settlementAddress = makeAddr("SETTLEMENT_ADDRESS");
+        t.friend = makeAddr("FRIEND");
 
         // ------------------------------------------------------------------
         // SimpleFunder ‑ gas wallet set-up & basic functionality checks
         // ------------------------------------------------------------------
         {
-            address gasWallet = makeAddr("GAS_WALLET");
             address[] memory gasWallets = new address[](1);
-            gasWallets[0] = gasWallet;
+            gasWallets[0] = t.gasWallet;
             // Owner (this test contract) whitelists the gas wallet.
-            funder.setGasWallet(gasWallets, true);
+            t.funder.setGasWallet(gasWallets, true);
 
             // Fund the SimpleFunder with native tokens so the gas wallet can pull gas.
-            vm.deal(address(funder), 2 ether);
-            uint256 gasBalanceBefore = gasWallet.balance;
+            vm.deal(address(t.funder), 2 ether);
+            uint256 gasBalanceBefore = t.gasWallet.balance;
 
             // Gas wallet successfully pulls 1 ether.
-            vm.prank(gasWallet);
-            funder.pullGas(1 ether);
-            assertEq(gasWallet.balance, gasBalanceBefore + 1 ether);
-            assertEq(address(funder).balance, 1 ether);
+            vm.prank(t.gasWallet);
+            t.funder.pullGas(1 ether);
+            assertEq(t.gasWallet.balance, gasBalanceBefore + 1 ether);
+            assertEq(address(t.funder).balance, 1 ether);
         }
         // ------------------------------------------------------------------
 
         merkleHelper = new Merkle();
         // USDC has different address on all chains
-        MockPaymentToken usdcMainnet = new MockPaymentToken();
-        MockPaymentToken usdcArb = new MockPaymentToken();
-        MockPaymentToken usdcBase = new MockPaymentToken();
+        t.usdcMainnet = new MockPaymentToken();
+        t.usdcArb = new MockPaymentToken();
+        t.usdcBase = new MockPaymentToken();
 
         // Deploy the account on all chains
-        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        vm.deal(d.eoa, 10 ether);
+        t.d = _randomEIP7702DelegatedEOA();
+        vm.deal(t.d.eoa, 10 ether);
 
         // Authorize the passskey on all chains
-        PassKey memory k = _randomPassKey();
-        k.k.isSuperAdmin = true;
-        vm.prank(d.eoa);
-        d.d.authorize(k.k);
+        t.k = _randomPassKey();
+        t.k.k.isSuperAdmin = true;
+        vm.prank(t.d.eoa);
+        t.d.d.authorize(t.k.k);
 
         // Test Scenario:
         // Send 1000 USDC to a friend on Mainnet. By pulling funds from Base and Arb.
@@ -1234,158 +1265,134 @@ contract OrchestratorTest is BaseTest {
         // 1. Relay prepares the MultiChainIntent and get it signed by the user.
         // Note: This assumes user has the same synced passkey on all chains,
         // so only 1 signature is needed.
-        ICommon.Intent memory baseIntent;
-        baseIntent.eoa = d.eoa;
-        baseIntent.nonce = d.d.getNonce(0);
-        baseIntent.executionData =
-            _transferExecutionData(address(usdcBase), makeAddr("SETTLEMENT_ADDRESS"), 600);
-        baseIntent.combinedGas = 1000000;
+        t.baseIntent.eoa = t.d.eoa;
+        t.baseIntent.nonce = t.d.d.getNonce(0);
+        t.baseIntent.executionData =
+            _transferExecutionData(address(t.usdcBase), t.settlementAddress, 600);
+        t.baseIntent.combinedGas = 1000000;
 
-        ICommon.Intent memory arbIntent;
-        arbIntent.eoa = d.eoa;
-        arbIntent.nonce = d.d.getNonce(0);
-        arbIntent.executionData =
-            _transferExecutionData(address(usdcArb), makeAddr("SETTLEMENT_ADDRESS"), 500);
-        arbIntent.combinedGas = 1000000;
+        t.arbIntent.eoa = t.d.eoa;
+        t.arbIntent.nonce = t.d.d.getNonce(0);
+        t.arbIntent.executionData =
+            _transferExecutionData(address(t.usdcArb), t.settlementAddress, 500);
+        t.arbIntent.combinedGas = 1000000;
 
-        ICommon.Intent memory outputIntent;
-        outputIntent.eoa = d.eoa;
-        outputIntent.nonce = d.d.getNonce(0);
-        outputIntent.executionData =
-            _transferExecutionData(address(usdcMainnet), makeAddr("FRIEND"), 1000);
-        outputIntent.combinedGas = 1000000;
+        t.outputIntent.eoa = t.d.eoa;
+        t.outputIntent.nonce = t.d.d.getNonce(0);
+        t.outputIntent.executionData =
+            _transferExecutionData(address(t.usdcMainnet), t.friend, 1000);
+        t.outputIntent.combinedGas = 1000000;
 
         {
             bytes[] memory encodedFundTransfers = new bytes[](1);
             encodedFundTransfers[0] =
-                abi.encode(ICommon.Transfer({token: address(usdcMainnet), amount: 1000}));
+                abi.encode(ICommon.Transfer({token: address(t.usdcMainnet), amount: 1000}));
 
-            outputIntent.encodedFundTransfers = encodedFundTransfers;
-            outputIntent.funder = address(funder);
+            t.outputIntent.encodedFundTransfers = encodedFundTransfers;
+            t.outputIntent.funder = address(t.funder);
         }
 
-        bytes32 root;
-        bytes memory rootSig;
+        // Compute merkle tree data
+        _computeMerkleData(t);
 
-        {
-            bytes32[] memory leafs = new bytes32[](3);
-            vm.chainId(8453);
-            leafs[0] = oc.computeDigest(baseIntent);
-            vm.chainId(42161);
-            leafs[1] = oc.computeDigest(arbIntent);
-            vm.chainId(1);
-            leafs[2] = oc.computeDigest(outputIntent);
-
-            root = merkleHelper.getRoot(leafs);
-
-            // 2. User signs the root in a single click.
-            rootSig = _sig(k, root);
-
-            outputIntent.funderSignature = _eoaSig(funderPrivateKey, leafs[2]);
-
-            baseIntent.signature = abi.encode(merkleHelper.getProof(leafs, 0), root, rootSig);
-            arbIntent.signature = abi.encode(merkleHelper.getProof(leafs, 1), root, rootSig);
-            outputIntent.signature = abi.encode(merkleHelper.getProof(leafs, 2), root, rootSig);
-        }
-
-        bytes4[] memory errs;
+        t.encodedIntents = new bytes[](1);
 
         // Setup complete.
-        uint256 snapshot = vm.snapshotState();
+        t.snapshot = vm.snapshotState();
         // 3. Actions on Base
         vm.chainId(8453);
         // User has 600 USDC on base
-        usdcBase.mint(d.eoa, 600);
+        t.usdcBase.mint(t.d.eoa, 600);
 
-        bytes[] memory encodedIntents = new bytes[](1);
-        encodedIntents[0] = abi.encode(baseIntent);
+        t.encodedIntents[0] = abi.encode(t.baseIntent);
         // Relay/Settlement system pulls user funds on Base.
-        vm.prank(makeAddr("GAS_WALLET"));
-        errs = oc.execute(true, encodedIntents);
-        assertEq(uint256(bytes32(errs[0])), 0);
-        vm.assertEq(usdcBase.balanceOf(makeAddr("SETTLEMENT_ADDRESS")), 600);
+        vm.prank(t.gasWallet);
+        t.errs = oc.execute(true, t.encodedIntents);
+        assertEq(uint256(bytes32(t.errs[0])), 0);
+        vm.assertEq(t.usdcBase.balanceOf(t.settlementAddress), 600);
 
         // 4. Action on Arb
-        vm.revertToState(snapshot);
+        vm.revertToState(t.snapshot);
         vm.chainId(42161);
         // User has 500 USDC on arb
-        usdcArb.mint(d.eoa, 500);
+        t.usdcArb.mint(t.d.eoa, 500);
         // Unhappy case, try to send base intent to arb
-        encodedIntents[0] = abi.encode(baseIntent);
-        vm.prank(makeAddr("GAS_WALLET"));
-        errs = oc.execute(true, encodedIntents);
+        t.encodedIntents[0] = abi.encode(t.baseIntent);
+        vm.prank(t.gasWallet);
+        t.errs = oc.execute(true, t.encodedIntents);
         assertEq(
-            uint256(bytes32(errs[0])), uint256(bytes32(bytes4(keccak256("VerificationError()"))))
+            uint256(bytes32(t.errs[0])), uint256(bytes32(bytes4(keccak256("VerificationError()"))))
         );
 
         // Try to send wrong proof
         {
-            bytes32[] memory leafs = new bytes32[](3);
+            bytes32[] memory wrongLeafs = new bytes32[](3);
 
             // Some random leaf
-            leafs[0] = oc.computeDigest(arbIntent);
-            leafs[1] = oc.computeDigest(arbIntent);
-            leafs[2] = oc.computeDigest(outputIntent);
+            wrongLeafs[0] = oc.computeDigest(t.arbIntent);
+            wrongLeafs[1] = oc.computeDigest(t.arbIntent);
+            wrongLeafs[2] = oc.computeDigest(t.outputIntent);
 
-            bytes memory correctSig = arbIntent.signature;
+            bytes memory correctSig = t.arbIntent.signature;
 
-            arbIntent.signature = abi.encode(merkleHelper.getProof(leafs, 1), root, rootSig);
-            encodedIntents[0] = abi.encode(arbIntent);
-            vm.prank(makeAddr("GAS_WALLET"));
-            errs = oc.execute(true, encodedIntents);
+            t.arbIntent.signature =
+                abi.encode(merkleHelper.getProof(wrongLeafs, 1), t.root, t.rootSig);
+            t.encodedIntents[0] = abi.encode(t.arbIntent);
+            vm.prank(t.gasWallet);
+            t.errs = oc.execute(true, t.encodedIntents);
             assertEq(
-                uint256(bytes32(errs[0])),
+                uint256(bytes32(t.errs[0])),
                 uint256(bytes32(bytes4(keccak256("VerificationError()"))))
             );
 
             // Restore correct sig
-            arbIntent.signature = correctSig;
+            t.arbIntent.signature = correctSig;
         }
 
         // Relay/Settlement system pulls user funds on Arb.
-        encodedIntents[0] = abi.encode(arbIntent);
-        vm.prank(makeAddr("GAS_WALLET"));
-        errs = oc.execute(true, encodedIntents);
-        assertEq(uint256(bytes32(errs[0])), 0);
-        vm.assertEq(usdcArb.balanceOf(makeAddr("SETTLEMENT_ADDRESS")), 500);
+        t.encodedIntents[0] = abi.encode(t.arbIntent);
+        vm.prank(t.gasWallet);
+        t.errs = oc.execute(true, t.encodedIntents);
+        assertEq(uint256(bytes32(t.errs[0])), 0);
+        vm.assertEq(t.usdcArb.balanceOf(t.settlementAddress), 500);
 
         // 5. Action on Mainnet (Destination Chain)
-        vm.revertToState(snapshot);
+        vm.revertToState(t.snapshot);
         vm.chainId(1);
         // Relay/Settlement system has funds on mainnet. User has no funds.
-        usdcMainnet.mint(makeAddr("SETTLEMENT_ADDRESS"), 1000);
+        t.usdcMainnet.mint(t.settlementAddress, 1000);
 
         vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
-        usdcMainnet.mint(address(funder), 1000);
+        t.usdcMainnet.mint(address(t.funder), 1000);
         // Relay/Settlement system funds the user account, and the intended execution happens.
-        encodedIntents[0] = abi.encode(outputIntent);
-        vm.prank(makeAddr("GAS_WALLET"));
-        errs = oc.execute(true, encodedIntents);
-        assertEq(uint256(bytes32(errs[0])), 0);
-        vm.assertEq(usdcMainnet.balanceOf(makeAddr("FRIEND")), 1000);
+        t.encodedIntents[0] = abi.encode(t.outputIntent);
+        vm.prank(t.gasWallet);
+        t.errs = oc.execute(true, t.encodedIntents);
+        assertEq(uint256(bytes32(t.errs[0])), 0);
+        vm.assertEq(t.usdcMainnet.balanceOf(t.friend), 1000);
 
         // 6. Attempt execution with duplicated or unordered `encodedFundTransfers` (should fail).
-        vm.revertToState(snapshot);
+        vm.revertToState(t.snapshot);
         vm.chainId(1);
         {
             // Relay/Settlement system funds setup on Mainnet again.
-            usdcMainnet.mint(makeAddr("SETTLEMENT_ADDRESS"), 1000);
+            t.usdcMainnet.mint(t.settlementAddress, 1000);
             vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
-            usdcMainnet.mint(address(funder), 1000);
+            t.usdcMainnet.mint(address(t.funder), 1000);
 
             {
                 // Construct a duplicated transfers array to violate the strictly ascending order check.
                 bytes[] memory dupTransfers = new bytes[](2);
-                dupTransfers[0] = outputIntent.encodedFundTransfers[0];
-                dupTransfers[1] = outputIntent.encodedFundTransfers[0];
-                outputIntent.encodedFundTransfers = dupTransfers;
+                dupTransfers[0] = t.outputIntent.encodedFundTransfers[0];
+                dupTransfers[1] = t.outputIntent.encodedFundTransfers[0];
+                t.outputIntent.encodedFundTransfers = dupTransfers;
             }
 
-            encodedIntents[0] = abi.encode(outputIntent);
-            vm.prank(makeAddr("GAS_WALLET"));
-            errs = oc.execute(true, encodedIntents);
+            t.encodedIntents[0] = abi.encode(t.outputIntent);
+            vm.prank(t.gasWallet);
+            t.errs = oc.execute(true, t.encodedIntents);
             assertEq(
-                uint256(bytes32(errs[0])),
+                uint256(bytes32(t.errs[0])),
                 uint256(bytes32(bytes4(keccak256("InvalidTransferOrder()"))))
             );
 
@@ -1393,17 +1400,17 @@ contract OrchestratorTest is BaseTest {
             {
                 bytes[] memory unorderedTransfers = new bytes[](2);
                 unorderedTransfers[0] =
-                    abi.encode(ICommon.Transfer({token: address(usdcMainnet), amount: 500}));
+                    abi.encode(ICommon.Transfer({token: address(t.usdcMainnet), amount: 500}));
                 unorderedTransfers[1] =
                     abi.encode(ICommon.Transfer({token: address(0), amount: 0.5 ether}));
-                outputIntent.encodedFundTransfers = unorderedTransfers;
+                t.outputIntent.encodedFundTransfers = unorderedTransfers;
             }
 
-            encodedIntents[0] = abi.encode(outputIntent);
-            vm.prank(makeAddr("GAS_WALLET"));
-            errs = oc.execute(true, encodedIntents);
+            t.encodedIntents[0] = abi.encode(t.outputIntent);
+            vm.prank(t.gasWallet);
+            t.errs = oc.execute(true, t.encodedIntents);
             assertEq(
-                uint256(bytes32(errs[0])),
+                uint256(bytes32(t.errs[0])),
                 uint256(bytes32(bytes4(keccak256("InvalidTransferOrder()"))))
             );
         }
@@ -1411,50 +1418,65 @@ contract OrchestratorTest is BaseTest {
         // ------------------------------------------------------------------
         // Test invalid funder signature - should revert
         // ------------------------------------------------------------------
-        vm.revertToState(snapshot);
+        vm.revertToState(t.snapshot);
         vm.chainId(1);
         {
             // Setup funds for the test
-            usdcMainnet.mint(makeAddr("SETTLEMENT_ADDRESS"), 1000);
+            t.usdcMainnet.mint(t.settlementAddress, 1000);
             vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
-            usdcMainnet.mint(address(funder), 1000);
+            t.usdcMainnet.mint(address(t.funder), 1000);
 
             // Reset encodedFundTransfers back to original single transfer
             bytes[] memory originalTransfers = new bytes[](1);
             originalTransfers[0] =
-                abi.encode(ICommon.Transfer({token: address(usdcMainnet), amount: 1000}));
-            outputIntent.encodedFundTransfers = originalTransfers;
+                abi.encode(ICommon.Transfer({token: address(t.usdcMainnet), amount: 1000}));
+            t.outputIntent.encodedFundTransfers = originalTransfers;
 
-            // Create an invalid signature by using a wrong private key for the original digest
+            // Create an invalid signature by using a wrong private key
             uint256 wrongPrivateKey = _randomPrivateKey();
-            // Use the original leaf digest (leafs[2]) that was computed for the outputIntent
-            bytes32[] memory leafs = new bytes32[](3);
-            vm.chainId(8453);
-            leafs[0] = oc.computeDigest(baseIntent);
-            vm.chainId(42161);
-            leafs[1] = oc.computeDigest(arbIntent);
-            vm.chainId(1);
-            leafs[2] = oc.computeDigest(outputIntent);
+            // Recompute merkle data since we need the original digest
+            _computeMerkleData(t);
 
-            outputIntent.funderSignature = _eoaSig(wrongPrivateKey, leafs[2]);
+            t.outputIntent.funderSignature = _eoaSig(wrongPrivateKey, t.leafs[2]);
 
-            encodedIntents[0] = abi.encode(outputIntent);
-            vm.prank(makeAddr("GAS_WALLET"));
-            errs = oc.execute(true, encodedIntents);
+            t.encodedIntents[0] = abi.encode(t.outputIntent);
+            vm.prank(t.gasWallet);
+            t.errs = oc.execute(true, t.encodedIntents);
 
             // Check that it reverted with InvalidFunderSignature error
-            assertEq(errs[0], bytes4(keccak256("InvalidFunderSignature()")));
+            assertEq(t.errs[0], bytes4(keccak256("InvalidFunderSignature()")));
         }
 
         // ------------------------------------------------------------------
         // Gas wallet blacklist check – after removal it should no longer pull gas.
         // ------------------------------------------------------------------
         address[] memory removeGasWallets = new address[](1);
-        removeGasWallets[0] = makeAddr("GAS_WALLET");
-        funder.setGasWallet(removeGasWallets, false);
-        vm.prank(makeAddr("GAS_WALLET"));
+        removeGasWallets[0] = t.gasWallet;
+        t.funder.setGasWallet(removeGasWallets, false);
+        vm.prank(t.gasWallet);
         vm.expectRevert(bytes4(keccak256("OnlyGasWallet()")));
-        funder.pullGas(0.1 ether);
+        t.funder.pullGas(0.1 ether);
         // ------------------------------------------------------------------
+    }
+
+    function _computeMerkleData(_TestMultiChainIntentTemps memory t) internal {
+        t.leafs = new bytes32[](3);
+        vm.chainId(8453);
+        t.leafs[0] = oc.computeDigest(t.baseIntent);
+        vm.chainId(42161);
+        t.leafs[1] = oc.computeDigest(t.arbIntent);
+        vm.chainId(1);
+        t.leafs[2] = oc.computeDigest(t.outputIntent);
+
+        t.root = merkleHelper.getRoot(t.leafs);
+
+        // 2. User signs the root in a single click.
+        t.rootSig = _sig(t.k, t.root);
+
+        t.outputIntent.funderSignature = _eoaSig(t.funderPrivateKey, t.leafs[2]);
+
+        t.baseIntent.signature = abi.encode(merkleHelper.getProof(t.leafs, 0), t.root, t.rootSig);
+        t.arbIntent.signature = abi.encode(merkleHelper.getProof(t.leafs, 1), t.root, t.rootSig);
+        t.outputIntent.signature = abi.encode(merkleHelper.getProof(t.leafs, 2), t.root, t.rootSig);
     }
 }
