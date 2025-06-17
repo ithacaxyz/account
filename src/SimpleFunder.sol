@@ -10,6 +10,7 @@ import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 contract SimpleFunder is Ownable, IFunder {
     error OnlyOrchestrator();
     error OnlyGasWallet();
+    error InvalidFunderSignature();
 
     address public immutable ORCHESTRATOR;
 
@@ -62,7 +63,9 @@ contract SimpleFunder is Ownable, IFunder {
             revert OnlyOrchestrator();
         }
 
-        SignatureCheckerLib.isValidSignatureNow(funder, digest, funderSignature);
+        if (!SignatureCheckerLib.isValidSignatureNow(funder, digest, funderSignature)) {
+            revert InvalidFunderSignature();
+        }
 
         for (uint256 i; i < transfers.length; ++i) {
             TokenTransferLib.safeTransfer(transfers[i].token, account, transfers[i].amount);
