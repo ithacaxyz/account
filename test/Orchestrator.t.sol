@@ -1409,6 +1409,44 @@ contract OrchestratorTest is BaseTest {
         }
 
         // ------------------------------------------------------------------
+        // Test invalid funder signature - should revert
+        // ------------------------------------------------------------------
+        vm.revertToState(snapshot);
+        vm.chainId(1);
+        {
+            // Setup funds for the test
+            usdcMainnet.mint(makeAddr("SETTLEMENT_ADDRESS"), 1000);
+            vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
+            usdcMainnet.mint(address(funder), 1000);
+
+            // Reset encodedFundTransfers back to original single transfer
+            bytes[] memory originalTransfers = new bytes[](1);
+            originalTransfers[0] =
+                abi.encode(ICommon.Transfer({token: address(usdcMainnet), amount: 1000}));
+            outputIntent.encodedFundTransfers = originalTransfers;
+
+            // Create an invalid signature by using a wrong private key for the original digest
+            uint256 wrongPrivateKey = _randomPrivateKey();
+            // Use the original leaf digest (leafs[2]) that was computed for the outputIntent
+            bytes32[] memory leafs = new bytes32[](3);
+            vm.chainId(8453);
+            leafs[0] = oc.computeDigest(baseIntent);
+            vm.chainId(42161);
+            leafs[1] = oc.computeDigest(arbIntent);
+            vm.chainId(1);
+            leafs[2] = oc.computeDigest(outputIntent);
+
+            outputIntent.funderSignature = _eoaSig(wrongPrivateKey, leafs[2]);
+
+            encodedIntents[0] = abi.encode(outputIntent);
+            vm.prank(makeAddr("GAS_WALLET"));
+            errs = oc.execute(true, encodedIntents);
+
+            // Check that it reverted with InvalidFunderSignature error
+            assertEq(errs[0], bytes4(keccak256("InvalidFunderSignature()")));
+        }
+
+        // ------------------------------------------------------------------
         // Gas wallet blacklist check – after removal it should no longer pull gas.
         // ------------------------------------------------------------------
         address[] memory removeGasWallets = new address[](1);
