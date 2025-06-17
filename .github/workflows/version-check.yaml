@@ -46,7 +46,7 @@ jobs:
       - name: Check bytecode changes and version
         id: check
         run: |
-          node scripts/check-bytecode-changes.js /tmp/base-artifacts out
+          node prep/check-bytecode-changes.js /tmp/base-artifacts out
       
       - name: Bump version if needed
         if: steps.check.outputs.needs_version_bump == 'true'

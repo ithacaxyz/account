@@ -4,11 +4,12 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-// Main source contracts to check
+// Main contracts to check for bytecode changes
+// When any dependency (parent contracts, libraries, interfaces) changes,
+// it will be reflected in the bytecode of these contracts
 const CONTRACTS_TO_CHECK = [
   "IthacaAccount.sol/IthacaAccount.json",
   "Orchestrator.sol/Orchestrator.json",
-  "GuardedExecutor.sol/GuardedExecutor.json",
 ];
 
 function getBytecodeHash(artifactPath) {
