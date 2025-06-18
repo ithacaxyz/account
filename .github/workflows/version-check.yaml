@@ -3,6 +3,7 @@ name: Version Check
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 jobs:
   check-bytecode-changes:
