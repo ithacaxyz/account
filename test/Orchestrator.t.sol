@@ -1413,12 +1413,17 @@ contract OrchestratorTest is BaseTest {
 
             t.outputIntent.encodedFundTransfers = encodedFundTransfers;
             t.outputIntent.funder = address(t.funder);
+<<<<<<< HEAD
 
+=======
+            
+>>>>>>> 9f298b5 (refactor: use flexible settlerContext instead of hardcoded input chains)
             // Set settlerContext with input chains
             uint256[] memory inputChains = new uint256[](2);
             inputChains[0] = 8453; // Base
             inputChains[1] = 42161; // Arbitrum
             t.outputIntent.settlerContext = abi.encode(inputChains);
+<<<<<<< HEAD
         }
 
         // Compute the output intent digest to use as settlementId
@@ -1502,6 +1507,8 @@ contract OrchestratorTest is BaseTest {
                 data: abi.encodeWithSelector(IEscrow.escrow.selector, escrows)
             });
             t.arbIntent.executionData = abi.encode(calls);
+=======
+>>>>>>> 9f298b5 (refactor: use flexible settlerContext instead of hardcoded input chains)
         }
 
         // Compute the output intent digest to use as settlementId
@@ -1667,15 +1674,23 @@ contract OrchestratorTest is BaseTest {
         vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
         t.usdcMainnet.mint(address(t.funder), 1000);
 <<<<<<< HEAD
+<<<<<<< HEAD
 
+=======
+        
+>>>>>>> 9f298b5 (refactor: use flexible settlerContext instead of hardcoded input chains)
         // Expect settler.send to be called during outputIntent execution
         vm.expectEmit(true, true, true, false, address(t.settler));
         emit SimpleSettler.Sent(address(oc), t.settlementId, 8453); // Base
         vm.expectEmit(true, true, true, false, address(t.settler));
         emit SimpleSettler.Sent(address(oc), t.settlementId, 42161); // Arbitrum
+<<<<<<< HEAD
 
 =======
 >>>>>>> 982bb34 (test: add a detailed test that uses the new escrow and settlement system)
+=======
+        
+>>>>>>> 9f298b5 (refactor: use flexible settlerContext instead of hardcoded input chains)
         // Relay funds the user account, and the intended execution happens.
         t.encodedIntents[0] = abi.encode(t.outputIntent);
         vm.prank(t.gasWallet);
@@ -1684,6 +1699,7 @@ contract OrchestratorTest is BaseTest {
         vm.assertEq(t.usdcMainnet.balanceOf(t.friend), 1000);
 
         // 6. Settlement Phase - After outputIntent is executed successfully
+<<<<<<< HEAD
 <<<<<<< HEAD
         // The orchestrator has already emitted Sent events during execution
 =======
@@ -1703,6 +1719,9 @@ contract OrchestratorTest is BaseTest {
         vm.prank(address(oc));
         t.settler.send(t.settlementId, inputChains);
 >>>>>>> 982bb34 (test: add a detailed test that uses the new escrow and settlement system)
+=======
+        // The orchestrator has already emitted Sent events during execution
+>>>>>>> 9f298b5 (refactor: use flexible settlerContext instead of hardcoded input chains)
 
         // Now the settler owner (settlement oracle) writes the settlement attestation
         // This represents the off-chain process where the oracle verifies the Sent events
