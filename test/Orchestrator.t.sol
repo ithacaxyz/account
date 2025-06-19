@@ -1295,6 +1295,12 @@ contract OrchestratorTest is BaseTest {
 
             t.outputIntent.encodedFundTransfers = encodedFundTransfers;
             t.outputIntent.funder = address(t.funder);
+            
+            // Set settlerContext with input chains
+            uint256[] memory inputChains = new uint256[](2);
+            inputChains[0] = 8453; // Base
+            inputChains[1] = 42161; // Arbitrum
+            t.outputIntent.settlerContext = abi.encode(inputChains);
         }
 
         // Compute the output intent digest to use as settlementId
@@ -1459,6 +1465,13 @@ contract OrchestratorTest is BaseTest {
 
         vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
         t.usdcMainnet.mint(address(t.funder), 1000);
+        
+        // Expect settler.send to be called during outputIntent execution
+        vm.expectEmit(true, true, true, false, address(t.settler));
+        emit SimpleSettler.Sent(address(oc), t.settlementId, 8453); // Base
+        vm.expectEmit(true, true, true, false, address(t.settler));
+        emit SimpleSettler.Sent(address(oc), t.settlementId, 42161); // Arbitrum
+        
         // Relay funds the user account, and the intended execution happens.
         t.encodedIntents[0] = abi.encode(t.outputIntent);
         vm.prank(t.gasWallet);
@@ -1467,21 +1480,7 @@ contract OrchestratorTest is BaseTest {
         vm.assertEq(t.usdcMainnet.balanceOf(t.friend), 1000);
 
         // 6. Settlement Phase - After outputIntent is executed successfully
-        // The orchestrator emits Sent events using the output intent digest as settlementId
-
-        // First, let's check that the Sent events were emitted
-        uint256[] memory inputChains = new uint256[](2);
-        inputChains[0] = 8453; // Base
-        inputChains[1] = 42161; // Arbitrum
-
-        // The orchestrator calls send on the settler to emit events
-        // Using the output intent digest as the settlementId
-        vm.expectEmit(true, true, true, false, address(t.settler));
-        emit SimpleSettler.Sent(address(oc), t.settlementId, 8453); // Base
-        vm.expectEmit(true, true, true, false, address(t.settler));
-        emit SimpleSettler.Sent(address(oc), t.settlementId, 42161); // Arbitrum
-        vm.prank(address(oc));
-        t.settler.send(t.settlementId, inputChains);
+        // The orchestrator has already emitted Sent events during execution
 
         // Now the settler owner (settlement oracle) writes the settlement attestation
         // This represents the off-chain process where the oracle verifies the Sent events

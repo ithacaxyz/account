@@ -59,9 +59,8 @@ interface ICommon {
         address funder;
         /// @dev The funder signature.
         bytes funderSignature;
-        /// @dev The input chains to send settlement messages to.
-        // TODO: Should this field be included in the 712?
-        uint256[] inputChains;
+        /// @dev The settler context data to be passed to the settler.
+        bytes settlerContext;
         /// @dev The actual pre payment amount, requested by the filler. MUST be less than or equal to `prePaymentMaxAmount`
         uint256 prePaymentAmount;
         /// @dev The actual total payment amount, requested by the filler. MUST be less than or equal to `totalPaymentMaxAmount`

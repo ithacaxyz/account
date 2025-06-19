@@ -14,7 +14,10 @@ contract SimpleSettler is ISettler, Ownable {
     mapping(bytes32 => mapping(address => mapping(uint256 => bool))) public settled;
 
     /// @dev Send the settlementId to the receiver on the input chains.
-    function send(bytes32 settlementId, uint256[] memory inputChains) external {
+    function send(bytes32 settlementId, bytes calldata settlerContext) external payable {
+        // Decode settlerContext as an array of input chains
+        uint256[] memory inputChains = abi.decode(settlerContext, (uint256[]));
+        
         for (uint256 i = 0; i < inputChains.length; i++) {
             emit Sent(msg.sender, settlementId, inputChains[i]);
         }
