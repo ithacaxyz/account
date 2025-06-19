@@ -1295,7 +1295,7 @@ contract OrchestratorTest is BaseTest {
 
             t.outputIntent.encodedFundTransfers = encodedFundTransfers;
             t.outputIntent.funder = address(t.funder);
-            
+
             // Set settlerContext with input chains
             uint256[] memory inputChains = new uint256[](2);
             inputChains[0] = 8453; // Base
@@ -1465,13 +1465,13 @@ contract OrchestratorTest is BaseTest {
 
         vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
         t.usdcMainnet.mint(address(t.funder), 1000);
-        
+
         // Expect settler.send to be called during outputIntent execution
         vm.expectEmit(true, true, true, false, address(t.settler));
         emit SimpleSettler.Sent(address(oc), t.settlementId, 8453); // Base
         vm.expectEmit(true, true, true, false, address(t.settler));
         emit SimpleSettler.Sent(address(oc), t.settlementId, 42161); // Arbitrum
-        
+
         // Relay funds the user account, and the intended execution happens.
         t.encodedIntents[0] = abi.encode(t.outputIntent);
         vm.prank(t.gasWallet);
