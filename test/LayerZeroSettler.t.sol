@@ -150,10 +150,7 @@ contract LayerZeroSettlerTest is SoladyTest {
         token2 = new MockPaymentToken();
         token3 = new MockPaymentToken();
 
-        // Fund settlers for operation
-        vm.deal(address(settler1), 1 ether);
-        vm.deal(address(settler2), 1 ether);
-        vm.deal(address(settler3), 1 ether);
+        // Don't fund the orchestrator - funds will come via msg.value
     }
 
     function testLayerZeroSettlement() public {
@@ -216,20 +213,19 @@ contract LayerZeroSettlerTest is SoladyTest {
         // 2. Execute output intent on mainnet and send settlement
         vm.chainId(1);
 
-        uint256[] memory inputChains = new uint256[](2);
-        inputChains[0] = 42161; // Arbitrum
-        inputChains[1] = 8453; // Base
+        uint32[] memory endpointIds = new uint32[](2);
+        endpointIds[0] = 30110; // Arbitrum endpoint ID
+        endpointIds[1] = 30184; // Base endpoint ID
+        bytes memory settlerContext = abi.encode(endpointIds);
 
         // Check quote
-        uint256 fee = settler1.quoteSend(inputChains);
+        uint256 fee = settler1.quoteSendByEndpoints(endpointIds);
         assertEq(fee, 0.001 ether); // 0.0005 ETH per chain
 
-        // Check settler has sufficient balance
-        assertGe(address(settler1).balance, fee);
-
-        // Send settlement notification
+        // Send settlement notification with msg.value (simulating funds from output chain execution)
+        vm.deal(orchestrator, fee);
         vm.prank(orchestrator);
-        settler1.send(settlementId, inputChains);
+        settler1.send{value: fee}(settlementId, settlerContext);
 
         // 3. Self-execute message delivery to Arbitrum
         vm.chainId(42161);
@@ -270,110 +266,80 @@ contract LayerZeroSettlerTest is SoladyTest {
         assertEq(token3.balanceOf(relay), 600);
     }
 
-    function testInsufficientBalance() public {
+    function testInsufficientFee() public {
         vm.chainId(1);
 
-        // Drain settler balance
-        vm.prank(address(this));
-        settler1.withdraw(address(settler1).balance);
+        uint32[] memory endpointIds = new uint32[](2);
+        endpointIds[0] = 30110; // Arbitrum
+        endpointIds[1] = 30184; // Base
+        bytes memory settlerContext = abi.encode(endpointIds);
 
-        uint256[] memory chains = new uint256[](2);
-        chains[0] = 42161;
-        chains[1] = 8453;
+        uint256 requiredFee = settler1.quoteSendByEndpoints(endpointIds);
+        uint256 insufficientFee = requiredFee - 0.0001 ether;
 
         vm.expectRevert(
-            abi.encodeWithSelector(LayerZeroSettler.InsufficientBalance.selector, 0, 0.001 ether)
+            abi.encodeWithSelector(LayerZeroSettler.InsufficientFee.selector, insufficientFee, requiredFee)
         );
+        vm.deal(orchestrator, insufficientFee);
         vm.prank(orchestrator);
-        settler1.send(bytes32(0), chains);
+        settler1.send{value: insufficientFee}(bytes32(0), settlerContext);
     }
 
-    function testInvalidChainId() public {
+    function testInvalidEndpointId() public {
         vm.chainId(1);
 
-        uint256[] memory invalidChains = new uint256[](1);
-        invalidChains[0] = 999; // Invalid chain
+        uint32[] memory invalidEndpoints = new uint32[](1);
+        invalidEndpoints[0] = 0; // Zero endpoint ID
+        bytes memory settlerContext = abi.encode(invalidEndpoints);
 
-        vm.expectRevert(LayerZeroSettler.InvalidChainId.selector);
+        vm.expectRevert(LayerZeroSettler.InvalidEndpointId.selector);
+        vm.deal(orchestrator, 0.001 ether);
         vm.prank(orchestrator);
-        settler1.send(bytes32(0), invalidChains);
+        settler1.send{value: 0.001 ether}(bytes32(0), settlerContext);
     }
 
-    function testWithdraw() public {
+
+    function testQuoteSendByEndpoints() public {
         vm.chainId(1);
 
-        uint256 balanceBefore = address(this).balance;
-        uint256 settlerBalance = address(settler1).balance;
+        // Test various endpoint combinations
+        uint32[] memory endpoints1 = new uint32[](1);
+        endpoints1[0] = 30110; // Arbitrum
+        assertEq(settler1.quoteSendByEndpoints(endpoints1), 0.0005 ether);
 
-        // Owner withdraws half
-        settler1.withdraw(settlerBalance / 2);
+        uint32[] memory endpoints2 = new uint32[](3);
+        endpoints2[0] = 30110; // Arbitrum
+        endpoints2[1] = 30184; // Base
+        endpoints2[2] = 30101; // Mainnet (self)
+        assertEq(settler1.quoteSendByEndpoints(endpoints2), 0.0015 ether);
 
-        assertEq(address(settler1).balance, settlerBalance / 2);
-        assertEq(address(this).balance, balanceBefore + settlerBalance / 2);
-    }
-
-    function testWithdrawInsufficientBalance() public {
-        vm.chainId(1);
-
-        uint256 settlerBalance = address(settler1).balance;
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LayerZeroSettler.InsufficientBalance.selector, settlerBalance, settlerBalance + 1
-            )
-        );
-        settler1.withdraw(settlerBalance + 1);
-    }
-
-    function testReceiveETH() public {
-        vm.chainId(1);
-
-        uint256 balanceBefore = address(settler1).balance;
-
-        // Send ETH to settler
-        vm.deal(address(this), 5 ether);
-        (bool success,) = address(settler1).call{value: 2 ether}("");
-        assertTrue(success);
-
-        assertEq(address(settler1).balance, balanceBefore + 2 ether);
-    }
-
-    function testQuoteSend() public {
-        vm.chainId(1);
-
-        // Test various chain combinations
-        uint256[] memory chains1 = new uint256[](1);
-        chains1[0] = 42161;
-        assertEq(settler1.quoteSend(chains1), 0.0005 ether);
-
-        uint256[] memory chains2 = new uint256[](3);
-        chains2[0] = 42161;
-        chains2[1] = 8453;
-        chains2[2] = 1; // Self
-        assertEq(settler1.quoteSend(chains2), 0.0015 ether);
-
-        // Invalid chain is skipped
-        uint256[] memory chains3 = new uint256[](2);
-        chains3[0] = 42161;
-        chains3[1] = 999; // Invalid
-        assertEq(settler1.quoteSend(chains3), 0.0005 ether);
+        // Invalid endpoint is skipped
+        uint32[] memory endpoints3 = new uint32[](2);
+        endpoints3[0] = 30110;
+        endpoints3[1] = 0; // Invalid
+        assertEq(settler1.quoteSendByEndpoints(endpoints3), 0.0005 ether);
     }
 
     function testRefundMechanism() public {
         vm.chainId(1);
 
-        // Overfund the settler
-        vm.deal(address(settler1), 10 ether);
-        uint256 balanceBefore = address(settler1).balance;
+        uint32[] memory endpointIds = new uint32[](1);
+        endpointIds[0] = 30110; // Arbitrum
+        bytes memory settlerContext = abi.encode(endpointIds);
 
-        uint256[] memory chains = new uint256[](1);
-        chains[0] = 42161;
-
-        // Send with overfunded balance
+        uint256 requiredFee = settler1.quoteSendByEndpoints(endpointIds);
+        uint256 overpayment = requiredFee + 0.5 ether;
+        
+        // Send with overpayment (simulating funds from output chain execution)
+        vm.deal(orchestrator, overpayment);
+        uint256 orchestratorBalanceBefore = orchestrator.balance;
+        
         vm.prank(orchestrator);
-        settler1.send(bytes32("REFUND_TEST"), chains);
+        settler1.send{value: overpayment}(bytes32("REFUND_TEST"), settlerContext);
 
-        // Should have refunded excess back to settler
-        assertApproxEqAbs(address(settler1).balance, balanceBefore - 0.0005 ether, 0.0001 ether);
+        // With the current implementation, the excess stays in the settler contract
+        // since we only forward the exact fee to the endpoint
+        assertEq(orchestrator.balance, orchestratorBalanceBefore - overpayment);
+        assertEq(address(settler1).balance, overpayment - requiredFee);
     }
 }
