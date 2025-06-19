@@ -4,6 +4,7 @@ pragma solidity ^0.8.23;
 import {OApp, MessagingFee, Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
+import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 
 /// @title LayerZeroSettler
 /// @notice Cross-chain settlement using LayerZero v2 with self-execution model
@@ -99,6 +100,14 @@ contract LayerZeroSettler is OApp, ISettler {
         }
     }
 
+    /// @notice Owner can withdraw excess funds
+    /// @dev Allows recovery of any ETH that accumulates from overpayments
+    /// @param recipient Address to receive the funds
+    /// @param amount Amount to withdraw
+    function withdraw(address recipient, uint256 amount) external onlyOwner {
+        TokenTransferLib.safeTransfer(address(0), recipient, amount);
+    }
+
     /// @notice Override to pay from msg.value instead of balance
     /// @param _nativeFee The native fee to be paid
     /// @return nativeFee The amount of native currency paid
@@ -106,4 +115,7 @@ contract LayerZeroSettler is OApp, ISettler {
         // Return the fee amount; the base contract will handle the actual payment
         return _nativeFee;
     }
+
+    /// @notice Allow contract to receive ETH from refunds
+    receive() external payable {}
 }
