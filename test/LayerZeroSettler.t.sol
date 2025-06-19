@@ -278,7 +278,9 @@ contract LayerZeroSettlerTest is SoladyTest {
         uint256 insufficientFee = requiredFee - 0.0001 ether;
 
         vm.expectRevert(
-            abi.encodeWithSelector(LayerZeroSettler.InsufficientFee.selector, insufficientFee, requiredFee)
+            abi.encodeWithSelector(
+                LayerZeroSettler.InsufficientFee.selector, insufficientFee, requiredFee
+            )
         );
         vm.deal(orchestrator, insufficientFee);
         vm.prank(orchestrator);
@@ -297,7 +299,6 @@ contract LayerZeroSettlerTest is SoladyTest {
         vm.prank(orchestrator);
         settler1.send{value: 0.001 ether}(bytes32(0), settlerContext);
     }
-
 
     function testQuoteSendByEndpoints() public {
         vm.chainId(1);
@@ -329,11 +330,11 @@ contract LayerZeroSettlerTest is SoladyTest {
 
         uint256 requiredFee = settler1.quoteSendByEndpoints(endpointIds);
         uint256 overpayment = requiredFee + 0.5 ether;
-        
+
         // Send with overpayment (simulating funds from output chain execution)
         vm.deal(orchestrator, overpayment);
         uint256 orchestratorBalanceBefore = orchestrator.balance;
-        
+
         vm.prank(orchestrator);
         settler1.send{value: overpayment}(bytes32("REFUND_TEST"), settlerContext);
 
