@@ -26,9 +26,15 @@ contract Escrow is IEscrow {
     /// @notice Emitted when an escrow is successfully settled
     event EscrowSettled(bytes32 escrowId);
 
+<<<<<<< HEAD
     ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
+=======
+    error InvalidStatus();
+    error RefundExpired();
+    error SettlementNotReady();
+>>>>>>> abde622 (chore: add settlement information to the Escrow structs)
 
     /// @notice Thrown when an operation is attempted on an escrow in an invalid status
     error InvalidStatus();
