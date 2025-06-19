@@ -14,8 +14,11 @@ import {ICommon} from "../src/interfaces/ICommon.sol";
 import {Merkle} from "murky/Merkle.sol";
 import {SimpleFunder} from "../src/SimpleFunder.sol";
 import {SimpleSettler} from "../src/SimpleSettler.sol";
+<<<<<<< HEAD
 import {Escrow} from "../src/Escrow.sol";
 import {IEscrow} from "../src/interfaces/IEscrow.sol";
+=======
+>>>>>>> bb3a2df (feat: add a simple settler contract, which uses a trusted offchain entity to settle across chains)
 
 contract OrchestratorTest is BaseTest {
     struct _TestFullFlowTemps {
