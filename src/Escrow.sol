@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {IEscrow} from "./interfaces/IEscrow.sol";
+import {ISettler} from "./interfaces/ISettler.sol";
 
 contract Escrow is IEscrow {
     mapping(bytes32 => Escrow) public escrows;
@@ -14,6 +15,7 @@ contract Escrow is IEscrow {
 
     error InvalidStatus();
     error RefundExpired();
+    error SettlementNotReady();
 
     /// @dev Accounts can call this function to escrow funds with the orchestrator.
     function escrow(Escrow[] memory _escrows) public payable {
@@ -60,6 +62,15 @@ contract Escrow is IEscrow {
         }
 
         Escrow storage _escrow = escrows[escrowId];
+
+        // Check with the settler if the message has been sent from the correct sender and chainId.
+        bool isSettled = ISettler(_escrow.settler).read(
+            _escrow.settlementId, _escrow.sender, _escrow.senderChainId
+        );
+
+        if (!isSettled) {
+            revert SettlementNotReady();
+        }
 
         if (block.timestamp > _escrow.refundTimestamp) {
             TokenTransferLib.safeTransfer(

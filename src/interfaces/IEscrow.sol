@@ -15,7 +15,9 @@ interface IEscrow {
         address recipient;
         address token;
         address settler;
+        address sender;
         bytes32 settlementId;
+        uint256 senderChainId;
         uint256 escrowAmount;
         uint256 refundAmount;
         uint256 refundTimestamp;
