@@ -18,7 +18,7 @@ import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
 import {ICommon} from "./interfaces/ICommon.sol";
 import {PauseAuthority} from "./PauseAuthority.sol";
 import {IFunder} from "./interfaces/IFunder.sol";
-
+import {ISettler} from "./interfaces/ISettler.sol";
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 
 /// @title Orchestrator
@@ -454,10 +454,17 @@ contract Orchestrator is
 
         bool isValid;
         bytes32 keyHash;
-
         if (flags == uint256(Flags.MULTICHAIN_INTENT_MODE)) {
+            bytes32 root;
             // For multi chain intents, we have to verify using merkle sigs.
-            (isValid, keyHash) = _verifyMerkleSig(digest, eoa, i.signature);
+            (isValid, keyHash, root) = _verifyMerkleSig(digest, eoa, i.signature);
+
+            // If this is an output intent, then write the root as the settlementId
+            // on all input chains.
+            if (i.encodedFundTransfers.length > 0) {
+                // Output intent
+                ISettler(i.settler).write(root, i.inputChains);
+            }
         } else {
             (isValid, keyHash) = _verify(digest, eoa, i.signature);
         }
@@ -648,7 +655,7 @@ contract Orchestrator is
     function _verifyMerkleSig(bytes32 digest, address eoa, bytes memory signature)
         internal
         view
-        returns (bool isValid, bytes32 keyHash)
+        returns (bool isValid, bytes32 keyHash, bytes32)
     {
         (bytes32[] memory proof, bytes32 root, bytes memory rootSig) =
             abi.decode(signature, (bytes32[], bytes32, bytes));
@@ -656,10 +663,10 @@ contract Orchestrator is
         if (MerkleProofLib.verify(proof, root, digest)) {
             (isValid, keyHash) = IIthacaAccount(eoa).unwrapAndValidateSignature(root, rootSig);
 
-            return (isValid, keyHash);
+            return (isValid, keyHash, root);
         }
 
-        return (false, bytes32(0));
+        return (false, bytes32(0), bytes32(0));
     }
 
     /// @dev Funds the eoa with with the encoded fund transfers, before executing the intent.

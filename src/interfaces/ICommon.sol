@@ -48,7 +48,11 @@ interface ICommon {
         /// @dev Only relevant for multi chain intents.
         /// All the fund transfers HAVE To be in ascending order of the token address.
         /// There also cannot be any duplicate token addresses. Use address(0) for native token.
+        /// If encodedFundTransfers is not empty, then the intent is considered the output intent.
         bytes[] encodedFundTransfers;
+        // TODO: Add this field to the EIP712 signature.
+        /// @dev The settler address.
+        address settler;
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
         ////////////////////////////////////////////////////////////////////////
@@ -56,6 +60,9 @@ interface ICommon {
         address funder;
         /// @dev The funder signature.
         bytes funderSignature;
+        /// @dev The input chains to send settlement messages to.
+        // TODO: Should this field be included in the 712?
+        uint256[] inputChains;
         /// @dev The actual pre payment amount, requested by the filler. MUST be less than or equal to `prePaymentMaxAmount`
         uint256 prePaymentAmount;
         /// @dev The actual total payment amount, requested by the filler. MUST be less than or equal to `totalPaymentMaxAmount`
