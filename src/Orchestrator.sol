@@ -653,7 +653,7 @@ contract Orchestrator is
     function _verifyMerkleSig(bytes32 digest, address eoa, bytes memory signature)
         internal
         view
-        returns (bool isValid, bytes32 keyHash, bytes32)
+        returns (bool isValid, bytes32 keyHash)
     {
         (bytes32[] memory proof, bytes32 root, bytes memory rootSig) =
             abi.decode(signature, (bytes32[], bytes32, bytes));
@@ -661,10 +661,10 @@ contract Orchestrator is
         if (MerkleProofLib.verify(proof, root, digest)) {
             (isValid, keyHash) = IIthacaAccount(eoa).unwrapAndValidateSignature(root, rootSig);
 
-            return (isValid, keyHash, root);
+            return (isValid, keyHash);
         }
 
-        return (false, bytes32(0), bytes32(0));
+        return (false, bytes32(0));
     }
 
     /// @dev Funds the eoa with with the encoded fund transfers, before executing the intent.
