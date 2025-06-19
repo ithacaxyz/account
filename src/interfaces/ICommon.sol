@@ -50,7 +50,6 @@ interface ICommon {
         /// There also cannot be any duplicate token addresses. Use address(0) for native token.
         /// If encodedFundTransfers is not empty, then the intent is considered the output intent.
         bytes[] encodedFundTransfers;
-        // TODO: Add this field to the EIP712 signature.
         /// @dev The settler address.
         address settler;
         ////////////////////////////////////////////////////////////////////////
