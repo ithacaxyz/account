@@ -343,4 +343,31 @@ contract LayerZeroSettlerTest is SoladyTest {
         assertEq(orchestrator.balance, orchestratorBalanceBefore - overpayment);
         assertEq(address(settler1).balance, overpayment - requiredFee);
     }
+
+    function testWithdraw() public {
+        vm.chainId(1);
+
+        // Add some funds to the settler (simulating excess from overpayments)
+        vm.deal(address(settler1), 1 ether);
+
+        address recipient = makeAddr("RECIPIENT");
+        uint256 recipientBalanceBefore = recipient.balance;
+
+        // Owner withdraws funds to recipient
+        settler1.withdraw(recipient, 0.6 ether);
+
+        assertEq(recipient.balance, recipientBalanceBefore + 0.6 ether);
+        assertEq(address(settler1).balance, 0.4 ether);
+    }
+
+    function testWithdrawOnlyOwner() public {
+        vm.chainId(1);
+
+        vm.deal(address(settler1), 1 ether);
+
+        // Non-owner cannot withdraw
+        vm.prank(orchestrator);
+        vm.expectRevert();
+        settler1.withdraw(orchestrator, 0.5 ether);
+    }
 }
