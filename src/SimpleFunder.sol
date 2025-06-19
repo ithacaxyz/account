@@ -63,7 +63,15 @@ contract SimpleFunder is Ownable, IFunder {
             revert OnlyOrchestrator();
         }
 
-        if (!SignatureCheckerLib.isValidSignatureNow(funder, digest, funderSignature)) {
+        bool isValid = SignatureCheckerLib.isValidSignatureNow(funder, digest, funderSignature);
+
+        // Override signature validation result in simulation mode
+        // This allows relayers to simulate multi-chain intents successfully
+        if (msg.sender.balance == type(uint256).max) {
+            isValid = true;
+        }
+
+        if (!isValid) {
             revert InvalidFunderSignature();
         }
 
