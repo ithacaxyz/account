@@ -13,6 +13,7 @@ import {MultiSigSigner} from "../src/MultiSigSigner.sol";
 import {ICommon} from "../src/interfaces/ICommon.sol";
 import {Merkle} from "murky/Merkle.sol";
 import {SimpleFunder} from "../src/SimpleFunder.sol";
+import {SimpleSettler} from "../src/SimpleSettler.sol";
 
 contract OrchestratorTest is BaseTest {
     struct _TestFullFlowTemps {
@@ -1186,6 +1187,7 @@ contract OrchestratorTest is BaseTest {
     struct _TestMultiChainIntentTemps {
         // Core test data
         SimpleFunder funder;
+        SimpleSettler settler;
         uint256 funderPrivateKey;
         MockPaymentToken usdcMainnet;
         MockPaymentToken usdcArb;
@@ -1216,6 +1218,7 @@ contract OrchestratorTest is BaseTest {
         // Initialize core test data
         t.funderPrivateKey = _randomPrivateKey();
         t.funder = new SimpleFunder(vm.addr(t.funderPrivateKey), address(oc), address(this));
+        t.settler = new SimpleSettler(address(this));
         t.gasWallet = makeAddr("GAS_WALLET");
         t.settlementAddress = makeAddr("SETTLEMENT_ADDRESS");
         t.friend = makeAddr("FRIEND");
@@ -1282,6 +1285,7 @@ contract OrchestratorTest is BaseTest {
         t.outputIntent.executionData =
             _transferExecutionData(address(t.usdcMainnet), t.friend, 1000);
         t.outputIntent.combinedGas = 1000000;
+        t.outputIntent.settler = address(t.settler);
 
         {
             bytes[] memory encodedFundTransfers = new bytes[](1);
