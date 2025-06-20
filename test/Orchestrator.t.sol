@@ -1766,12 +1766,18 @@ contract OrchestratorTest is BaseTest {
         emit Escrow.EscrowSettled(t.escrowIdBase);
         vm.prank(t.relay); // Relay can call settle
 <<<<<<< HEAD
+<<<<<<< HEAD
         bytes32[] memory escrowIds = new bytes32[](1);
         escrowIds[0] = t.escrowIdBase;
         t.escrowBase.settle(escrowIds);
 =======
         t.escrowBase.settle(t.escrowIdBase);
 >>>>>>> 982bb34 (test: add a detailed test that uses the new escrow and settlement system)
+=======
+        bytes32[] memory escrowIds = new bytes32[](1);
+        escrowIds[0] = t.escrowIdBase;
+        t.escrowBase.settle(escrowIds);
+>>>>>>> bda46bd (refactor: update settle and refund to accept array of escrowIds)
 
         // Verify funds are transferred to relay
         vm.assertEq(t.usdcBase.balanceOf(t.relay), 600);
@@ -1802,12 +1808,18 @@ contract OrchestratorTest is BaseTest {
         emit Escrow.EscrowSettled(t.escrowIdArb);
         vm.prank(t.relay); // Relay can call settle
 <<<<<<< HEAD
+<<<<<<< HEAD
         bytes32[] memory escrowIdsArb = new bytes32[](1);
         escrowIdsArb[0] = t.escrowIdArb;
         t.escrowArb.settle(escrowIdsArb);
 =======
         t.escrowArb.settle(t.escrowIdArb);
 >>>>>>> 982bb34 (test: add a detailed test that uses the new escrow and settlement system)
+=======
+        bytes32[] memory escrowIdsArb = new bytes32[](1);
+        escrowIdsArb[0] = t.escrowIdArb;
+        t.escrowArb.settle(escrowIdsArb);
+>>>>>>> bda46bd (refactor: update settle and refund to accept array of escrowIds)
 
         // Verify funds are transferred to relay
         vm.assertEq(t.usdcArb.balanceOf(t.relay), 500);
