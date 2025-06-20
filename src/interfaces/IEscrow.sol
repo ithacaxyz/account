@@ -25,7 +25,7 @@ interface IEscrow {
 
     function escrow(Escrow[] memory _escrows) external payable;
 
-    function refund(bytes32 escrowId) external;
+    function refund(bytes32[] calldata escrowIds) external;
 
-    function settle(bytes32 escrowId) external;
+    function settle(bytes32[] calldata escrowIds) external;
 }

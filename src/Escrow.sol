@@ -38,7 +38,13 @@ contract Escrow is IEscrow {
         }
     }
 
-    function refund(bytes32 escrowId) public {
+    function refund(bytes32[] calldata escrowIds) public {
+        for (uint256 i = 0; i < escrowIds.length; i++) {
+            _refund(escrowIds[i]);
+        }
+    }
+
+    function _refund(bytes32 escrowId) internal {
         if (statuses[escrowId] != EscrowStatus.CREATED) {
             revert InvalidStatus();
         }
@@ -56,7 +62,13 @@ contract Escrow is IEscrow {
         emit EscrowRefunded(escrowId);
     }
 
-    function settle(bytes32 escrowId) public {
+    function settle(bytes32[] calldata escrowIds) public {
+        for (uint256 i = 0; i < escrowIds.length; i++) {
+            _settle(escrowIds[i]);
+        }
+    }
+
+    function _settle(bytes32 escrowId) internal {
         if (statuses[escrowId] != EscrowStatus.CREATED) {
             revert InvalidStatus();
         }

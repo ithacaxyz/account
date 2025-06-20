@@ -1508,7 +1508,9 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, false, false, false, address(t.escrowBase));
         emit Escrow.EscrowSettled(t.escrowIdBase);
         vm.prank(t.relay); // Relay can call settle
-        t.escrowBase.settle(t.escrowIdBase);
+        bytes32[] memory escrowIds = new bytes32[](1);
+        escrowIds[0] = t.escrowIdBase;
+        t.escrowBase.settle(escrowIds);
 
         // Verify funds are transferred to relay
         vm.assertEq(t.usdcBase.balanceOf(t.relay), 600);
@@ -1534,7 +1536,9 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, false, false, false, address(t.escrowArb));
         emit Escrow.EscrowSettled(t.escrowIdArb);
         vm.prank(t.relay); // Relay can call settle
-        t.escrowArb.settle(t.escrowIdArb);
+        bytes32[] memory escrowIdsArb = new bytes32[](1);
+        escrowIdsArb[0] = t.escrowIdArb;
+        t.escrowArb.settle(escrowIdsArb);
 
         // Verify funds are transferred to relay
         vm.assertEq(t.usdcArb.balanceOf(t.relay), 500);
