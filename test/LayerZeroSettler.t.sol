@@ -243,7 +243,9 @@ contract LayerZeroSettlerTest is SoladyTest {
 
         // Settle the Arbitrum escrow
         bytes32 escrowIdArb = keccak256(abi.encode(escrowArb));
-        escrow2.settle(escrowIdArb);
+        bytes32[] memory escrowIdsArb = new bytes32[](1);
+        escrowIdsArb[0] = escrowIdArb;
+        escrow2.settle(escrowIdsArb);
         assertEq(token2.balanceOf(relay), 500);
 
         // 4. Self-execute message delivery to Base
@@ -262,7 +264,9 @@ contract LayerZeroSettlerTest is SoladyTest {
 
         // Settle the Base escrow
         bytes32 escrowIdBase = keccak256(abi.encode(escrowBase));
-        escrow3.settle(escrowIdBase);
+        bytes32[] memory escrowIdsBase = new bytes32[](1);
+        escrowIdsBase[0] = escrowIdBase;
+        escrow3.settle(escrowIdsBase);
         assertEq(token3.balanceOf(relay), 600);
     }
 
