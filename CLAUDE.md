@@ -17,7 +17,7 @@
 ### 3. Gas Optimization
 
 - Keep a dedicated **Gas Optimization** section in the PR description; justify any measurable gas deltas.
-- Prefer `calldata` over `memory`.
+- Prefer `calldata` over `memory` for function arguments wherever possible, as `calldata` is cheaper. Note that `calldata` is read-only.
 - Limit storage (`sstore`, `sload`) operations; cache in memory wherever possible.
 - Use forge snapshot, forge test --match-test "benchmark", and npm scripts:
   ```bash

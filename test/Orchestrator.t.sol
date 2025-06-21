@@ -13,6 +13,9 @@ import {MultiSigSigner} from "../src/MultiSigSigner.sol";
 import {ICommon} from "../src/interfaces/ICommon.sol";
 import {Merkle} from "murky/Merkle.sol";
 import {SimpleFunder} from "../src/SimpleFunder.sol";
+import {SimpleSettler} from "../src/SimpleSettler.sol";
+import {Escrow} from "../src/Escrow.sol";
+import {IEscrow} from "../src/interfaces/IEscrow.sol";
 
 contract OrchestratorTest is BaseTest {
     struct _TestFullFlowTemps {
@@ -1186,6 +1189,7 @@ contract OrchestratorTest is BaseTest {
     struct _TestMultiChainIntentTemps {
         // Core test data
         SimpleFunder funder;
+        SimpleSettler settler;
         uint256 funderPrivateKey;
         MockPaymentToken usdcMainnet;
         MockPaymentToken usdcArb;
@@ -1202,8 +1206,16 @@ contract OrchestratorTest is BaseTest {
         bytes rootSig;
         // Common addresses
         address gasWallet;
-        address settlementAddress;
+        address relay;
         address friend;
+        address settlementOracle;
+        // Escrow contracts
+        Escrow escrowBase;
+        Escrow escrowArb;
+        // Escrow data
+        bytes32 settlementId;
+        bytes32 escrowIdBase;
+        bytes32 escrowIdArb;
         // Other common data
         bytes[] encodedIntents;
         bytes4[] errs;
@@ -1215,9 +1227,11 @@ contract OrchestratorTest is BaseTest {
 
         // Initialize core test data
         t.funderPrivateKey = _randomPrivateKey();
+        t.settlementOracle = makeAddr("SETTLEMENT_ORACLE");
         t.funder = new SimpleFunder(vm.addr(t.funderPrivateKey), address(oc), address(this));
+        t.settler = new SimpleSettler(t.settlementOracle);
         t.gasWallet = makeAddr("GAS_WALLET");
-        t.settlementAddress = makeAddr("SETTLEMENT_ADDRESS");
+        t.relay = makeAddr("RELAY");
         t.friend = makeAddr("FRIEND");
 
         // ------------------------------------------------------------------
@@ -1247,6 +1261,10 @@ contract OrchestratorTest is BaseTest {
         t.usdcArb = new MockPaymentToken();
         t.usdcBase = new MockPaymentToken();
 
+        // Deploy Escrow contracts on input chains
+        t.escrowBase = new Escrow();
+        t.escrowArb = new Escrow();
+
         // Deploy the account on all chains
         t.d = _randomEIP7702DelegatedEOA();
         vm.deal(t.d.eoa, 10 ether);
@@ -1262,26 +1280,13 @@ contract OrchestratorTest is BaseTest {
         // User has 0 USDC on Mainnet.
         // Relay fees (Bridging + gas on all chains included) is 100 USDC.
 
-        // 1. Relay prepares the MultiChainIntent and get it signed by the user.
-        // Note: This assumes user has the same synced passkey on all chains,
-        // so only 1 signature is needed.
-        t.baseIntent.eoa = t.d.eoa;
-        t.baseIntent.nonce = t.d.d.getNonce(0);
-        t.baseIntent.executionData =
-            _transferExecutionData(address(t.usdcBase), t.settlementAddress, 600);
-        t.baseIntent.combinedGas = 1000000;
-
-        t.arbIntent.eoa = t.d.eoa;
-        t.arbIntent.nonce = t.d.d.getNonce(0);
-        t.arbIntent.executionData =
-            _transferExecutionData(address(t.usdcArb), t.settlementAddress, 500);
-        t.arbIntent.combinedGas = 1000000;
-
+        // 1. Prepare the output intent first to get its digest as settlementId
         t.outputIntent.eoa = t.d.eoa;
         t.outputIntent.nonce = t.d.d.getNonce(0);
         t.outputIntent.executionData =
             _transferExecutionData(address(t.usdcMainnet), t.friend, 1000);
         t.outputIntent.combinedGas = 1000000;
+        t.outputIntent.settler = address(t.settler);
 
         {
             bytes[] memory encodedFundTransfers = new bytes[](1);
@@ -1290,6 +1295,94 @@ contract OrchestratorTest is BaseTest {
 
             t.outputIntent.encodedFundTransfers = encodedFundTransfers;
             t.outputIntent.funder = address(t.funder);
+
+            // Set settlerContext with input chains
+            uint256[] memory inputChains = new uint256[](2);
+            inputChains[0] = 8453; // Base
+            inputChains[1] = 42161; // Arbitrum
+            t.outputIntent.settlerContext = abi.encode(inputChains);
+        }
+
+        // Compute the output intent digest to use as settlementId
+        vm.chainId(1); // Mainnet
+        t.settlementId = oc.computeDigest(t.outputIntent);
+
+        // Base Intent with escrow execution data
+        t.baseIntent.eoa = t.d.eoa;
+        t.baseIntent.nonce = t.d.d.getNonce(0);
+        t.baseIntent.combinedGas = 1000000;
+
+        // Create Base escrow execution data
+        {
+            IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](1);
+            escrows[0] = IEscrow.Escrow({
+                salt: bytes12(uint96(_random())),
+                depositor: t.d.eoa,
+                recipient: t.relay,
+                token: address(t.usdcBase),
+                settler: address(t.settler),
+                sender: address(oc), // Orchestrator on output chain (mainnet)
+                settlementId: t.settlementId,
+                senderChainId: 1, // Mainnet chain ID
+                escrowAmount: 600,
+                refundAmount: 600, // Full refund if settlement fails
+                refundTimestamp: block.timestamp + 1 hours
+            });
+            t.escrowIdBase = keccak256(abi.encode(escrows[0]));
+
+            ERC7821.Call[] memory calls = new ERC7821.Call[](2);
+            // First approve the escrow contract
+            calls[0] = ERC7821.Call({
+                to: address(t.usdcBase),
+                value: 0,
+                data: abi.encodeWithSignature("approve(address,uint256)", address(t.escrowBase), 600)
+            });
+            // Then call escrow function
+            calls[1] = ERC7821.Call({
+                to: address(t.escrowBase),
+                value: 0,
+                data: abi.encodeWithSelector(IEscrow.escrow.selector, escrows)
+            });
+            t.baseIntent.executionData = abi.encode(calls);
+        }
+
+        // Arbitrum Intent with escrow execution data
+        t.arbIntent.eoa = t.d.eoa;
+        t.arbIntent.nonce = t.d.d.getNonce(0);
+        t.arbIntent.combinedGas = 1000000;
+
+        // Create Arbitrum escrow execution data
+        {
+            IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](1);
+            escrows[0] = IEscrow.Escrow({
+                salt: bytes12(uint96(_random())),
+                depositor: t.d.eoa,
+                recipient: t.relay,
+                token: address(t.usdcArb),
+                settler: address(t.settler),
+                sender: address(oc), // Orchestrator on output chain (mainnet)
+                settlementId: t.settlementId,
+                senderChainId: 1, // Mainnet chain ID
+                escrowAmount: 500,
+                refundAmount: 500, // Full refund if settlement fails
+                refundTimestamp: block.timestamp + 1 hours
+            });
+            t.escrowIdArb = keccak256(abi.encode(escrows[0]));
+
+            ERC7821.Call[] memory calls = new ERC7821.Call[](2);
+            // First approve the escrow contract
+            calls[0] = ERC7821.Call({
+                to: address(t.usdcArb),
+                value: 0,
+                data: abi.encodeWithSignature("approve(address,uint256)", address(t.escrowArb), 500)
+            });
+            // Then call escrow function
+            calls[1] = ERC7821.Call({
+                to: address(t.escrowArb),
+                value: 0,
+                data: abi.encodeWithSelector(IEscrow.escrow.selector, escrows)
+            });
+            t.arbIntent.executionData = abi.encode(calls);
         }
 
         // Compute merkle tree data
@@ -1305,11 +1398,15 @@ contract OrchestratorTest is BaseTest {
         t.usdcBase.mint(t.d.eoa, 600);
 
         t.encodedIntents[0] = abi.encode(t.baseIntent);
-        // Relay/Settlement system pulls user funds on Base.
+        // User escrows funds on Base
+        vm.expectEmit(true, false, false, false, address(t.escrowBase));
+        emit Escrow.EscrowCreated(t.escrowIdBase);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(true, t.encodedIntents);
         assertEq(uint256(bytes32(t.errs[0])), 0);
-        vm.assertEq(t.usdcBase.balanceOf(t.settlementAddress), 600);
+        // Verify funds are escrowed, not transferred yet
+        vm.assertEq(t.usdcBase.balanceOf(address(t.escrowBase)), 600);
+        vm.assertEq(t.usdcBase.balanceOf(t.relay), 0);
 
         // 4. Action on Arb
         vm.revertToState(t.snapshot);
@@ -1349,34 +1446,110 @@ contract OrchestratorTest is BaseTest {
             t.arbIntent.signature = correctSig;
         }
 
-        // Relay/Settlement system pulls user funds on Arb.
+        // User escrows funds on Arb
         t.encodedIntents[0] = abi.encode(t.arbIntent);
+        vm.expectEmit(true, false, false, false, address(t.escrowArb));
+        emit Escrow.EscrowCreated(t.escrowIdArb);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(true, t.encodedIntents);
         assertEq(uint256(bytes32(t.errs[0])), 0);
-        vm.assertEq(t.usdcArb.balanceOf(t.settlementAddress), 500);
+        // Verify funds are escrowed, not transferred yet
+        vm.assertEq(t.usdcArb.balanceOf(address(t.escrowArb)), 500);
+        vm.assertEq(t.usdcArb.balanceOf(t.relay), 0);
 
         // 5. Action on Mainnet (Destination Chain)
         vm.revertToState(t.snapshot);
         vm.chainId(1);
-        // Relay/Settlement system has funds on mainnet. User has no funds.
-        t.usdcMainnet.mint(t.settlementAddress, 1000);
+        // Relay has funds on mainnet for settlement. User has no funds.
+        t.usdcMainnet.mint(t.relay, 1000);
 
         vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
         t.usdcMainnet.mint(address(t.funder), 1000);
-        // Relay/Settlement system funds the user account, and the intended execution happens.
+
+        // Expect settler.send to be called during outputIntent execution
+        vm.expectEmit(true, true, true, false, address(t.settler));
+        emit SimpleSettler.Sent(address(oc), t.settlementId, 8453); // Base
+        vm.expectEmit(true, true, true, false, address(t.settler));
+        emit SimpleSettler.Sent(address(oc), t.settlementId, 42161); // Arbitrum
+
+        // Relay funds the user account, and the intended execution happens.
         t.encodedIntents[0] = abi.encode(t.outputIntent);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(true, t.encodedIntents);
         assertEq(uint256(bytes32(t.errs[0])), 0);
         vm.assertEq(t.usdcMainnet.balanceOf(t.friend), 1000);
 
+        // 6. Settlement Phase - After outputIntent is executed successfully
+        // The orchestrator has already emitted Sent events during execution
+
+        // Now the settler owner (settlement oracle) writes the settlement attestation
+        // This represents the off-chain process where the oracle verifies the Sent events
+        // and writes the settlement on all input chains
+        vm.prank(t.settlementOracle);
+        t.settler.write(address(oc), t.settlementId, 1); // Mainnet attestation
+
+        // 7. Settle on Base chain - release escrowed funds
+        vm.revertToState(t.snapshot);
+        vm.chainId(8453);
+
+        // Re-execute the escrow on Base (to recreate the state)
+        t.usdcBase.mint(t.d.eoa, 600);
+        t.encodedIntents[0] = abi.encode(t.baseIntent);
+        vm.expectEmit(true, false, false, false, address(t.escrowBase));
+        emit Escrow.EscrowCreated(t.escrowIdBase);
+        vm.prank(t.gasWallet);
+        oc.execute(true, t.encodedIntents);
+
+        // Settler owner needs to write the settlement on Base chain too
+        vm.prank(t.settlementOracle);
+        t.settler.write(address(oc), t.settlementId, 1); // Write that mainnet orchestrator attested
+
+        // Now settle the escrow
+        vm.expectEmit(true, false, false, false, address(t.escrowBase));
+        emit Escrow.EscrowSettled(t.escrowIdBase);
+        vm.prank(t.relay); // Relay can call settle
+        bytes32[] memory escrowIds = new bytes32[](1);
+        escrowIds[0] = t.escrowIdBase;
+        t.escrowBase.settle(escrowIds);
+
+        // Verify funds are transferred to relay
+        vm.assertEq(t.usdcBase.balanceOf(t.relay), 600);
+        vm.assertEq(t.usdcBase.balanceOf(address(t.escrowBase)), 0);
+
+        // 8. Settle on Arbitrum chain - release escrowed funds
+        vm.revertToState(t.snapshot);
+        vm.chainId(42161);
+
+        // Re-execute the escrow on Arbitrum (to recreate the state)
+        t.usdcArb.mint(t.d.eoa, 500);
+        t.encodedIntents[0] = abi.encode(t.arbIntent);
+        vm.expectEmit(true, false, false, false, address(t.escrowArb));
+        emit Escrow.EscrowCreated(t.escrowIdArb);
+        vm.prank(t.gasWallet);
+        oc.execute(true, t.encodedIntents);
+
+        // Settler owner needs to write the settlement on Arbitrum chain too
+        vm.prank(t.settlementOracle);
+        t.settler.write(address(oc), t.settlementId, 1); // Write that mainnet orchestrator attested
+
+        // Now settle the escrow
+        vm.expectEmit(true, false, false, false, address(t.escrowArb));
+        emit Escrow.EscrowSettled(t.escrowIdArb);
+        vm.prank(t.relay); // Relay can call settle
+        bytes32[] memory escrowIdsArb = new bytes32[](1);
+        escrowIdsArb[0] = t.escrowIdArb;
+        t.escrowArb.settle(escrowIdsArb);
+
+        // Verify funds are transferred to relay
+        vm.assertEq(t.usdcArb.balanceOf(t.relay), 500);
+        vm.assertEq(t.usdcArb.balanceOf(address(t.escrowArb)), 0);
+
         // 6. Attempt execution with duplicated or unordered `encodedFundTransfers` (should fail).
         vm.revertToState(t.snapshot);
         vm.chainId(1);
         {
-            // Relay/Settlement system funds setup on Mainnet again.
-            t.usdcMainnet.mint(t.settlementAddress, 1000);
+            // Relay funds setup on Mainnet again.
+            t.usdcMainnet.mint(t.relay, 1000);
             vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
             t.usdcMainnet.mint(address(t.funder), 1000);
 
@@ -1422,7 +1595,7 @@ contract OrchestratorTest is BaseTest {
         vm.chainId(1);
         {
             // Setup funds for the test
-            t.usdcMainnet.mint(t.settlementAddress, 1000);
+            t.usdcMainnet.mint(t.relay, 1000);
             vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
             t.usdcMainnet.mint(address(t.funder), 1000);
 

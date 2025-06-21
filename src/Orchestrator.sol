@@ -18,7 +18,7 @@ import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
 import {ICommon} from "./interfaces/ICommon.sol";
 import {PauseAuthority} from "./PauseAuthority.sol";
 import {IFunder} from "./interfaces/IFunder.sol";
-
+import {ISettler} from "./interfaces/ISettler.sol";
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 
 /// @title Orchestrator
@@ -125,7 +125,7 @@ contract Orchestrator is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers)Call(address to,uint256 value,bytes data)"
+        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers,address settler)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for SignedCalls
@@ -454,10 +454,16 @@ contract Orchestrator is
 
         bool isValid;
         bytes32 keyHash;
-
         if (flags == uint256(Flags.MULTICHAIN_INTENT_MODE)) {
             // For multi chain intents, we have to verify using merkle sigs.
             (isValid, keyHash) = _verifyMerkleSig(digest, eoa, i.signature);
+
+            // If this is an output intent, then send the digest as the settlementId
+            // on all input chains.
+            if (i.encodedFundTransfers.length > 0) {
+                // Output intent - forward all msg.value to settler for multi-chain intents
+                ISettler(i.settler).send{value: msg.value}(digest, i.settlerContext);
+            }
         } else {
             (isValid, keyHash) = _verify(digest, eoa, i.signature);
         }
@@ -824,7 +830,7 @@ contract Orchestrator is
         bool isMultichain = i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
 
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(12);
+        bytes32[] memory f = EfficientHashLib.malloc(13);
         f.set(0, INTENT_TYPEHASH);
         f.set(1, LibBit.toUint(isMultichain));
         f.set(2, uint160(i.eoa));
@@ -837,6 +843,7 @@ contract Orchestrator is
         f.set(9, i.combinedGas);
         f.set(10, _encodedArrHash(i.encodedPreCalls));
         f.set(11, _encodedArrHash(i.encodedFundTransfers));
+        f.set(12, uint160(i.settler));
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }

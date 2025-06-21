@@ -581,7 +581,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     }
 
     /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
-
     function pay(
         uint256 paymentAmount,
         bytes32 keyHash,
