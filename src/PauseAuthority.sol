@@ -12,8 +12,8 @@ abstract contract PauseAuthority {
     /// @dev The pause flag has been updated.
     event PauseSet(bool indexed isPaused);
 
-    /// @dev The pause authority has been set to `pauseAuthority`.
-    event PauseAuthoritySet(address indexed pauseAuthority);
+    /// @dev The pause admin has been set to `pauseAdmin`.
+    event PauseAdminSet(address indexed pauseAdmin);
 
     /// @dev Time period after which the contract can be unpaused by anyone.
     uint256 public constant PAUSE_TIMEOUT = 4 weeks;
@@ -22,7 +22,7 @@ abstract contract PauseAuthority {
     uint256 public pauseFlag;
 
     /// @dev The pause configuration.
-    /// - The lower 160 bits store the pause authority.
+    /// - The lower 160 bits store the pause admin.
     /// - The 40 bits after that store the last paused timestamp.
     uint256 internal _pauseConfig;
 
@@ -35,21 +35,21 @@ abstract contract PauseAuthority {
     ///   This is done to prevent griefing attacks, where a malicious pauseAuthority,
     ///   keeps censoring the user.
     function pause(bool isPause) public virtual {
-        (address authority, uint40 lastPaused) = getPauseConfig();
+        (address admin, uint40 lastPaused) = getPauseConfig();
         uint256 timeout = lastPaused + PAUSE_TIMEOUT;
 
         if (isPause) {
             // Account owners, can use this 1 week buffer, to migrate,
             // if they don't trust the pauseAuthority.
-            if (msg.sender != authority || block.timestamp < timeout + 1 weeks || pauseFlag == 1) {
+            if (msg.sender != admin || block.timestamp < timeout + 1 weeks || pauseFlag == 1) {
                 revert Unauthorized();
             }
 
             // Set the pause flag.
             pauseFlag = 1;
-            _pauseConfig = (block.timestamp << 160) | uint256(uint160(authority));
+            _pauseConfig = (block.timestamp << 160) | uint256(uint160(admin));
         } else {
-            if (msg.sender == authority || block.timestamp > timeout) {
+            if (msg.sender == admin || block.timestamp > timeout) {
                 // Unpause the contract.
                 pauseFlag = 0;
             } else {
@@ -60,19 +60,19 @@ abstract contract PauseAuthority {
         emit PauseSet(isPause);
     }
 
-    /// @dev Returns the pause authority and the last pause timestamp.
+    /// @dev Returns the pause admin and the last pause timestamp.
     function getPauseConfig() public view virtual returns (address, uint40) {
         return (address(uint160(_pauseConfig)), uint40(_pauseConfig >> 160));
     }
 
-    function setPauseAuthority(address newPauseAuthority) public virtual {
+    function setPauseAuthority(address newPauseAdmin) public virtual {
         (address authority, uint40 lastPaused) = getPauseConfig();
         if (msg.sender != authority) {
             revert Unauthorized();
         }
 
-        _pauseConfig = (uint256(lastPaused) << 160) | uint160(newPauseAuthority);
+        _pauseConfig = (uint256(lastPaused) << 160) | uint160(newPauseAdmin);
 
-        emit PauseAuthoritySet(newPauseAuthority);
+        emit PauseAdminSet(newPauseAdmin);
     }
 }
