@@ -9,8 +9,9 @@ import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 
 /// @title SimpleFunder
 /// @notice A simple contract to allow our relayers to pull funds.
-/// @dev The contract is for Ithaca's internal operations.
-/// 3rd parties do not need to be concerned about it.
+/// @dev While the `IFunder` interface is expected by the Orchestrator,
+/// and can be used by 3rd parties to implement their custom funders,
+/// the internal logic here is catered towards Ithaca's operations and risk management.
 /// Note:
 /// - The `owner` is a very cold vault, which we will rarely touch.
 /// - The `funder` is an EOA used to sign signatures to authorize pull-based payments.
