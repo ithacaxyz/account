@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
+/// @title PauseAuthority
+/// @notice A mixin for that turns a contract to a pause beacon.
+/// @dev This is intended to be inherited by the Orchestrator, and serves as a
+/// training wheels until we are more certain of the correctness.
 abstract contract PauseAuthority {
     /// @dev Unauthorized to perform this action.
     error Unauthorized();

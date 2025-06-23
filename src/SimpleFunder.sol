@@ -7,6 +7,16 @@ import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 
+/// @title SimpleFunder
+/// @notice A simple contract to allow our relayers to pull funds.
+/// @dev The contract is for Ithaca's internal operations.
+/// 3rd parties do not need to be concerned about it.
+/// Note:
+/// - The `owner` is a very cold vault, which we will rarely touch.
+/// - The `funder` is an EOA used to sign signatures to authorize pull-based payments.
+/// - The `gasWallets` are authorized accounts that can pull native currency.
+///   We will not store too much native currency in this contract, and the `gasWallets`
+///   are trusted to not pull excessively.
 contract SimpleFunder is Ownable, IFunder {
     error OnlyOrchestrator();
     error OnlyGasWallet();
@@ -15,6 +25,7 @@ contract SimpleFunder is Ownable, IFunder {
     address public immutable ORCHESTRATOR;
 
     address public funder;
+
     mapping(address => bool) public gasWallets;
 
     ////////////////////////////////////////////////////////////////////////
@@ -53,6 +64,7 @@ contract SimpleFunder is Ownable, IFunder {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Allows the orchestrator to fund an account.
+    /// The `digest` includes the intent nonce and the transfers.
     function fund(
         address account,
         bytes32 digest,
