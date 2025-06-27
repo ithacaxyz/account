@@ -36,6 +36,7 @@ jobs:
         run: |
           git checkout origin/${{ github.base_ref }}
           forge clean
+          forge install
           forge build --force
           mkdir -p /tmp/base-artifacts
           cp -r out/* /tmp/base-artifacts/
@@ -44,6 +45,7 @@ jobs:
         run: |
           git checkout ${{ github.head_ref }}
           forge clean
+          forge install
           forge build --force
       
       - name: Check bytecode changes and version
