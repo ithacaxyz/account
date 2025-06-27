@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {OApp, MessagingFee, Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
@@ -10,8 +11,11 @@ import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 /// @notice Cross-chain settlement using LayerZero v2 with self-execution model
 /// @dev Uses msg.value to pay for cross-chain messaging fees
 contract LayerZeroSettler is OApp, ISettler {
+    using OptionsBuilder for *;
+
     event Settled(address indexed sender, bytes32 indexed settlementId, uint256 senderChainId);
 
+    error ArrayLengthsMismatch();
     error InvalidEndpointId();
     error InsufficientFee(uint256 provided, uint256 required);
 
@@ -26,27 +30,45 @@ contract LayerZeroSettler is OApp, ISettler {
     /// @dev Requires msg.value to cover all LayerZero fees
     function send(bytes32 settlementId, bytes calldata settlerContext) external payable override {
         // Decode settlerContext as an array of LayerZero endpoint IDs
-        uint32[] memory endpointIds = abi.decode(settlerContext, (uint32[]));
+        (uint128[] memory expectedDstGasRequired, uint32[] memory endpointIds) =
+            abi.decode(settlerContext, (uint128[], uint32[]));
 
-        uint256 totalFee = quoteSendByEndpoints(endpointIds);
+        if (expectedDstGasRequired.length != endpointIds.length) revert ArrayLengthsMismatch();
+
+        uint256[] memory nativeFees = new uint256[](expectedDstGasRequired.length);
+        bytes[] memory allOptions = new bytes[](expectedDstGasRequired.length);
+
+        bytes memory payload = abi.encode(settlementId, msg.sender, block.chainid);
+        uint256 totalFee = 0;
+
+        for (uint256 i = 0; i < endpointIds.length; i++) {
+            uint32 dstEid = endpointIds[i];
+            if (dstEid == 0) revert InvalidEndpointId();
+            bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(
+                expectedDstGasRequired[i], // `gas` for destination chain.
+                0 // `value`. Zero as we are not funding any contract on destination chain.
+            );
+            uint256 nativeFee = _quote(dstEid, payload, options, false).nativeFee;
+            allOptions[i] = options;
+            nativeFees[i] = nativeFee;
+            totalFee += nativeFee;
+        }
 
         if (msg.value < totalFee) {
             revert InsufficientFee(msg.value, totalFee);
         }
 
-        bytes memory payload = abi.encode(settlementId, msg.sender, block.chainid);
-        bytes memory options = ""; // No executor options for self-execution
-
         for (uint256 i = 0; i < endpointIds.length; i++) {
             uint32 dstEid = endpointIds[i];
-            if (dstEid == 0) revert InvalidEndpointId();
-
-            // Quote individual fee for this destination
-            MessagingFee memory fee = _quote(dstEid, payload, options, false);
-
             // Send with exact fee, refund to msg.sender
-            _lzSend(dstEid, payload, options, MessagingFee(fee.nativeFee, 0), payable(msg.sender));
+            _lzSend(
+                dstEid, payload, allOptions[i], MessagingFee(nativeFees[i], 0), payable(msg.sender)
+            );
         }
+
+        // if (msg.value > totalFee) {
+        //     TokenTransferLib.safeTransfer(address(0), msg.sender, msg.value - totalFee);
+        // }
     }
 
     /// @notice Receive settlement attestation from another chain
