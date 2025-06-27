@@ -8,9 +8,11 @@ import {LibZip} from "solady/utils/LibZip.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 import {DynamicArrayLib} from "solady/utils/DynamicArrayLib.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
+import {EnumerableMapLib} from "solady/utils/EnumerableMapLib.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {DateTimeLib} from "solady/utils/DateTimeLib.sol";
+import {ICallChecker} from "./interfaces/ICallChecker.sol";
 
 /// @title GuardedExecutor
 /// @notice Mixin for spend limits and calldata execution guards.
@@ -26,6 +28,7 @@ import {DateTimeLib} from "solady/utils/DateTimeLib.sol";
 abstract contract GuardedExecutor is ERC7821 {
     using DynamicArrayLib for *;
     using EnumerableSetLib for *;
+    using EnumerableMapLib for *;
 
     ////////////////////////////////////////////////////////////////////////
     // Enums
@@ -64,6 +67,14 @@ abstract contract GuardedExecutor is ERC7821 {
         uint256 current;
     }
 
+    /// @dev Information about a call checker.
+    struct CallCheckerInfo {
+        /// @dev The target. Could be a wildcard like `ANY_TARGET`.
+        address target;
+        /// @dev The checker.
+        address checker;
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
@@ -98,6 +109,9 @@ abstract contract GuardedExecutor is ERC7821 {
 
     /// @dev Emitted when the ability to execute a call with function selector is set.
     event CanExecuteSet(bytes32 keyHash, address target, bytes4 fnSel, bool can);
+
+    /// @dev Emitted when a call checker is set for the `keyHash` and `target`.
+    event CallCheckerSet(bytes32 keyHash, address target, address checker);
 
     /// @dev Emitted when a spend limit is set.
     event SpendLimitSet(bytes32 keyHash, address token, SpendPeriod period, uint256 limit);
@@ -164,6 +178,8 @@ abstract contract GuardedExecutor is ERC7821 {
         EnumerableSetLib.Bytes32Set canExecute;
         /// @dev Mapping of `keyHash` to the `SpendStorage`.
         SpendStorage spends;
+        /// @dev Mapping of 3rd-party checkers for determining if an address can execute a function.
+        EnumerableMapLib.AddressToAddressMap callCheckers;
     }
 
     /// @dev Returns the storage pointer.
@@ -362,6 +378,27 @@ abstract contract GuardedExecutor is ERC7821 {
         emit CanExecuteSet(keyHash, target, fnSel, can);
     }
 
+    /// @dev Sets a third party call checker, which has a view function 
+    /// `canExecute(bytes32,address,bytes)` to return if a call can be executed.
+    /// By setting `checker` to `address(0)`, it removes the it from the list of 
+    /// call checkers on this account.
+    /// The `ANY_KEYHASH` and `ANY_TARGET` wildcards apply here too.
+    function setCallChecker(bytes32 keyHash, address target, address checker)
+        public
+        virtual
+        onlyThis
+        checkKeyHashIsNonZero(keyHash)
+    {
+        if (_isSuperAdmin(keyHash)) revert SuperAdminCanSpendAnything();
+
+        EnumerableMapLib.AddressToAddressMap storage checkers = _getGuardedExecutorKeyStorage(keyHash).callCheckers;
+
+        // Impose a max capacity of 2048 for map enumeration, which should be more than enough.
+        checkers.update(target, checker, checker != address(0), 2048);
+
+        emit CallCheckerSet(keyHash, target, checker);
+    }
+
     /// @dev Sets the spend limit of `token` for `keyHash` for `period`.
     function setSpendLimit(bytes32 keyHash, address token, SpendPeriod period, uint256 limit)
         public
@@ -452,6 +489,10 @@ abstract contract GuardedExecutor is ERC7821 {
             if (c.contains(_packCanExecute(ANY_TARGET, fnSel))) return true;
             if (c.contains(_packCanExecute(ANY_TARGET, ANY_FN_SEL))) return true;
         }
+        if (_checkCall(keyHash, keyHash, target, target, data)) return true;
+        if (_checkCall(keyHash, keyHash, ANY_TARGET, target, data)) return true;
+        if (_checkCall(ANY_KEYHASH, keyHash, target, target, data)) return true;
+        if (_checkCall(ANY_KEYHASH, keyHash, ANY_TARGET, target, data)) return true;
         return false;
     }
 
@@ -499,6 +540,20 @@ abstract contract GuardedExecutor is ERC7821 {
         }
     }
 
+    /// @dev Returns the list of call checker infos.
+    function callCheckerInfos(bytes32 keyHash)
+        public 
+        view
+        virtual
+        returns (CallCheckerInfo[] memory results)
+    {
+        EnumerableMapLib.AddressToAddressMap storage checkers = _getGuardedExecutorKeyStorage(keyHash).callCheckers;
+        results = new CallCheckerInfo[](checkers.length());
+        for (uint256 i; i < results.length; ++i) {
+            (results[i].target, results[i].checker) = checkers.at(i);
+        }
+    }
+
     /// @dev Returns spend and execute infos for each provided key hash in the same order.
     function spendAndExecuteInfos(bytes32[] calldata keyHashes)
         public
@@ -537,6 +592,19 @@ abstract contract GuardedExecutor is ERC7821 {
     ////////////////////////////////////////////////////////////////////////
     // Internal Helpers
     ////////////////////////////////////////////////////////////////////////
+
+    /// @dev Returns if the call can be executed via consulting a 3rd party checker.
+    function _checkCall(
+        bytes32 forKeyHash,
+        bytes32 keyHash,
+        address forTarget,
+        address target,
+        bytes calldata data
+    ) internal view returns (bool) {
+        address checker = _getGuardedExecutorKeyStorage(forKeyHash).callCheckers.get(forTarget);
+        if (checker != address(0)) return ICallChecker(checker).canExecute(keyHash, target, data);
+        return false;
+    }
 
     /// @dev Returns whether the call is a self execute.
     function _isSelfExecute(address target, bytes4 fnSel) internal view returns (bool) {

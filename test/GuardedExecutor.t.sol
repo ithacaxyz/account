@@ -3,6 +3,7 @@ pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
+import "./utils/mocks/MockCallChecker.sol";
 
 contract GuardedExecutorTest is BaseTest {
     mapping(uint256 => mapping(address => uint256)) expectedSpents;
@@ -11,6 +12,21 @@ contract GuardedExecutorTest is BaseTest {
 
     function setUp() public virtual override {
         super.setUp();
+    }
+
+    function testSetAndGetCallCheckers() public {
+        MockCallChecker anyKeyHashChecker = new MockCallChecker();
+        MockCallChecker anyTargetChecker = new MockCallChecker();
+        MockCallChecker specificChecker = new MockCallChecker();
+
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        PassKey memory k = _randomSecp256r1PassKey();
+
+        vm.startPrank(d.eoa);
+
+        d.d.authorize(k.k);
+
+        
     }
 
     function testCanExecuteGetsResetAfterKeyIsReadded(address target, bytes4 fnSel) public {
