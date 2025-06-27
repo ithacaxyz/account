@@ -378,9 +378,9 @@ abstract contract GuardedExecutor is ERC7821 {
         emit CanExecuteSet(keyHash, target, fnSel, can);
     }
 
-    /// @dev Sets a third party call checker, which has a view function 
+    /// @dev Sets a third party call checker, which has a view function
     /// `canExecute(bytes32,address,bytes)` to return if a call can be executed.
-    /// By setting `checker` to `address(0)`, it removes the it from the list of 
+    /// By setting `checker` to `address(0)`, it removes the it from the list of
     /// call checkers on this account.
     /// The `ANY_KEYHASH` and `ANY_TARGET` wildcards apply here too.
     function setCallChecker(bytes32 keyHash, address target, address checker)
@@ -389,9 +389,15 @@ abstract contract GuardedExecutor is ERC7821 {
         onlyThis
         checkKeyHashIsNonZero(keyHash)
     {
-        if (_isSuperAdmin(keyHash)) revert SuperAdminCanSpendAnything();
+        if (keyHash != ANY_KEYHASH) {
+            if (_isSuperAdmin(keyHash)) revert SuperAdminCanSpendAnything();
+        }
 
-        EnumerableMapLib.AddressToAddressMap storage checkers = _getGuardedExecutorKeyStorage(keyHash).callCheckers;
+        // It is ok even if we don't check for `_isSelfExecute` here, as we will still
+        // check it in `canExecute` before any custom call checker.
+
+        EnumerableMapLib.AddressToAddressMap storage checkers =
+            _getGuardedExecutorKeyStorage(keyHash).callCheckers;
 
         // Impose a max capacity of 2048 for map enumeration, which should be more than enough.
         checkers.update(target, checker, checker != address(0), 2048);
@@ -489,6 +495,7 @@ abstract contract GuardedExecutor is ERC7821 {
             if (c.contains(_packCanExecute(ANY_TARGET, fnSel))) return true;
             if (c.contains(_packCanExecute(ANY_TARGET, ANY_FN_SEL))) return true;
         }
+        // Note that these checks have to be placed after the `_isSelfExecute` check.
         if (_checkCall(keyHash, keyHash, target, target, data)) return true;
         if (_checkCall(keyHash, keyHash, ANY_TARGET, target, data)) return true;
         if (_checkCall(ANY_KEYHASH, keyHash, target, target, data)) return true;
@@ -542,12 +549,13 @@ abstract contract GuardedExecutor is ERC7821 {
 
     /// @dev Returns the list of call checker infos.
     function callCheckerInfos(bytes32 keyHash)
-        public 
+        public
         view
         virtual
         returns (CallCheckerInfo[] memory results)
     {
-        EnumerableMapLib.AddressToAddressMap storage checkers = _getGuardedExecutorKeyStorage(keyHash).callCheckers;
+        EnumerableMapLib.AddressToAddressMap storage checkers =
+            _getGuardedExecutorKeyStorage(keyHash).callCheckers;
         results = new CallCheckerInfo[](checkers.length());
         for (uint256 i; i < results.length; ++i) {
             (results[i].target, results[i].checker) = checkers.at(i);
@@ -601,8 +609,9 @@ abstract contract GuardedExecutor is ERC7821 {
         address target,
         bytes calldata data
     ) internal view returns (bool) {
-        address checker = _getGuardedExecutorKeyStorage(forKeyHash).callCheckers.get(forTarget);
-        if (checker != address(0)) return ICallChecker(checker).canExecute(keyHash, target, data);
+        (bool exists, address checker) =
+            _getGuardedExecutorKeyStorage(forKeyHash).callCheckers.tryGet(forTarget);
+        if (exists) return ICallChecker(checker).canExecute(keyHash, target, data);
         return false;
     }
 

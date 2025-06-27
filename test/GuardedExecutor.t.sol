@@ -4,6 +4,7 @@ pragma solidity ^0.8.4;
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
 import "./utils/mocks/MockCallChecker.sol";
+import "./utils/mocks/MockCounter.sol";
 
 contract GuardedExecutorTest is BaseTest {
     mapping(uint256 => mapping(address => uint256)) expectedSpents;
@@ -14,19 +15,63 @@ contract GuardedExecutorTest is BaseTest {
         super.setUp();
     }
 
-    function testSetAndGetCallCheckers() public {
-        MockCallChecker anyKeyHashChecker = new MockCallChecker();
-        MockCallChecker anyTargetChecker = new MockCallChecker();
-        MockCallChecker specificChecker = new MockCallChecker();
+    function testSetAndGetCallCheckers(bytes32) public {
+        MockCounter counter = new MockCounter();
+        MockCallChecker checker = new MockCallChecker();
 
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256r1PassKey();
 
         vm.startPrank(d.eoa);
-
         d.d.authorize(k.k);
+        vm.stopPrank();
 
-        
+        Orchestrator.Intent memory u;
+        u.eoa = d.eoa;
+        u.combinedGas = 10000000;
+
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].to = address(counter);
+        calls[0].data = abi.encodeWithSelector(MockCounter.increment.selector);
+
+        u.nonce = d.d.getNonce(0);
+        u.executionData = abi.encode(calls);
+        u.signature = _sig(k, u);
+
+        assertEq(
+            oc.execute(false, abi.encode(u)),
+            bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)"))
+        );
+
+        vm.startPrank(d.eoa);
+        bytes32 forKeyHash = _randomChance(2) ? k.keyHash : _ANY_KEYHASH;
+        address forTarget = _randomChance(2) ? address(counter) : _ANY_TARGET;
+        d.d.setCallChecker(forKeyHash, forTarget, address(checker));
+        vm.stopPrank();
+
+        GuardedExecutor.CallCheckerInfo[] memory infos = d.d.callCheckerInfos(forKeyHash);
+        assertEq(infos.length, 1);
+        assertEq(infos[0].checker, address(checker));
+        assertEq(infos[0].target, forTarget);
+
+        u.nonce = d.d.getNonce(0);
+        u.executionData = abi.encode(calls);
+        u.signature = _sig(k, u);
+
+        assertEq(
+            oc.execute(false, abi.encode(u)),
+            bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)"))
+        );
+
+        checker.setAuthorized(
+            k.keyHash, address(counter), abi.encodeWithSelector(MockCounter.increment.selector)
+        );
+
+        u.nonce = d.d.getNonce(0);
+        u.executionData = abi.encode(calls);
+        u.signature = _sig(k, u);
+
+        assertEq(oc.execute(false, abi.encode(u)), bytes4(0));
     }
 
     function testCanExecuteGetsResetAfterKeyIsReadded(address target, bytes4 fnSel) public {

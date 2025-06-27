@@ -8,7 +8,6 @@ contract MockCallChecker {
     bytes32 public authorizedKeyHash;
     address public authorizedTarget;
     bytes public authorizedData;
-    uint256 public counter;
 
     function setAuthorized(bytes32 keyHash, address target, bytes calldata data) public {
         authorizedKeyHash = keyHash;
@@ -16,15 +15,14 @@ contract MockCallChecker {
         authorizedData = data;
     }
 
-    function canExecute(bytes32 keyHash, address target, bytes calldata data) public view returns (bool) {
+    function canExecute(bytes32 keyHash, address target, bytes calldata data)
+        public
+        view
+        returns (bool)
+    {
         return (
-            keyHash == authorizedKeyHash && 
-            target == authorizedTarget &&
-            keccak256(data) == keccak256(authorizedData)
+            keyHash == authorizedKeyHash && target == authorizedTarget
+                && keccak256(data) == keccak256(authorizedData)
         );
-    }
-
-    function increment() public {
-        ++counter;
     }
 }
