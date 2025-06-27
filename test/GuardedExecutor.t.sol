@@ -22,9 +22,8 @@ contract GuardedExecutorTest is BaseTest {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256r1PassKey();
 
-        vm.startPrank(d.eoa);
+        vm.prank(d.eoa);
         d.d.authorize(k.k);
-        vm.stopPrank();
 
         Orchestrator.Intent memory u;
         u.eoa = d.eoa;
@@ -34,44 +33,57 @@ contract GuardedExecutorTest is BaseTest {
         calls[0].to = address(counter);
         calls[0].data = abi.encodeWithSelector(MockCounter.increment.selector);
 
+        // Try, but without any checker configured.
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-
         assertEq(
             oc.execute(false, abi.encode(u)),
             bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)"))
         );
-
-        vm.startPrank(d.eoa);
+        // Set the call checker.
         bytes32 forKeyHash = _randomChance(2) ? k.keyHash : _ANY_KEYHASH;
         address forTarget = _randomChance(2) ? address(counter) : _ANY_TARGET;
+        vm.prank(d.eoa);
         d.d.setCallChecker(forKeyHash, forTarget, address(checker));
-        vm.stopPrank();
-
+        // Check the infos.
         GuardedExecutor.CallCheckerInfo[] memory infos = d.d.callCheckerInfos(forKeyHash);
         assertEq(infos.length, 1);
         assertEq(infos[0].checker, address(checker));
         assertEq(infos[0].target, forTarget);
 
+        // Try, but with the checker not yet configured.
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-
         assertEq(
             oc.execute(false, abi.encode(u)),
             bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)"))
         );
 
+        // Try, now with the checker configured to authorize the call..
         checker.setAuthorized(
             k.keyHash, address(counter), abi.encodeWithSelector(MockCounter.increment.selector)
         );
+        u.nonce = d.d.getNonce(0);
+        u.executionData = abi.encode(calls);
+        u.signature = _sig(k, u);
+        assertEq(oc.execute(false, abi.encode(u)), bytes4(0));
+        assertEq(counter.counter(), 1);
+
+        // Try, now with the checker removed.
+        vm.prank(d.eoa);
+        d.d.setCallChecker(forKeyHash, forTarget, address(0));
+        // Check the infos.
+        assertEq(d.d.callCheckerInfos(forKeyHash).length, 0);
 
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-
-        assertEq(oc.execute(false, abi.encode(u)), bytes4(0));
+        assertEq(
+            oc.execute(false, abi.encode(u)),
+            bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)"))
+        );
     }
 
     function testCanExecuteGetsResetAfterKeyIsReadded(address target, bytes4 fnSel) public {
