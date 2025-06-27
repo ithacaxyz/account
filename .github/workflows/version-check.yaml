@@ -35,6 +35,7 @@ jobs:
       - name: Build contracts on base branch
         run: |
           git checkout origin/${{ github.base_ref }}
+          forge clean
           forge build --force
           mkdir -p /tmp/base-artifacts
           cp -r out/* /tmp/base-artifacts/
@@ -42,6 +43,7 @@ jobs:
       - name: Build contracts on PR branch
         run: |
           git checkout ${{ github.head_ref }}
+          forge clean
           forge build --force
       
       - name: Check bytecode changes and version
