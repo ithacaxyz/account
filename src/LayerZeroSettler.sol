@@ -65,10 +65,6 @@ contract LayerZeroSettler is OApp, ISettler {
                 dstEid, payload, allOptions[i], MessagingFee(nativeFees[i], 0), payable(msg.sender)
             );
         }
-
-        // if (msg.value > totalFee) {
-        //     TokenTransferLib.safeTransfer(address(0), msg.sender, msg.value - totalFee);
-        // }
     }
 
     /// @notice Receive settlement attestation from another chain
@@ -106,16 +102,19 @@ contract LayerZeroSettler is OApp, ISettler {
     /// @notice Quote the total fee for sending to multiple endpoints
     /// @param endpointIds Array of LayerZero endpoint IDs to send to
     /// @return totalFee The total native fee required
-    function quoteSendByEndpoints(uint32[] memory endpointIds)
-        public
-        view
-        returns (uint256 totalFee)
-    {
+    function quoteSendByEndpoints(
+        uint128[] memory expectedDstGasRequired,
+        uint32[] memory endpointIds
+    ) public view returns (uint256 totalFee) {
         bytes memory payload = abi.encode(bytes32(0), address(0), uint256(0));
-        bytes memory options = ""; // No executor options
 
         for (uint256 i = 0; i < endpointIds.length; i++) {
-            if (endpointIds[i] == 0) continue;
+            if (endpointIds[i] == 0) revert InvalidEndpointId();
+
+            bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(
+                expectedDstGasRequired[i], // `gas` for destination chain.
+                0 // `value`. Zero as we are not funding any contract on destination chain.
+            );
 
             MessagingFee memory fee = _quote(endpointIds[i], payload, options, false);
             totalFee += fee.nativeFee;
