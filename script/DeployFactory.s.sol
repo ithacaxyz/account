@@ -16,8 +16,6 @@ contract DeployFactoryScript is Script {
     bytes32 constant FACTORY_SALT = keccak256("ithaca.factory.v1");
 
     function run() external returns (address factory) {
-        vm.startBroadcast();
-
         // Deploy the factory using Safe Singleton Deployer
         bytes memory factoryCreationCode = type(IthacaFactory).creationCode;
 
@@ -39,7 +37,5 @@ contract DeployFactoryScript is Script {
         // Verify deployment
         if (factory != predicted) revert FactoryDeployedToUnexpectedAddress();
         if (factory.code.length == 0) revert FactoryDeploymentFailed();
-
-        vm.stopBroadcast();
     }
 }
