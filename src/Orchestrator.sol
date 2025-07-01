@@ -461,8 +461,8 @@ contract Orchestrator is
             // If this is an output intent, then send the digest as the settlementId
             // on all input chains.
             if (i.encodedFundTransfers.length > 0) {
-                // Output intent - forward all msg.value to settler for multi-chain intents
-                ISettler(i.settler).send{value: msg.value}(digest, i.settlerContext);
+                // Output intent
+                ISettler(i.settler).send(digest, i.settlerContext);
             }
         } else {
             (isValid, keyHash) = _verify(digest, eoa, i.signature);
