@@ -1,9 +1,9 @@
 {
   "8453": {
-    "orchestrator": "0xF337a809Da07083ba19874318cAa968a4345D8be",
-    "accountImplementation": "0x8c0466A6C046395c8999227b288883cf7dC9f5de",
-    "accountProxy": "0x664ab8c20b629422f5398e58ff8989e68b26a4e6",
-    "simulator": "0x78830C9a0618c1755Ae7C5647a603e0f6CCbE6d1"
+    "orchestrator": "0x883ac1afd6bf920755ccee253669515683634930",
+    "accountImplementation": "0xb292da8879c26ecd558bbea87f581cdd608ffc3c",
+    "accountProxy": "0x96e9ded822ffd4c65d8e09340ee95d2dc8fa209f",
+    "simulator": "0x21d83f97fff3e35ab42d02e4bec8d61a9b645852"
   },
   "84532": {
     "orchestrator": "0x1692bc8d0c73a7540ecb572e85c0775e68c55d25",
