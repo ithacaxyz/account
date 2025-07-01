@@ -462,7 +462,7 @@ contract Orchestrator is
             // on all input chains.
             if (i.encodedFundTransfers.length > 0) {
                 // Output intent - forward all msg.value to settler for multi-chain intents
-                ISettler(i.settler).send{value: msg.value}(digest, i.settlerContext);
+                ISettler(i.settler).send(digest, i.settlerContext);
             }
         } else {
             (isValid, keyHash) = _verify(digest, eoa, i.signature);

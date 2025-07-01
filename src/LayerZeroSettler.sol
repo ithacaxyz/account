@@ -14,9 +14,11 @@ contract LayerZeroSettler is OApp, ISettler {
 
     error InvalidEndpointId();
     error InsufficientFee(uint256 provided, uint256 required);
+    error InvalidSettlementId();
 
     // Mapping: settlementId => sender => chainId => isSettled
     mapping(bytes32 => mapping(address => mapping(uint256 => bool))) public settled;
+    mapping(bytes32 => bool) public validSend;
 
     constructor(address _endpoint, address _owner) OApp(_endpoint, _owner) Ownable(_owner) {}
 
@@ -25,6 +27,23 @@ contract LayerZeroSettler is OApp, ISettler {
     /// @param settlerContext Encoded context containing endpoint IDs
     /// @dev Requires msg.value to cover all LayerZero fees
     function send(bytes32 settlementId, bytes calldata settlerContext) external payable override {
+        // Decode settlerContext as an array of LayerZero endpoint IDs
+        uint32[] memory endpointIds = abi.decode(settlerContext, (uint32[]));
+
+        bytes32 finalDigest = keccak256(settlementId, settlerContext);
+        validSend[finalDigest] = true;
+    }
+
+    function executeSend(bytes32 settlementId, bytes calldata settlerContext)
+        external
+        payable
+        override
+    {
+        bytes32 finalDigest = keccak256(settlementId, settlerContext);
+        if (!validSend[finalDigest]) {
+            revert InvalidSettlementId();
+        }
+
         // Decode settlerContext as an array of LayerZero endpoint IDs
         uint32[] memory endpointIds = abi.decode(settlerContext, (uint32[]));
 
@@ -51,6 +70,7 @@ contract LayerZeroSettler is OApp, ISettler {
 
     /// @notice Receive settlement attestation from another chain
     /// @dev Called by LayerZero endpoint after message verification
+
     function _lzReceive(
         Origin calldata, /*_origin*/
         bytes32, /*_guid*/
