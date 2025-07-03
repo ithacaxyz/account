@@ -1326,7 +1326,7 @@ contract OrchestratorTest is BaseTest {
                 senderChainId: 1, // Mainnet chain ID
                 escrowAmount: 600,
                 refundAmount: 600, // Full refund if settlement fails
-                refundTimestamp: block.timestamp + 1 hours
+                settleDeadline: block.timestamp + 1 hours
             });
             t.escrowIdBase = keccak256(abi.encode(escrows[0]));
 
@@ -1365,7 +1365,7 @@ contract OrchestratorTest is BaseTest {
                 senderChainId: 1, // Mainnet chain ID
                 escrowAmount: 500,
                 refundAmount: 500, // Full refund if settlement fails
-                refundTimestamp: block.timestamp + 1 hours
+                settleDeadline: block.timestamp + 1 hours
             });
             t.escrowIdArb = keccak256(abi.encode(escrows[0]));
 

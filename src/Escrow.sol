@@ -10,12 +10,14 @@ contract Escrow is IEscrow {
     mapping(bytes32 => EscrowStatus) public statuses;
 
     event EscrowCreated(bytes32 escrowId);
-    event EscrowRefunded(bytes32 escrowId);
+    event EscrowRefundedDepositor(bytes32 escrowId);
+    event EscrowRefundedRecipient(bytes32 escrowId);
     event EscrowSettled(bytes32 escrowId);
 
     error InvalidStatus();
-    error RefundExpired();
-    error SettlementNotReady();
+    error RefundInvalid();
+    error SettlementExpired();
+    error SettlementInvalid();
 
     /// @dev Accounts can call this function to escrow funds with the orchestrator.
     function escrow(Escrow[] memory _escrows) public payable {
@@ -38,28 +40,63 @@ contract Escrow is IEscrow {
         }
     }
 
-    function refund(bytes32[] calldata escrowIds) public {
+    function refundDepositor(bytes32[] calldata escrowIds) public {
         for (uint256 i = 0; i < escrowIds.length; i++) {
-            _refund(escrowIds[i]);
+            _refundDepositor(escrowIds[i]);
         }
     }
 
-    function _refund(bytes32 escrowId) internal {
-        if (statuses[escrowId] != EscrowStatus.CREATED) {
-            revert InvalidStatus();
-        }
-
+    function _refundDepositor(bytes32 escrowId) internal {
         Escrow storage _escrow = escrows[escrowId];
+        // If settlement is still within the deadline, then refund is invalid.
+        if (block.timestamp <= _escrow.settleDeadline) {
+            revert RefundInvalid();
+        }
+        EscrowStatus status = statuses[escrowId];
 
-        if (_escrow.refundTimestamp < block.timestamp) {
-            revert RefundExpired();
+        if (status == EscrowStatus.CREATED) {
+            statuses[escrowId] = EscrowStatus.REFUND_DEPOSIT;
+        } else if (status == EscrowStatus.REFUND_RECEIVER) {
+            statuses[escrowId] = EscrowStatus.FINALIZED;
+        } else {
+            revert InvalidStatus();
         }
 
         TokenTransferLib.safeTransfer(_escrow.token, _escrow.depositor, _escrow.refundAmount);
 
-        statuses[escrowId] = EscrowStatus.REFUNDED;
+        emit EscrowRefundedDepositor(escrowId);
+    }
 
-        emit EscrowRefunded(escrowId);
+    function refundRecipient(bytes32[] calldata escrowIds) public {
+        for (uint256 i = 0; i < escrowIds.length; i++) {
+            _refundRecipient(escrowIds[i]);
+        }
+    }
+
+    function _refundRecipient(bytes32 escrowId) internal {
+        Escrow storage _escrow = escrows[escrowId];
+
+        // If settlement is still within the deadline, then refund is invalid.
+        if (block.timestamp <= _escrow.settleDeadline) {
+            revert RefundInvalid();
+        }
+
+        EscrowStatus status = statuses[escrowId];
+
+        // Status has to be REFUND_DEPOSIT or CREATED
+        if (status == EscrowStatus.CREATED) {
+            statuses[escrowId] = EscrowStatus.REFUND_RECEIVER;
+        } else if (status == EscrowStatus.REFUND_DEPOSIT) {
+            statuses[escrowId] = EscrowStatus.FINALIZED;
+        } else {
+            revert InvalidStatus();
+        }
+
+        TokenTransferLib.safeTransfer(
+            _escrow.token, _escrow.recipient, _escrow.escrowAmount - _escrow.refundAmount
+        );
+
+        emit EscrowRefundedRecipient(escrowId);
     }
 
     function settle(bytes32[] calldata escrowIds) public {
@@ -69,11 +106,17 @@ contract Escrow is IEscrow {
     }
 
     function _settle(bytes32 escrowId) internal {
+        Escrow storage _escrow = escrows[escrowId];
+
+        // If the settlement is within the deadline, then the escrow is settled.
+        if (block.timestamp > _escrow.settleDeadline) {
+            revert SettlementExpired();
+        }
+
+        // Status has to be CREATED.
         if (statuses[escrowId] != EscrowStatus.CREATED) {
             revert InvalidStatus();
         }
-
-        Escrow storage _escrow = escrows[escrowId];
 
         // Check with the settler if the message has been sent from the correct sender and chainId.
         bool isSettled = ISettler(_escrow.settler).read(
@@ -81,19 +124,17 @@ contract Escrow is IEscrow {
         );
 
         if (!isSettled) {
-            revert SettlementNotReady();
+            revert SettlementInvalid();
         }
 
-        if (block.timestamp > _escrow.refundTimestamp) {
-            TokenTransferLib.safeTransfer(
-                _escrow.token, _escrow.recipient, _escrow.escrowAmount - _escrow.refundAmount
-            );
-        } else {
-            TokenTransferLib.safeTransfer(_escrow.token, _escrow.recipient, _escrow.escrowAmount);
-        }
-
-        statuses[escrowId] = EscrowStatus.SETTLED;
+        TokenTransferLib.safeTransfer(_escrow.token, _escrow.recipient, _escrow.escrowAmount);
+        statuses[escrowId] = EscrowStatus.FINALIZED;
 
         emit EscrowSettled(escrowId);
     }
 }
+
+// Issues
+// 1. If refund amount > escrow amount, someone can extract too many funds from the escrow.
+// 2. How does nonce increment happen in the contracts, if the intent fails. There is some expiry stuff here for multichain flows.
+// 3. Can we allow relay to refund the user even before the expiry.
