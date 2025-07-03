@@ -22,11 +22,15 @@ jobs:
       - name: Deploy
         env:
           PRIVATE_KEY: ${{ secrets.deployer }}
+          FUNDER: ${{ secrets.deployer }}
+          FUNDER_OWNER: ${{ secrets.deployer }}
         # TODO: remove the --evm-version argument once https://github.com/blockscout/blockscout/pull/12115 is released.
         # TODO: re-add --verify --verifier blockscout --verifier-url "https://odyssey-explorer.ithaca.xyz/api"
         run: |
           # For testnets and devnets, pause authority is the same as the deployer.
           export PAUSE_AUTHORITY=$(cast wallet addr "$PRIVATE_KEY")
+          export FUNDER=$(cast wallet addr "$FUNDER")
+          export FUNDER_OWNER=$(cast wallet addr "$FUNDER_OWNER")
 
           forge script DeployAllScript \
             --rpc-url "https://porto-dev.rpc.ithaca.xyz/" \
