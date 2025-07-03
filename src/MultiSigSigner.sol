@@ -4,6 +4,7 @@ pragma solidity ^0.8.23;
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 import {ISigner} from "./interfaces/ISigner.sol";
 
+/// @title MultiSigSigner
 /// @notice A Signer contract, that extends multi-sig functionality to the Porto Account.
 contract MultiSigSigner is ISigner {
     ////////////////////////////////////////////////////////////////////////

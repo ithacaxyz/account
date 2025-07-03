@@ -1,12 +1,13 @@
 [submodule "lib/forge-std"]
 	path = lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
-[submodule "lib/solady"]
-	path = lib/solady
-	url = https://github.com/vectorized/solady
 [submodule "lib/murky"]
 	path = lib/murky
 	url = https://github.com/dmfxyz/murky
 [submodule "lib/safe-singleton-deployer-sol"]
 	path = lib/safe-singleton-deployer-sol
 	url = https://github.com/wilsoncusack/safe-singleton-deployer-sol
+[submodule "lib/solady"]
+	path = lib/solady
+	url = https://github.com/vectorized/solady
+	branch = main
