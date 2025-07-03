@@ -21,8 +21,8 @@ interface IEscrow {
         uint256 escrowAmount;
         // The amount of tokens that will be refunded to depositor, if settlement doesn't happen.
         uint256 refundAmount;
-        // The deadline for the settlement to happen.
-        uint256 settleDeadline;
+        // The timestamp after which permissionless refunds become available.
+        uint256 refundTimestamp;
         // The address of the oracle, which decides if the escrow should be settled.
         address settler;
         // The settler expects the following parameters as input.

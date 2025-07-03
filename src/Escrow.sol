@@ -38,9 +38,6 @@ contract Escrow is IEscrow {
     /// @notice Thrown when refund is attempted before the settlement deadline
     error RefundInvalid();
 
-    /// @notice Thrown when settlement is attempted after the deadline
-    error SettlementExpired();
-
     /// @notice Thrown when the settler contract rejects the settlement
     error SettlementInvalid();
     ////////////////////////////////////////////////////////////////////////
@@ -83,8 +80,8 @@ contract Escrow is IEscrow {
         }
     }
 
-    /// @notice Refunds the specified amount to depositors after the settlement deadline
-    /// @dev Can only be called after settleDeadline has passed
+    /// @notice Refunds the specified amount to depositors after the refund timestamp
+    /// @dev Can only be called after refundTimestamp has passed
     function refundDepositor(bytes32[] calldata escrowIds) public {
         for (uint256 i = 0; i < escrowIds.length; i++) {
             _refundDepositor(escrowIds[i]);
@@ -95,8 +92,8 @@ contract Escrow is IEscrow {
     /// @dev Updates escrow status based on current state (CREATED -> REFUND_DEPOSIT or REFUND_RECIPIENT -> FINALIZED)
     function _refundDepositor(bytes32 escrowId) internal {
         Escrow storage _escrow = escrows[escrowId];
-        // If settlement is still within the deadline, then refund is invalid.
-        if (block.timestamp <= _escrow.settleDeadline) {
+        // If refund timestamp hasn't passed yet, then the refund is invalid.
+        if (block.timestamp <= _escrow.refundTimestamp) {
             revert RefundInvalid();
         }
         EscrowStatus status = statuses[escrowId];
@@ -114,8 +111,8 @@ contract Escrow is IEscrow {
         emit EscrowRefundedDepositor(escrowId);
     }
 
-    /// @notice Refunds the remaining amount (escrowAmount - refundAmount) to recipients after the settlement deadline
-    /// @dev Can only be called after settleDeadline has passed
+    /// @notice Refunds the remaining amount (escrowAmount - refundAmount) to recipients after the refund timestamp
+    /// @dev Can only be called after refundTimestamp has passed
     function refundRecipient(bytes32[] calldata escrowIds) public {
         for (uint256 i = 0; i < escrowIds.length; i++) {
             _refundRecipient(escrowIds[i]);
@@ -128,7 +125,7 @@ contract Escrow is IEscrow {
         Escrow storage _escrow = escrows[escrowId];
 
         // If settlement is still within the deadline, then refund is invalid.
-        if (block.timestamp <= _escrow.settleDeadline) {
+        if (block.timestamp <= _escrow.refundTimestamp) {
             revert RefundInvalid();
         }
 
@@ -151,7 +148,9 @@ contract Escrow is IEscrow {
     }
 
     /// @notice Settles escrows by transferring the full amount to recipients if validated by the settler
-    /// @dev Must be called before settleDeadline and requires validation from the settler contract
+    /// @dev Requires validation from the settler contract.
+    /// @dev Settlement can happen anytime before the refund timestamp. It can also happen after
+    /// refund timestamp, but only if the escrow hasn't processed any refunds yet.
     function settle(bytes32[] calldata escrowIds) public {
         for (uint256 i = 0; i < escrowIds.length; i++) {
             _settle(escrowIds[i]);
@@ -162,11 +161,6 @@ contract Escrow is IEscrow {
     /// @dev Validates settlement with the settler contract and transfers full escrowAmount to recipient
     function _settle(bytes32 escrowId) internal {
         Escrow storage _escrow = escrows[escrowId];
-
-        // If the settlement is within the deadline, then the escrow is settled.
-        if (block.timestamp > _escrow.settleDeadline) {
-            revert SettlementExpired();
-        }
 
         // Status has to be CREATED.
         if (statuses[escrowId] != EscrowStatus.CREATED) {

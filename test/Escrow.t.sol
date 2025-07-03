@@ -201,25 +201,6 @@ contract EscrowTest is BaseTest {
         assertEq(token.balanceOf(address(escrow)), 1000);
     }
 
-    function testCannotSettleAfterDeadline() public {
-        IEscrow.Escrow memory escrowData = _createEscrowData(1000, 800);
-        bytes32 escrowId = _createAndFundEscrow(escrowData);
-
-        // Mark as settled
-        vm.prank(settlerOwner);
-        settler.write(sender, escrowData.settlementId, 1);
-
-        // Warp past deadline
-        vm.warp(block.timestamp + 2 hours);
-
-        bytes32[] memory escrowIds = new bytes32[](1);
-        escrowIds[0] = escrowId;
-
-        // Cannot settle after deadline
-        vm.expectRevert(bytes4(keccak256("SettlementExpired()")));
-        escrow.settle(escrowIds);
-    }
-
     // ========== Negative Tests - State Machine ==========
 
     function testCannotDoubleRefundDepositor() public {
@@ -339,6 +320,53 @@ contract EscrowTest is BaseTest {
         assertEq(token.balanceOf(randomUser), 0);
     }
 
+    function testSettleAfterDeadlineAndRefundBlocking() public {
+        // Test 1: CAN settle after deadline if no refunds have occurred
+        IEscrow.Escrow memory escrowData = _createEscrowData(1000, 800);
+        bytes32 escrowId = _createAndFundEscrow(escrowData);
+
+        vm.prank(settlerOwner);
+        settler.write(sender, escrowData.settlementId, 1);
+
+        // Warp past deadline
+        vm.warp(block.timestamp + 2 hours);
+
+        bytes32[] memory escrowIds = new bytes32[](1);
+        escrowIds[0] = escrowId;
+
+        // Settlement SHOULD SUCCEED after deadline if no refunds have occurred
+        escrow.settle(escrowIds);
+        assertEq(token.balanceOf(recipient), 1000);
+
+        // Test 2: Cannot settle after partial refund (depositor only)
+        escrowData.salt = bytes12(uint96(2));
+        escrowId = _createAndFundEscrow(escrowData);
+
+        vm.prank(settlerOwner);
+        settler.write(sender, escrowData.settlementId, 1);
+
+        escrowIds[0] = escrowId;
+        escrow.refundDepositor(escrowIds);
+
+        // Settlement should fail after depositor refund
+        vm.expectRevert(bytes4(keccak256("InvalidStatus()")));
+        escrow.settle(escrowIds);
+
+        // Test 3: Cannot settle after partial refund (recipient only)
+        escrowData.salt = bytes12(uint96(3));
+        escrowId = _createAndFundEscrow(escrowData);
+
+        vm.prank(settlerOwner);
+        settler.write(sender, escrowData.settlementId, 1);
+
+        escrowIds[0] = escrowId;
+        escrow.refundRecipient(escrowIds);
+
+        // Settlement should fail after recipient refund
+        vm.expectRevert(bytes4(keccak256("InvalidStatus()")));
+        escrow.settle(escrowIds);
+    }
+
     // ========== Edge Cases ==========
 
     function testZeroRefundAmount() public {
@@ -393,7 +421,7 @@ contract EscrowTest is BaseTest {
                 senderChainId: 1,
                 escrowAmount: 1000 * (i + 1),
                 refundAmount: 800 * (i + 1),
-                settleDeadline: block.timestamp + 1 hours
+                refundTimestamp: block.timestamp + 1 hours
             });
 
             vm.startPrank(depositor);
@@ -461,7 +489,7 @@ contract EscrowTest is BaseTest {
             senderChainId: 1,
             escrowAmount: escrowAmount,
             refundAmount: refundAmount,
-            settleDeadline: block.timestamp + 1 hours
+            refundTimestamp: block.timestamp + 1 hours
         });
     }
 
