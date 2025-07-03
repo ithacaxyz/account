@@ -125,7 +125,7 @@ contract EscrowTest is BaseTest {
         // Verify recipient got remainder
         assertEq(token.balanceOf(recipient), 200); // 1000 - 800
         assertEq(token.balanceOf(address(escrow)), 800); // Depositor's portion still there
-        assertEq(uint256(escrow.statuses(escrowId)), uint256(IEscrow.EscrowStatus.REFUND_RECEIVER));
+        assertEq(uint256(escrow.statuses(escrowId)), uint256(IEscrow.EscrowStatus.REFUND_RECIPIENT));
     }
 
     function testIndependentRefundsDepositorFirst() public {
@@ -168,7 +168,7 @@ contract EscrowTest is BaseTest {
         vm.prank(attacker);
         escrow.refundRecipient(escrowIds);
         assertEq(token.balanceOf(recipient), 200);
-        assertEq(uint256(escrow.statuses(escrowId)), uint256(IEscrow.EscrowStatus.REFUND_RECEIVER));
+        assertEq(uint256(escrow.statuses(escrowId)), uint256(IEscrow.EscrowStatus.REFUND_RECIPIENT));
 
         // Step 2: Depositor can still refund
         vm.prank(randomUser);

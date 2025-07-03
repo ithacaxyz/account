@@ -6,7 +6,7 @@ interface IEscrow {
         NULL,
         CREATED,
         REFUND_DEPOSIT,
-        REFUND_RECEIVER,
+        REFUND_RECIPIENT,
         FINALIZED
     }
 
