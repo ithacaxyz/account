@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {SimpleFunder} from "../src/SimpleFunder.sol";
 import {ICommon} from "../src/interfaces/ICommon.sol";
 import {MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
+import {EIP712} from "solady/utils/EIP712.sol";
 
 contract SimpleFunderTest is Test {
     SimpleFunder public simpleFunder;
@@ -15,11 +16,20 @@ contract SimpleFunderTest is Test {
     MockPaymentToken public token;
 
     uint256 public funderPrivateKey = 0x1234;
+    uint256 public ownerPrivateKey = 0x5678;
+
+    // EIP712 constants
+    bytes32 constant DOMAIN_TYPEHASH = keccak256(
+        "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+    );
+    bytes32 constant WITHDRAWAL_TYPE_HASH = keccak256(
+        "Withdrawal(address token,address recipient,uint256 amount,uint256 deadline,uint256 nonce)"
+    );
 
     function setUp() public {
         orchestrator = address(this); // Test contract acts as orchestrator
         funder = vm.addr(funderPrivateKey);
-        owner = makeAddr("owner");
+        owner = vm.addr(ownerPrivateKey);
         recipient = makeAddr("recipient");
 
         simpleFunder = new SimpleFunder(funder, orchestrator, owner);
@@ -28,6 +38,30 @@ contract SimpleFunderTest is Test {
         // Fund the SimpleFunder with tokens
         token.mint(address(simpleFunder), 1000 ether);
         vm.deal(address(simpleFunder), 10 ether);
+    }
+
+    // Helper function to compute EIP712 digest
+    function computeWithdrawalDigest(
+        address token,
+        address recipient,
+        uint256 amount,
+        uint256 deadline,
+        uint256 nonce
+    ) internal view returns (bytes32) {
+        bytes32 domainSeparator = keccak256(
+            abi.encode(
+                DOMAIN_TYPEHASH,
+                keccak256(bytes("SimpleFunder")),
+                keccak256(bytes("0.1.0")),
+                block.chainid,
+                address(simpleFunder)
+            )
+        );
+
+        bytes32 structHash =
+            keccak256(abi.encode(WITHDRAWAL_TYPE_HASH, token, recipient, amount, deadline, nonce));
+
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
     }
 
     function test_fund_withValidSignature() public {
@@ -141,5 +175,162 @@ contract SimpleFunderTest is Test {
         simpleFunder.fund(recipient, digest, transfers, randomSignature);
 
         assertEq(token.balanceOf(recipient), balanceBefore + 100 ether);
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // Withdrawal Signature Tests
+    ////////////////////////////////////////////////////////////////////////
+
+    function test_withdrawTokensWithSignature_validSignature() public {
+        uint256 amount = 100 ether;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 nonce = 1;
+
+        bytes32 digest = computeWithdrawalDigest(address(token), recipient, amount, deadline, nonce);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        uint256 balanceBefore = token.balanceOf(recipient);
+
+        simpleFunder.withdrawTokensWithSignature(
+            address(token), recipient, amount, deadline, nonce, signature
+        );
+
+        assertEq(token.balanceOf(recipient), balanceBefore + amount);
+        assertTrue(simpleFunder.nonces(nonce));
+    }
+
+    function test_withdrawTokensWithSignature_invalidSignature_reverts() public {
+        uint256 amount = 100 ether;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 nonce = 1;
+
+        // Create signature with wrong private key
+        bytes32 digest = computeWithdrawalDigest(address(token), recipient, amount, deadline, nonce);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(funderPrivateKey, digest); // Wrong key
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        vm.expectRevert(abi.encodeWithSelector(SimpleFunder.InvalidWithdrawalSignature.selector));
+        simpleFunder.withdrawTokensWithSignature(
+            address(token), recipient, amount, deadline, nonce, signature
+        );
+    }
+
+    function test_withdrawTokensWithSignature_invalidNonce_reverts() public {
+        uint256 amount = 100 ether;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 nonce = 1;
+
+        bytes32 digest = computeWithdrawalDigest(address(token), recipient, amount, deadline, nonce);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // First withdrawal should succeed
+        simpleFunder.withdrawTokensWithSignature(
+            address(token), recipient, amount, deadline, nonce, signature
+        );
+
+        // Second withdrawal with same nonce should fail
+        vm.expectRevert(abi.encodeWithSelector(SimpleFunder.InvalidNonce.selector));
+        simpleFunder.withdrawTokensWithSignature(
+            address(token), recipient, amount, deadline, nonce, signature
+        );
+    }
+
+    function test_withdrawTokensWithSignature_expiredDeadline_reverts() public {
+        uint256 amount = 100 ether;
+        uint256 deadline = block.timestamp - 1; // Already expired
+        uint256 nonce = 1;
+
+        bytes32 digest = computeWithdrawalDigest(address(token), recipient, amount, deadline, nonce);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        vm.expectRevert(abi.encodeWithSelector(SimpleFunder.DeadlineExpired.selector));
+        simpleFunder.withdrawTokensWithSignature(
+            address(token), recipient, amount, deadline, nonce, signature
+        );
+    }
+
+    function test_withdrawTokensWithSignature_nativeToken() public {
+        uint256 amount = 1 ether;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 nonce = 1;
+
+        bytes32 digest = computeWithdrawalDigest(address(0), recipient, amount, deadline, nonce);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        uint256 balanceBefore = recipient.balance;
+
+        simpleFunder.withdrawTokensWithSignature(
+            address(0), recipient, amount, deadline, nonce, signature
+        );
+
+        assertEq(recipient.balance, balanceBefore + amount);
+    }
+
+    function testFuzz_withdrawTokensWithSignature_differentAmounts(
+        uint256 amount,
+        uint256 nonce,
+        uint256 deadline
+    ) public {
+        amount = bound(amount, 1, token.balanceOf(address(simpleFunder)));
+        deadline = bound(deadline, block.timestamp + 1, type(uint256).max);
+
+        bytes32 digest = computeWithdrawalDigest(address(token), recipient, amount, deadline, nonce);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        uint256 balanceBefore = token.balanceOf(recipient);
+
+        simpleFunder.withdrawTokensWithSignature(
+            address(token), recipient, amount, deadline, nonce, signature
+        );
+
+        assertEq(token.balanceOf(recipient), balanceBefore + amount);
+        assertTrue(simpleFunder.nonces(nonce));
+    }
+
+    function testFuzz_withdrawTokensWithSignature_invalidSignatures(
+        bytes memory randomSignature,
+        uint256 amount,
+        uint256 nonce,
+        uint256 deadline
+    ) public {
+        amount = bound(amount, 1, type(uint128).max);
+        deadline = bound(deadline, block.timestamp + 1, type(uint256).max);
+
+        vm.expectRevert(abi.encodeWithSelector(SimpleFunder.InvalidWithdrawalSignature.selector));
+        simpleFunder.withdrawTokensWithSignature(
+            address(token), recipient, amount, deadline, nonce, randomSignature
+        );
+    }
+
+    function test_withdrawTokensWithSignature_zeroAmount() public {
+        uint256 amount = 0;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 nonce = 1;
+
+        bytes32 digest = computeWithdrawalDigest(address(token), recipient, amount, deadline, nonce);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerPrivateKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        uint256 balanceBefore = token.balanceOf(recipient);
+
+        // Should succeed even with zero amount
+        simpleFunder.withdrawTokensWithSignature(
+            address(token), recipient, amount, deadline, nonce, signature
+        );
+
+        assertEq(token.balanceOf(recipient), balanceBefore); // No change
+        assertTrue(simpleFunder.nonces(nonce)); // Nonce still consumed
     }
 }
