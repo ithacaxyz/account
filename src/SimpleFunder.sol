@@ -6,16 +6,24 @@ import {ICommon} from "./interfaces/ICommon.sol";
 import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
+import {EIP712} from "solady/utils/EIP712.sol";
 
-contract SimpleFunder is Ownable, IFunder {
+contract SimpleFunder is EIP712, Ownable, IFunder {
     error OnlyOrchestrator();
     error OnlyGasWallet();
     error InvalidFunderSignature();
+    error InvalidWithdrawalSignature();
+    error InvalidNonce();
 
     address public immutable ORCHESTRATOR;
 
     address public funder;
     mapping(address => bool) public gasWallets;
+    mapping(uint256 => bool) public nonces;
+
+    bytes32 constant WITHDRAWAL_TYPE_HASH = keccak256(
+        "Withdrawal(address token,address recipient,uint256 amount,uint256 deadline,uint256 nonce)"
+    );
 
     ////////////////////////////////////////////////////////////////////////
     // Constructor
@@ -27,12 +35,50 @@ contract SimpleFunder is Ownable, IFunder {
         _initializeOwner(_owner);
     }
 
+    /// @dev For EIP712.
+    function _domainNameAndVersion()
+        internal
+        view
+        virtual
+        override
+        returns (string memory name, string memory version)
+    {
+        name = "SimpleFunder";
+        version = "0.1.0";
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Admin Functions
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Allows the owner to withdraw tokens from the funder.
     function withdrawTokens(address token, address recipient, uint256 amount) external onlyOwner {
+        TokenTransferLib.safeTransfer(token, recipient, amount);
+    }
+
+    /// @dev Allows to withdraw tokens via a signature from owner.
+    function withdrawTokensWithSignature(
+        address token,
+        address recipient,
+        uint256 amount,
+        uint256 deadline,
+        uint256 nonce,
+        bytes calldata signature
+    ) external onlyOwner {
+        if (nonces[nonce]) {
+            revert InvalidNonce();
+        }
+
+        bytes32 digest = _hashTypedData(
+            keccak256(abi.encode(WITHDRAWAL_TYPE_HASH, token, recipient, amount, deadline, nonce))
+        );
+
+        if (!SignatureCheckerLib.isValidSignatureNow(owner(), digest, signature)) {
+            revert InvalidWithdrawalSignature();
+        }
+
+        nonces[nonce] = true;
+
         TokenTransferLib.safeTransfer(token, recipient, amount);
     }
 
