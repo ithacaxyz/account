@@ -55,6 +55,9 @@ interface ICommon {
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
         ////////////////////////////////////////////////////////////////////////
+        /// @dev Whether the intent should use the multichain mode - i.e verify with merkle sigs
+        /// and send the cross chain message.
+        bool isMultichain;
         /// @dev The funder address.
         address funder;
         /// @dev The funder signature.
