@@ -15,6 +15,7 @@ contract Escrow is IEscrow {
     event EscrowSettled(bytes32 escrowId);
 
     error InvalidStatus();
+    error InvalidEscrow();
     error RefundInvalid();
     error SettlementExpired();
     error SettlementInvalid();
@@ -22,6 +23,10 @@ contract Escrow is IEscrow {
     /// @dev Accounts can call this function to escrow funds with the orchestrator.
     function escrow(Escrow[] memory _escrows) public payable {
         for (uint256 i = 0; i < _escrows.length; i++) {
+            if (_escrows[i].refundAmount > _escrows[i].escrowAmount) {
+                revert InvalidEscrow();
+            }
+
             TokenTransferLib.safeTransferFrom(
                 _escrows[i].token, msg.sender, address(this), _escrows[i].escrowAmount
             );
@@ -133,8 +138,3 @@ contract Escrow is IEscrow {
         emit EscrowSettled(escrowId);
     }
 }
-
-// Issues
-// 1. If refund amount > escrow amount, someone can extract too many funds from the escrow.
-// 2. How does nonce increment happen in the contracts, if the intent fails. There is some expiry stuff here for multichain flows.
-// 3. Can we allow relay to refund the user even before the expiry.

@@ -310,24 +310,9 @@ contract EscrowTest is BaseTest {
         IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](1);
         escrows[0] = escrowData;
 
-        // This should NOT be allowed but currently is!
+        vm.expectRevert(bytes4(keccak256("InvalidEscrow()")));
         escrow.escrow(escrows);
         vm.stopPrank();
-
-        vm.warp(block.timestamp + 2 hours);
-
-        bytes32[] memory escrowIds = new bytes32[](1);
-        escrowIds[0] = keccak256(abi.encode(escrowData));
-
-        // This will underflow: 1000 - 1500
-        vm.expectRevert(); // Arithmetic underflow
-        escrow.refundRecipient(escrowIds);
-
-        // But depositor can still drain more than they put in!
-        escrow.refundDepositor(escrowIds);
-
-        // CRITICAL BUG: Depositor got 1500 tokens but only put in 1000!
-        assertEq(token.balanceOf(depositor), 9500); // 10000 - 1000 + 1500
     }
 
     function testAnyoneCanTriggerRefunds() public {
