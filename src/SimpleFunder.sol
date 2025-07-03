@@ -76,7 +76,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
         uint256 deadline,
         uint256 nonce,
         bytes calldata signature
-    ) external onlyOwner {
+    ) external {
         if (nonces[nonce]) {
             revert InvalidNonce();
         }
