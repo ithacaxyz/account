@@ -25,6 +25,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
     error InvalidFunderSignature();
     error InvalidWithdrawalSignature();
     error InvalidNonce();
+    error Expired();
 
     address public immutable ORCHESTRATOR;
 
@@ -79,6 +80,10 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
     ) external {
         if (nonces[nonce]) {
             revert InvalidNonce();
+        }
+
+        if (block.timestamp > deadline) {
+            revert Expired();
         }
 
         bytes32 digest = _hashTypedData(
