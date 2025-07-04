@@ -80,22 +80,39 @@ contract Escrow is IEscrow {
         }
     }
 
+    /// @notice Refunds the specified amount to both depositors and recipients
+    /// @dev Can only be called after refundTimestamp has passed.
+    /// @dev If one of the parties is forcefully reverting the tx, then the other party
+    /// can use the individual refund functions to get their funds back.
+    function refund(bytes32[] calldata escrowIds) public {
+        for (uint256 i = 0; i < escrowIds.length; i++) {
+            Escrow storage _escrow = escrows[escrowIds[i]];
+            // If refund timestamp hasn't passed yet, then the refund is invalid.
+            if (block.timestamp <= _escrow.refundTimestamp) {
+                revert RefundInvalid();
+            }
+
+            _refundDepositor(escrowIds[i], _escrow);
+            _refundRecipient(escrowIds[i], _escrow);
+        }
+    }
+
     /// @notice Refunds the specified amount to depositors after the refund timestamp
     /// @dev Can only be called after refundTimestamp has passed
     function refundDepositor(bytes32[] calldata escrowIds) public {
         for (uint256 i = 0; i < escrowIds.length; i++) {
-            _refundDepositor(escrowIds[i]);
+            Escrow storage _escrow = escrows[escrowIds[i]];
+            // If refund timestamp hasn't passed yet, then the refund is invalid.
+            if (block.timestamp <= _escrow.refundTimestamp) {
+                revert RefundInvalid();
+            }
+            _refundDepositor(escrowIds[i], _escrow);
         }
     }
 
     /// @notice Internal function to process depositor refund
     /// @dev Updates escrow status based on current state (CREATED -> REFUND_DEPOSIT or REFUND_RECIPIENT -> FINALIZED)
-    function _refundDepositor(bytes32 escrowId) internal {
-        Escrow storage _escrow = escrows[escrowId];
-        // If refund timestamp hasn't passed yet, then the refund is invalid.
-        if (block.timestamp <= _escrow.refundTimestamp) {
-            revert RefundInvalid();
-        }
+    function _refundDepositor(bytes32 escrowId, Escrow storage _escrow) internal {
         EscrowStatus status = statuses[escrowId];
 
         if (status == EscrowStatus.CREATED) {
@@ -115,20 +132,20 @@ contract Escrow is IEscrow {
     /// @dev Can only be called after refundTimestamp has passed
     function refundRecipient(bytes32[] calldata escrowIds) public {
         for (uint256 i = 0; i < escrowIds.length; i++) {
-            _refundRecipient(escrowIds[i]);
+            Escrow storage _escrow = escrows[escrowIds[i]];
+
+            // If settlement is still within the deadline, then refund is invalid.
+            if (block.timestamp <= _escrow.refundTimestamp) {
+                revert RefundInvalid();
+            }
+
+            _refundRecipient(escrowIds[i], _escrow);
         }
     }
 
     /// @notice Internal function to process recipient refund
     /// @dev Updates escrow status based on current state (CREATED -> REFUND_RECIPIENT or REFUND_DEPOSIT -> FINALIZED)
-    function _refundRecipient(bytes32 escrowId) internal {
-        Escrow storage _escrow = escrows[escrowId];
-
-        // If settlement is still within the deadline, then refund is invalid.
-        if (block.timestamp <= _escrow.refundTimestamp) {
-            revert RefundInvalid();
-        }
-
+    function _refundRecipient(bytes32 escrowId, Escrow storage _escrow) internal {
         EscrowStatus status = statuses[escrowId];
 
         // Status has to be REFUND_DEPOSIT or CREATED

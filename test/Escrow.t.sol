@@ -180,6 +180,40 @@ contract EscrowTest is BaseTest {
         assertEq(token.balanceOf(address(escrow)), 0);
     }
 
+    function testRefundBothPartiesInOneCall() public {
+        IEscrow.Escrow memory escrowData = _createEscrowData(1000, 800);
+        bytes32 escrowId = _createAndFundEscrow(escrowData);
+
+        // Warp past deadline
+        vm.warp(block.timestamp + 2 hours);
+
+        bytes32[] memory escrowIds = new bytes32[](1);
+        escrowIds[0] = escrowId;
+
+        // Initial balances
+        assertEq(token.balanceOf(depositor), 9000);
+        assertEq(token.balanceOf(recipient), 0);
+        assertEq(token.balanceOf(address(escrow)), 1000);
+
+        // Expect both refund events
+        vm.expectEmit(true, false, false, false);
+        emit EscrowRefundedDepositor(escrowId);
+        vm.expectEmit(true, false, false, false);
+        emit EscrowRefundedRecipient(escrowId);
+
+        // Call the new refund function that refunds both parties
+        vm.prank(randomUser);
+        escrow.refund(escrowIds);
+
+        // Verify both parties received their funds
+        assertEq(token.balanceOf(depositor), 9800); // 9000 + 800 refund
+        assertEq(token.balanceOf(recipient), 200); // 1000 - 800
+        assertEq(token.balanceOf(address(escrow)), 0);
+
+        // Verify status is FINALIZED since both refunds happened
+        assertEq(uint256(escrow.statuses(escrowId)), uint256(IEscrow.EscrowStatus.FINALIZED));
+    }
+
     // ========== Negative Tests - Timing ==========
 
     function testCannotRefundBeforeDeadline() public {
@@ -196,6 +230,10 @@ contract EscrowTest is BaseTest {
         // Try recipient refund before deadline
         vm.expectRevert(bytes4(keccak256("RefundInvalid()")));
         escrow.refundRecipient(escrowIds);
+
+        // Try combined refund before deadline
+        vm.expectRevert(bytes4(keccak256("RefundInvalid()")));
+        escrow.refund(escrowIds);
 
         // Verify funds still locked
         assertEq(token.balanceOf(address(escrow)), 1000);
