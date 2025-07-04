@@ -98,11 +98,11 @@ contract SimulateExecuteTest is BaseTest {
         i.signature = _sig(d, i);
 
         vm.expectRevert(bytes4(keccak256("InsufficientGas()")));
-        oc.execute{gas: t.gExecute}(false, abi.encode(i));
+        oc.execute{gas: t.gExecute}(abi.encode(i));
 
         t.gExecute = Math.mulDiv(t.gCombined + 110_000, 64, 63);
 
-        assertEq(oc.execute{gas: t.gExecute}(false, abi.encode(i)), 0);
+        assertEq(oc.execute{gas: t.gExecute}(abi.encode(i)), 0);
     }
 
     function testSimulateExecuteNoRevertUnderfundedReverts() public {
@@ -206,7 +206,7 @@ contract SimulateExecuteTest is BaseTest {
 
         i.signature = _sig(d, i);
 
-        assertEq(oc.execute{gas: t.gExecute}(false, abi.encode(i)), 0);
+        assertEq(oc.execute{gas: t.gExecute}(abi.encode(i)), 0);
         assertEq(gasBurner.randomness(), t.randomness);
     }
 
@@ -264,7 +264,7 @@ contract SimulateExecuteTest is BaseTest {
 
         i.signature = _sig(d, i);
 
-        assertEq(oc.execute{gas: t.gExecute}(false, abi.encode(i)), 0);
+        assertEq(oc.execute{gas: t.gExecute}(abi.encode(i)), 0);
         assertEq(gasBurner.randomness(), t.randomness);
     }
 
@@ -325,7 +325,7 @@ contract SimulateExecuteTest is BaseTest {
 
         i.signature = _sig(k, i);
 
-        assertEq(oc.execute{gas: t.gExecute}(false, abi.encode(i)), 0);
+        assertEq(oc.execute{gas: t.gExecute}(abi.encode(i)), 0);
         assertEq(gasBurner.randomness(), t.randomness);
     }
 }

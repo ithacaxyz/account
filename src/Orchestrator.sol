@@ -52,12 +52,6 @@ contract Orchestrator is
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
 
-    enum Flags {
-        NORMAL_MODE,
-        SIMULATION_MODE,
-        MULTICHAIN_INTENT_MODE
-    }
-
     ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
@@ -154,6 +148,12 @@ contract Orchestrator is
     /// Should be enough for a cold zero to non-zero SSTORE + a warm SSTORE + a few SLOADs.
     uint256 internal constant _REFUND_GAS = 50000;
 
+    /// @dev Flag for normal execution mode.
+    uint256 internal constant _NORMAL_MODE_FLAG = 0;
+
+    /// @dev Flag for simulation mode.
+    uint256 internal constant _SIMULATION_MODE_FLAG = 1;
+
     ////////////////////////////////////////////////////////////////////////
     // Constructor
     ////////////////////////////////////////////////////////////////////////
@@ -176,24 +176,20 @@ contract Orchestrator is
     /// `encodedIntent` is given by `abi.encode(intent)`, where `intent` is a struct of type `Intent`.
     /// If sufficient gas is provided, returns an error selector that is non-zero
     /// if there is an error during the payment, verification, and call execution.
-    function execute(bool isMultichain, bytes calldata encodedIntent)
+    function execute(bytes calldata encodedIntent)
         public
         payable
         virtual
         nonReentrant
         returns (bytes4 err)
     {
-        (, err) = _execute(
-            encodedIntent,
-            0,
-            uint256(isMultichain ? Flags.MULTICHAIN_INTENT_MODE : Flags.NORMAL_MODE)
-        );
+        (, err) = _execute(encodedIntent, 0, _NORMAL_MODE_FLAG);
     }
 
     /// @dev Executes the array of encoded intents.
     /// Each element in `encodedIntents` is given by `abi.encode(intent)`,
     /// where `intent` is a struct of type `Intent`.
-    function execute(bool isMultichain, bytes[] calldata encodedIntents)
+    function execute(bytes[] calldata encodedIntents)
         public
         payable
         virtual
@@ -206,11 +202,7 @@ contract Orchestrator is
             // We reluctantly use regular Solidity to access `encodedIntents[i]`.
             // This generates an unnecessary check for `i < encodedIntents.length`, but helps
             // generate all the implicit calldata bound checks on `encodedIntents[i]`.
-            (, errs[i]) = _execute(
-                encodedIntents[i],
-                0,
-                uint256(isMultichain ? Flags.MULTICHAIN_INTENT_MODE : Flags.NORMAL_MODE)
-            );
+            (, errs[i]) = _execute(encodedIntents[i], 0, _NORMAL_MODE_FLAG);
         }
     }
 
@@ -229,7 +221,7 @@ contract Orchestrator is
     ) external payable returns (uint256) {
         // If Simulation Fails, then it will revert here.
         (uint256 gUsed, bytes4 err) =
-            _execute(encodedIntent, combinedGasOverride, uint256(Flags.SIMULATION_MODE));
+            _execute(encodedIntent, combinedGasOverride, _SIMULATION_MODE_FLAG);
 
         if (err != 0) {
             assembly ("memory-safe") {
@@ -308,7 +300,7 @@ contract Orchestrator is
         ) {
             err = PaymentError.selector;
 
-            if (flags == uint256(Flags.SIMULATION_MODE)) {
+            if (flags == _SIMULATION_MODE_FLAG) {
                 revert PaymentError();
             }
         }
@@ -318,7 +310,7 @@ contract Orchestrator is
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
             if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
-                if (flags != uint256(Flags.SIMULATION_MODE)) {
+                if (flags != _SIMULATION_MODE_FLAG) {
                     revert InsufficientGas();
                 }
             }
@@ -327,7 +319,7 @@ contract Orchestrator is
         if (i.supportedAccountImplementation != address(0)) {
             if (accountImplementationOf(i.eoa) != i.supportedAccountImplementation) {
                 err = UnsupportedAccountImplementation.selector;
-                if (flags == uint256(Flags.SIMULATION_MODE)) {
+                if (flags == _SIMULATION_MODE_FLAG) {
                     revert UnsupportedAccountImplementation();
                 }
             }
@@ -338,14 +330,11 @@ contract Orchestrator is
         // Early skip the entire pay-verify-call workflow if the payer lacks tokens,
         // so that less gas is wasted when the Intent fails.
         // For multi chain mode, we skip this check, as the funding happens inside the self call.
-        if (
-            flags != uint256(Flags.MULTICHAIN_INTENT_MODE)
-                && LibBit.and(i.prePaymentAmount != 0, err == 0)
-        ) {
+        if (!i.isMultichain && LibBit.and(i.prePaymentAmount != 0, err == 0)) {
             if (TokenTransferLib.balanceOf(i.paymentToken, payer) < i.prePaymentAmount) {
                 err = PaymentError.selector;
 
-                if (flags == uint256(Flags.SIMULATION_MODE)) {
+                if (flags == _SIMULATION_MODE_FLAG) {
                     revert PaymentError();
                 }
             }
@@ -373,7 +362,7 @@ contract Orchestrator is
 
                 if iszero(selfCallSuccess) {
                     // If it is a simulation, we simply revert with the full error.
-                    if eq(flags, 1) {
+                    if eq(flags, _SIMULATION_MODE_FLAG) {
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
@@ -454,7 +443,7 @@ contract Orchestrator is
 
         bool isValid;
         bytes32 keyHash;
-        if (flags == uint256(Flags.MULTICHAIN_INTENT_MODE)) {
+        if (i.isMultichain) {
             // For multi chain intents, we have to verify using merkle sigs.
             (isValid, keyHash) = _verifyMerkleSig(digest, eoa, i.signature);
 
@@ -468,7 +457,7 @@ contract Orchestrator is
             (isValid, keyHash) = _verify(digest, eoa, i.signature);
         }
 
-        if (flags == uint256(Flags.SIMULATION_MODE)) {
+        if (flags == _SIMULATION_MODE_FLAG) {
             isValid = true;
         }
 
@@ -515,7 +504,7 @@ contract Orchestrator is
             if iszero(
                 call(gas(), address(), 0, add(m, 0x1c), add(0x64, encodedIntentLength), m, 0x20)
             ) {
-                if eq(flags, 1) {
+                if eq(flags, _SIMULATION_MODE_FLAG) {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
                 }
@@ -556,7 +545,7 @@ contract Orchestrator is
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
             if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
-                if eq(flags, 1) {
+                if eq(flags, _SIMULATION_MODE_FLAG) {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
                 }
@@ -597,7 +586,7 @@ contract Orchestrator is
 
             (bool isValid, bytes32 keyHash) = _verify(_computeDigest(p), eoa, p.signature);
 
-            if (flags == uint256(Flags.SIMULATION_MODE)) {
+            if (flags == _SIMULATION_MODE_FLAG) {
                 isValid = true;
             }
             if (!isValid) revert PreCallVerificationError();
@@ -616,7 +605,7 @@ contract Orchestrator is
                 mstore(0x00, 0) // Zeroize the return slot.
                 if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
                     // If this is a simulation via `simulateFailed`, bubble up the whole revert.
-                    if eq(flags, 1) {
+                    if eq(flags, _SIMULATION_MODE_FLAG) {
                         returndatacopy(mload(0x40), 0x00, returndatasize())
                         revert(mload(0x40), returndatasize())
                     }
@@ -898,7 +887,7 @@ contract Orchestrator is
         returns (string memory name, string memory version)
     {
         name = "Orchestrator";
-        version = "0.4.2";
+        version = "0.4.3";
     }
 
     ////////////////////////////////////////////////////////////////////////

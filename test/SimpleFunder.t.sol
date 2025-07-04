@@ -42,8 +42,8 @@ contract SimpleFunderTest is Test {
 
     // Helper function to compute EIP712 digest
     function computeWithdrawalDigest(
-        address token,
-        address recipient,
+        address _token,
+        address _recipient,
         uint256 amount,
         uint256 deadline,
         uint256 nonce
@@ -59,7 +59,7 @@ contract SimpleFunderTest is Test {
         );
 
         bytes32 structHash =
-            keccak256(abi.encode(WITHDRAWAL_TYPE_HASH, token, recipient, amount, deadline, nonce));
+            keccak256(abi.encode(WITHDRAWAL_TYPE_HASH, _token, _recipient, amount, deadline, nonce));
 
         return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
     }
