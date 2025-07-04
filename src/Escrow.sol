@@ -62,10 +62,6 @@ contract Escrow is IEscrow {
                 revert InvalidEscrow();
             }
 
-            TokenTransferLib.safeTransferFrom(
-                _escrows[i].token, msg.sender, address(this), _escrows[i].escrowAmount
-            );
-
             bytes32 escrowId = keccak256(abi.encode(_escrows[i]));
 
             // Check if the escrow already exists
@@ -75,6 +71,10 @@ contract Escrow is IEscrow {
 
             statuses[escrowId] = EscrowStatus.CREATED;
             escrows[escrowId] = _escrows[i];
+
+            TokenTransferLib.safeTransferFrom(
+                _escrows[i].token, msg.sender, address(this), _escrows[i].escrowAmount
+            );
 
             emit EscrowCreated(escrowId);
         }
@@ -184,6 +184,8 @@ contract Escrow is IEscrow {
             revert InvalidStatus();
         }
 
+        statuses[escrowId] = EscrowStatus.FINALIZED;
+
         // Check with the settler if the message has been sent from the correct sender and chainId.
         bool isSettled = ISettler(_escrow.settler).read(
             _escrow.settlementId, _escrow.sender, _escrow.senderChainId
@@ -194,7 +196,6 @@ contract Escrow is IEscrow {
         }
 
         TokenTransferLib.safeTransfer(_escrow.token, _escrow.recipient, _escrow.escrowAmount);
-        statuses[escrowId] = EscrowStatus.FINALIZED;
 
         emit EscrowSettled(escrowId);
     }
