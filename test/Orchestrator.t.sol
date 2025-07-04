@@ -14,6 +14,7 @@ import {ICommon} from "../src/interfaces/ICommon.sol";
 import {Merkle} from "murky/Merkle.sol";
 import {SimpleFunder} from "../src/SimpleFunder.sol";
 import {SimpleSettler} from "../src/SimpleSettler.sol";
+import {ISettler} from "../src/interfaces/ISettler.sol";
 import {Escrow} from "../src/Escrow.sol";
 import {IEscrow} from "../src/interfaces/IEscrow.sol";
 
@@ -1283,8 +1284,7 @@ contract OrchestratorTest is BaseTest {
         // 1. Prepare the output intent first to get its digest as settlementId
         t.outputIntent.eoa = t.d.eoa;
         t.outputIntent.nonce = t.d.d.getNonce(0);
-        t.outputIntent.executionData =
-            _transferExecutionData(address(t.usdcMainnet), t.friend, 1000);
+
         t.outputIntent.combinedGas = 1000000;
         t.outputIntent.settler = address(t.settler);
 
@@ -1305,7 +1305,27 @@ contract OrchestratorTest is BaseTest {
 
         // Compute the output intent digest to use as settlementId
         vm.chainId(1); // Mainnet
+        // PROBLEM: The settlementID has a circular dependency with the intent digest.
         t.settlementId = oc.computeDigest(t.outputIntent);
+
+        // Now update the execution data with the actual settler.send call
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](2);
+
+            // First call: transfer USDC to friend
+            calls[0] = _transferCall(address(t.usdcMainnet), t.friend, 1000);
+
+            // Second call: settler.send to notify input chains
+            calls[1] = ERC7821.Call({
+                to: address(t.settler),
+                value: 0,
+                data: abi.encodeWithSelector(
+                    ISettler.send.selector, t.settlementId, t.outputIntent.settlerContext
+                )
+            });
+
+            t.outputIntent.executionData = abi.encode(calls);
+        }
 
         // Base Intent with escrow execution data
         t.baseIntent.eoa = t.d.eoa;
@@ -1467,10 +1487,11 @@ contract OrchestratorTest is BaseTest {
         t.usdcMainnet.mint(address(t.funder), 1000);
 
         // Expect settler.send to be called during outputIntent execution
+        // Now the call comes from the user's EOA, not the orchestrator
         vm.expectEmit(true, true, true, false, address(t.settler));
-        emit SimpleSettler.Sent(address(oc), t.settlementId, 8453); // Base
+        emit SimpleSettler.Sent(t.d.eoa, t.settlementId, 8453); // Base
         vm.expectEmit(true, true, true, false, address(t.settler));
-        emit SimpleSettler.Sent(address(oc), t.settlementId, 42161); // Arbitrum
+        emit SimpleSettler.Sent(t.d.eoa, t.settlementId, 42161); // Arbitrum
 
         // Relay funds the user account, and the intended execution happens.
         t.encodedIntents[0] = abi.encode(t.outputIntent);
