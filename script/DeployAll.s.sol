@@ -7,6 +7,8 @@ import {IthacaAccount} from "../src/IthacaAccount.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 import {Simulator} from "../src/Simulator.sol";
 import {SimpleFunder} from "../src/SimpleFunder.sol";
+import {SimpleSettler} from "../src/SimpleSettler.sol";
+import {Escrow} from "../src/Escrow.sol";
 
 contract DeployAllScript is Script {
     address public orchestrator;
@@ -14,6 +16,8 @@ contract DeployAllScript is Script {
     address public accountProxy;
     address public simulator;
     address public funder;
+    address public simpleSettler;
+    address public escrow;
 
     function run() external {
         vm.startBroadcast();
@@ -27,6 +31,8 @@ contract DeployAllScript is Script {
                 vm.envAddress("FUNDER"), address(orchestrator), vm.envAddress("FUNDER_OWNER")
             )
         );
+        simpleSettler = address(new SimpleSettler(vm.envAddress("SETTLER_OWNER")));
+        escrow = address(new Escrow());
 
         vm.stopBroadcast();
     }
