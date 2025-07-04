@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {IEscrow} from "./interfaces/IEscrow.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 
@@ -57,6 +58,8 @@ contract Escrow is IEscrow {
     /// @notice Creates one or more escrows by transferring tokens from the depositor
     /// @dev Generates unique escrow IDs by hashing the escrow struct
     function escrow(Escrow[] memory _escrows) public payable {
+        uint256 totalNativeEscrowAmount;
+
         for (uint256 i = 0; i < _escrows.length; i++) {
             if (_escrows[i].refundAmount > _escrows[i].escrowAmount) {
                 revert InvalidEscrow();
@@ -72,11 +75,19 @@ contract Escrow is IEscrow {
             statuses[escrowId] = EscrowStatus.CREATED;
             escrows[escrowId] = _escrows[i];
 
-            TokenTransferLib.safeTransferFrom(
-                _escrows[i].token, msg.sender, address(this), _escrows[i].escrowAmount
-            );
+            if (_escrows[i].token == address(0)) {
+                totalNativeEscrowAmount += _escrows[i].escrowAmount;
+            } else {
+                SafeTransferLib.safeTransferFrom(
+                    _escrows[i].token, msg.sender, address(this), _escrows[i].escrowAmount
+                );
+            }
 
             emit EscrowCreated(escrowId);
+        }
+
+        if (msg.value != totalNativeEscrowAmount) {
+            revert InvalidEscrow();
         }
     }
 

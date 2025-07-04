@@ -26,15 +26,4 @@ library TokenTransferLib {
             SafeTransferLib.safeTransfer(token, to, amount);
         }
     }
-
-    /// @dev ERC20 or native token transfer function.
-    /// If `token` is `address(0)`, it is treated as a native token transfer,
-    /// and will transfer native tokens from the contract itself.
-    function safeTransferFrom(address token, address from, address to, uint256 amount) internal {
-        if (token == address(0)) {
-            SafeTransferLib.safeTransferETH(to, amount);
-        } else {
-            SafeTransferLib.safeTransferFrom(token, from, to, amount);
-        }
-    }
 }

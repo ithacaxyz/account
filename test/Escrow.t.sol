@@ -509,6 +509,220 @@ contract EscrowTest is BaseTest {
         vm.stopPrank();
     }
 
+    // ========== Native ETH Tests ==========
+
+    function testEscrowNativeETH_CreateAndSettle() public {
+        // Setup
+        uint256 escrowAmount = 1 ether;
+        uint256 refundAmount = 0.8 ether;
+        bytes32 settlementId = keccak256("ETH_SETTLEMENT_ID");
+
+        // Create escrow
+        IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](1);
+        escrows[0] = IEscrow.Escrow({
+            salt: bytes12(uint96(1234)),
+            depositor: depositor,
+            recipient: recipient,
+            token: address(0), // Native ETH
+            settler: address(settler),
+            sender: sender,
+            settlementId: settlementId,
+            senderChainId: 1,
+            escrowAmount: escrowAmount,
+            refundAmount: refundAmount,
+            refundTimestamp: block.timestamp + 1 hours
+        });
+
+        bytes32 escrowId = keccak256(abi.encode(escrows[0]));
+
+        // Execute escrow creation
+        vm.expectEmit(true, false, false, false);
+        emit EscrowCreated(escrowId);
+
+        vm.prank(depositor);
+        escrow.escrow{value: escrowAmount}(escrows);
+
+        // Verify escrow was created
+        assertEq(address(escrow).balance, escrowAmount);
+        assertEq(uint8(escrow.statuses(escrowId)), uint8(IEscrow.EscrowStatus.CREATED));
+
+        // Settle the escrow
+        vm.prank(settlerOwner);
+        settler.write(sender, settlementId, 1);
+
+        uint256 recipientBalanceBefore = recipient.balance;
+
+        vm.expectEmit(true, false, false, false);
+        emit EscrowSettled(escrowId);
+
+        bytes32[] memory escrowIds = new bytes32[](1);
+        escrowIds[0] = escrowId;
+        escrow.settle(escrowIds);
+
+        // Verify settlement
+        assertEq(recipient.balance, recipientBalanceBefore + escrowAmount);
+        assertEq(address(escrow).balance, 0);
+        assertEq(uint8(escrow.statuses(escrowId)), uint8(IEscrow.EscrowStatus.FINALIZED));
+    }
+
+    function testEscrowNativeETH_RefundFlow() public {
+        // Setup
+        uint256 escrowAmount = 1 ether;
+        uint256 refundAmount = 0.8 ether;
+
+        // Create escrow
+        IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](1);
+        escrows[0] = IEscrow.Escrow({
+            salt: bytes12(uint96(1234)),
+            depositor: depositor,
+            recipient: recipient,
+            token: address(0), // Native ETH
+            settler: address(settler),
+            sender: sender,
+            settlementId: keccak256("SETTLEMENT_ID"),
+            senderChainId: 1,
+            escrowAmount: escrowAmount,
+            refundAmount: refundAmount,
+            refundTimestamp: block.timestamp + 1 hours
+        });
+
+        bytes32 escrowId = keccak256(abi.encode(escrows[0]));
+
+        vm.prank(depositor);
+        escrow.escrow{value: escrowAmount}(escrows);
+
+        // Advance time past refund timestamp
+        vm.warp(block.timestamp + 2 hours);
+
+        uint256 depositorBalanceBefore = depositor.balance;
+        uint256 recipientBalanceBefore = recipient.balance;
+
+        // Refund
+        bytes32[] memory escrowIds = new bytes32[](1);
+        escrowIds[0] = escrowId;
+
+        vm.expectEmit(true, false, false, false);
+        emit EscrowRefundedDepositor(escrowId);
+        vm.expectEmit(true, false, false, false);
+        emit EscrowRefundedRecipient(escrowId);
+
+        escrow.refund(escrowIds);
+
+        // Verify refunds
+        assertEq(depositor.balance, depositorBalanceBefore + refundAmount);
+        assertEq(recipient.balance, recipientBalanceBefore + (escrowAmount - refundAmount));
+        assertEq(address(escrow).balance, 0);
+        assertEq(uint8(escrow.statuses(escrowId)), uint8(IEscrow.EscrowStatus.FINALIZED));
+    }
+
+    function testEscrowNativeETH_IncorrectValue() public {
+        IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](1);
+        escrows[0] = IEscrow.Escrow({
+            salt: bytes12(uint96(1234)),
+            depositor: depositor,
+            recipient: recipient,
+            token: address(0), // Native ETH
+            settler: address(settler),
+            sender: sender,
+            settlementId: keccak256("SETTLEMENT_ID"),
+            senderChainId: 1,
+            escrowAmount: 1 ether,
+            refundAmount: 0.8 ether,
+            refundTimestamp: block.timestamp + 1 hours
+        });
+
+        vm.startPrank(depositor);
+
+        // Test insufficient value
+        vm.expectRevert(Escrow.InvalidEscrow.selector);
+        escrow.escrow{value: 0.5 ether}(escrows);
+
+        // Test excess value
+        vm.expectRevert(Escrow.InvalidEscrow.selector);
+        escrow.escrow{value: 2 ether}(escrows);
+
+        vm.stopPrank();
+    }
+
+    function testEscrowNativeETH_MixedWithERC20() public {
+        IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](3);
+
+        // First escrow with native ETH - 1 ether
+        escrows[0] = IEscrow.Escrow({
+            salt: bytes12(uint96(1234)),
+            depositor: depositor,
+            recipient: recipient,
+            token: address(0), // Native ETH
+            settler: address(settler),
+            sender: sender,
+            settlementId: keccak256("SETTLEMENT_ID"),
+            senderChainId: 1,
+            escrowAmount: 1 ether,
+            refundAmount: 0.8 ether,
+            refundTimestamp: block.timestamp + 1 hours
+        });
+
+        // Second escrow with native ETH - 0.5 ether
+        escrows[1] = IEscrow.Escrow({
+            salt: bytes12(uint96(5678)),
+            depositor: depositor,
+            recipient: recipient,
+            token: address(0), // Native ETH
+            settler: address(settler),
+            sender: sender,
+            settlementId: keccak256("SETTLEMENT_ID_2"),
+            senderChainId: 1,
+            escrowAmount: 0.5 ether,
+            refundAmount: 0.4 ether,
+            refundTimestamp: block.timestamp + 1 hours
+        });
+
+        // Third escrow with ERC20
+        escrows[2] = IEscrow.Escrow({
+            salt: bytes12(uint96(9999)),
+            depositor: depositor,
+            recipient: recipient,
+            token: address(token),
+            settler: address(settler),
+            sender: sender,
+            settlementId: keccak256("SETTLEMENT_ID_3"),
+            senderChainId: 1,
+            escrowAmount: 2000,
+            refundAmount: 1500,
+            refundTimestamp: block.timestamp + 1 hours
+        });
+
+        // Approve ERC20
+        vm.startPrank(depositor);
+        token.approve(address(escrow), 2000);
+
+        // Test 1: Incorrect ETH amount (less than required)
+        vm.expectRevert(Escrow.InvalidEscrow.selector);
+        escrow.escrow{value: 1 ether}(escrows); // Sending 1 ETH but need 1.5 ETH
+
+        // Test 2: Incorrect ETH amount (more than required)
+        vm.expectRevert(Escrow.InvalidEscrow.selector);
+        escrow.escrow{value: 2 ether}(escrows); // Sending 2 ETH but need 1.5 ETH
+
+        // Test 3: Correct ETH amount - should succeed
+        uint256 totalNativeAmount = 1 ether + 0.5 ether; // 1.5 ETH total
+        escrow.escrow{value: totalNativeAmount}(escrows);
+        vm.stopPrank();
+
+        // Verify balances
+        assertEq(address(escrow).balance, totalNativeAmount);
+        assertEq(token.balanceOf(address(escrow)), 2000);
+
+        // Verify each escrow was created
+        bytes32 escrowId1 = keccak256(abi.encode(escrows[0]));
+        bytes32 escrowId2 = keccak256(abi.encode(escrows[1]));
+        bytes32 escrowId3 = keccak256(abi.encode(escrows[2]));
+
+        assertEq(uint8(escrow.statuses(escrowId1)), uint8(IEscrow.EscrowStatus.CREATED));
+        assertEq(uint8(escrow.statuses(escrowId2)), uint8(IEscrow.EscrowStatus.CREATED));
+        assertEq(uint8(escrow.statuses(escrowId3)), uint8(IEscrow.EscrowStatus.CREATED));
+    }
+
     // ========== Helper Functions ==========
 
     function _createEscrowData(uint256 escrowAmount, uint256 refundAmount)
