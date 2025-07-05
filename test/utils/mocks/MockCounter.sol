@@ -10,4 +10,8 @@ contract MockCounter {
     function increment() public {
         ++counter;
     }
+
+    function decrement() public {
+        --counter;
+    }
 }
