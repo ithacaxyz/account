@@ -101,6 +101,9 @@ contract Orchestrator is
     /// @dev The encoded fund transfers are not striclty increasing.
     error InvalidTransferOrder();
 
+    /// @dev The intent has expired.
+    error IntentExpired();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -119,7 +122,7 @@ contract Orchestrator is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers,address settler)Call(address to,uint256 value,bytes data)"
+        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers,address settler,uint256 expiry)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for SignedCalls
@@ -412,6 +415,13 @@ contract Orchestrator is
             i := add(0x24, calldataload(0x24))
             flags := calldataload(0x04)
         }
+
+        // Check if intent has expired (only if expiry is set)
+        // If expiry timestamp is set to 0, then expiry is considered to be infinite.
+        if (i.expiry != 0 && block.timestamp > i.expiry) {
+            revert IntentExpired();
+        }
+
         address eoa = i.eoa;
         uint256 nonce = i.nonce;
         bytes32 digest = _computeDigest(i);
@@ -819,7 +829,7 @@ contract Orchestrator is
         bool isMultichain = i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
 
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(13);
+        bytes32[] memory f = EfficientHashLib.malloc(14);
         f.set(0, INTENT_TYPEHASH);
         f.set(1, LibBit.toUint(isMultichain));
         f.set(2, uint160(i.eoa));
@@ -833,6 +843,7 @@ contract Orchestrator is
         f.set(10, _encodedArrHash(i.encodedPreCalls));
         f.set(11, _encodedArrHash(i.encodedFundTransfers));
         f.set(12, uint160(i.settler));
+        f.set(13, i.expiry);
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }

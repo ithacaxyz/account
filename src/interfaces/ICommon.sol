@@ -52,6 +52,9 @@ interface ICommon {
         bytes[] encodedFundTransfers;
         /// @dev The settler address.
         address settler;
+        /// @dev The expiry timestamp for the intent. The intent is invalid after this timestamp.
+        /// If expiry timestamp is set to 0, then expiry is considered to be infinite.
+        uint256 expiry;
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
         ////////////////////////////////////////////////////////////////////////

@@ -320,7 +320,119 @@ contract OrchestratorTest is BaseTest {
         oc.withdrawTokens(address(paymentToken), address(0xabcd), 10 ether);
     }
 
-    function testExecuteGasUsed() public {
+    function testIntentExpiry() public {
+        // Warp time forward to ensure we have reasonable timestamps to work with
+        vm.warp(1000);
+
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 1 ether);
+        paymentToken.mint(d.eoa, 10 ether);
+
+        // Create base intent with common fields
+        Orchestrator.Intent memory baseIntent;
+        baseIntent.eoa = d.eoa;
+        baseIntent.paymentToken = address(paymentToken);
+        baseIntent.prePaymentAmount = 0.1 ether;
+        baseIntent.prePaymentMaxAmount = 0.1 ether;
+        baseIntent.totalPaymentAmount = 0.1 ether;
+        baseIntent.totalPaymentMaxAmount = 0.1 ether;
+        baseIntent.combinedGas = 10000000;
+
+        // Test case 1: Intent with no expiry (expiry = 0) should always be valid
+        {
+            Orchestrator.Intent memory u = baseIntent;
+            u.nonce = d.d.getNonce(0);
+            u.executionData =
+                _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
+            u.expiry = 0; // No expiry
+            u.signature = _sig(d, u);
+
+            assertEq(oc.execute(false, abi.encode(u)), 0);
+            assertEq(paymentToken.balanceOf(address(0xabcd)), 1 ether);
+        }
+
+        // Test case 2: Intent with future expiry should be valid
+        {
+            Orchestrator.Intent memory u = baseIntent;
+            u.nonce = d.d.getNonce(0);
+            u.executionData =
+                _transferExecutionData(address(paymentToken), address(0xbcde), 1 ether);
+            u.expiry = block.timestamp + 1 hours; // Future expiry
+            u.signature = _sig(d, u);
+
+            assertEq(oc.execute(false, abi.encode(u)), 0);
+            assertEq(paymentToken.balanceOf(address(0xbcde)), 1 ether);
+        }
+
+        // Test case 3: Intent with past expiry should fail
+        {
+            Orchestrator.Intent memory u = baseIntent;
+            u.nonce = d.d.getNonce(0); // This will be 2 after the previous two intents
+            u.executionData =
+                _transferExecutionData(address(paymentToken), address(0xcdef), 1 ether);
+            u.expiry = block.timestamp - 1; // Past expiry
+            u.signature = _sig(d, u);
+
+            bytes4 result = oc.execute(false, abi.encode(u));
+            assertEq(result, bytes4(keccak256("IntentExpired()")));
+            assertEq(paymentToken.balanceOf(address(0xcdef)), 0); // Transfer should not happen
+        }
+
+        // Test case 4: Batch execution with mixed expired and valid intents
+        {
+            bytes[] memory encodedIntents = new bytes[](3);
+
+            // Create base intent for batch with smaller amounts
+            Orchestrator.Intent memory batchBase;
+            batchBase.eoa = d.eoa;
+            batchBase.paymentToken = address(paymentToken);
+            batchBase.prePaymentAmount = 0.05 ether;
+            batchBase.prePaymentMaxAmount = 0.05 ether;
+            batchBase.totalPaymentAmount = 0.05 ether;
+            batchBase.totalPaymentMaxAmount = 0.05 ether;
+            batchBase.combinedGas = 10000000;
+
+            // Valid intent with nonce 2
+            Orchestrator.Intent memory u1 = batchBase;
+            u1.nonce = 2;
+            u1.executionData =
+                _transferExecutionData(address(paymentToken), address(0x1111), 0.5 ether);
+            u1.expiry = block.timestamp + 1 hours;
+            u1.signature = _sig(d, u1);
+            encodedIntents[0] = abi.encode(u1);
+
+            // Expired intent with nonce 3
+            Orchestrator.Intent memory u2 = batchBase;
+            u2.nonce = 3;
+            u2.executionData =
+                _transferExecutionData(address(paymentToken), address(0x2222), 0.5 ether);
+            u2.expiry = block.timestamp - 1;
+            u2.signature = _sig(d, u2);
+            encodedIntents[1] = abi.encode(u2);
+
+            // Another valid intent with nonce 3 (since nonce 3 wasn't consumed due to expiry)
+            Orchestrator.Intent memory u3 = batchBase;
+            u3.nonce = 3;
+            u3.executionData =
+                _transferExecutionData(address(paymentToken), address(0x3333), 0.5 ether);
+            u3.expiry = 0; // No expiry
+            u3.signature = _sig(d, u3);
+            encodedIntents[2] = abi.encode(u3);
+
+            bytes4[] memory errors = oc.execute(false, encodedIntents);
+            assertEq(errors.length, 3);
+            assertEq(errors[0], 0); // First intent succeeded
+            assertEq(errors[1], bytes4(keccak256("IntentExpired()"))); // Second intent expired
+            assertEq(errors[2], 0); // Third intent succeeded
+
+            // Verify transfers
+            assertEq(paymentToken.balanceOf(address(0x1111)), 0.5 ether);
+            assertEq(paymentToken.balanceOf(address(0x2222)), 0); // Expired intent didn't transfer
+            assertEq(paymentToken.balanceOf(address(0x3333)), 0.5 ether);
+        }
+    }
+
+    function testExceuteGasUsed() public {
         vm.pauseGasMetering();
         uint256 n = 7;
         bytes[] memory encodeIntents = new bytes[](n);
