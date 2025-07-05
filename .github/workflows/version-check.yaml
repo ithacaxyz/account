@@ -17,6 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Setup Node.js
@@ -43,7 +44,7 @@ jobs:
       
       - name: Build contracts on PR branch
         run: |
-          git checkout ${{ github.head_ref }}
+          git checkout ${{ github.event.pull_request.head.sha }}
           forge clean
           forge install
           forge build --force
@@ -75,7 +76,7 @@ jobs:
 Contracts updated: $CONTRACTS_TO_BUMP"
           
           # Push to the PR branch
-          git push origin HEAD:${{ github.head_ref }}
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
       
       - name: Create PR comment
         if: steps.check.outputs.needs_version_bump == 'true'

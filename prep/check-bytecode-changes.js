@@ -87,8 +87,9 @@ function determineContractsToBump(bytecodeChanges) {
 function checkSolidityVersions() {
   try {
     // Check if any Solidity files have been modified to update their version
+    const baseRef = process.env.GITHUB_BASE_REF || 'main';
     const gitStatus = require("child_process")
-      .execSync("git diff --name-only origin/$GITHUB_BASE_REF...HEAD", {
+      .execSync(`git diff --name-only origin/${baseRef}...HEAD`, {
         encoding: "utf8",
       })
       .trim()
