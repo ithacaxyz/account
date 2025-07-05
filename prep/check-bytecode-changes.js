@@ -4,13 +4,25 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 
-// Main contracts to check for bytecode changes
-// When any dependency (parent contracts, libraries, interfaces) changes,
-// it will be reflected in the bytecode of these contracts
-const CONTRACTS_TO_CHECK = [
-  "IthacaAccount.sol/IthacaAccount.json",
-  "Orchestrator.sol/Orchestrator.json",
-];
+// Contract configuration
+// Each contract specifies which other contracts should be bumped when it changes
+const CONTRACT_CONFIG = {
+  "IthacaAccount.sol/IthacaAccount.json": {
+    name: "IthacaAccount",
+    bumpsWhenChanged: [], // Account changes don't bump other contracts
+  },
+  "Orchestrator.sol/Orchestrator.json": {
+    name: "Orchestrator",
+    bumpsWhenChanged: ["IthacaAccount"], // Orchestrator changes bump Account
+  },
+  "SimpleFunder.sol/SimpleFunder.json": {
+    name: "SimpleFunder",
+    bumpsWhenChanged: [], // SimpleFunder changes only bump itself
+  },
+};
+
+// All contracts to check for bytecode changes
+const CONTRACTS_TO_CHECK = Object.keys(CONTRACT_CONFIG);
 
 function getBytecodeHash(artifactPath) {
   try {
@@ -34,7 +46,7 @@ function getBytecodeHash(artifactPath) {
 }
 
 function compareArtifacts(baseDir, prDir) {
-  const changes = [];
+  const changes = {};
 
   for (const contract of CONTRACTS_TO_CHECK) {
     const basePath = path.join(baseDir, contract);
@@ -44,7 +56,7 @@ function compareArtifacts(baseDir, prDir) {
     const prHash = getBytecodeHash(prPath);
 
     if (baseHash && prHash && baseHash !== prHash) {
-      changes.push(contract);
+      changes[contract] = true;
       console.log(`Bytecode changed: ${contract}`);
     }
   }
@@ -52,17 +64,38 @@ function compareArtifacts(baseDir, prDir) {
   return changes;
 }
 
-function checkVersionBump() {
+function determineContractsToBump(bytecodeChanges) {
+  const contractsToBump = new Set();
+
+  for (const [contractPath, changed] of Object.entries(bytecodeChanges)) {
+    if (changed) {
+      const config = CONTRACT_CONFIG[contractPath];
+      
+      // The contract itself needs to be bumped
+      contractsToBump.add(config.name);
+      
+      // Also bump any contracts specified in bumpsWhenChanged
+      for (const otherContract of config.bumpsWhenChanged) {
+        contractsToBump.add(otherContract);
+      }
+    }
+  }
+
+  return Array.from(contractsToBump);
+}
+
+function checkSolidityVersions() {
   try {
-    // Check if package.json has been modified in this PR
+    // Check if any Solidity files have been modified to update their version
     const gitStatus = require("child_process")
       .execSync("git diff --name-only origin/$GITHUB_BASE_REF...HEAD", {
         encoding: "utf8",
       })
       .trim()
-      .split("\n");
+      .split("\n")
+      .filter(f => f.endsWith(".sol"));
 
-    return gitStatus.includes("package.json");
+    return gitStatus.length > 0;
   } catch (error) {
     console.error("Error checking git status:", error.message);
     return false;
@@ -81,23 +114,29 @@ function main() {
   const [baseDir, prDir] = args;
 
   console.log("Checking bytecode changes...");
-  const changes = compareArtifacts(baseDir, prDir);
+  const bytecodeChanges = compareArtifacts(baseDir, prDir);
+  const changedContracts = Object.values(bytecodeChanges).filter(Boolean).length;
 
-  if (changes.length > 0) {
-    console.log(`\nFound bytecode changes in ${changes.length} contracts`);
+  if (changedContracts > 0) {
+    console.log(`\nFound bytecode changes in ${changedContracts} contracts`);
 
-    const versionBumped = checkVersionBump();
+    // Determine which contracts need version bumps
+    const contractsToBump = determineContractsToBump(bytecodeChanges);
+    console.log(`\nContracts that need version bumps: ${contractsToBump.join(", ")}`);
 
-    if (!versionBumped) {
-      console.log("Version has not been bumped - automatic bump required");
+    const versionsUpdated = checkSolidityVersions();
+
+    if (!versionsUpdated) {
+      console.log("Contract versions have not been bumped - automatic bump required");
       // Use modern GitHub Actions output syntax
       console.log(`::set-output name=needs_version_bump::true`);
+      console.log(`::set-output name=contracts_to_bump::${contractsToBump.join(",")}`);
       fs.appendFileSync(
         process.env.GITHUB_OUTPUT || "/dev/null",
-        "needs_version_bump=true\n"
+        `needs_version_bump=true\ncontracts_to_bump=${contractsToBump.join(",")}\n`
       );
     } else {
-      console.log("Version has already been bumped");
+      console.log("Contract versions have already been updated");
       console.log(`::set-output name=needs_version_bump::false`);
       fs.appendFileSync(
         process.env.GITHUB_OUTPUT || "/dev/null",
