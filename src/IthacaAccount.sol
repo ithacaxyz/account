@@ -225,6 +225,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev MUST return the magic value `0x8afc93b4` if the signature is valid.
+    /// @dev This function is used for subaccounts to validate signatures using main account keys.
     function isValidSignatureWithKeyHash(bytes32 digest, bytes32 keyHash, bytes calldata signature)
         external
         view
@@ -232,12 +233,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     {
         (bool isValid, bytes32 sigKeyHash) = unwrapAndValidateSignature(digest, signature);
 
-        // Requested keyhash should be the same as the signature keyhash.
-        if (keyHash != sigKeyHash) {
-            return 0xffffffff;
-        }
-
-        if (isValid) {
+        if (isValid && _getKeyExtraStorage(sigKeyHash).subaccounts.contains(msg.sender)) {
+            // For subaccounts, the keyHash parameter is the external key hash on the subaccount
+            // that points to the main account, sigKeyHash is the actual key that signs the digest.
             return 0x8afc93b4;
         }
 
