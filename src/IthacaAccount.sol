@@ -71,6 +71,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         /// @dev The `msg.senders` that can use `isValidSignature`
         /// to successfully validate a signature for a given key hash.
         EnumerableSetLib.AddressSet checkers;
+        /// @dev The subaccounts (msg.senders) that can use this account and keyhash as a signer.
+        EnumerableSetLib.AddressSet subaccounts;
     }
 
     /// @dev Holds the storage.
@@ -140,11 +142,16 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     event Authorized(bytes32 indexed keyHash, Key key);
 
     /// @dev The `implementation` has been authorized.
-    event ImplementationApprovalSet(address indexed implementation, bool isApproved);
+    event ImplementationApprovalSet(address indexed implementation, bool Approved);
 
     /// @dev The `caller` has been authorized to delegate call into `implementation`.
     event ImplementationCallerApprovalSet(
         address indexed implementation, address indexed caller, bool isApproved
+    );
+
+    /// @dev The `subaccount` has been authorized to use `keyHash` as a signer.
+    event SubAccountApprovalSet(
+        bytes32 indexed keyHash, address indexed subaccount, bool isApproved
     );
 
     /// @dev The key with a corresponding `keyHash` has been revoked.
@@ -214,6 +221,28 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     }
 
     ////////////////////////////////////////////////////////////////////////
+    // SubAccount Signer Functions
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev MUST return the magic value `0x8afc93b4` if the signature is valid.
+    /// @dev This function is used for subaccounts to validate signatures using main account keys.
+    function isValidSignatureWithKeyHash(bytes32 digest, bytes32 keyHash, bytes calldata signature)
+        external
+        view
+        returns (bytes4 magicValue)
+    {
+        (bool isValid, bytes32 sigKeyHash) = unwrapAndValidateSignature(digest, signature);
+
+        if (isValid && _getKeyExtraStorage(sigKeyHash).subaccounts.contains(msg.sender)) {
+            // For subaccounts, the keyHash parameter is the external key hash on the subaccount
+            // that points to the main account, sigKeyHash is the actual key that signs the digest.
+            return 0x8afc93b4;
+        }
+
+        return 0xffffffff;
+    }
+
+    ////////////////////////////////////////////////////////////////////////
     // ERC1271
     ////////////////////////////////////////////////////////////////////////
 
@@ -274,6 +303,18 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         if (_getAccountStorage().keyStorage[keyHash].isEmpty()) revert KeyDoesNotExist();
         _getKeyExtraStorage(keyHash).checkers.update(checker, isApproved, _CAP);
         emit SignatureCheckerApprovalSet(keyHash, checker, isApproved);
+    }
+
+    /// @dev Sets whether `subaccount` can use `keyHash` as a signer.
+    function setSubAccountApproval(bytes32 keyHash, address subaccount, bool isApproved)
+        public
+        virtual
+        onlyThis
+    {
+        if (_getAccountStorage().keyStorage[keyHash].isEmpty()) revert KeyDoesNotExist();
+        // TODO: Do we need a cap of more than 512 subaccounts?
+        _getKeyExtraStorage(keyHash).subaccounts.update(subaccount, isApproved, _CAP);
+        emit SubAccountApprovalSet(keyHash, subaccount, isApproved);
     }
 
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
@@ -413,6 +454,11 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         returns (address[] memory)
     {
         return _getKeyExtraStorage(keyHash).checkers.values();
+    }
+
+    /// @dev Returns the list of approved subaccounts for `keyHash`.
+    function approvedSubaccounts(bytes32 keyHash) public view virtual returns (address[] memory) {
+        return _getKeyExtraStorage(keyHash).subaccounts.values();
     }
 
     /// @dev Computes the EIP712 digest for `calls`.
@@ -726,6 +772,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         returns (string memory name, string memory version)
     {
         name = "IthacaAccount";
-        version = "0.4.2";
+        version = "0.4.3";
     }
 }
