@@ -347,7 +347,7 @@ contract OrchestratorTest is BaseTest {
             u.expiry = 0; // No expiry
             u.signature = _sig(d, u);
 
-            assertEq(oc.execute(false, abi.encode(u)), 0);
+            assertEq(oc.execute(abi.encode(u)), 0);
             assertEq(paymentToken.balanceOf(address(0xabcd)), 1 ether);
         }
 
@@ -360,7 +360,7 @@ contract OrchestratorTest is BaseTest {
             u.expiry = block.timestamp + 1 hours; // Future expiry
             u.signature = _sig(d, u);
 
-            assertEq(oc.execute(false, abi.encode(u)), 0);
+            assertEq(oc.execute(abi.encode(u)), 0);
             assertEq(paymentToken.balanceOf(address(0xbcde)), 1 ether);
         }
 
@@ -373,7 +373,7 @@ contract OrchestratorTest is BaseTest {
             u.expiry = block.timestamp - 1; // Past expiry
             u.signature = _sig(d, u);
 
-            bytes4 result = oc.execute(false, abi.encode(u));
+            bytes4 result = oc.execute(abi.encode(u));
             assertEq(result, bytes4(keccak256("IntentExpired()")));
             assertEq(paymentToken.balanceOf(address(0xcdef)), 0); // Transfer should not happen
         }
@@ -419,7 +419,7 @@ contract OrchestratorTest is BaseTest {
             u3.signature = _sig(d, u3);
             encodedIntents[2] = abi.encode(u3);
 
-            bytes4[] memory errors = oc.execute(false, encodedIntents);
+            bytes4[] memory errors = oc.execute(encodedIntents);
             assertEq(errors.length, 3);
             assertEq(errors[0], 0); // First intent succeeded
             assertEq(errors[1], bytes4(keccak256("IntentExpired()"))); // Second intent expired
