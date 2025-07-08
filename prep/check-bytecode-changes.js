@@ -118,21 +118,27 @@ function checkManualVersionBumps(contractsToBump) {
         
         for (const line of lines) {
           // Track which contract we're currently in based on context lines or added lines
-          if (line.match(/^[@\s].*contract\s+(\w+)/)) {
-            currentContract = line.match(/contract\s+(\w+)/)[1];
-          } else if (line.match(/^\+.*contract\s+(\w+)/)) {
-            currentContract = line.match(/contract\s+(\w+)/)[1];
+          // Match contract declarations in various diff formats
+          const contractMatch = line.match(/^([@\s\+\-])?.*\bcontract\s+(\w+)/);
+          if (contractMatch && !line.startsWith('---') && !line.startsWith('+++')) {
+            const potentialContract = contractMatch[2];
+            // Only update currentContract if it's a contract declaration line
+            if (line.includes('{') || line.match(/\bcontract\s+\w+\s*(is|{)/)) {
+              currentContract = potentialContract;
+            }
           }
           
           // Only look for version changes if we're in the right contract
           if (currentContract === contractName) {
             // Check for removed version line
-            if (line.match(/^-\s*version = "(\d+\.\d+\.\d+)";/)) {
-              oldVersion = line.match(/"(\d+\.\d+\.\d+)"/)[1];
+            const removedVersionMatch = line.match(/^-\s*version = "(\d+\.\d+\.\d+)";/);
+            if (removedVersionMatch) {
+              oldVersion = removedVersionMatch[1];
             }
             // Check for added version line
-            else if (line.match(/^\+\s*version = "(\d+\.\d+\.\d+)";/)) {
-              newVersion = line.match(/"(\d+\.\d+\.\d+)"/)[1];
+            const addedVersionMatch = line.match(/^\+\s*version = "(\d+\.\d+\.\d+)";/);
+            if (addedVersionMatch) {
+              newVersion = addedVersionMatch[1];
             }
           }
         }
@@ -189,15 +195,12 @@ function main() {
       console.log(`Contracts still needing version bumps: ${contractsStillNeedingBump.join(", ")}`);
       console.log("Automatic bump required for remaining contracts");
       // Use modern GitHub Actions output syntax
-      console.log(`::set-output name=needs_version_bump::true`);
-      console.log(`::set-output name=contracts_to_bump::${contractsStillNeedingBump.join(",")}`);
       fs.appendFileSync(
         process.env.GITHUB_OUTPUT || "/dev/null",
         `needs_version_bump=true\ncontracts_to_bump=${contractsStillNeedingBump.join(",")}\n`
       );
     } else {
       console.log("All required contract versions have already been updated");
-      console.log(`::set-output name=needs_version_bump::false`);
       fs.appendFileSync(
         process.env.GITHUB_OUTPUT || "/dev/null",
         "needs_version_bump=false\n"
@@ -205,7 +208,6 @@ function main() {
     }
   } else {
     console.log("No bytecode changes detected");
-    console.log(`::set-output name=needs_version_bump::false`);
     fs.appendFileSync(
       process.env.GITHUB_OUTPUT || "/dev/null",
       "needs_version_bump=false\n"
