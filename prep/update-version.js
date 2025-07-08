@@ -23,8 +23,9 @@ async function main() {
     const src = readSync(srcPath);
     if (src.indexOf('_domainNameAndVersion()') === -1) return;
 
-    // Extract contract name from the file
-    const contractNameMatch = src.match(/contract\s+(\w+)/);
+    // Extract contract name from the file - match actual contract declarations
+    // This regex ensures we're matching actual contract definitions, not just any "contract" word
+    const contractNameMatch = src.match(/^\s*(?:abstract\s+)?contract\s+(\w+)/m);
     if (!contractNameMatch) return;
     
     const contractName = contractNameMatch[1];
