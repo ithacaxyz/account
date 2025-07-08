@@ -52,7 +52,7 @@ contract SimpleFunderTest is Test {
             abi.encode(
                 DOMAIN_TYPEHASH,
                 keccak256(bytes("SimpleFunder")),
-                keccak256(bytes("0.1.0")),
+                keccak256(bytes("0.1.1")),
                 block.chainid,
                 address(simpleFunder)
             )
@@ -62,6 +62,12 @@ contract SimpleFunderTest is Test {
             keccak256(abi.encode(WITHDRAWAL_TYPE_HASH, _token, _recipient, amount, deadline, nonce));
 
         return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+    }
+
+    function test_receive() public {
+        (bool success,) = address(simpleFunder).call{value: 1 ether}("");
+        assertTrue(success);
+        assertEq(address(simpleFunder).balance, 11 ether);
     }
 
     function test_fund_withValidSignature() public {

@@ -57,7 +57,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
         returns (string memory name, string memory version)
     {
         name = "SimpleFunder";
-        version = "0.1.0";
+        version = "0.1.1";
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -157,4 +157,6 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
 
         TokenTransferLib.safeTransfer(address(0), msg.sender, amount);
     }
+
+    receive() external payable {}
 }
