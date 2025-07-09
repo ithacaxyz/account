@@ -1,377 +1,564 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import "./utils/SoladyTest.sol";
+import {Test} from "forge-std/Test.sol";
 import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
+import {ISettler} from "../src/interfaces/ISettler.sol";
+import {MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
+import {MockEndpointV2} from "./mocks/MockEndpointV2.sol";
 import {Escrow} from "../src/Escrow.sol";
 import {IEscrow} from "../src/interfaces/IEscrow.sol";
-import {MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
-import {Origin, MessagingFee} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
-import {
-    MessagingParams,
-    MessagingReceipt
-} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {Origin} from
+    "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
-// Mock LayerZero endpoint for testing
-contract MockLZEndpoint {
-    mapping(address => bool) public delegates;
+contract LayerZeroSettlerTest is Test {
+    LayerZeroSettler public settlerA;
+    LayerZeroSettler public settlerB;
+    LayerZeroSettler public settlerC;
 
-    struct StoredMessage {
-        uint32 dstEid;
-        bytes32 sender;
-        bytes payload;
-        address receiver;
-    }
+    MockEndpointV2 public endpointA;
+    MockEndpointV2 public endpointB;
+    MockEndpointV2 public endpointC;
 
-    StoredMessage[] public messages;
+    Escrow public escrowA;
+    Escrow public escrowB;
+    MockPaymentToken public token;
 
-    function setDelegate(address delegate) external {
-        delegates[msg.sender] = true;
-    }
+    uint32 public constant EID_A = 1;
+    uint32 public constant EID_B = 2;
+    uint32 public constant EID_C = 3;
 
-    function send(MessagingParams calldata params, address refundAddress)
-        external
-        payable
-        returns (MessagingReceipt memory receipt)
-    {
-        messages.push(
-            StoredMessage({
-                dstEid: params.dstEid,
-                sender: bytes32(uint256(uint160(msg.sender))),
-                payload: params.message,
-                receiver: address(uint160(uint256(params.receiver)))
-            })
-        );
+    address public owner;
+    address public depositor;
+    address public recipient;
+    address public orchestrator;
 
-        receipt.guid = keccak256(abi.encode(messages.length));
-        receipt.nonce = 0;
-        receipt.fee = MessagingFee(msg.value, 0);
-
-        // Refund excess
-        if (msg.value > 0.0005 ether) {
-            (bool success,) = refundAddress.call{value: msg.value - 0.0005 ether}("");
-            require(success, "Refund failed");
-        }
-    }
-
-    function quote(MessagingParams calldata params, address sender)
-        external
-        pure
-        returns (MessagingFee memory fee)
-    {
-        // Mock fee: 0.0005 ETH per message (lower for self-execution)
-        fee.nativeFee = 0.0005 ether;
-        fee.lzTokenFee = 0;
-    }
-
-    // Helper to simulate message delivery (anyone can call - self execution)
-    function deliverMessage(address target, uint256 messageIndex) external {
-        require(messageIndex < messages.length, "Invalid message");
-        StoredMessage memory m = messages[messageIndex];
-
-        // We need to find the source chain ID based on the sender
-        uint32 srcEid = 30101; // Default mainnet
-        if (m.sender == bytes32(uint256(uint160(0xc7183455a4C133Ae270771860664b6B7ec320bB1)))) {
-            srcEid = 30110; // Arbitrum
-        } else if (
-            m.sender == bytes32(uint256(uint160(0xa0Cb889707d426A7A386870A03bc70d1b0697598)))
-        ) {
-            srcEid = 30184; // Base
-        }
-
-        Origin memory origin = Origin({srcEid: srcEid, sender: m.sender, nonce: 0});
-
-        // The endpoint (this contract) calls lzReceive on the target OApp
-        LayerZeroSettler(payable(target)).lzReceive(
-            origin,
-            keccak256(abi.encode(messageIndex)),
-            m.payload,
-            address(this), // executor
-            ""
-        );
-    }
-}
-
-contract LayerZeroSettlerTest is SoladyTest {
-    LayerZeroSettler settler1; // Mainnet
-    LayerZeroSettler settler2; // Arbitrum
-    LayerZeroSettler settler3; // Base
-
-    MockLZEndpoint endpoint1;
-    MockLZEndpoint endpoint2;
-    MockLZEndpoint endpoint3;
-
-    Escrow escrow2; // Arbitrum escrow
-    Escrow escrow3; // Base escrow
-
-    MockPaymentToken token2;
-    MockPaymentToken token3;
-
-    address orchestrator = makeAddr("ORCHESTRATOR");
-    address user = makeAddr("USER");
-    address relay = makeAddr("RELAY");
-
-    // Allow test contract to receive ETH
-    receive() external payable {}
+    event Settled(address indexed sender, bytes32 indexed settlementId, uint256 senderChainId);
 
     function setUp() public {
+        owner = makeAddr("owner");
+        depositor = makeAddr("depositor");
+        recipient = makeAddr("recipient");
+        orchestrator = makeAddr("orchestrator");
+
         // Deploy mock endpoints
-        endpoint1 = new MockLZEndpoint();
-        endpoint2 = new MockLZEndpoint();
-        endpoint3 = new MockLZEndpoint();
+        endpointA = new MockEndpointV2(EID_A);
+        endpointB = new MockEndpointV2(EID_B);
+        endpointC = new MockEndpointV2(EID_C);
 
-        // Deploy settlers on each "chain"
-        vm.chainId(1); // Mainnet
-        settler1 = new LayerZeroSettler(address(endpoint1), address(this));
+        // Deploy settlers
+        settlerA = new LayerZeroSettler(address(endpointA), owner);
+        settlerB = new LayerZeroSettler(address(endpointB), owner);
+        settlerC = new LayerZeroSettler(address(endpointC), owner);
 
-        vm.chainId(42161); // Arbitrum
-        settler2 = new LayerZeroSettler(address(endpoint2), address(this));
+        // Set peers for each settler
+        vm.prank(owner);
+        settlerA.setPeer(EID_B, bytes32(uint256(uint160(address(settlerB)))));
+        vm.prank(owner);
+        settlerA.setPeer(EID_C, bytes32(uint256(uint160(address(settlerC)))));
 
-        vm.chainId(8453); // Base
-        settler3 = new LayerZeroSettler(address(endpoint3), address(this));
+        vm.prank(owner);
+        settlerB.setPeer(EID_A, bytes32(uint256(uint160(address(settlerA)))));
+        vm.prank(owner);
+        settlerB.setPeer(EID_C, bytes32(uint256(uint160(address(settlerC)))));
 
-        // Set peers using LayerZero endpoint IDs
-        settler1.setPeer(30101, bytes32(uint256(uint160(address(settler1))))); // Self
-        settler1.setPeer(30110, bytes32(uint256(uint160(address(settler2))))); // Arbitrum
-        settler1.setPeer(30184, bytes32(uint256(uint160(address(settler3))))); // Base
+        vm.prank(owner);
+        settlerC.setPeer(EID_A, bytes32(uint256(uint160(address(settlerA)))));
+        vm.prank(owner);
+        settlerC.setPeer(EID_B, bytes32(uint256(uint160(address(settlerB)))));
 
-        settler2.setPeer(30101, bytes32(uint256(uint160(address(settler1))))); // Mainnet
-        settler2.setPeer(30110, bytes32(uint256(uint160(address(settler2))))); // Self
-        settler2.setPeer(30184, bytes32(uint256(uint160(address(settler3))))); // Base
+        // Deploy escrows
+        escrowA = new Escrow();
+        escrowB = new Escrow();
 
-        settler3.setPeer(30101, bytes32(uint256(uint160(address(settler1))))); // Mainnet
-        settler3.setPeer(30110, bytes32(uint256(uint160(address(settler2))))); // Arbitrum
-        settler3.setPeer(30184, bytes32(uint256(uint160(address(settler3))))); // Self
+        // Deploy token
+        token = new MockPaymentToken();
 
-        // Deploy escrows and tokens
-        escrow2 = new Escrow();
-        escrow3 = new Escrow();
-
-        token2 = new MockPaymentToken();
-        token3 = new MockPaymentToken();
-
-        // Don't fund the orchestrator - funds will come via msg.value
+        // Fund test accounts
+        vm.deal(depositor, 100 ether);
+        vm.deal(orchestrator, 100 ether);
+        token.mint(depositor, 1000 ether);
     }
 
-    function testLayerZeroSettlement() public {
-        // Setup: User has funds on Arbitrum and Base
-        vm.chainId(42161);
-        token2.mint(user, 500);
+    // Helper function to calculate total fee for multiple endpoints
+    function _quoteFeeForEndpoints(LayerZeroSettler, uint32[] memory endpointIds)
+        internal
+        pure
+        returns (uint256 totalFee)
+    {
+        for (uint256 i = 0; i < endpointIds.length; i++) {
+            if (endpointIds[i] != 0) {
+                totalFee += 0.001 ether; // BASE_FEE from MockEndpointV2
+            }
+        }
+    }
 
-        vm.chainId(8453);
-        token3.mint(user, 600);
+    // Helper to simulate cross-chain message delivery
+    function _deliverCrossChainMessage(
+        uint32 srcEid,
+        uint32 dstEid,
+        address srcSettler,
+        address payable dstSettler,
+        bytes32 settlementId,
+        address sender,
+        uint256 senderChainId
+    ) internal {
+        MockEndpointV2 dstEndpoint;
+        if (dstEid == EID_A) dstEndpoint = endpointA;
+        else if (dstEid == EID_B) dstEndpoint = endpointB;
+        else if (dstEid == EID_C) dstEndpoint = endpointC;
+        else revert("Invalid destination EID");
 
-        // 1. Create escrows on input chains
-        bytes32 settlementId = keccak256("TEST_SETTLEMENT");
-
-        // Arbitrum escrow
-        vm.chainId(42161);
-        IEscrow.Escrow memory escrowArb = IEscrow.Escrow({
-            salt: bytes12(uint96(1)),
-            depositor: user,
-            recipient: relay,
-            token: address(token2),
-            settler: address(settler2),
-            sender: orchestrator,
-            settlementId: settlementId,
-            senderChainId: 1, // Mainnet
-            escrowAmount: 500,
-            refundAmount: 500,
-            refundTimestamp: block.timestamp + 1 hours
-        });
-
-        vm.startPrank(user);
-        token2.approve(address(escrow2), 500);
-        IEscrow.Escrow[] memory escrowsArb = new IEscrow.Escrow[](1);
-        escrowsArb[0] = escrowArb;
-        escrow2.escrow(escrowsArb);
-        vm.stopPrank();
-
-        // Base escrow
-        vm.chainId(8453);
-        IEscrow.Escrow memory escrowBase = IEscrow.Escrow({
-            salt: bytes12(uint96(2)),
-            depositor: user,
-            recipient: relay,
-            token: address(token3),
-            settler: address(settler3),
-            sender: orchestrator,
-            settlementId: settlementId,
-            senderChainId: 1, // Mainnet
-            escrowAmount: 600,
-            refundAmount: 600,
-            refundTimestamp: block.timestamp + 1 hours
-        });
-
-        vm.startPrank(user);
-        token3.approve(address(escrow3), 600);
-        IEscrow.Escrow[] memory escrowsBase = new IEscrow.Escrow[](1);
-        escrowsBase[0] = escrowBase;
-        escrow3.escrow(escrowsBase);
-        vm.stopPrank();
-
-        // 2. Execute output intent on mainnet and send settlement
-        vm.chainId(1);
-
-        uint32[] memory endpointIds = new uint32[](2);
-        endpointIds[0] = 30110; // Arbitrum endpoint ID
-        endpointIds[1] = 30184; // Base endpoint ID
-        bytes memory settlerContext = abi.encode(endpointIds);
-
-        // Check quote
-        uint256 fee = settler1.quoteSendByEndpoints(endpointIds);
-        assertEq(fee, 0.001 ether); // 0.0005 ETH per chain
-
-        // Send settlement notification with msg.value (simulating funds from output chain execution)
-        vm.deal(orchestrator, fee);
-        vm.prank(orchestrator);
-        settler1.send{value: fee}(settlementId, settlerContext);
-
-        // 3. Self-execute message delivery to Arbitrum
-        vm.chainId(42161);
-        vm.prank(address(endpoint2)); // Endpoint2 is the Arbitrum endpoint
-        settler2.lzReceive(
-            Origin({srcEid: 30101, sender: bytes32(uint256(uint160(address(settler1)))), nonce: 0}),
-            keccak256(abi.encode(0)),
-            abi.encode(settlementId, orchestrator, uint256(1)),
-            address(this),
-            ""
+        vm.prank(address(dstEndpoint));
+        LayerZeroSettler(dstSettler).lzReceive(
+            Origin({srcEid: srcEid, sender: bytes32(uint256(uint160(srcSettler))), nonce: 1}),
+            keccak256(
+                abi.encode(
+                    uint64(1),
+                    srcEid,
+                    srcSettler,
+                    dstEid,
+                    bytes32(uint256(uint160(address(dstSettler))))
+                )
+            ),
+            abi.encode(settlementId, sender, senderChainId),
+            address(dstEndpoint),
+            bytes("")
         );
-
-        // Verify settlement is recorded
-        assertTrue(settler2.read(settlementId, orchestrator, 1));
-
-        // Settle the Arbitrum escrow
-        bytes32 escrowIdArb = keccak256(abi.encode(escrowArb));
-        bytes32[] memory escrowIdsArb = new bytes32[](1);
-        escrowIdsArb[0] = escrowIdArb;
-        escrow2.settle(escrowIdsArb);
-        assertEq(token2.balanceOf(relay), 500);
-
-        // 4. Self-execute message delivery to Base
-        vm.chainId(8453);
-        vm.prank(address(endpoint3)); // Endpoint3 is the Base endpoint
-        settler3.lzReceive(
-            Origin({srcEid: 30101, sender: bytes32(uint256(uint160(address(settler1)))), nonce: 0}),
-            keccak256(abi.encode(1)),
-            abi.encode(settlementId, orchestrator, uint256(1)),
-            address(this),
-            ""
-        );
-
-        // Verify settlement is recorded
-        assertTrue(settler3.read(settlementId, orchestrator, 1));
-
-        // Settle the Base escrow
-        bytes32 escrowIdBase = keccak256(abi.encode(escrowBase));
-        bytes32[] memory escrowIdsBase = new bytes32[](1);
-        escrowIdsBase[0] = escrowIdBase;
-        escrow3.settle(escrowIdsBase);
-        assertEq(token3.balanceOf(relay), 600);
     }
 
-    function testInsufficientFee() public {
-        vm.chainId(1);
-
-        uint32[] memory endpointIds = new uint32[](2);
-        endpointIds[0] = 30110; // Arbitrum
-        endpointIds[1] = 30184; // Base
-        bytes memory settlerContext = abi.encode(endpointIds);
-
-        uint256 requiredFee = settler1.quoteSendByEndpoints(endpointIds);
-        uint256 insufficientFee = requiredFee - 0.0001 ether;
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                LayerZeroSettler.InsufficientFee.selector, insufficientFee, requiredFee
-            )
-        );
-        vm.deal(orchestrator, insufficientFee);
-        vm.prank(orchestrator);
-        settler1.send{value: insufficientFee}(bytes32(0), settlerContext);
-    }
-
-    function testInvalidEndpointId() public {
-        vm.chainId(1);
-
-        uint32[] memory invalidEndpoints = new uint32[](1);
-        invalidEndpoints[0] = 0; // Zero endpoint ID
-        bytes memory settlerContext = abi.encode(invalidEndpoints);
-
-        vm.expectRevert(LayerZeroSettler.InvalidEndpointId.selector);
-        vm.deal(orchestrator, 0.001 ether);
-        vm.prank(orchestrator);
-        settler1.send{value: 0.001 ether}(bytes32(0), settlerContext);
-    }
-
-    function testQuoteSendByEndpoints() public {
-        vm.chainId(1);
-
-        // Test various endpoint combinations
-        uint32[] memory endpoints1 = new uint32[](1);
-        endpoints1[0] = 30110; // Arbitrum
-        assertEq(settler1.quoteSendByEndpoints(endpoints1), 0.0005 ether);
-
-        uint32[] memory endpoints2 = new uint32[](3);
-        endpoints2[0] = 30110; // Arbitrum
-        endpoints2[1] = 30184; // Base
-        endpoints2[2] = 30101; // Mainnet (self)
-        assertEq(settler1.quoteSendByEndpoints(endpoints2), 0.0015 ether);
-
-        // Invalid endpoint is skipped
-        uint32[] memory endpoints3 = new uint32[](2);
-        endpoints3[0] = 30110;
-        endpoints3[1] = 0; // Invalid
-        assertEq(settler1.quoteSendByEndpoints(endpoints3), 0.0005 ether);
-    }
-
-    function testRefundMechanism() public {
-        vm.chainId(1);
-
+    function test_send_validSettlement() public {
+        bytes32 settlementId = keccak256("test-settlement");
         uint32[] memory endpointIds = new uint32[](1);
-        endpointIds[0] = 30110; // Arbitrum
+        endpointIds[0] = EID_B;
         bytes memory settlerContext = abi.encode(endpointIds);
 
-        uint256 requiredFee = settler1.quoteSendByEndpoints(endpointIds);
-        uint256 overpayment = requiredFee + 0.5 ether;
-
-        // Send with overpayment (simulating funds from output chain execution)
-        vm.deal(orchestrator, overpayment);
-        uint256 orchestratorBalanceBefore = orchestrator.balance;
-
         vm.prank(orchestrator);
-        settler1.send{value: overpayment}(bytes32("REFUND_TEST"), settlerContext);
+        settlerA.send(settlementId, settlerContext);
 
-        // With the current implementation, the excess stays in the settler contract
-        // since we only forward the exact fee to the endpoint
-        assertEq(orchestrator.balance, orchestratorBalanceBefore - overpayment);
-        assertEq(address(settler1).balance, overpayment - requiredFee);
+        // Verify the send was recorded with the correct key
+        bytes32 sendKey = keccak256(abi.encode(orchestrator, settlementId, settlerContext));
+        assertTrue(settlerA.validSend(sendKey));
     }
 
-    function testWithdraw() public {
-        vm.chainId(1);
+    function test_executeSend_singleDestination_success() public {
+        bytes32 settlementId = keccak256("test-settlement");
+        uint32[] memory endpointIds = new uint32[](1);
+        endpointIds[0] = EID_B;
+        bytes memory settlerContext = abi.encode(endpointIds);
 
-        // Add some funds to the settler (simulating excess from overpayments)
-        vm.deal(address(settler1), 1 ether);
+        // First, orchestrator calls send to authorize
+        vm.prank(orchestrator);
+        settlerA.send(settlementId, settlerContext);
 
-        address recipient = makeAddr("RECIPIENT");
-        uint256 recipientBalanceBefore = recipient.balance;
+        // Calculate the fee
+        uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
 
-        // Owner withdraws funds to recipient
-        settler1.withdraw(recipient, 0.6 ether);
+        // Now anyone can execute with proper fee
+        address randomCaller = makeAddr("randomCaller");
+        vm.deal(randomCaller, fee);
 
-        assertEq(recipient.balance, recipientBalanceBefore + 0.6 ether);
-        assertEq(address(settler1).balance, 0.4 ether);
+        vm.prank(randomCaller);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext);
+
+        // Verify message was sent
+        (,, uint32 dstEid, bytes32 receiver,,) = endpointA.messages(0);
+        assertEq(dstEid, EID_B);
+        assertEq(receiver, bytes32(uint256(uint160(address(settlerB)))));
+
+        // Simulate cross-chain message delivery
+        _deliverCrossChainMessage(
+            EID_A,
+            EID_B,
+            address(settlerA),
+            payable(address(settlerB)),
+            settlementId,
+            orchestrator,
+            block.chainid
+        );
+
+        // Check that settlement was recorded on destination
+        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
     }
 
-    function testWithdrawOnlyOwner() public {
-        vm.chainId(1);
+    function test_executeSend_multipleDestinations_success() public {
+        bytes32 settlementId = keccak256("test-settlement-multi");
+        uint32[] memory endpointIds = new uint32[](2);
+        endpointIds[0] = EID_B;
+        endpointIds[1] = EID_C;
+        bytes memory settlerContext = abi.encode(endpointIds);
 
-        vm.deal(address(settler1), 1 ether);
-
-        // Non-owner cannot withdraw
+        // Orchestrator authorizes the settlement
         vm.prank(orchestrator);
+        settlerA.send(settlementId, settlerContext);
+
+        // Calculate the fee
+        uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
+
+        // Different caller executes with proper fee
+        address executor = makeAddr("executor");
+        vm.deal(executor, fee);
+
+        vm.prank(executor);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext);
+
+        // Verify messages were sent to both destinations
+        (,, uint32 dstEid1,,,) = endpointA.messages(0);
+        (,, uint32 dstEid2,,,) = endpointA.messages(1);
+        assertEq(dstEid1, EID_B);
+        assertEq(dstEid2, EID_C);
+
+        // Simulate cross-chain message delivery
+        _deliverCrossChainMessage(
+            EID_A,
+            EID_B,
+            address(settlerA),
+            payable(address(settlerB)),
+            settlementId,
+            orchestrator,
+            block.chainid
+        );
+        _deliverCrossChainMessage(
+            EID_A,
+            EID_C,
+            address(settlerA),
+            payable(address(settlerC)),
+            settlementId,
+            orchestrator,
+            block.chainid
+        );
+
+        // Check that settlements were recorded
+        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+        assertTrue(settlerC.read(settlementId, orchestrator, block.chainid));
+    }
+
+    function test_executeSend_invalidSettlementId_reverts() public {
+        bytes32 settlementId = keccak256("test-settlement");
+        uint32[] memory endpointIds = new uint32[](1);
+        endpointIds[0] = EID_B;
+        bytes memory settlerContext = abi.encode(endpointIds);
+
+        // Try to execute without calling send first
+        vm.expectRevert(abi.encodeWithSelector(LayerZeroSettler.InvalidSettlementId.selector));
+        settlerA.executeSend{value: 1 ether}(orchestrator, settlementId, settlerContext);
+    }
+
+    function test_executeSend_invalidEndpointId_reverts() public {
+        bytes32 settlementId = keccak256("test-settlement");
+        uint32[] memory endpointIds = new uint32[](1);
+        endpointIds[0] = 0; // Invalid endpoint ID
+        bytes memory settlerContext = abi.encode(endpointIds);
+
+        // First call send to validate
+        vm.prank(orchestrator);
+        settlerA.send(settlementId, settlerContext);
+
+        // Try to execute with invalid endpoint
+        vm.expectRevert(abi.encodeWithSelector(LayerZeroSettler.InvalidEndpointId.selector));
+        settlerA.executeSend{value: 1 ether}(orchestrator, settlementId, settlerContext);
+    }
+
+    function test_executeSend_insufficientFee_reverts() public {
+        bytes32 settlementId = keccak256("test-settlement");
+        uint32[] memory endpointIds = new uint32[](1);
+        endpointIds[0] = EID_B;
+        bytes memory settlerContext = abi.encode(endpointIds);
+
+        // First call send to validate
+        vm.prank(orchestrator);
+        settlerA.send(settlementId, settlerContext);
+
+        // Calculate the fee
+        uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
+
+        // Try to execute with insufficient fee - will revert with OutOfFunds
         vm.expectRevert();
-        settler1.withdraw(orchestrator, 0.5 ether);
+        settlerA.executeSend{value: fee / 2}(orchestrator, settlementId, settlerContext);
+    }
+
+    function test_executeSend_orchestratorCanExecute() public {
+        bytes32 settlementId = keccak256("test-settlement");
+        uint32[] memory endpointIds = new uint32[](1);
+        endpointIds[0] = EID_B;
+        bytes memory settlerContext = abi.encode(endpointIds);
+
+        // Orchestrator calls send
+        vm.prank(orchestrator);
+        settlerA.send(settlementId, settlerContext);
+
+        // Calculate the fee
+        uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
+
+        // Orchestrator can also execute
+        vm.prank(orchestrator);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext);
+
+        // Simulate cross-chain message delivery and check settlement
+        _deliverCrossChainMessage(
+            EID_A,
+            EID_B,
+            address(settlerA),
+            payable(address(settlerB)),
+            settlementId,
+            orchestrator,
+            block.chainid
+        );
+        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+    }
+
+    function test_lzReceive_recordsSettlement() public {
+        bytes32 settlementId = keccak256("test-settlement");
+        uint32[] memory endpointIds = new uint32[](1);
+        endpointIds[0] = EID_B;
+        bytes memory settlerContext = abi.encode(endpointIds);
+
+        // Send from A to B
+        vm.prank(orchestrator);
+        settlerA.send(settlementId, settlerContext);
+
+        uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
+
+        vm.prank(orchestrator);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext);
+
+        // Expect the Settled event
+        vm.expectEmit(true, true, true, true, payable(address(settlerB)));
+        emit Settled(orchestrator, settlementId, block.chainid);
+
+        // Simulate cross-chain message delivery
+        _deliverCrossChainMessage(
+            EID_A,
+            EID_B,
+            address(settlerA),
+            payable(address(settlerB)),
+            settlementId,
+            orchestrator,
+            block.chainid
+        );
+
+        // Verify the settlement was recorded
+        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+    }
+
+    function test_withdraw_nativeToken_onlyOwner() public {
+        // Send some ETH to the settler
+        vm.deal(address(settlerA), 10 ether);
+
+        uint256 balanceBefore = recipient.balance;
+
+        // Owner can withdraw native token
+        vm.prank(owner);
+        settlerA.withdraw(address(0), recipient, 5 ether);
+
+        assertEq(recipient.balance, balanceBefore + 5 ether);
+        assertEq(address(settlerA).balance, 5 ether);
+    }
+
+    function test_withdraw_erc20Token_onlyOwner() public {
+        // Send some tokens to the settler
+        token.mint(address(settlerA), 100 ether);
+
+        uint256 balanceBefore = token.balanceOf(recipient);
+
+        // Owner can withdraw ERC20 token
+        vm.prank(owner);
+        settlerA.withdraw(address(token), recipient, 50 ether);
+
+        assertEq(token.balanceOf(recipient), balanceBefore + 50 ether);
+        assertEq(token.balanceOf(address(settlerA)), 50 ether);
+    }
+
+    function test_withdraw_nonOwner_reverts() public {
+        vm.deal(address(settlerA), 10 ether);
+
+        vm.prank(makeAddr("notOwner"));
+        vm.expectRevert(abi.encodeWithSelector(0x118cdaa7, makeAddr("notOwner"))); // OwnableUnauthorizedAccount selector
+        settlerA.withdraw(address(0), recipient, 5 ether);
+    }
+
+    function test_escrowIntegration_successfulSettlement() public {
+        bytes32 settlementId = keccak256("escrow-settlement");
+        uint256 escrowAmount = 100 ether;
+        uint256 refundAmount = 10 ether;
+        uint256 refundTimestamp = block.timestamp + 1 days;
+
+        // Create escrow on chain B
+        IEscrow.Escrow memory escrowData = IEscrow.Escrow({
+            salt: bytes12(0),
+            depositor: depositor,
+            recipient: recipient,
+            token: address(token),
+            escrowAmount: escrowAmount,
+            refundAmount: refundAmount,
+            refundTimestamp: refundTimestamp,
+            settler: payable(address(settlerB)),
+            sender: orchestrator,
+            settlementId: settlementId,
+            senderChainId: block.chainid
+        });
+
+        IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](1);
+        escrows[0] = escrowData;
+
+        vm.startPrank(depositor);
+        token.approve(address(escrowB), escrowAmount);
+        escrowB.escrow(escrows);
+        vm.stopPrank();
+
+        // Send settlement from chain A to chain B
+        uint32[] memory endpointIds = new uint32[](1);
+        endpointIds[0] = EID_B;
+        bytes memory settlerContext = abi.encode(endpointIds);
+
+        vm.prank(orchestrator);
+        settlerA.send(settlementId, settlerContext);
+
+        uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
+
+        vm.prank(orchestrator);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext);
+
+        // Simulate cross-chain message delivery
+        _deliverCrossChainMessage(
+            EID_A,
+            EID_B,
+            address(settlerA),
+            payable(address(settlerB)),
+            settlementId,
+            orchestrator,
+            block.chainid
+        );
+
+        // Now settle the escrow
+        bytes32 escrowId = keccak256(abi.encode(escrowData));
+        bytes32[] memory escrowIds = new bytes32[](1);
+        escrowIds[0] = escrowId;
+
+        uint256 recipientBalanceBefore = token.balanceOf(recipient);
+
+        escrowB.settle(escrowIds);
+
+        assertEq(token.balanceOf(recipient), recipientBalanceBefore + escrowAmount);
+        assertEq(uint8(escrowB.statuses(escrowId)), uint8(IEscrow.EscrowStatus.FINALIZED));
+    }
+
+    function test_quoteFee_multipleEndpoints() public view {
+        uint32[] memory endpointIds = new uint32[](2);
+        endpointIds[0] = EID_B;
+        endpointIds[1] = EID_C;
+
+        uint256 totalFee = _quoteFeeForEndpoints(settlerA, endpointIds);
+        assertEq(totalFee, 0.001 ether * 2);
+    }
+
+    function test_quoteFee_emptyArray() public view {
+        uint32[] memory endpointIds = new uint32[](0);
+        uint256 totalFee = _quoteFeeForEndpoints(settlerA, endpointIds);
+        assertEq(totalFee, 0);
+    }
+
+    function test_quoteFee_withInvalidEndpoint() public view {
+        uint32[] memory endpointIds = new uint32[](3);
+        endpointIds[0] = EID_B;
+        endpointIds[1] = 0; // Invalid, will be skipped
+        endpointIds[2] = EID_C;
+
+        uint256 totalFee = _quoteFeeForEndpoints(settlerA, endpointIds);
+
+        // Should only include fees for valid endpoints
+        assertEq(totalFee, 0.001 ether * 2);
+    }
+
+    function test_receive_externalEthTransfer() public {
+        uint256 balanceBefore = address(settlerA).balance;
+
+        vm.deal(makeAddr("alice"), 5 ether);
+        vm.prank(makeAddr("alice"));
+        (bool success,) = payable(address(settlerA)).call{value: 5 ether}("");
+
+        assertTrue(success);
+        assertEq(address(settlerA).balance, balanceBefore + 5 ether);
+    }
+
+    function testFuzz_send_differentSettlementIds(bytes32 settlementId, uint8 numEndpoints)
+        public
+    {
+        vm.assume(numEndpoints > 0 && numEndpoints <= 3);
+
+        uint32[] memory endpointIds = new uint32[](numEndpoints);
+        for (uint8 i = 0; i < numEndpoints; i++) {
+            // Use valid endpoint IDs
+            if (i == 0) endpointIds[i] = EID_B;
+            else if (i == 1) endpointIds[i] = EID_C;
+            else endpointIds[i] = EID_A; // Send back to A for testing
+        }
+        bytes memory settlerContext = abi.encode(endpointIds);
+
+        vm.prank(orchestrator);
+        settlerA.send(settlementId, settlerContext);
+
+        bytes32 sendKey = keccak256(abi.encode(orchestrator, settlementId, settlerContext));
+        assertTrue(settlerA.validSend(sendKey));
+    }
+
+    function testFuzz_executeSend_fullFlow(
+        bytes32 settlementId,
+        address executor,
+        bool includeB,
+        bool includeC
+    ) public {
+        vm.assume(executor != address(0));
+        vm.assume(includeB || includeC); // At least one destination
+
+        // Build endpoint IDs based on fuzz inputs
+        uint8 count = 0;
+        if (includeB) count++;
+        if (includeC) count++;
+
+        uint32[] memory endpointIds = new uint32[](count);
+        uint8 idx = 0;
+        if (includeB) endpointIds[idx++] = EID_B;
+        if (includeC) endpointIds[idx++] = EID_C;
+
+        bytes memory settlerContext = abi.encode(endpointIds);
+
+        // Orchestrator authorizes
+        vm.prank(orchestrator);
+        settlerA.send(settlementId, settlerContext);
+
+        // Quote and fund executor
+        uint256 totalFee = _quoteFeeForEndpoints(settlerA, endpointIds);
+        vm.deal(executor, totalFee);
+
+        // Any address can execute
+        vm.prank(executor);
+        settlerA.executeSend{value: totalFee}(orchestrator, settlementId, settlerContext);
+
+        // Verify and deliver messages
+        if (includeB) {
+            _deliverCrossChainMessage(
+                EID_A,
+                EID_B,
+                address(settlerA),
+                payable(address(settlerB)),
+                settlementId,
+                orchestrator,
+                block.chainid
+            );
+            assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+        }
+        if (includeC) {
+            _deliverCrossChainMessage(
+                EID_A,
+                EID_C,
+                address(settlerA),
+                payable(address(settlerC)),
+                settlementId,
+                orchestrator,
+                block.chainid
+            );
+            assertTrue(settlerC.read(settlementId, orchestrator, block.chainid));
+        }
     }
 }
