@@ -22,31 +22,29 @@ contract LayerZeroSettler is OApp, ISettler {
 
     constructor(address _endpoint, address _owner) OApp(_endpoint, _owner) Ownable(_owner) {}
 
-    /// @notice Send settlement attestation to multiple chains
-    /// @param settlementId The unique identifier for the settlement
-    /// @param settlerContext Encoded context containing endpoint IDs
-    /// @dev Requires msg.value to cover all LayerZero fees
+    /// @notice Mark the settlement as valid to be sent
     function send(bytes32 settlementId, bytes calldata settlerContext) external payable override {
-        validSend[keccak256(abi.encode(settlementId, settlerContext))] = true;
+        validSend[keccak256(abi.encode(msg.sender, settlementId, settlerContext))] = true;
     }
 
-    function executeSend(bytes32 settlementId, bytes calldata settlerContext) external payable {
-        if (!validSend[keccak256(abi.encode(settlementId, settlerContext))]) {
+    /// @notice Execute the settlement send to multiple chains
+    /// @dev `send` must have been called with the exact same parameters, before calling this function.
+    /// @dev Requires msg.value to cover all LayerZero fees.
+    function executeSend(address sender, bytes32 settlementId, bytes calldata settlerContext)
+        external
+        payable
+    {
+        if (!validSend[keccak256(abi.encode(sender, settlementId, settlerContext))]) {
             revert InvalidSettlementId();
         }
 
         // Decode settlerContext as an array of LayerZero endpoint IDs
         uint32[] memory endpointIds = abi.decode(settlerContext, (uint32[]));
 
-        uint256 totalFee = quoteSendByEndpoints(endpointIds);
-
-        if (msg.value < totalFee) {
-            revert InsufficientFee(msg.value, totalFee);
-        }
-
-        bytes memory payload = abi.encode(settlementId, msg.sender, block.chainid);
+        bytes memory payload = abi.encode(settlementId, sender, block.chainid);
         bytes memory options = ""; // No executor options for self-execution
 
+        // If the fee sent as msg.value is incorrect, then one of these _lzSends will revert.
         for (uint256 i = 0; i < endpointIds.length; i++) {
             uint32 dstEid = endpointIds[i];
             if (dstEid == 0) revert InvalidEndpointId();
@@ -61,7 +59,6 @@ contract LayerZeroSettler is OApp, ISettler {
 
     /// @notice Receive settlement attestation from another chain
     /// @dev Called by LayerZero endpoint after message verification
-
     function _lzReceive(
         Origin calldata, /*_origin*/
         bytes32, /*_guid*/
@@ -80,48 +77,23 @@ contract LayerZeroSettler is OApp, ISettler {
     }
 
     /// @notice Check if a settlement has been attested
-    /// @param settlementId The settlement to check
-    /// @param attester The address that attested (orchestrator)
-    /// @param chainId The chain ID where attestation originated
-    function read(bytes32 settlementId, address attester, uint256 chainId)
+    /// @dev In the case of IthacAccount interop, the sender will always be the orchestrator.
+    function read(bytes32 settlementId, address sender, uint256 chainId)
         external
         view
         override
         returns (bool isSettled)
     {
-        return settled[settlementId][attester][chainId];
-    }
-
-    /// @notice Quote the total fee for sending to multiple endpoints
-    /// @param endpointIds Array of LayerZero endpoint IDs to send to
-    /// @return totalFee The total native fee required
-    function quoteSendByEndpoints(uint32[] memory endpointIds)
-        public
-        view
-        returns (uint256 totalFee)
-    {
-        bytes memory payload = abi.encode(bytes32(0), address(0), uint256(0));
-        bytes memory options = ""; // No executor options
-
-        for (uint256 i = 0; i < endpointIds.length; i++) {
-            if (endpointIds[i] == 0) continue;
-
-            MessagingFee memory fee = _quote(endpointIds[i], payload, options, false);
-            totalFee += fee.nativeFee;
-        }
+        return settled[settlementId][sender][chainId];
     }
 
     /// @notice Owner can withdraw excess funds
-    /// @dev Allows recovery of any ETH that accumulates from overpayments
-    /// @param recipient Address to receive the funds
-    /// @param amount Amount to withdraw
-    function withdraw(address recipient, uint256 amount) external onlyOwner {
-        TokenTransferLib.safeTransfer(address(0), recipient, amount);
+    /// @dev Allows recovery of any assets that might accumulate from overpayments
+    function withdraw(address token, address recipient, uint256 amount) external onlyOwner {
+        TokenTransferLib.safeTransfer(token, recipient, amount);
     }
 
-    /// @notice Override to pay from msg.value instead of balance
-    /// @param _nativeFee The native fee to be paid
-    /// @return nativeFee The amount of native currency paid
+    /// @notice We override this function, because multiple L0 messages are sent in a single transaction.
     function _payNative(uint256 _nativeFee) internal pure override returns (uint256 nativeFee) {
         // Return the fee amount; the base contract will handle the actual payment
         return _nativeFee;
