@@ -26,15 +26,9 @@ contract Escrow is IEscrow {
     /// @notice Emitted when an escrow is successfully settled
     event EscrowSettled(bytes32 escrowId);
 
-<<<<<<< HEAD
     ////////////////////////////////////////////////////////////////////////
     // Errors
     ////////////////////////////////////////////////////////////////////////
-=======
-    error InvalidStatus();
-    error RefundExpired();
-    error SettlementNotReady();
->>>>>>> abde622 (chore: add settlement information to the Escrow structs)
 
     /// @notice Thrown when an operation is attempted on an escrow in an invalid status
     error InvalidStatus();
@@ -97,7 +91,6 @@ contract Escrow is IEscrow {
         }
     }
 
-<<<<<<< HEAD
     /// @notice Refunds the specified amount to both depositors and recipients
     /// @dev Can only be called after refundTimestamp has passed.
     /// @dev If one of the parties is forcefully reverting the tx, then the other party
@@ -112,17 +105,6 @@ contract Escrow is IEscrow {
 
             _refundDepositor(escrowIds[i], _escrow);
             _refundRecipient(escrowIds[i], _escrow);
-=======
-    function refund(bytes32[] calldata escrowIds) public {
-        for (uint256 i = 0; i < escrowIds.length; i++) {
-            _refund(escrowIds[i]);
-        }
-    }
-
-    function _refund(bytes32 escrowId) internal {
-        if (statuses[escrowId] != EscrowStatus.CREATED) {
-            revert InvalidStatus();
->>>>>>> bda46bd (refactor: update settle and refund to accept array of escrowIds)
         }
     }
 

@@ -14,16 +14,9 @@ import {ICommon} from "../src/interfaces/ICommon.sol";
 import {Merkle} from "murky/Merkle.sol";
 import {SimpleFunder} from "../src/SimpleFunder.sol";
 import {SimpleSettler} from "../src/SimpleSettler.sol";
-<<<<<<< HEAD
-<<<<<<< HEAD
+
 import {Escrow} from "../src/Escrow.sol";
 import {IEscrow} from "../src/interfaces/IEscrow.sol";
-=======
->>>>>>> bb3a2df (feat: add a simple settler contract, which uses a trusted offchain entity to settle across chains)
-=======
-import {Escrow} from "../src/Escrow.sol";
-import {IEscrow} from "../src/interfaces/IEscrow.sol";
->>>>>>> 982bb34 (test: add a detailed test that uses the new escrow and settlement system)
 
 contract OrchestratorTest is BaseTest {
     struct _TestFullFlowTemps {
@@ -1413,21 +1406,12 @@ contract OrchestratorTest is BaseTest {
 
             t.outputIntent.encodedFundTransfers = encodedFundTransfers;
             t.outputIntent.funder = address(t.funder);
-<<<<<<< HEAD
-<<<<<<< HEAD
 
-=======
-            
->>>>>>> 9f298b5 (refactor: use flexible settlerContext instead of hardcoded input chains)
-=======
-
->>>>>>> b16abda (minor: forge fmt)
             // Set settlerContext with input chains
-            uint256[] memory inputChains = new uint256[](2);
-            inputChains[0] = 8453; // Base
-            inputChains[1] = 42161; // Arbitrum
-            t.outputIntent.settlerContext = abi.encode(inputChains);
-<<<<<<< HEAD
+            uint256[] memory _inputChains = new uint256[](2);
+            _inputChains[0] = 8453; // Base
+            _inputChains[1] = 42161; // Arbitrum
+            t.outputIntent.settlerContext = abi.encode(_inputChains);
         }
 
         // Compute the output intent digest to use as settlementId
@@ -1479,90 +1463,6 @@ contract OrchestratorTest is BaseTest {
         t.arbIntent.nonce = t.d.d.getNonce(0);
         t.arbIntent.combinedGas = 1000000;
         t.arbIntent.isMultichain = true;
-        // Create Arbitrum escrow execution data
-        {
-            IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](1);
-            escrows[0] = IEscrow.Escrow({
-                salt: bytes12(uint96(_random())),
-                depositor: t.d.eoa,
-                recipient: t.relay,
-                token: address(t.usdcArb),
-                settler: address(t.settler),
-                sender: address(oc), // Orchestrator on output chain (mainnet)
-                settlementId: t.settlementId,
-                senderChainId: 1, // Mainnet chain ID
-                escrowAmount: 500,
-                refundAmount: 500, // Full refund if settlement fails
-                refundTimestamp: block.timestamp + 1 hours
-            });
-            t.escrowIdArb = keccak256(abi.encode(escrows[0]));
-
-            ERC7821.Call[] memory calls = new ERC7821.Call[](2);
-            // First approve the escrow contract
-            calls[0] = ERC7821.Call({
-                to: address(t.usdcArb),
-                value: 0,
-                data: abi.encodeWithSignature("approve(address,uint256)", address(t.escrowArb), 500)
-            });
-            // Then call escrow function
-            calls[1] = ERC7821.Call({
-                to: address(t.escrowArb),
-                value: 0,
-                data: abi.encodeWithSelector(IEscrow.escrow.selector, escrows)
-            });
-            t.arbIntent.executionData = abi.encode(calls);
-=======
->>>>>>> 9f298b5 (refactor: use flexible settlerContext instead of hardcoded input chains)
-        }
-
-        // Compute the output intent digest to use as settlementId
-        vm.chainId(1); // Mainnet
-        t.settlementId = oc.computeDigest(t.outputIntent);
-
-        // Base Intent with escrow execution data
-        t.baseIntent.eoa = t.d.eoa;
-        t.baseIntent.nonce = t.d.d.getNonce(0);
-        t.baseIntent.combinedGas = 1000000;
-
-        // Create Base escrow execution data
-        {
-            IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](1);
-            escrows[0] = IEscrow.Escrow({
-                salt: bytes12(uint96(_random())),
-                depositor: t.d.eoa,
-                recipient: t.relay,
-                token: address(t.usdcBase),
-                settler: address(t.settler),
-                sender: address(oc), // Orchestrator on output chain (mainnet)
-                settlementId: t.settlementId,
-                senderChainId: 1, // Mainnet chain ID
-                escrowAmount: 600,
-                refundAmount: 600, // Full refund if settlement fails
-                refundTimestamp: block.timestamp + 1 hours
-            });
-            t.escrowIdBase = keccak256(abi.encode(escrows[0]));
-
-            ERC7821.Call[] memory calls = new ERC7821.Call[](2);
-            // First approve the escrow contract
-            calls[0] = ERC7821.Call({
-                to: address(t.usdcBase),
-                value: 0,
-                data: abi.encodeWithSignature("approve(address,uint256)", address(t.escrowBase), 600)
-            });
-            // Then call escrow function
-            calls[1] = ERC7821.Call({
-                to: address(t.escrowBase),
-                value: 0,
-                data: abi.encodeWithSelector(IEscrow.escrow.selector, escrows)
-            });
-            t.baseIntent.executionData = abi.encode(calls);
-        }
-
-        // Arbitrum Intent with escrow execution data
-        t.arbIntent.eoa = t.d.eoa;
-        t.arbIntent.nonce = t.d.d.getNonce(0);
-        t.arbIntent.combinedGas = 1000000;
-
         // Create Arbitrum escrow execution data
         {
             IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](1);
@@ -1677,32 +1577,13 @@ contract OrchestratorTest is BaseTest {
 
         vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
         t.usdcMainnet.mint(address(t.funder), 1000);
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 
-=======
-        
->>>>>>> 9f298b5 (refactor: use flexible settlerContext instead of hardcoded input chains)
-=======
-
->>>>>>> b16abda (minor: forge fmt)
         // Expect settler.send to be called during outputIntent execution
         vm.expectEmit(true, true, true, false, address(t.settler));
         emit SimpleSettler.Sent(address(oc), t.settlementId, 8453); // Base
         vm.expectEmit(true, true, true, false, address(t.settler));
         emit SimpleSettler.Sent(address(oc), t.settlementId, 42161); // Arbitrum
-<<<<<<< HEAD
-<<<<<<< HEAD
 
-=======
->>>>>>> 982bb34 (test: add a detailed test that uses the new escrow and settlement system)
-=======
-        
->>>>>>> 9f298b5 (refactor: use flexible settlerContext instead of hardcoded input chains)
-=======
-
->>>>>>> b16abda (minor: forge fmt)
         // Relay funds the user account, and the intended execution happens.
         t.encodedIntents[0] = abi.encode(t.outputIntent);
         vm.prank(t.gasWallet);
@@ -1711,10 +1592,6 @@ contract OrchestratorTest is BaseTest {
         vm.assertEq(t.usdcMainnet.balanceOf(t.friend), 1000);
 
         // 6. Settlement Phase - After outputIntent is executed successfully
-<<<<<<< HEAD
-<<<<<<< HEAD
-        // The orchestrator has already emitted Sent events during execution
-=======
         // The orchestrator emits Sent events using the output intent digest as settlementId
 
         // First, let's check that the Sent events were emitted
@@ -1729,11 +1606,7 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, true, true, false, address(t.settler));
         emit SimpleSettler.Sent(address(oc), t.settlementId, 42161); // Arbitrum
         vm.prank(address(oc));
-        t.settler.send(t.settlementId, inputChains);
->>>>>>> 982bb34 (test: add a detailed test that uses the new escrow and settlement system)
-=======
-        // The orchestrator has already emitted Sent events during execution
->>>>>>> 9f298b5 (refactor: use flexible settlerContext instead of hardcoded input chains)
+        t.settler.send(t.settlementId, abi.encode(inputChains));
 
         // Now the settler owner (settlement oracle) writes the settlement attestation
         // This represents the off-chain process where the oracle verifies the Sent events
@@ -1751,11 +1624,7 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, false, false, false, address(t.escrowBase));
         emit Escrow.EscrowCreated(t.escrowIdBase);
         vm.prank(t.gasWallet);
-<<<<<<< HEAD
         oc.execute(t.encodedIntents);
-=======
-        oc.execute(true, t.encodedIntents);
->>>>>>> 982bb34 (test: add a detailed test that uses the new escrow and settlement system)
 
         // Settler owner needs to write the settlement on Base chain too
         vm.prank(t.settlementOracle);
@@ -1765,19 +1634,10 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, false, false, false, address(t.escrowBase));
         emit Escrow.EscrowSettled(t.escrowIdBase);
         vm.prank(t.relay); // Relay can call settle
-<<<<<<< HEAD
-<<<<<<< HEAD
+
         bytes32[] memory escrowIds = new bytes32[](1);
         escrowIds[0] = t.escrowIdBase;
         t.escrowBase.settle(escrowIds);
-=======
-        t.escrowBase.settle(t.escrowIdBase);
->>>>>>> 982bb34 (test: add a detailed test that uses the new escrow and settlement system)
-=======
-        bytes32[] memory escrowIds = new bytes32[](1);
-        escrowIds[0] = t.escrowIdBase;
-        t.escrowBase.settle(escrowIds);
->>>>>>> bda46bd (refactor: update settle and refund to accept array of escrowIds)
 
         // Verify funds are transferred to relay
         vm.assertEq(t.usdcBase.balanceOf(t.relay), 600);
@@ -1793,11 +1653,7 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, false, false, false, address(t.escrowArb));
         emit Escrow.EscrowCreated(t.escrowIdArb);
         vm.prank(t.gasWallet);
-<<<<<<< HEAD
         oc.execute(t.encodedIntents);
-=======
-        oc.execute(true, t.encodedIntents);
->>>>>>> 982bb34 (test: add a detailed test that uses the new escrow and settlement system)
 
         // Settler owner needs to write the settlement on Arbitrum chain too
         vm.prank(t.settlementOracle);
@@ -1807,19 +1663,10 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, false, false, false, address(t.escrowArb));
         emit Escrow.EscrowSettled(t.escrowIdArb);
         vm.prank(t.relay); // Relay can call settle
-<<<<<<< HEAD
-<<<<<<< HEAD
+
         bytes32[] memory escrowIdsArb = new bytes32[](1);
         escrowIdsArb[0] = t.escrowIdArb;
         t.escrowArb.settle(escrowIdsArb);
-=======
-        t.escrowArb.settle(t.escrowIdArb);
->>>>>>> 982bb34 (test: add a detailed test that uses the new escrow and settlement system)
-=======
-        bytes32[] memory escrowIdsArb = new bytes32[](1);
-        escrowIdsArb[0] = t.escrowIdArb;
-        t.escrowArb.settle(escrowIdsArb);
->>>>>>> bda46bd (refactor: update settle and refund to accept array of escrowIds)
 
         // Verify funds are transferred to relay
         vm.assertEq(t.usdcArb.balanceOf(t.relay), 500);

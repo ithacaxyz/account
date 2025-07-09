@@ -27,20 +27,11 @@ contract LayerZeroSettler is OApp, ISettler {
     /// @param settlerContext Encoded context containing endpoint IDs
     /// @dev Requires msg.value to cover all LayerZero fees
     function send(bytes32 settlementId, bytes calldata settlerContext) external payable override {
-        // Decode settlerContext as an array of LayerZero endpoint IDs
-        uint32[] memory endpointIds = abi.decode(settlerContext, (uint32[]));
-
-        bytes32 finalDigest = keccak256(settlementId, settlerContext);
-        validSend[finalDigest] = true;
+        validSend[keccak256(abi.encode(settlementId, settlerContext))] = true;
     }
 
-    function executeSend(bytes32 settlementId, bytes calldata settlerContext)
-        external
-        payable
-        override
-    {
-        bytes32 finalDigest = keccak256(settlementId, settlerContext);
-        if (!validSend[finalDigest]) {
+    function executeSend(bytes32 settlementId, bytes calldata settlerContext) external payable {
+        if (!validSend[keccak256(abi.encode(settlementId, settlerContext))]) {
             revert InvalidSettlementId();
         }
 
