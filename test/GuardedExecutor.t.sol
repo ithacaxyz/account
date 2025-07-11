@@ -176,6 +176,60 @@ contract GuardedExecutorTest is BaseTest {
         }
     }
 
+    function testTransferFromGuard(bytes32) public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        PassKey memory k = _randomSecp256r1PassKey();
+
+        paymentToken.mint(address(0xb0b), 1 ether);
+        vm.prank(address(0xb0b));
+        paymentToken.approve(d.eoa, 1 ether);
+
+        Orchestrator.Intent memory u;
+        u.eoa = d.eoa;
+        u.combinedGas = 10000000;
+
+        bool transferToSelf = _randomChance(2);
+
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].to = address(paymentToken);
+        calls[0].data = abi.encodeWithSignature(
+            "transferFrom(address,address,uint256)",
+            address(0xb0b),
+            transferToSelf ? d.eoa : address(0xdad),
+            0.1 ether
+        );
+        u.executionData = abi.encode(calls);
+
+        vm.startPrank(d.eoa);
+        d.d.authorize(k.k);
+        d.d.setCanExecute(k.keyHash, address(paymentToken), _ANY_FN_SEL, true);
+        vm.stopPrank();
+
+        u.nonce = d.d.getNonce(0);
+        u.signature = _sig(k, u);
+
+        emit LogBool("transferToSelf:", transferToSelf);
+        if (transferToSelf) {
+            assertEq(oc.execute(false, abi.encode(u)), 0);
+            assertEq(paymentToken.balanceOf(d.eoa), 0.1 ether);
+            return;
+        }
+
+        assertEq(oc.execute(false, abi.encode(u)), bytes4(keccak256("NoSpendPermissions()")));
+
+        vm.startPrank(d.eoa);
+        d.d.setSpendLimit(
+            k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether
+        );
+        vm.stopPrank();
+
+        u.nonce = d.d.getNonce(0);
+        u.signature = _sig(k, u);
+        assertEq(oc.execute(false, abi.encode(u)), 0);
+        assertEq(paymentToken.balanceOf(address(0xdad)), 0.1 ether);
+        assertEq(d.d.spendInfos(k.keyHash)[0].spent, 0.1 ether);
+    }
+
     function _randomCalldata(bytes4 fnSel) internal returns (bytes memory) {
         if (fnSel == _EMPTY_CALLDATA_FN_SEL && _randomChance(8)) return "";
         return abi.encodePacked(fnSel);

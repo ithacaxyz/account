@@ -263,7 +263,8 @@ abstract contract GuardedExecutor is ERC7821 {
             // to transfer to an account that is not `address(this)`, treat it as outflow.
             if (fnSel == 0x23b872dd) {
                 // `transferFrom(address from, address to, uint256 amount)`.
-                if (address(bytes20(LibBytes.loadCalldata(data, 0x24))) == address(this)) continue;
+                address to = address(uint160(uint256(LibBytes.loadCalldata(data, 0x24))));
+                if (to == address(this)) continue;
                 if (LibBytes.loadCalldata(data, 0x44) == 0) continue; // `amount == 0`.
                 t.erc20s.p(target);
                 t.transferAmounts.p(LibBytes.loadCalldata(data, 0x44)); // `amount`.
