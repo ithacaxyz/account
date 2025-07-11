@@ -276,13 +276,6 @@ abstract contract GuardedExecutor is ERC7821 {
                 t.permit2ERC20s.p(LibBytes.loadCalldata(data, 0x04)); // `token`.
                 t.permit2Spenders.p(LibBytes.loadCalldata(data, 0x24)); // `spender`.
             }
-            // `setSpendLimit(bytes32,address,uint8,uint256)`.
-            if (fnSel == 0x598daac4) {
-                if (target != address(this)) continue;
-                if (LibBytes.loadCalldata(data, 0x04) != keyHash) continue;
-                t.erc20s.p(LibBytes.loadCalldata(data, 0x24)); // `token`.
-                t.transferAmounts.p(uint256(0));
-            }
         }
 
         // Sum transfer amounts, grouped by the ERC20s. In-place.
