@@ -83,6 +83,56 @@ contract GuardedExecutorTest is BaseTest {
         );
     }
 
+    function testApproveIncreaseSpent(bytes32) public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        PassKey memory k = _randomSecp256r1PassKey();
+
+        paymentToken.mint(d.eoa, 1 ether);
+
+        vm.startPrank(d.eoa);
+        d.d.authorize(k.k);
+        d.d.setCanExecute(k.keyHash, address(paymentToken), _ANY_FN_SEL, true);
+        vm.stopPrank();
+
+        Orchestrator.Intent memory u;
+        u.eoa = d.eoa;
+        u.combinedGas = 10000000;
+
+        ERC7821.Call[] memory calls = new ERC7821.Call[](2);
+
+        calls[0].to = address(paymentToken);
+        calls[0].data =
+            abi.encodeWithSignature("approve(address,uint256)", address(d.eoa), 0.1 ether);
+
+        calls[1].to = address(paymentToken);
+        calls[1].data = abi.encodeWithSignature(
+            "transferFrom(address,address,uint256)", address(d.eoa), address(0xb0b), 0.1 ether
+        );
+
+        u.nonce = d.d.getNonce(0);
+        u.executionData = abi.encode(calls);
+        u.signature = _sig(k, u);
+        assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("NoSpendPermissions()")));
+
+        // Check that after the spend permission has been done, the token can be approved
+        // and moved via `transferFrom`.
+
+        vm.startPrank(d.eoa);
+        d.d.setSpendLimit(
+            k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether
+        );
+        vm.stopPrank();
+
+        u.nonce = d.d.getNonce(0);
+        u.executionData = abi.encode(calls);
+        u.signature = _sig(k, u);
+        assertEq(oc.execute(abi.encode(u)), 0);
+        assertEq(paymentToken.balanceOf(address(0xb0b)), 0.1 ether);
+
+        // Check that the spent has been increased.
+        assertEq(d.d.spendInfos(k.keyHash)[0].spent, 0.1 ether);
+    }
+
     function testCanExecuteGetsResetAfterKeyIsReadded(address target, bytes4 fnSel) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256r1PassKey();
