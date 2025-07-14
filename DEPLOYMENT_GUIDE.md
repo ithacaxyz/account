@@ -83,6 +83,13 @@ If you need cross-chain settlement capabilities via LayerZero:
 
 ```bash
 export LZ_ENDPOINT=<LAYERZERO_ENDPOINT_ADDRESS>
+export SETTLER_OWNER=<SETTLER_OWNER_ADDRESS>
+
+forge script script/DeployL0.s.sol \
+  --rpc-url <YOUR_RPC_URL> \
+  --private-key $PRIVATE_KEY \
+  --broadcast \
+  --verify
 export LZ_SETTLER_OWNER=<SETTLER_OWNER_ADDRESS>
 
 forge script script/DeployL0.s.sol \
