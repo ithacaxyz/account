@@ -74,7 +74,11 @@ jobs:
           git commit -m "chore: bump contract versions due to bytecode changes - Contracts updated: $CONTRACTS_TO_BUMP"
           
           # Pull latest changes and rebase
-          git pull origin ${{ github.event.pull_request.head.ref }} --rebase
+          # Pull latest changes and rebase
+          if ! git pull origin ${{ github.event.pull_request.head.ref }} --rebase; then
+            echo "Failed to rebase version bump changes. Manual intervention required."
+            exit 1
+          fi
           
           # Push to the PR branch
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
