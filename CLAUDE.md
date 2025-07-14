@@ -40,7 +40,68 @@
 - After coding, ask: "What new attack surface did I introduce?"
 - Reject any change that raises security risk without strong justification.
 
-### 6. Verification Workflow
+### 6. Reentrancy Protection
+
+**All external functions MUST be protected against reentrancy attacks**. This is critical for maintaining contract security.
+
+#### Checks-Effects-Interactions Pattern
+
+Always follow the Checks-Effects-Interactions (CEI) pattern:
+
+```solidity
+// ✅ Correct: CEI pattern
+function withdraw(uint256 amount) external {
+    // 1. Checks
+    if (balances[msg.sender] < amount) revert InsufficientBalance();
+    
+    // 2. Effects (state changes BEFORE external calls)
+    balances[msg.sender] -= amount;
+    
+    // 3. Interactions (external calls LAST)
+    (bool success,) = msg.sender.call{value: amount}("");
+    if (!success) revert TransferFailed();
+}
+
+// ❌ Wrong: State change after external call
+function withdrawUnsafe(uint256 amount) external {
+    if (balances[msg.sender] < amount) revert InsufficientBalance();
+    
+    (bool success,) = msg.sender.call{value: amount}("");
+    if (!success) revert TransferFailed();
+    
+    balances[msg.sender] -= amount; // VULNERABLE: State change after external call
+}
+```
+
+#### When CEI Pattern Isn't Sufficient
+
+If the Checks-Effects-Interactions pattern cannot be applied (e.g., complex multi-step operations), use a reentrancy guard:
+
+```solidity
+// Add reentrancy guard modifier when CEI pattern isn't possible
+modifier nonReentrant() {
+    if (_locked != 1) revert ReentrancyGuardReentrantCall();
+    _locked = 2;
+    _;
+    _locked = 1;
+}
+
+function complexOperation() external nonReentrant {
+    // Complex logic that requires multiple external calls
+    // Protected by reentrancy guard
+}
+```
+
+#### Key Rules for Reentrancy Safety
+
+1. **Default to CEI pattern**: This should be your first choice for all functions
+2. **State changes before calls**: Update all state variables before making external calls
+3. **Use reentrancy guards sparingly**: Only when CEI pattern is genuinely not applicable
+4. **Review all external calls**: Any `.call()`, `.transfer()`, `.send()`, or calls to other contracts
+5. **Consider read-only reentrancy**: Even view functions called during state changes can be attack vectors
+6. **Test reentrancy scenarios**: Write tests that attempt reentrancy attacks on your functions
+
+### 7. Verification Workflow
 
 ```bash
 forge build                    # compile
@@ -51,7 +112,7 @@ npm run snapshot:main          # baseline gas (main)
 npm run diff:main              # gas diff vs. main
 ```
 
-### 7. Continuous Learning
+### 8. Continuous Learning
 
 - Consult official Solidity docs and relevant project references when uncertain.
 - Borrow battle-tested patterns from audited codebases.
@@ -156,15 +217,6 @@ Remember: **Well-tested code is trusted code**. Take the time to write thorough 
 
 ## Project-Specific Tools and Configuration
 
-### Ithaca Account Repository Details
-
-This is an EIP-7702 powered account contract repository for the Ithaca Porto system, focusing on secure, user-friendly crypto accounts with features like:
-- WebAuthn/PassKey authentication
-- Call batching and gas sponsorship
-- Access control and session keys
-- Multi-factor authentication (planned)
-- Chain abstraction (planned)
-
 ### Foundry Configuration
 You can always refer to the `foundry.toml` file to understand the environment the tests are running in.
 
@@ -249,87 +301,8 @@ cast keccak "transfer(address,uint256)"
 # Generate function selector (4-byte signature)
 cast sig "transfer(address,uint256)"
 
-# Encode calldata
-cast calldata "transfer(address,uint256)" 0x... 1000
-
-# Decode calldata
-cast calldata-decode "transfer(address,uint256)" 0xa9059cbb...
-```
-
-**Reading from Blockchain:**
-```bash
-# Read contract state (call)
-cast call CONTRACT_ADDRESS "balanceOf(address)" USER_ADDRESS --rpc-url $RPC_URL
-
-# Get storage at specific slot
-cast storage CONTRACT_ADDRESS 0 --rpc-url $RPC_URL
-
-# Get full storage layout (requires verified contract)
-cast storage CONTRACT_ADDRESS --rpc-url $RPC_URL
-
-# Get transaction receipt
-cast receipt TX_HASH --rpc-url $RPC_URL
-
-# Get current gas price
-cast gas-price --rpc-url $RPC_URL
-
-# Get account nonce
-cast nonce ADDRESS --rpc-url $RPC_URL
-
-# Get block number
-cast block-number --rpc-url $RPC_URL
-
-# Get contract bytecode
-cast code CONTRACT_ADDRESS --rpc-url $RPC_URL
-```
-
-**Writing to Blockchain:**
-```bash
-# Send transaction (write operation)
-cast send CONTRACT_ADDRESS "setNumber(uint256)" 42 --rpc-url $RPC_URL --private-key $PRIVATE_KEY
-
-# Estimate gas for transaction
-cast estimate CONTRACT_ADDRESS "transfer(address,uint256)" RECIPIENT 1000 --rpc-url $RPC_URL
-```
-
-**Data Conversion Utilities:**
-```bash
-# Convert between units
-cast to-wei 1 ether        # Convert to wei
-cast from-wei 1000000000000000000  # Convert from wei
-
-# Hex conversions
-cast to-hex 255            # Decimal to hex
-cast to-dec 0xff           # Hex to decimal
-cast to-uint256 100        # Convert to uint256 format
-
-# Address utilities
-cast to-checksum-address 0x...  # EIP-55 checksum
-cast compute-address DEPLOYER NONCE  # Compute deployment address
-```
-
-**ENS Operations:**
-```bash
-# Resolve ENS name to address
-cast resolve-name "vitalik.eth" --rpc-url $RPC_URL
-
-# Reverse ENS lookup
-cast lookup-address 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 --rpc-url $RPC_URL
-
-# Compute ENS namehash
-cast namehash "vitalik.eth"
-```
-
-**Advanced Features:**
-```bash
-# Run transaction locally and get trace
-cast run TX_HASH --rpc-url $RPC_URL
-
-# Extract selectors from bytecode
-cast selectors BYTECODE
-
-# 4byte directory lookup
-cast 4byte 0xa9059cbb  # Returns: transfer(address,uint256)
+# Get function sig from selector
+cast 4byte 0xa9059cbb
 ```
 
 ### When to Use Cast vs Custom Code
