@@ -19,6 +19,10 @@ const CONTRACT_CONFIG = {
     name: "SimpleFunder",
     bumpsWhenChanged: [], // SimpleFunder changes only bump itself
   },
+  "SimpleSettler.sol/SimpleSettler.json": {
+    name: "SimpleSettler",
+    bumpsWhenChanged: [], // SimpleSettler changes only bump itself
+  },
 };
 
 // All contracts to check for bytecode changes
