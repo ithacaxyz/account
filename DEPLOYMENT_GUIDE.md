@@ -77,8 +77,30 @@ factory.predictAddresses(pauseAuthority, salt);
 
 After deployment, verify the addresses match predictions.
 
+## Step 3: Deploy LayerZero Settler (Optional)
+
+If you need cross-chain settlement capabilities via LayerZero:
+
+```bash
+export LZ_ENDPOINT=<LAYERZERO_ENDPOINT_ADDRESS>
+export LZ_SETTLER_OWNER=<SETTLER_OWNER_ADDRESS>
+
+forge script script/DeployL0.s.sol \
+  --rpc-url <YOUR_RPC_URL> \
+  --private-key $PRIVATE_KEY \
+  --broadcast \
+  --verify
+```
+
+Required environment variables:
+- `LZ_ENDPOINT`: LayerZero V2 endpoint address for your chain
+- `LZ_SETTLER_OWNER`: Address that will own the settler contract (defaults to deployer)
+
+Find LayerZero endpoint addresses at: https://docs.layerzero.network/v2/developers/evm/technical-reference/deployed-contracts
+
 ## Troubleshooting
 
 - **"Factory not deployed"**: Ensure Safe Singleton Factory is deployed on your chain
 - **"Orchestrator not deployed"**: Deploy contracts in the correct order
 - **Different addresses**: Ensure you're using the same salt and pause authority
+- **"LZ_ENDPOINT not set"**: Check LayerZero docs for the endpoint address on your chain
