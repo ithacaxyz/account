@@ -29,7 +29,7 @@ contract SimpleSettler is ISettler, EIP712, Ownable {
         returns (string memory name, string memory version)
     {
         name = "SimpleSettler";
-        version = "0.1.0";
+        version = "0.1.1";
     }
 
     /// @dev Send the settlementId to the receiver on the input chains.
