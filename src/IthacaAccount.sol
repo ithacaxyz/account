@@ -129,6 +129,11 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev The public key is invalid.
     error InvalidPublicKey();
 
+    /// @dev Upgrading to `address(0)` is not allowed.
+    /// If you want to upgrade to a bricked implementation,
+    /// use `address(0xdeaDDeADDEaDdeaDdEAddEADDEAdDeadDEADDEaD)`.
+    error NewImplementationIsZero();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -290,6 +295,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// `upgradeProxyAccount` or similar, otherwise upgrades will be locked and
     /// only a new EIP-7702 transaction can change the authority's logic.
     function upgradeProxyAccount(address newImplementation) public virtual onlyThis {
+        if (newImplementation == address(0)) revert NewImplementationIsZero();
         LibEIP7702.upgradeProxyDelegation(newImplementation);
         (, string memory version) = _domainNameAndVersion();
         // Using a dedicated guard makes the hook only callable via this function
