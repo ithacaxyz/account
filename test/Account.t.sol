@@ -148,6 +148,28 @@ contract AccountTest is BaseTest {
         assertEq(MockSampleDelegateCallTarget(d.eoa).upgradeHookCounter(), 1);
     }
 
+    function testUpgradeAccountToZeroAddressReverts() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        PassKey memory k = _randomSecp256k1PassKey();
+
+        k.k.isSuperAdmin = true;
+
+        vm.prank(d.eoa);
+        d.d.authorize(k.k);
+
+        _TestUpgradeAccountWithPassKeyTemps memory t;
+        t.calls = new ERC7821.Call[](1);
+        t.calls[0].data = abi.encodeWithSignature("upgradeProxyAccount(address)", address(0));
+
+        t.nonce = d.d.getNonce(0);
+        bytes memory signature = _sig(d, d.d.computeDigest(t.calls, t.nonce));
+        t.opData = abi.encodePacked(t.nonce, signature);
+        t.executionData = abi.encode(t.calls, t.opData);
+
+        vm.expectRevert(IthacaAccount.NewImplementationIsZero.selector);
+        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
+    }
+
     function testApproveAndRevokeKey(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         IthacaAccount.Key memory k;
