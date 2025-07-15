@@ -296,8 +296,11 @@ contract Orchestrator is
             LibBit.or(
                 i.prePaymentAmount > i.prePaymentMaxAmount,
                 LibBit.or(
-                    i.prePaymentMaxAmount > i.totalPaymentMaxAmount,
-                    i.totalPaymentAmount > i.totalPaymentMaxAmount
+                    i.totalPaymentAmount > i.totalPaymentMaxAmount,
+                    LibBit.or(
+                        i.prePaymentMaxAmount > i.totalPaymentMaxAmount,
+                        i.prePaymentAmount > i.totalPaymentAmount
+                    )
                 )
             )
         ) {
