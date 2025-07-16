@@ -1,0 +1,6 @@
+{
+  "environment": "devnet",
+  "dryRun": true,
+  "maxRetries": 2,
+  "retryDelay": 2
+}

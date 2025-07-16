@@ -1,0 +1,10 @@
+{
+  "default": {
+    "pauseAuthority": "${MAINNET_PAUSE_AUTHORITY}",
+    "funderSigner": "${MAINNET_FUNDER_SIGNER}",
+    "funderOwner": "${MAINNET_FUNDER_OWNER}",
+    "settlerOwner": "${MAINNET_SETTLER_OWNER}",
+    "l0SettlerOwner": "${MAINNET_L0_SETTLER_OWNER}",
+    "settlerType": "layerzero"
+  }
+}
