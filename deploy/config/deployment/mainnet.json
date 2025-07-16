@@ -1,0 +1,6 @@
+{
+  "environment": "mainnet",
+  "dryRun": false,
+  "maxRetries": 3,
+  "retryDelay": 5
+}

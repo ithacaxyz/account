@@ -1,0 +1,10 @@
+{
+  "default": {
+    "pauseAuthority": "${TESTNET_PAUSE_AUTHORITY}",
+    "funderSigner": "${TESTNET_FUNDER_SIGNER}",
+    "funderOwner": "${TESTNET_FUNDER_OWNER}",
+    "settlerOwner": "${TESTNET_SETTLER_OWNER}",
+    "l0SettlerOwner": "${TESTNET_L0_SETTLER_OWNER}",
+    "settlerType": "layerzero"
+  }
+}
