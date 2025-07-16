@@ -17,7 +17,7 @@ import {DeploymentStatus} from "./DeploymentStatus.s.sol";
  * forge script deploy/DeployAll.s.sol:DeployAll \
  *   --rpc-url $RPC_URL \
  *   --broadcast \
- *   --sig "run(string,string[])" \
+ *   --sig "runWithStages(string,string[])" \
  *   "deploy/config/deployment/mainnet.json" \
  *   '["basic","interop","settlement","lz-config"]'
  *
@@ -39,10 +39,10 @@ contract DeployAll is Script {
     string[] ALL_STAGES = ["basic", "interop", "settlement", "lz-config"];
 
     function run(string memory configPath) external {
-        run(configPath, ALL_STAGES);
+        runWithStages(configPath, ALL_STAGES);
     }
 
-    function run(string memory configPath, string[] memory stages) external {
+    function runWithStages(string memory configPath, string[] memory stages) public {
         console.log("\n========================================");
         console.log("    ITHACA MULTI-STAGE DEPLOYMENT");
         console.log("========================================");
@@ -84,7 +84,7 @@ contract DeployAll is Script {
                 revert(string.concat("Deployment failed at stage: ", stages[i]));
             }
 
-            console.log("\n[✓] Stage completed:", stages[i]);
+            console.log(unicode"\n[✓] Stage completed:", stages[i]);
         }
 
         // Show final status

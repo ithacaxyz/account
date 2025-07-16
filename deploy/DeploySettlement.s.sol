@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import {BaseDeployment} from "./BaseDeployment.sol";
 import {console} from "forge-std/Script.sol";
+import {stdJson} from "forge-std/StdJson.sol";
 import {SimpleSettler} from "../src/SimpleSettler.sol";
 import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
 
@@ -19,6 +20,8 @@ import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
  *   "deploy/config/deployment/mainnet.json"
  */
 contract DeploySettlement is BaseDeployment {
+    using stdJson for string;
+
     enum SettlerType {
         SIMPLE,
         LAYERZERO
@@ -84,7 +87,7 @@ contract DeploySettlement is BaseDeployment {
         // Verify deployments
         verifyDeployments(chainId, deployed);
 
-        console.log("\n[✓] Settlement contracts deployment completed");
+        console.log(unicode"\n[✓] Settlement contracts deployment completed");
 
         if (settlerType == SettlerType.LAYERZERO) {
             console.log("\n[!] Remember to run ConfigureLayerZero to set up cross-chain peers");
@@ -268,7 +271,7 @@ contract DeploySettlement is BaseDeployment {
             require(address(settler.endpoint()) == contracts.layerZeroEndpoint, "Invalid endpoint");
         }
 
-        console.log("[✓] All verifications passed");
+        console.log(unicode"[✓] All verifications passed");
     }
 
     function getChainConfig(uint256 chainId, string memory key) internal view returns (address) {
