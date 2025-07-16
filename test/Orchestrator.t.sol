@@ -1471,33 +1471,32 @@ contract OrchestratorTest is BaseTest {
         inputChains[1] = 42161; // Arbitrum
         t.outputIntent.settlerContext = abi.encode(inputChains);
 
-        // Create execution data with both transfer and settler.send
+        // First set the execution data WITHOUT settler.send to calculate the digest
         {
-            // Calculate settlementId based on output calls + encodedFundTransfers
             ERC7821.Call[] memory outputCalls = new ERC7821.Call[](1);
             outputCalls[0] = _transferCall(address(t.usdcMainnet), t.friend, 1000);
+            t.outputIntent.executionData = abi.encode(outputCalls);
+        }
 
-            // Create the hash of output calls + encodedFundTransfers
-            // This becomes the settlementId
-            bytes32 settlementId = keccak256(abi.encode(outputCalls, encodedFundTransfers));
+        // Calculate the settlementId as the digest of the intent (without settler.send)
+        vm.chainId(1); // Ensure we're on mainnet for digest calculation
+        t.settlementId = oc.computeDigest(t.outputIntent);
 
-            t.settlementId = settlementId;
-
-            // Create calls array with transfer and settler.send
+        // Now update the execution data to include the settler.send call
+        {
             ERC7821.Call[] memory calls = new ERC7821.Call[](2);
-            calls[0] = outputCalls[0]; // Transfer USDC
+            calls[0] = _transferCall(address(t.usdcMainnet), t.friend, 1000);
             calls[1] = ERC7821.Call({
                 to: address(t.settler),
                 value: 0,
                 data: abi.encodeWithSelector(
-                    ISettler.send.selector, settlementId, t.outputIntent.settlerContext
+                    ISettler.send.selector, t.settlementId, t.outputIntent.settlerContext
                 )
             });
-
             t.outputIntent.executionData = abi.encode(calls);
         }
 
-        // settlementId is already computed above based on output calls + encodedFundTransfers
+        // settlementId is computed as the digest of the intent without settler.send call
 
         // Base Intent with escrow execution data
         t.baseIntent.eoa = t.d.eoa;
