@@ -18,7 +18,6 @@ import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
 import {ICommon} from "./interfaces/ICommon.sol";
 import {PauseAuthority} from "./PauseAuthority.sol";
 import {IFunder} from "./interfaces/IFunder.sol";
-import {ISettler} from "./interfaces/ISettler.sol";
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 
 /// @title Orchestrator
@@ -455,13 +454,6 @@ contract Orchestrator is
         if (i.isMultichain) {
             // For multi chain intents, we have to verify using merkle sigs.
             (isValid, keyHash) = _verifyMerkleSig(digest, eoa, i.signature);
-
-            // If this is an output intent, then send the digest as the settlementId
-            // on all input chains.
-            if (i.encodedFundTransfers.length > 0) {
-                // Output intent
-                ISettler(i.settler).send(digest, i.settlerContext);
-            }
         } else {
             (isValid, keyHash) = _verify(digest, eoa, i.signature);
         }

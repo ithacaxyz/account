@@ -14,6 +14,7 @@ import {ICommon} from "../src/interfaces/ICommon.sol";
 import {Merkle} from "murky/Merkle.sol";
 import {SimpleFunder} from "../src/SimpleFunder.sol";
 import {SimpleSettler} from "../src/SimpleSettler.sol";
+import {ISettler} from "../src/interfaces/ISettler.sol";
 
 import {Escrow} from "../src/Escrow.sol";
 import {IEscrow} from "../src/interfaces/IEscrow.sol";
@@ -1453,30 +1454,50 @@ contract OrchestratorTest is BaseTest {
         // 1. Prepare the output intent first to get its digest as settlementId
         t.outputIntent.eoa = t.d.eoa;
         t.outputIntent.nonce = t.d.d.getNonce(0);
-        t.outputIntent.executionData =
-            _transferExecutionData(address(t.usdcMainnet), t.friend, 1000);
         t.outputIntent.combinedGas = 1000000;
         t.outputIntent.settler = address(t.settler);
         t.outputIntent.isMultichain = true;
 
+        // First prepare encodedFundTransfers
+        bytes[] memory encodedFundTransfers = new bytes[](1);
+        encodedFundTransfers[0] =
+            abi.encode(ICommon.Transfer({token: address(t.usdcMainnet), amount: 1000}));
+        t.outputIntent.encodedFundTransfers = encodedFundTransfers;
+        t.outputIntent.funder = address(t.funder);
+
+        // Set settlerContext with input chains
+        uint256[] memory inputChains = new uint256[](2);
+        inputChains[0] = 8453; // Base
+        inputChains[1] = 42161; // Arbitrum
+        t.outputIntent.settlerContext = abi.encode(inputChains);
+
+        // Create execution data with both transfer and settler.send
         {
-            bytes[] memory encodedFundTransfers = new bytes[](1);
-            encodedFundTransfers[0] =
-                abi.encode(ICommon.Transfer({token: address(t.usdcMainnet), amount: 1000}));
+            // Calculate settlementId based on output calls + encodedFundTransfers
+            ERC7821.Call[] memory outputCalls = new ERC7821.Call[](1);
+            outputCalls[0] = _transferCall(address(t.usdcMainnet), t.friend, 1000);
 
-            t.outputIntent.encodedFundTransfers = encodedFundTransfers;
-            t.outputIntent.funder = address(t.funder);
+            // Create the hash of output calls + encodedFundTransfers
+            // This becomes the settlementId
+            bytes32 settlementId = keccak256(abi.encode(outputCalls, encodedFundTransfers));
 
-            // Set settlerContext with input chains
-            uint256[] memory _inputChains = new uint256[](2);
-            _inputChains[0] = 8453; // Base
-            _inputChains[1] = 42161; // Arbitrum
-            t.outputIntent.settlerContext = abi.encode(_inputChains);
+            t.settlementId = settlementId;
+
+            // Create calls array with transfer and settler.send
+            ERC7821.Call[] memory calls = new ERC7821.Call[](2);
+            calls[0] = outputCalls[0]; // Transfer USDC
+            calls[1] = ERC7821.Call({
+                to: address(t.settler),
+                value: 0,
+                data: abi.encodeWithSelector(
+                    ISettler.send.selector, settlementId, t.outputIntent.settlerContext
+                )
+            });
+
+            t.outputIntent.executionData = abi.encode(calls);
         }
 
-        // Compute the output intent digest to use as settlementId
-        vm.chainId(1); // Mainnet
-        t.settlementId = oc.computeDigest(t.outputIntent);
+        // settlementId is already computed above based on output calls + encodedFundTransfers
 
         // Base Intent with escrow execution data
         t.baseIntent.eoa = t.d.eoa;
@@ -1493,7 +1514,7 @@ contract OrchestratorTest is BaseTest {
                 recipient: t.relay,
                 token: address(t.usdcBase),
                 settler: address(t.settler),
-                sender: address(oc), // Orchestrator on output chain (mainnet)
+                sender: t.d.eoa, // Account on output chain (mainnet)
                 settlementId: t.settlementId,
                 senderChainId: 1, // Mainnet chain ID
                 escrowAmount: 600,
@@ -1532,7 +1553,7 @@ contract OrchestratorTest is BaseTest {
                 recipient: t.relay,
                 token: address(t.usdcArb),
                 settler: address(t.settler),
-                sender: address(oc), // Orchestrator on output chain (mainnet)
+                sender: t.d.eoa, // Account on output chain (mainnet)
                 settlementId: t.settlementId,
                 senderChainId: 1, // Mainnet chain ID
                 escrowAmount: 500,
@@ -1638,11 +1659,11 @@ contract OrchestratorTest is BaseTest {
         vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
         t.usdcMainnet.mint(address(t.funder), 1000);
 
-        // Expect settler.send to be called during outputIntent execution
+        // Expect settler.send to be called during outputIntent execution by the account
         vm.expectEmit(true, true, true, false, address(t.settler));
-        emit SimpleSettler.Sent(address(oc), t.settlementId, 8453); // Base
+        emit SimpleSettler.Sent(t.d.eoa, t.settlementId, 8453); // Base (from account, not orchestrator)
         vm.expectEmit(true, true, true, false, address(t.settler));
-        emit SimpleSettler.Sent(address(oc), t.settlementId, 42161); // Arbitrum
+        emit SimpleSettler.Sent(t.d.eoa, t.settlementId, 42161); // Arbitrum (from account, not orchestrator)
 
         // Relay funds the user account, and the intended execution happens.
         t.encodedIntents[0] = abi.encode(t.outputIntent);
@@ -1654,25 +1675,16 @@ contract OrchestratorTest is BaseTest {
         // 6. Settlement Phase - After outputIntent is executed successfully
         // The orchestrator emits Sent events using the output intent digest as settlementId
 
-        // First, let's check that the Sent events were emitted
-        uint256[] memory inputChains = new uint256[](2);
-        inputChains[0] = 8453; // Base
-        inputChains[1] = 42161; // Arbitrum
+        // The Sent events were already emitted during the output intent execution
 
-        // The orchestrator calls send on the settler to emit events
-        // Using the output intent digest as the settlementId
-        vm.expectEmit(true, true, true, false, address(t.settler));
-        emit SimpleSettler.Sent(address(oc), t.settlementId, 8453); // Base
-        vm.expectEmit(true, true, true, false, address(t.settler));
-        emit SimpleSettler.Sent(address(oc), t.settlementId, 42161); // Arbitrum
-        vm.prank(address(oc));
-        t.settler.send(t.settlementId, abi.encode(inputChains));
+        // The settler.send was already called during the output intent execution
+        // No need to call it again from the orchestrator
 
         // Now the settler owner (settlement oracle) writes the settlement attestation
         // This represents the off-chain process where the oracle verifies the Sent events
         // and writes the settlement on all input chains
         vm.prank(t.settlementOracle);
-        t.settler.write(address(oc), t.settlementId, 1); // Mainnet attestation
+        t.settler.write(t.d.eoa, t.settlementId, 1); // Mainnet attestation from account
 
         // 7. Settle on Base chain - release escrowed funds
         vm.revertToState(t.snapshot);
@@ -1688,7 +1700,7 @@ contract OrchestratorTest is BaseTest {
 
         // Settler owner needs to write the settlement on Base chain too
         vm.prank(t.settlementOracle);
-        t.settler.write(address(oc), t.settlementId, 1); // Write that mainnet orchestrator attested
+        t.settler.write(t.d.eoa, t.settlementId, 1); // Write that mainnet account attested
 
         // Now settle the escrow
         vm.expectEmit(true, false, false, false, address(t.escrowBase));
@@ -1717,7 +1729,7 @@ contract OrchestratorTest is BaseTest {
 
         // Settler owner needs to write the settlement on Arbitrum chain too
         vm.prank(t.settlementOracle);
-        t.settler.write(address(oc), t.settlementId, 1); // Write that mainnet orchestrator attested
+        t.settler.write(t.d.eoa, t.settlementId, 1); // Write that mainnet account attested
 
         // Now settle the escrow
         vm.expectEmit(true, false, false, false, address(t.escrowArb));
