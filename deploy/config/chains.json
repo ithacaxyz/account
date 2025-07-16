@@ -35,19 +35,6 @@
       "maxPriorityFeePerGas": "auto"
     }
   },
-  "31337": {
-    "name": "Porto Devnet",
-    "rpcUrl": "https://porto-dev.rpc.ithaca.xyz/",
-    "explorer": "",
-    "explorerApiKey": "",
-    "layerZeroEndpoint": "0x0000000000000000000000000000000000000000",
-    "layerZeroEid": 0,
-    "gasSettings": {
-      "maxFeePerGas": "auto",
-      "maxPriorityFeePerGas": "auto"
-    },
-    "isTestnet": true
-  },
   "11155111": {
     "name": "Sepolia",
     "rpcUrl": "${SEPOLIA_RPC_URL}",
@@ -81,6 +68,19 @@
     "explorerApiKey": "${BASESCAN_API_KEY}",
     "layerZeroEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
     "layerZeroEid": 40245,
+    "gasSettings": {
+      "maxFeePerGas": "auto",
+      "maxPriorityFeePerGas": "auto"
+    },
+    "isTestnet": true
+  },
+  "28404": {
+    "name": "Porto Devnet",
+    "rpcUrl": "https://porto-dev.rpc.ithaca.xyz/",
+    "explorer": "",
+    "explorerApiKey": "",
+    "layerZeroEndpoint": "0x0000000000000000000000000000000000000000",
+    "layerZeroEid": 0,
     "gasSettings": {
       "maxFeePerGas": "auto",
       "maxPriorityFeePerGas": "auto"

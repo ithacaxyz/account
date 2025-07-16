@@ -118,17 +118,19 @@ abstract contract BaseDeployment is Script {
                 uint256 chainId = targetChains[i];
                 string memory chainKey = vm.toString(chainId);
 
-                try stateJson.readUint(string.concat(".", chainKey, ".state")) returns (
-                    uint256 state
-                ) {
-                    chainDeployments[chainId].state = DeploymentState(state);
-                } catch {}
+                // Try to read state - if it fails, keep default
+                string memory stateKey = string.concat(".", chainKey, ".state");
+                if (bytes(stateJson).length > 0) {
+                    chainDeployments[chainId].state =
+                        DeploymentState(abi.decode(vm.parseJson(stateJson, stateKey), (uint256)));
+                }
 
-                try stateJson.readUint(string.concat(".", chainKey, ".attempts")) returns (
-                    uint256 attempts
-                ) {
-                    chainDeployments[chainId].attempts = attempts;
-                } catch {}
+                // Try to read attempts - if it fails, keep default
+                string memory attemptsKey = string.concat(".", chainKey, ".attempts");
+                if (bytes(stateJson).length > 0) {
+                    chainDeployments[chainId].attempts =
+                        abi.decode(vm.parseJson(stateJson, attemptsKey), (uint256));
+                }
             }
         } catch {
             // No previous state found
@@ -265,7 +267,7 @@ abstract contract BaseDeployment is Script {
         ChainDeployment memory deployment = chainDeployments[chainId];
 
         if (deployment.state == DeploymentState.COMPLETED) {
-            console.log("\n[✓] Skipping", deployment.chainName, "- already deployed");
+            console.log(unicode"\n[✓] Skipping", deployment.chainName, "- already deployed");
             return true;
         }
 
@@ -377,6 +379,42 @@ abstract contract BaseDeployment is Script {
             result[i - start] = strBytes[i];
         }
         return string(result);
+    }
+
+    // Helper functions for safe JSON parsing
+    function tryReadAddress(string memory json, string memory key)
+        internal
+        view
+        returns (address)
+    {
+        try vm.parseJson(json, key) returns (bytes memory data) {
+            if (data.length > 0) {
+                return abi.decode(data, (address));
+            }
+        } catch {}
+        return address(0);
+    }
+
+    function tryReadString(string memory json, string memory key)
+        internal
+        view
+        returns (string memory)
+    {
+        try vm.parseJson(json, key) returns (bytes memory data) {
+            if (data.length > 0) {
+                return abi.decode(data, (string));
+            }
+        } catch {}
+        return "";
+    }
+
+    function tryReadUint(string memory json, string memory key) internal view returns (uint256) {
+        try vm.parseJson(json, key) returns (bytes memory data) {
+            if (data.length > 0) {
+                return abi.decode(data, (uint256));
+            }
+        } catch {}
+        return 0;
     }
 
     // Abstract functions to be implemented by derived contracts

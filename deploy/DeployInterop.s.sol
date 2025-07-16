@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import {BaseDeployment} from "./BaseDeployment.sol";
 import {console} from "forge-std/Script.sol";
+import {stdJson} from "forge-std/StdJson.sol";
 import {SimpleFunder} from "../src/SimpleFunder.sol";
 import {Escrow} from "../src/Escrow.sol";
 
@@ -19,6 +20,8 @@ import {Escrow} from "../src/Escrow.sol";
  *   "deploy/config/deployment/mainnet.json"
  */
 contract DeployInterop is BaseDeployment {
+    using stdJson for string;
+
     struct InteropContracts {
         address simpleFunder;
         address escrow;
@@ -76,7 +79,7 @@ contract DeployInterop is BaseDeployment {
         // Verify deployments
         verifyDeployments(chainId, deployed, orchestrator, funderSigner, funderOwner);
 
-        console.log("\n[✓] Interop contracts deployment completed");
+        console.log(unicode"\n[✓] Interop contracts deployment completed");
     }
 
     function deploySimpleFunder(address funderSigner, address orchestrator, address funderOwner)
@@ -180,14 +183,14 @@ contract DeployInterop is BaseDeployment {
         // Verify SimpleFunder
         require(contracts.simpleFunder.code.length > 0, "SimpleFunder not deployed");
         SimpleFunder funder = SimpleFunder(contracts.simpleFunder);
-        require(funder.signer() == funderSigner, "Invalid funder signer");
-        require(funder.orchestrator() == orchestrator, "Invalid orchestrator reference");
+        require(funder.funder() == funderSigner, "Invalid funder signer");
+        require(funder.ORCHESTRATOR() == orchestrator, "Invalid orchestrator reference");
         require(funder.owner() == funderOwner, "Invalid funder owner");
 
         // Verify Escrow
         require(contracts.escrow.code.length > 0, "Escrow not deployed");
 
-        console.log("[✓] All verifications passed");
+        console.log(unicode"[✓] All verifications passed");
     }
 
     function getChainConfig(uint256 chainId, string memory key) internal view returns (address) {

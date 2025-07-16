@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import {BaseDeployment} from "./BaseDeployment.sol";
 import {console} from "forge-std/Script.sol";
+import {stdJson} from "forge-std/StdJson.sol";
 import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
 
 /**
@@ -18,6 +19,8 @@ import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
  *   "deploy/config/deployment/mainnet.json"
  */
 contract ConfigureLayerZero is BaseDeployment {
+    using stdJson for string;
+
     struct LzSettler {
         uint256 chainId;
         address settler;
@@ -73,9 +76,12 @@ contract ConfigureLayerZero is BaseDeployment {
             string memory chainKey = vm.toString(chainId);
 
             // Check if LayerZero settler exists
-            try settlementJson.readUint(string.concat(".", chainKey, ".settlerType")) returns (
-                uint256 settlerType
-            ) {
+            string memory typeKey = string.concat(".", chainKey, ".settlerType");
+            bytes memory typeData = vm.parseJson(settlementJson, typeKey);
+
+            if (typeData.length > 0) {
+                uint256 settlerType = abi.decode(typeData, (uint256));
+
                 if (settlerType == 1) {
                     // LayerZero type
                     LzSettler memory settler;
@@ -91,7 +97,7 @@ contract ConfigureLayerZero is BaseDeployment {
 
                     lzSettlers.push(settler);
                 }
-            } catch {}
+            }
         }
     }
 
@@ -175,9 +181,23 @@ contract ConfigureLayerZero is BaseDeployment {
         }
 
         console.log("\n[>] Configuring peer:");
-        console.log("    From:", sourceSettler.chainName, "(", peerConfig.sourceChainId, ")");
         console.log(
-            "    To:  ", getChainName(peerConfig.targetChainId), "(", peerConfig.targetChainId, ")"
+            string.concat(
+                "    From: ",
+                sourceSettler.chainName,
+                " (",
+                vm.toString(peerConfig.sourceChainId),
+                ")"
+            )
+        );
+        console.log(
+            string.concat(
+                "    To:   ",
+                getChainName(peerConfig.targetChainId),
+                " (",
+                vm.toString(peerConfig.targetChainId),
+                ")"
+            )
         );
 
         // Switch to source chain
@@ -191,7 +211,7 @@ contract ConfigureLayerZero is BaseDeployment {
             bytes32 expectedPeer = bytes32(uint256(uint160(peerConfig.targetSettler)));
 
             if (currentPeer == expectedPeer) {
-                console.log("    [✓] Already configured correctly");
+                console.log(unicode"    [✓] Already configured correctly");
                 peerConfigs[configIndex].configured = true;
                 return true;
             }
@@ -206,14 +226,14 @@ contract ConfigureLayerZero is BaseDeployment {
         try this.setPeerExternal(
             sourceSettler.settler, peerConfig.targetEid, peerConfig.targetSettler
         ) {
-            console.log("    [✓] Peer configured successfully");
+            console.log(unicode"    [✓] Peer configured successfully");
             return true;
         } catch Error(string memory reason) {
-            console.log("    [✗] Failed:", reason);
+            console.log(unicode"    [✗] Failed:", reason);
             peerConfigs[configIndex].error = reason;
             return false;
         } catch {
-            console.log("    [✗] Failed: Unknown error");
+            console.log(unicode"    [✗] Failed: Unknown error");
             peerConfigs[configIndex].error = "Unknown error";
             return false;
         }
@@ -237,9 +257,12 @@ contract ConfigureLayerZero is BaseDeployment {
                     vm.toString(peerConfigs[i].targetChainId)
                 );
 
-                try json.readBool(string.concat(key, ".configured")) returns (bool configured) {
-                    peerConfigs[i].configured = configured;
-                } catch {}
+                // Try to read configured status
+                string memory configKey = string.concat(key, ".configured");
+                bytes memory configData = vm.parseJson(json, configKey);
+                if (configData.length > 0) {
+                    peerConfigs[i].configured = abi.decode(configData, (bool));
+                }
             }
         } catch {}
     }
