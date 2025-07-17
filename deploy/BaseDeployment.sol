@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import {Script, console} from "forge-std/Script.sol";
 import {stdJson} from "forge-std/StdJson.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 
 /**
  * @title BaseDeployment
@@ -239,6 +240,11 @@ abstract contract BaseDeployment is Script {
      * @notice Save deployment state to registry
      */
     function saveDeploymentState() internal {
+        // Only save state during actual broadcasts, not dry runs
+        if (!vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) {
+            return;
+        }
+
         string memory json = "{";
 
         for (uint256 i = 0; i < targetChainIds.length; i++) {
@@ -466,6 +472,11 @@ abstract contract BaseDeployment is Script {
      * @notice Save chain registry to file
      */
     function saveChainRegistry(uint256 chainId) internal {
+        // Only save registry during actual broadcasts, not dry runs
+        if (!vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) {
+            return;
+        }
+
         DeployedContracts memory deployed = deployedContracts[chainId];
 
         string memory json = "{";
