@@ -102,6 +102,7 @@ contract DeployMain is BaseDeployment {
             address orchestrator;
             if (config.salt == bytes32(0)) {
                 // Use CREATE with new keyword
+                vm.broadcast();
                 orchestrator = address(new Orchestrator(config.pauseAuthority));
                 console.log("Orchestrator deployed with CREATE:", orchestrator);
             } else {
@@ -121,6 +122,7 @@ contract DeployMain is BaseDeployment {
             address accountImpl;
             if (config.salt == bytes32(0)) {
                 // Use CREATE with new keyword
+                vm.broadcast();
                 accountImpl = address(new IthacaAccount(deployed.orchestrator));
                 console.log("IthacaAccount deployed with CREATE:", accountImpl);
             } else {
@@ -140,6 +142,7 @@ contract DeployMain is BaseDeployment {
             address accountProxy;
             if (config.salt == bytes32(0)) {
                 // For regular CREATE, use the library's deployment method
+                vm.broadcast();
                 accountProxy = LibEIP7702.deployProxy(deployed.accountImpl, address(0));
                 console.log("AccountProxy deployed with CREATE:", accountProxy);
             } else {
@@ -159,6 +162,7 @@ contract DeployMain is BaseDeployment {
             address simulator;
             if (config.salt == bytes32(0)) {
                 // Use CREATE with new keyword
+                vm.broadcast();
                 simulator = address(new Simulator());
                 console.log("Simulator deployed with CREATE:", simulator);
             } else {
@@ -192,6 +196,7 @@ contract DeployMain is BaseDeployment {
             address funder;
             if (config.salt == bytes32(0)) {
                 // Use CREATE with new keyword
+                vm.broadcast();
                 funder = address(
                     new SimpleFunder(config.funderSigner, deployed.orchestrator, config.funderOwner)
                 );
@@ -214,6 +219,7 @@ contract DeployMain is BaseDeployment {
             address escrow;
             if (config.salt == bytes32(0)) {
                 // Use CREATE with new keyword
+                vm.broadcast();
                 escrow = address(new Escrow());
                 console.log("Escrow deployed with CREATE:", escrow);
             } else {
@@ -244,6 +250,7 @@ contract DeployMain is BaseDeployment {
             address settler;
             if (config.salt == bytes32(0)) {
                 // Use CREATE with new keyword
+                vm.broadcast();
                 settler = address(new SimpleSettler(config.settlerOwner));
                 console.log("SimpleSettler deployed with CREATE:", settler);
             } else {
@@ -275,6 +282,7 @@ contract DeployMain is BaseDeployment {
             address settler;
             if (config.salt == bytes32(0)) {
                 // Use CREATE with new keyword
+                vm.broadcast();
                 settler =
                     address(new LayerZeroSettler(config.layerZeroEndpoint, config.l0SettlerOwner));
                 console.log("LayerZeroSettler deployed with CREATE:", settler);
