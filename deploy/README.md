@@ -249,7 +249,7 @@ This is useful for chains that need:
 
 The deployment system maintains state in the `deploy/registry/` directory:
 
-- **Contract addresses**: `{chainName}-{chainId}.json`
+- **Contract addresses**: `deployment_{chainId}.json`
   - Contains deployed contract addresses for each chain
   - Automatically updated after each successful deployment
 
@@ -257,7 +257,7 @@ The deployment system maintains state in the `deploy/registry/` directory:
   - Tracks deployment progress for each stage
   - Allows resuming deployments if interrupted
 
-Example registry file (`Ethereum Mainnet-1.json`):
+Example registry file (`deployment_1.json`):
 ```json
 {
   "Orchestrator": "0x...",

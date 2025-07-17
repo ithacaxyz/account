@@ -188,13 +188,7 @@ abstract contract BaseDeployment is Script {
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
             string memory registryFile = string.concat(
-                vm.projectRoot(),
-                "/",
-                REGISTRY_PATH,
-                chainConfigs[chainId].name,
-                "-",
-                vm.toString(chainId),
-                ".json"
+                vm.projectRoot(), "/", REGISTRY_PATH, "deployment_", vm.toString(chainId), ".json"
             );
 
             try vm.readFile(registryFile) returns (string memory registryJson) {
@@ -530,9 +524,8 @@ abstract contract BaseDeployment is Script {
 
         json = string.concat(json, "}");
 
-        string memory registryFile = string.concat(
-            REGISTRY_PATH, chainConfigs[chainId].name, "-", vm.toString(chainId), ".json"
-        );
+        string memory registryFile =
+            string.concat(REGISTRY_PATH, "deployment_", vm.toString(chainId), ".json");
         string memory fullPath = string.concat(vm.projectRoot(), "/", registryFile);
         vm.writeFile(fullPath, json);
     }
