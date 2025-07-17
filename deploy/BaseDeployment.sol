@@ -503,44 +503,33 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         string memory contractName
     ) internal returns (address deployed) {
         bytes32 salt = chainConfigs[chainId].salt;
+        require(salt != bytes32(0), "deployContract should only be used for CREATE2");
 
-        if (salt == bytes32(0)) {
-            // Use regular CREATE
-            bytes memory bytecode =
-                args.length > 0 ? abi.encodePacked(creationCode, args) : creationCode;
-
-            assembly {
-                deployed := create(0, add(bytecode, 0x20), mload(bytecode))
-            }
-            require(deployed != address(0), string.concat(contractName, " deployment failed"));
-            console.log(string.concat(contractName, " deployed with CREATE:"), deployed);
+        // Use CREATE2 via Safe Singleton Factory
+        // First compute the predicted address
+        address predicted;
+        if (args.length > 0) {
+            predicted = computeAddress(creationCode, args, salt);
         } else {
-            // Use CREATE2 via Safe Singleton Factory
-            // First compute the predicted address
-            address predicted;
-            if (args.length > 0) {
-                predicted = computeAddress(creationCode, args, salt);
-            } else {
-                predicted = computeAddress(creationCode, salt);
-            }
-
-            // Check if already deployed (CREATE2 collision)
-            if (predicted.code.length > 0) {
-                console.log(unicode"[🔷] ", contractName, "already deployed at:", predicted);
-                emit ContractAlreadyDeployed(chainId, contractName, predicted);
-                return predicted;
-            }
-
-            // Deploy using CREATE2
-            if (args.length > 0) {
-                deployed = broadcastDeploy(creationCode, args, salt);
-            } else {
-                deployed = broadcastDeploy(creationCode, salt);
-            }
-
-            console.log(string.concat(contractName, " deployed with CREATE2:"), deployed);
-            console.log("  Salt:", vm.toString(salt));
-            console.log("  Predicted:", predicted);
+            predicted = computeAddress(creationCode, salt);
         }
+
+        // Check if already deployed (CREATE2 collision)
+        if (predicted.code.length > 0) {
+            console.log(unicode"[🔷] ", contractName, "already deployed at:", predicted);
+            emit ContractAlreadyDeployed(chainId, contractName, predicted);
+            return predicted;
+        }
+
+        // Deploy using CREATE2
+        if (args.length > 0) {
+            deployed = broadcastDeploy(creationCode, args, salt);
+        } else {
+            deployed = broadcastDeploy(creationCode, salt);
+        }
+
+        console.log(string.concat(contractName, " deployed with CREATE2:"), deployed);
+        console.log("  Salt:", vm.toString(salt));
+        console.log("  Predicted:", predicted);
     }
 }
