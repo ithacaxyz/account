@@ -9,14 +9,14 @@ import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
 /**
  * @title ConfigureLayerZero
  * @notice Configures LayerZero peer connections between deployed settlers
- * @dev Fourth stage of deployment - only runs if LayerZero settlers were deployed
+ * @dev Configuration stage - only runs if "layerzeroConfig" is in stages
  *
  * Usage:
  * forge script deploy/ConfigureLayerZero.s.sol:ConfigureLayerZero \
  *   --rpc-url $RPC_URL \
  *   --broadcast \
- *   --sig "run(string)" \
- *   "mainnet"
+ *   --sig "run(uint256[])" \
+ *   "[1,42161,8453]"
  */
 contract ConfigureLayerZero is BaseDeployment {
     using stdJson for string;
@@ -47,8 +47,8 @@ contract ConfigureLayerZero is BaseDeployment {
         return "LayerZero Configuration";
     }
 
-    function run(string memory environment) external {
-        initializeDeployment(environment);
+    function run(uint256[] memory chainIds) external {
+        initializeDeployment(chainIds);
 
         // Load all LayerZero settlers
         loadLzSettlers();
@@ -68,25 +68,26 @@ contract ConfigureLayerZero is BaseDeployment {
     }
 
     function loadLzSettlers() internal {
-        // Check if we're using LayerZero settlers
-        ContractConfig memory contractConfig = getContractConfig();
+        for (uint256 i = 0; i < targetChainIds.length; i++) {
+            uint256 chainId = targetChainIds[i];
 
-        if (keccak256(bytes(contractConfig.settlerType)) != keccak256(bytes("layerzero"))) {
-            console.log("\n[!] Settler type is not LayerZero. Skipping configuration.");
-            return;
-        }
+            // Check if this chain has layerzeroConfig stage
+            if (!shouldDeployStage(chainId, "layerzeroConfig")) {
+                continue;
+            }
 
-        for (uint256 i = 0; i < config.targetChains.length; i++) {
-            uint256 chainId = config.targetChains[i];
             DeployedContracts memory deployed = getDeployedContracts(chainId);
             ChainConfig memory chainConfig = getChainConfig(chainId);
 
-            if (deployed.settler != address(0) && chainConfig.endpoint != address(0)) {
+            if (
+                deployed.layerZeroSettler != address(0)
+                    && chainConfig.layerZeroEndpoint != address(0)
+            ) {
                 LzSettler memory settler;
                 settler.chainId = chainId;
                 settler.chainName = chainConfig.name;
-                settler.settler = deployed.settler;
-                settler.eid = chainConfig.eid;
+                settler.settler = deployed.layerZeroSettler;
+                settler.eid = chainConfig.layerZeroEid;
 
                 lzSettlers.push(settler);
 
@@ -216,7 +217,8 @@ contract ConfigureLayerZero is BaseDeployment {
         } catch {}
 
         // Configure peer
-        if (config.deployment.dryRun) {
+        ChainConfig memory chainConfig = getChainConfig(sourceSettler.chainId);
+        if (chainConfig.dryRun) {
             console.log("    [DRY RUN] Would set peer");
             return true;
         }

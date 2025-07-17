@@ -26,16 +26,22 @@ contract DeployInterop is BaseDeployment {
         return "Interop";
     }
 
-    function run(string memory environment) external {
-        initializeDeployment(environment);
+    function run(uint256[] memory chainIds) external {
+        initializeDeployment(chainIds);
         executeDeployment();
     }
 
     function deployToChain(uint256 chainId) internal override {
+        // Check if this stage should be deployed
+        if (!shouldDeployStage(chainId, "interop")) {
+            console.log("Interop stage not configured for this chain");
+            return;
+        }
+
         console.log("Deploying interoperability contracts...");
 
         // Get configuration
-        ContractConfig memory contractConfig = getContractConfig();
+        ChainConfig memory chainConfig = getChainConfig(chainId);
         DeployedContracts memory existing = getDeployedContracts(chainId);
 
         // Verify dependencies
@@ -46,7 +52,7 @@ contract DeployInterop is BaseDeployment {
         // Deploy SimpleFunder
         if (existing.simpleFunder == address(0)) {
             address simpleFunder = deploySimpleFunder(
-                contractConfig.funderSigner, existing.orchestrator, contractConfig.funderOwner
+                chainConfig.funderSigner, existing.orchestrator, chainConfig.funderOwner
             );
             console.log("SimpleFunder deployed:", simpleFunder);
             saveDeployedContract(chainId, "SimpleFunder", simpleFunder);
@@ -86,14 +92,14 @@ contract DeployInterop is BaseDeployment {
         console.log("\n[>] Verifying deployments...");
 
         DeployedContracts memory contracts = getDeployedContracts(chainId);
-        ContractConfig memory contractConfig = getContractConfig();
+        ChainConfig memory chainConfig = getChainConfig(chainId);
 
         // Verify SimpleFunder
         require(contracts.simpleFunder.code.length > 0, "SimpleFunder not deployed");
         SimpleFunder funder = SimpleFunder(payable(contracts.simpleFunder));
-        require(funder.funder() == contractConfig.funderSigner, "Invalid funder signer");
+        require(funder.funder() == chainConfig.funderSigner, "Invalid funder signer");
         require(funder.ORCHESTRATOR() == contracts.orchestrator, "Invalid orchestrator reference");
-        require(funder.owner() == contractConfig.funderOwner, "Invalid funder owner");
+        require(funder.owner() == chainConfig.funderOwner, "Invalid funder owner");
 
         // Verify Escrow
         require(contracts.escrow.code.length > 0, "Escrow not deployed");
