@@ -52,12 +52,10 @@ The deployment system is modular with the following stages:
 - **interop**: Interoperability contracts (SimpleFunder, Escrow)
 - **simpleSettler**: Single-chain settlement contract
 - **layerzeroSettler**: Cross-chain settlement contract
-- **layerzeroConfig**: Configure LayerZero peer connections between deployed settlers
 
 ### Stage Dependencies
 
 - **interop** requires **basic** to be deployed first
-- **layerzeroConfig** requires **layerzeroSettler** to be deployed on at least 2 chains
 
 ## Deployment Scripts
 
@@ -90,50 +88,8 @@ The script automatically deploys stages in the correct order:
 1. `basic` - Core contracts (Orchestrator, IthacaAccount, Proxy, Simulator)
 2. `interop` - Interoperability contracts (SimpleFunder, Escrow)
 3. `simpleSettler` and/or `layerzeroSettler` - Settlement contracts
-4. `layerzeroConfig` - Configure LayerZero peers (if using LayerZero)
 
-### Deploy Individual Stages (Advanced)
-
-For more control, you can also deploy individual stages
-
-Deploy specific stages only:
-
-```bash
-# Deploy basic contracts
-forge script deploy/DeployBasic.s.sol:DeployBasic \
-  --rpc-url $RPC_URL \
-  --broadcast \
-  --sig "run(uint256[])" \
-  "[11155111]"
-
-# Deploy interop contracts
-forge script deploy/DeployInterop.s.sol:DeployInterop \
-  --rpc-url $RPC_URL \
-  --broadcast \
-  --sig "run(uint256[])" \
-  "[11155111]"
-
-# Deploy SimpleSettler
-forge script deploy/DeploySimpleSettler.s.sol:DeploySimpleSettler \
-  --rpc-url $RPC_URL \
-  --broadcast \
-  --sig "run(uint256[])" \
-  "[28404]"
-
-# Deploy LayerZeroSettler
-forge script deploy/DeployLayerZeroSettler.s.sol:DeployLayerZeroSettler \
-  --rpc-url $RPC_URL \
-  --broadcast \
-  --sig "run(uint256[])" \
-  "[1,42161,8453]"
-
-# Configure LayerZero peers
-forge script deploy/ConfigureLayerZero.s.sol:ConfigureLayerZero \
-  --rpc-url $RPC_URL \
-  --broadcast \
-  --sig "run(uint256[])" \
-  "[1,42161,8453]"
-```
+The DeployMain script handles all deployment stages automatically based on the configuration in `deploy-config.json`. Each chain will only deploy the stages specified in its configuration.
 
 ### Complete Deployment Example
 
@@ -156,7 +112,7 @@ The script will:
 - Skip already deployed contracts
 - Save deployment addresses to the registry
 
-**Note**: For LayerZero configuration across multiple chains, you may need to run the `ConfigureLayerZero.s.sol` script separately after deploying to all target chains.
+**Note**: LayerZero peer configuration across multiple chains will be added in a future update.
 
 ## Environment Variables
 
@@ -215,7 +171,7 @@ To add a new chain to the deployment system:
      "funderOwner": "0x...",
      "settlerOwner": "0x...",
      "l0SettlerOwner": "0x...",
-     "stages": ["basic", "interop", "layerzeroSettler", "layerzeroConfig"],
+     "stages": ["basic", "interop", "layerzeroSettler"],
      "maxRetries": 3,
      "retryDelay": 5
    }
@@ -242,7 +198,7 @@ To add a new chain to the deployment system:
 Chains can deploy both SimpleSettler and LayerZeroSettler by including both stages in the configuration:
 
 ```json
-"stages": ["basic", "interop", "simpleSettler", "layerzeroSettler", "layerzeroConfig"]
+"stages": ["basic", "interop", "simpleSettler", "layerzeroSettler"]
 ```
 
 This is useful for chains that need:
@@ -304,7 +260,7 @@ For cross-chain functionality, the LayerZero configuration stage:
 Requirements:
 - LayerZeroSettler must be deployed on at least 2 chains
 - Valid LayerZero endpoints must be configured
-- `layerzeroConfig` stage must be included for participating chains
+- LayerZero peer configuration will be added in a future update
 
 ## Troubleshooting
 
@@ -314,9 +270,9 @@ Requirements:
    - Ensure RPC URL matches the chain ID in config
    - Verify the RPC endpoint is correct
 
-2. **"Orchestrator not found - run DeployBasic first"**
-   - Deploy stages in order: basic → interop → settlers
-   - Check registry files for missing contracts
+2. **"Orchestrator not found"**
+   - Ensure `basic` stage is included in the chain's stages configuration
+   - The DeployMain script automatically handles stage ordering
 
 3. **"Less than 2 LayerZero settlers found"**
    - Deploy LayerZeroSettler on multiple chains before configuring
