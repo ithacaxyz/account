@@ -18,7 +18,7 @@ import {DeploymentStatus} from "./DeploymentStatus.s.sol";
  *   --rpc-url $RPC_URL \
  *   --broadcast \
  *   --sig "runWithStages(string,string[])" \
- *   "deploy/config/deployment/mainnet.json" \
+ *   "mainnet" \
  *   '["basic","interop","settlement","lz-config"]'
  *
  * Or to run all stages:
@@ -26,7 +26,7 @@ import {DeploymentStatus} from "./DeploymentStatus.s.sol";
  *   --rpc-url $RPC_URL \
  *   --broadcast \
  *   --sig "run(string)" \
- *   "deploy/config/deployment/mainnet.json"
+ *   "mainnet"
  */
 contract DeployAll is Script {
     enum Stage {
@@ -38,20 +38,17 @@ contract DeployAll is Script {
 
     string[] ALL_STAGES = ["basic", "interop", "settlement", "lz-config"];
 
-    function run(string memory configPath) external {
-        runWithStages(configPath, ALL_STAGES);
+    function run(string memory environment) external {
+        runWithStages(environment, ALL_STAGES);
     }
 
-    function runWithStages(string memory configPath, string[] memory stages) public {
+    function runWithStages(string memory environment, string[] memory stages) public {
         console.log("\n========================================");
         console.log("    ITHACA MULTI-STAGE DEPLOYMENT");
         console.log("========================================");
-        console.log("Config:", configPath);
+        console.log("Environment:", environment);
         console.log("Stages:", stages.length);
         console.log("");
-
-        // Parse environment from config path
-        string memory environment = parseEnvironment(configPath);
 
         // Show initial status
         console.log("Initial deployment status:");
@@ -71,7 +68,7 @@ contract DeployAll is Script {
             console.log("Running stage:", stages[i]);
             console.log("========================================");
 
-            bool success = executeStage(stage, configPath);
+            bool success = executeStage(stage, environment);
 
             if (!success) {
                 console.log("\n[!] Stage failed:", stages[i]);
@@ -125,45 +122,47 @@ contract DeployAll is Script {
         return true;
     }
 
-    function executeStage(Stage stage, string memory configPath) internal returns (bool) {
-        try this.executeStageExternal(stage, configPath) {
-            return true;
-        } catch {
-            return false;
-        }
-    }
-
-    function executeStageExternal(Stage stage, string memory configPath) external {
-        require(msg.sender == address(this), "Only callable internally");
-
+    function executeStage(Stage stage, string memory environment) internal returns (bool) {
+        // Execute stage directly - errors will revert the transaction
         if (stage == Stage.BASIC) {
             DeployBasic deploy = new DeployBasic();
-            deploy.run(configPath);
+            deploy.run(environment);
         } else if (stage == Stage.INTEROP) {
             DeployInterop deploy = new DeployInterop();
-            deploy.run(configPath);
+            deploy.run(environment);
         } else if (stage == Stage.SETTLEMENT) {
             DeploySettlement deploy = new DeploySettlement();
-            deploy.run(configPath);
+            deploy.run(environment);
         } else if (stage == Stage.LZ_CONFIG) {
             ConfigureLayerZero deploy = new ConfigureLayerZero();
-            deploy.run(configPath);
+            deploy.run(environment);
         }
+        return true;
     }
 
     function hasBasicDeployments(string memory environment) internal view returns (bool) {
-        try vm.readFile("deploy/registry/basic-contracts.json") returns (string memory json) {
-            // Check if any chain has basic deployments
-            string memory chainsPath = string.concat("deploy/config/chains/", environment, ".json");
-            string memory chainsJson = vm.readFile(chainsPath);
+        // Check for any chain registry files with basic deployments
+        string memory chainsPath = string.concat("deploy/config/chains/", environment, ".json");
+        string memory fullChainsPath = string.concat(vm.projectRoot(), "/", chainsPath);
+
+        try vm.readFile(fullChainsPath) returns (string memory chainsJson) {
             uint256[] memory chains = chainsJson.readUintArray(".chains");
 
+            // Look for any chain with orchestrator deployed
             for (uint256 i = 0; i < chains.length; i++) {
-                string memory chainKey = vm.toString(chains[i]);
-                try json.readAddress(string.concat(".", chainKey, ".orchestrator")) returns (
-                    address
-                ) {
-                    return true;
+                string memory registryFile = string.concat(
+                    "deploy/registry/",
+                    getChainName(chains[i]),
+                    "-",
+                    vm.toString(chains[i]),
+                    ".json"
+                );
+                string memory registryPath = string.concat(vm.projectRoot(), "/", registryFile);
+
+                try vm.readFile(registryPath) returns (string memory registry) {
+                    try registry.readAddress(".Orchestrator") returns (address) {
+                        return true;
+                    } catch {}
                 } catch {}
             }
         } catch {}
@@ -172,51 +171,34 @@ contract DeployAll is Script {
     }
 
     function hasLayerZeroSettlers(string memory environment) internal view returns (bool) {
-        try vm.readFile("deploy/registry/settlement-contracts.json") returns (string memory json) {
-            string memory chainsPath = string.concat("deploy/config/chains/", environment, ".json");
-            string memory chainsJson = vm.readFile(chainsPath);
-            uint256[] memory chains = chainsJson.readUintArray(".chains");
+        // Check contract config to see if LayerZero settlers are expected
+        string memory contractsPath =
+            string.concat("deploy/config/contracts/", environment, ".json");
+        string memory fullContractsPath = string.concat(vm.projectRoot(), "/", contractsPath);
 
-            uint256 lzSettlers = 0;
-            for (uint256 i = 0; i < chains.length; i++) {
-                string memory chainKey = vm.toString(chains[i]);
-                try json.readUint(string.concat(".", chainKey, ".settlerType")) returns (
-                    uint256 settlerType
-                ) {
-                    if (settlerType == 1) {
-                        // LayerZero
-                        lzSettlers++;
-                    }
-                } catch {}
+        try vm.readFile(fullContractsPath) returns (string memory contractsJson) {
+            string memory settlerType = contractsJson.readString(".settlerType");
+
+            // Only run LZ config if settler type is layerzero and we have at least 2 chains
+            if (keccak256(bytes(settlerType)) == keccak256(bytes("layerzero"))) {
+                string memory chainsPath =
+                    string.concat("deploy/config/chains/", environment, ".json");
+                string memory fullChainsPath = string.concat(vm.projectRoot(), "/", chainsPath);
+                string memory chainsJson = vm.readFile(fullChainsPath);
+                uint256[] memory chains = chainsJson.readUintArray(".chains");
+
+                return chains.length >= 2;
             }
-
-            return lzSettlers >= 2;
         } catch {}
 
         return false;
     }
 
-    function parseEnvironment(string memory configPath) internal pure returns (string memory) {
-        // Extract environment from path like "deploy/config/deployment/mainnet.json"
-        bytes memory pathBytes = bytes(configPath);
-        uint256 lastSlash = 0;
-        uint256 dotPos = pathBytes.length;
+    function getChainName(uint256 chainId) internal view returns (string memory) {
+        string memory chainsPath = "deploy/config/chains.json";
+        string memory fullPath = string.concat(vm.projectRoot(), "/", chainsPath);
+        string memory chainsJson = vm.readFile(fullPath);
 
-        // Find last slash
-        for (uint256 i = 0; i < pathBytes.length; i++) {
-            if (pathBytes[i] == "/") {
-                lastSlash = i;
-            } else if (pathBytes[i] == ".") {
-                dotPos = i;
-            }
-        }
-
-        // Extract filename between last slash and dot
-        bytes memory envBytes = new bytes(dotPos - lastSlash - 1);
-        for (uint256 i = 0; i < envBytes.length; i++) {
-            envBytes[i] = pathBytes[lastSlash + 1 + i];
-        }
-
-        return string(envBytes);
+        return chainsJson.readString(string.concat(".", vm.toString(chainId), ".name"));
     }
 }

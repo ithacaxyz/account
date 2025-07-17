@@ -16,7 +16,7 @@ import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
  *   --rpc-url $RPC_URL \
  *   --broadcast \
  *   --sig "run(string)" \
- *   "deploy/config/deployment/mainnet.json"
+ *   "mainnet"
  */
 contract ConfigureLayerZero is BaseDeployment {
     using stdJson for string;
@@ -37,8 +37,7 @@ contract ConfigureLayerZero is BaseDeployment {
         string error;
     }
 
-    // Registry files
-    string constant SETTLEMENT_REGISTRY = "deploy/registry/settlement-contracts.json";
+    // Registry file
     string constant LZ_CONFIG_REGISTRY = "deploy/registry/lz-peer-config.json";
 
     LzSettler[] lzSettlers;
@@ -48,8 +47,8 @@ contract ConfigureLayerZero is BaseDeployment {
         return "LayerZero Configuration";
     }
 
-    function run(string memory configPath) external {
-        initializeDeployment(configPath);
+    function run(string memory environment) external {
+        initializeDeployment(environment);
 
         // Load all LayerZero settlers
         loadLzSettlers();
@@ -69,34 +68,32 @@ contract ConfigureLayerZero is BaseDeployment {
     }
 
     function loadLzSettlers() internal {
-        string memory settlementJson = vm.readFile(SETTLEMENT_REGISTRY);
+        // Check if we're using LayerZero settlers
+        ContractConfig memory contractConfig = getContractConfig();
 
-        for (uint256 i = 0; i < targetChains.length; i++) {
-            uint256 chainId = targetChains[i];
-            string memory chainKey = vm.toString(chainId);
+        if (keccak256(bytes(contractConfig.settlerType)) != keccak256(bytes("layerzero"))) {
+            console.log("\n[!] Settler type is not LayerZero. Skipping configuration.");
+            return;
+        }
 
-            // Check if LayerZero settler exists
-            string memory typeKey = string.concat(".", chainKey, ".settlerType");
-            bytes memory typeData = vm.parseJson(settlementJson, typeKey);
+        for (uint256 i = 0; i < config.targetChains.length; i++) {
+            uint256 chainId = config.targetChains[i];
+            DeployedContracts memory deployed = getDeployedContracts(chainId);
+            ChainConfig memory chainConfig = getChainConfig(chainId);
 
-            if (typeData.length > 0) {
-                uint256 settlerType = abi.decode(typeData, (uint256));
+            if (deployed.settler != address(0) && chainConfig.endpoint != address(0)) {
+                LzSettler memory settler;
+                settler.chainId = chainId;
+                settler.chainName = chainConfig.name;
+                settler.settler = deployed.settler;
+                settler.eid = chainConfig.eid;
 
-                if (settlerType == 1) {
-                    // LayerZero type
-                    LzSettler memory settler;
-                    settler.chainId = chainId;
-                    settler.chainName = getChainName(chainId);
+                lzSettlers.push(settler);
 
-                    settler.settler =
-                        settlementJson.readAddress(string.concat(".", chainKey, ".settler"));
-
-                    settler.eid = uint32(
-                        settlementJson.readUint(string.concat(".", chainKey, ".layerZeroEid"))
-                    );
-
-                    lzSettlers.push(settler);
-                }
+                console.log("\n[>] Found LayerZero settler:");
+                console.log("    Chain:", settler.chainName);
+                console.log("    Settler:", settler.settler);
+                console.log("    EID:", settler.eid);
             }
         }
     }
@@ -201,7 +198,8 @@ contract ConfigureLayerZero is BaseDeployment {
         );
 
         // Switch to source chain
-        string memory rpcUrl = getRpcUrl(peerConfig.sourceChainId);
+        string memory rpcUrl =
+            vm.envString(string.concat("RPC_", vm.toString(peerConfig.sourceChainId)));
         vm.createSelectFork(rpcUrl);
 
         LayerZeroSettler settler = LayerZeroSettler(payable(sourceSettler.settler));
@@ -218,37 +216,25 @@ contract ConfigureLayerZero is BaseDeployment {
         } catch {}
 
         // Configure peer
-        if (config.dryRun) {
+        if (config.deployment.dryRun) {
             console.log("    [DRY RUN] Would set peer");
             return true;
         }
 
-        try this.setPeerExternal(
-            sourceSettler.settler, peerConfig.targetEid, peerConfig.targetSettler
-        ) {
-            console.log(unicode"    [✓] Peer configured successfully");
-            return true;
-        } catch Error(string memory reason) {
-            console.log(unicode"    [✗] Failed:", reason);
-            peerConfigs[configIndex].error = reason;
-            return false;
-        } catch {
-            console.log(unicode"    [✗] Failed: Unknown error");
-            peerConfigs[configIndex].error = "Unknown error";
-            return false;
-        }
-    }
-
-    function setPeerExternal(address settler, uint32 eid, address peer) external {
-        require(msg.sender == address(this), "Only callable internally");
-
+        // Execute the peer configuration directly
         vm.startBroadcast();
-        LayerZeroSettler(payable(settler)).setPeer(eid, bytes32(uint256(uint160(peer))));
+        LayerZeroSettler(payable(sourceSettler.settler)).setPeer(
+            peerConfig.targetEid, bytes32(uint256(uint160(peerConfig.targetSettler)))
+        );
         vm.stopBroadcast();
+
+        console.log(unicode"    [✓] Peer configured successfully");
+        return true;
     }
 
     function loadConfigurationState() internal {
-        try vm.readFile(LZ_CONFIG_REGISTRY) returns (string memory json) {
+        string memory fullPath = string.concat(vm.projectRoot(), "/", LZ_CONFIG_REGISTRY);
+        try vm.readFile(fullPath) returns (string memory json) {
             for (uint256 i = 0; i < peerConfigs.length; i++) {
                 string memory key = string.concat(
                     ".",
@@ -297,7 +283,8 @@ contract ConfigureLayerZero is BaseDeployment {
 
         json = string.concat(json, "}");
 
-        vm.writeFile(LZ_CONFIG_REGISTRY, json);
+        string memory fullPath = string.concat(vm.projectRoot(), "/", LZ_CONFIG_REGISTRY);
+        vm.writeFile(fullPath, json);
     }
 
     // Override base functions that don't apply to configuration

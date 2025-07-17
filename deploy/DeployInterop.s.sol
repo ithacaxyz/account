@@ -17,67 +17,54 @@ import {Escrow} from "../src/Escrow.sol";
  *   --rpc-url $RPC_URL \
  *   --broadcast \
  *   --sig "run(string)" \
- *   "deploy/config/deployment/mainnet.json"
+ *   "mainnet"
  */
 contract DeployInterop is BaseDeployment {
     using stdJson for string;
-
-    struct InteropContracts {
-        address simpleFunder;
-        address escrow;
-    }
-
-    // Registry files
-    string constant BASIC_REGISTRY = "deploy/registry/basic-contracts.json";
-    string constant INTEROP_REGISTRY = "deploy/registry/interop-contracts.json";
 
     function deploymentType() internal pure override returns (string memory) {
         return "Interop";
     }
 
-    function run(string memory configPath) external {
-        initializeDeployment(configPath);
+    function run(string memory environment) external {
+        initializeDeployment(environment);
         executeDeployment();
     }
 
     function deployToChain(uint256 chainId) internal override {
         console.log("Deploying interoperability contracts...");
 
-        // Load basic contracts (required dependencies)
-        address orchestrator = loadBasicContract(chainId, "orchestrator");
-        require(orchestrator != address(0), "Orchestrator not found - run DeployBasic first");
+        // Get configuration
+        ContractConfig memory contractConfig = getContractConfig();
+        DeployedContracts memory existing = getDeployedContracts(chainId);
 
-        // Load chain-specific configuration
-        address funderSigner = getChainConfig(chainId, "funderSigner");
-        address funderOwner = getChainConfig(chainId, "funderOwner");
-
-        // Check if contracts already deployed
-        InteropContracts memory existing = loadExistingContracts(chainId);
-        InteropContracts memory deployed;
+        // Verify dependencies
+        require(
+            existing.orchestrator != address(0), "Orchestrator not found - run DeployBasic first"
+        );
 
         // Deploy SimpleFunder
         if (existing.simpleFunder == address(0)) {
-            deployed.simpleFunder = deploySimpleFunder(funderSigner, orchestrator, funderOwner);
-            console.log("SimpleFunder deployed:", deployed.simpleFunder);
+            address simpleFunder = deploySimpleFunder(
+                contractConfig.funderSigner, existing.orchestrator, contractConfig.funderOwner
+            );
+            console.log("SimpleFunder deployed:", simpleFunder);
+            saveDeployedContract(chainId, "SimpleFunder", simpleFunder);
         } else {
-            deployed.simpleFunder = existing.simpleFunder;
-            console.log("SimpleFunder already deployed:", deployed.simpleFunder);
+            console.log("SimpleFunder already deployed:", existing.simpleFunder);
         }
 
         // Deploy Escrow
         if (existing.escrow == address(0)) {
-            deployed.escrow = deployEscrow();
-            console.log("Escrow deployed:", deployed.escrow);
+            address escrow = deployEscrow();
+            console.log("Escrow deployed:", escrow);
+            saveDeployedContract(chainId, "Escrow", escrow);
         } else {
-            deployed.escrow = existing.escrow;
-            console.log("Escrow already deployed:", deployed.escrow);
+            console.log("Escrow already deployed:", existing.escrow);
         }
 
-        // Save deployed addresses
-        saveDeployedContracts(chainId, deployed);
-
         // Verify deployments
-        verifyDeployments(chainId, deployed, orchestrator, funderSigner, funderOwner);
+        verifyDeployments(chainId);
 
         console.log(unicode"\n[✓] Interop contracts deployment completed");
     }
@@ -95,141 +82,22 @@ contract DeployInterop is BaseDeployment {
         return address(escrow);
     }
 
-    function loadBasicContract(uint256 chainId, string memory contractName)
-        internal
-        view
-        returns (address)
-    {
-        try vm.readFile(BASIC_REGISTRY) returns (string memory json) {
-            string memory key = string.concat(".", vm.toString(chainId), ".", contractName);
-
-            try json.readAddress(key) returns (address addr) {
-                return addr;
-            } catch {
-                return address(0);
-            }
-        } catch {
-            return address(0);
-        }
-    }
-
-    function loadExistingContracts(uint256 chainId)
-        internal
-        view
-        returns (InteropContracts memory)
-    {
-        try vm.readFile(INTEROP_REGISTRY) returns (string memory json) {
-            string memory chainKey = vm.toString(chainId);
-
-            InteropContracts memory contracts;
-
-            try json.readAddress(string.concat(".", chainKey, ".simpleFunder")) returns (
-                address addr
-            ) {
-                contracts.simpleFunder = addr;
-            } catch {}
-
-            try json.readAddress(string.concat(".", chainKey, ".escrow")) returns (address addr) {
-                contracts.escrow = addr;
-            } catch {}
-
-            return contracts;
-        } catch {
-            return InteropContracts(address(0), address(0));
-        }
-    }
-
-    function saveDeployedContracts(uint256 chainId, InteropContracts memory contracts) internal {
-        // Read existing registry
-        string memory json;
-        try vm.readFile(INTEROP_REGISTRY) returns (string memory existing) {
-            json = existing;
-        } catch {
-            json = "{}";
-        }
-
-        // Update with new deployment
-        string memory chainKey = vm.toString(chainId);
-        string memory contractsJson = string.concat(
-            '{"simpleFunder":"',
-            vm.toString(contracts.simpleFunder),
-            '",',
-            '"escrow":"',
-            vm.toString(contracts.escrow),
-            '",',
-            '"timestamp":',
-            vm.toString(block.timestamp),
-            ",",
-            '"blockNumber":',
-            vm.toString(block.number),
-            "}"
-        );
-
-        // Write updated registry
-        vm.writeJson(contractsJson, INTEROP_REGISTRY, string.concat(".", chainKey));
-
-        console.log("\n[>] Registry updated:", INTEROP_REGISTRY);
-    }
-
-    function verifyDeployments(
-        uint256 chainId,
-        InteropContracts memory contracts,
-        address orchestrator,
-        address funderSigner,
-        address funderOwner
-    ) internal view {
+    function verifyDeployments(uint256 chainId) internal view {
         console.log("\n[>] Verifying deployments...");
+
+        DeployedContracts memory contracts = getDeployedContracts(chainId);
+        ContractConfig memory contractConfig = getContractConfig();
 
         // Verify SimpleFunder
         require(contracts.simpleFunder.code.length > 0, "SimpleFunder not deployed");
-        SimpleFunder funder = SimpleFunder(contracts.simpleFunder);
-        require(funder.funder() == funderSigner, "Invalid funder signer");
-        require(funder.ORCHESTRATOR() == orchestrator, "Invalid orchestrator reference");
-        require(funder.owner() == funderOwner, "Invalid funder owner");
+        SimpleFunder funder = SimpleFunder(payable(contracts.simpleFunder));
+        require(funder.funder() == contractConfig.funderSigner, "Invalid funder signer");
+        require(funder.ORCHESTRATOR() == contracts.orchestrator, "Invalid orchestrator reference");
+        require(funder.owner() == contractConfig.funderOwner, "Invalid funder owner");
 
         // Verify Escrow
         require(contracts.escrow.code.length > 0, "Escrow not deployed");
 
         console.log(unicode"[✓] All verifications passed");
-    }
-
-    function getChainConfig(uint256 chainId, string memory key) internal view returns (address) {
-        string memory configPath =
-            string.concat("deploy/config/contracts/", config.environment, ".json");
-        string memory configJson = vm.readFile(configPath);
-
-        // Try chain-specific config first
-        string memory chainKey = vm.toString(chainId);
-        try configJson.readAddress(string.concat(".", chainKey, ".", key)) returns (address addr) {
-            return addr;
-        } catch {}
-
-        // Fall back to default config
-        try configJson.readAddress(string.concat(".default.", key)) returns (address addr) {
-            return addr;
-        } catch {}
-
-        // Try environment variable
-        string memory envVar = string.concat(toUpper(config.environment), "_", toUpper(key));
-        try vm.envAddress(envVar) returns (address addr) {
-            return addr;
-        } catch {}
-
-        revert(string.concat("Config not found: ", key));
-    }
-
-    function toUpper(string memory str) internal pure returns (string memory) {
-        bytes memory strBytes = bytes(str);
-        bytes memory result = new bytes(strBytes.length);
-
-        for (uint256 i = 0; i < strBytes.length; i++) {
-            if (strBytes[i] >= 0x61 && strBytes[i] <= 0x7A) {
-                result[i] = bytes1(uint8(strBytes[i]) - 32);
-            } else {
-                result[i] = strBytes[i];
-            }
-        }
-
-        return string(result);
     }
 }
