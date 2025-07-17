@@ -64,12 +64,16 @@ The deployment system is modular with the following stages:
 The primary way to deploy is using the main deployment script, which executes all configured stages for the specified chains:
 
 ```bash
+# Export your private key
+export PRIVATE_KEY=0x...
+
 # Deploy to all chains in config
 forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
   --multi \
   --slow \
   --sig "run(uint256[])" \
+  --private-key $PRIVATE_KEY \
   "[]"
 
 # Deploy to specific chains
@@ -78,12 +82,14 @@ forge script deploy/DeployMain.s.sol:DeployMain \
   --multi \
   --slow \
   --sig "run(uint256[])" \
+  --private-key $PRIVATE_KEY \
   "[1,42161,8453]"
 
 # Single chain deployment (no --multi needed)
 forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
   --sig "run(uint256[])" \
+  --private-key $PRIVATE_KEY \
   "[11155111]"
 
 # With verification (multi-chain)
@@ -93,6 +99,7 @@ forge script deploy/DeployMain.s.sol:DeployMain \
   --slow \
   --verify \
   --sig "run(uint256[])" \
+  --private-key $PRIVATE_KEY \
   "[1,42161,8453]"
 ```
 
@@ -218,11 +225,14 @@ To add a new chain to the deployment system:
 
 3. **Run deployment**:
    ```bash
+   export PRIVATE_KEY=0x...
+   
    # For single chain
    forge script deploy/DeployMain.s.sol:DeployMain \
      --broadcast \
      --verify \
      --sig "run(uint256[])" \
+     --private-key $PRIVATE_KEY \
      "[137]"
    
    # For multiple chains including this one
@@ -232,6 +242,7 @@ To add a new chain to the deployment system:
      --slow \
      --verify \
      --sig "run(uint256[])" \
+     --private-key $PRIVATE_KEY \
      "[137,42161,8453]"
    ```
 
@@ -279,11 +290,13 @@ To test deployments without broadcasting transactions, simply omit the `--broadc
 forge script deploy/DeployMain.s.sol:DeployMain --sig "run(uint256[])" "[1,42161]"
 
 # Actual deployment (multi-chain)
+export PRIVATE_KEY=0x...
 forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
   --multi \
   --slow \
   --sig "run(uint256[])" \
+  --private-key $PRIVATE_KEY \
   "[1,42161]"
 ```
 
@@ -344,6 +357,8 @@ Requirements:
 
 ## CREATE2 Deterministic Deployments
 
+⚠️ **WARNING**: When using CREATE2 deployments, you MUST save your salt values! The salt determines your contract addresses. If you lose the salt, you cannot redeploy to the same addresses on new chains. Store your production salt values securely and back them up.
+
 The deployment system supports deterministic address deployment using CREATE2 via the Safe Singleton Factory.
 
 ### Using CREATE2
@@ -368,7 +383,7 @@ To deploy contracts with deterministic addresses, add a `salt` field to your cha
 ### CREATE2 Requirements
 
 1. **Safe Singleton Factory** must be deployed at `0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`
-2. The factory is deployed on most major chains
+2. The factory is deployed on most major chains. It is also available on our devnets automatically.
 3. If not deployed, the deployment will revert with `SafeSingletonFactoryNotDeployed()`
 
 ### Salt Configuration Examples
@@ -376,9 +391,6 @@ To deploy contracts with deterministic addresses, add a `salt` field to your cha
 ```json
 // Use regular CREATE (default)
 "salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
-
-// Use CREATE2 with custom salt
-"salt": "0x0000000000000000000000000000000000000000000000000000000000000001"
 
 // Use CREATE2 with meaningful salt
 "salt": "0x697468616361000000000000000000000000000000000000000000000000001" // "ithaca" + version
@@ -406,7 +418,9 @@ When using CREATE2, addresses can be pre-computed. The deployment script will lo
    - Transfer ownership to final addresses if needed
 
 4. **CREATE2 Considerations**
+   - **ALWAYS SAVE YOUR SALT VALUES** - Lost salts cannot be recovered
    - Salt values should be carefully chosen and documented
    - Same salt + same code = same address across chains
    - Changing constructor parameters changes the address
-   - Lost salts cannot be recovered
+   - Store production salts in a secure location with backups
+   - Consider using meaningful salts that can be reconstructed if needed
