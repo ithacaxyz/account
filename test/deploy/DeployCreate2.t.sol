@@ -9,9 +9,25 @@ contract DeployCreate2Test is Test {
     using SafeSingletonDeployer for bytes;
 
     DeployMain deployment;
-    string constant TEST_CONFIG_FILE = "test-create2-config.json";
-    string constant TEST_REGISTRY_DIR = "test-registry/";
+    string constant TEST_TEMP_DIR = "test/deploy/temp/";
+    string constant TEST_CONFIG_FILE = "test/deploy/temp/test-create2-config.json";
+    string constant TEST_REGISTRY_DIR = "test/deploy/temp/test-registry/";
     address constant SAFE_SINGLETON_FACTORY = 0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7;
+
+    modifier withCleanup() {
+        // Ensure temp directory exists
+        if (!vm.exists(TEST_TEMP_DIR)) {
+            vm.createDir(TEST_TEMP_DIR, false);
+        }
+
+        _;
+
+        // Clean up test files after each test
+        try vm.removeFile(TEST_CONFIG_FILE) {} catch {}
+
+        // Also clean up any registry directory if it was created
+        try vm.removeDir(TEST_REGISTRY_DIR, true) {} catch {}
+    }
 
     function setUp() public {
         deployment = new DeployMain();
@@ -22,13 +38,7 @@ contract DeployCreate2Test is Test {
         );
     }
 
-    function tearDown() public {
-        if (vm.exists(TEST_CONFIG_FILE)) {
-            vm.removeFile(TEST_CONFIG_FILE);
-        }
-    }
-
-    function test_DeployWithCreate_WhenSaltIsZero() public {
+    function test_DeployWithCreate_WhenSaltIsZero() public withCleanup {
         // Explicitly set salt to zero in the config
         string memory json = '{"28404": {';
         json = string.concat(json, '"funderOwner": "0x0000000000000000000000000000000000000001",');
@@ -60,7 +70,7 @@ contract DeployCreate2Test is Test {
         deployment.run(chainIds, TEST_CONFIG_FILE, TEST_REGISTRY_DIR);
     }
 
-    function test_DeployWithCreate2_WhenSaltIsSet() public {
+    function test_DeployWithCreate2_WhenSaltIsSet() public withCleanup {
         // Deploy mock factory for CREATE2
         vm.etch(
             SAFE_SINGLETON_FACTORY,
@@ -78,7 +88,7 @@ contract DeployCreate2Test is Test {
         deployment.run(chainIds, TEST_CONFIG_FILE, TEST_REGISTRY_DIR);
     }
 
-    function test_DeterministicAddresses_WithCreate2() public {
+    function test_DeterministicAddresses_WithCreate2() public withCleanup {
         // Deploy mock factory for CREATE2
         vm.etch(
             SAFE_SINGLETON_FACTORY,
