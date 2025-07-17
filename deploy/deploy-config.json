@@ -86,7 +86,7 @@
     "layerZeroEid": 0,
     "name": "Porto Devnet",
     "pauseAuthority": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-    "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "salt": "0x00000000000000000000000000000000000000000000000000000000deadbeef",
     "settlerOwner": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
     "stages": ["basic", "interop", "simpleSettler"]
   }
