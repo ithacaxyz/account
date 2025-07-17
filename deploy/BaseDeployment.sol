@@ -4,16 +4,15 @@ pragma solidity ^0.8.23;
 import {Script, console} from "forge-std/Script.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {SafeSingletonDeployer} from "safe-singleton-deployer-sol/SafeSingletonDeployer.sol";
+import {SafeSingletonDeployer} from "./SafeSingletonDeployer.sol";
 
 /**
  * @title BaseDeployment
  * @notice Base contract for all deployment scripts with unified JSON configuration
  * @dev Provides simplified configuration management using Foundry's JSON parsing
  */
-abstract contract BaseDeployment is Script {
+abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     using stdJson for string;
-    using SafeSingletonDeployer for bytes;
 
     // Deployment states
     enum DeploymentState {
@@ -69,9 +68,6 @@ abstract contract BaseDeployment is Script {
     // Configurable paths with defaults
     string internal configPath = "deploy/deploy-config.json";
     string internal registryPath = "deploy/registry/";
-
-    // Safe Singleton Factory address (same on all chains)
-    address constant SAFE_SINGLETON_FACTORY = 0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7;
 
     // Events for tracking
     event DeploymentStarted(uint256 indexed chainId, string deploymentType);
@@ -687,11 +683,11 @@ abstract contract BaseDeployment is Script {
         } else {
             // Use CREATE2 via Safe Singleton Factory
             if (args.length > 0) {
-                deployed = creationCode.broadcastDeploy(args, salt);
-                console.log("  Predicted:", creationCode.computeAddress(args, salt));
+                deployed = broadcastDeploy(creationCode, args, salt);
+                console.log("  Predicted:", computeAddress(creationCode, args, salt));
             } else {
-                deployed = creationCode.broadcastDeploy(salt);
-                console.log("  Predicted:", creationCode.computeAddress(salt));
+                deployed = broadcastDeploy(creationCode, salt);
+                console.log("  Predicted:", computeAddress(creationCode, salt));
             }
             console.log(string.concat(contractName, " deployed with CREATE2:"), deployed);
             console.log("  Salt:", vm.toString(salt));

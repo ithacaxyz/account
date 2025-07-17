@@ -4,9 +4,6 @@
 [submodule "lib/murky"]
 	path = lib/murky
 	url = https://github.com/dmfxyz/murky
-[submodule "lib/safe-singleton-deployer-sol"]
-	path = lib/safe-singleton-deployer-sol
-	url = https://github.com/wilsoncusack/safe-singleton-deployer-sol
 [submodule "lib/solady"]
 	path = lib/solady
 	url = https://github.com/vectorized/solady
