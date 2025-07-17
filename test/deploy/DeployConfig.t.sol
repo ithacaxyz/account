@@ -6,8 +6,24 @@ import {DeployMain} from "../../deploy/DeployMain.s.sol";
 
 contract DeployConfigTest is Test {
     DeployMain deployment;
-    string constant TEST_CONFIG_FILE = "test-config.json";
-    string constant TEST_REGISTRY_DIR = "test-registry/";
+    string constant TEST_TEMP_DIR = "test/deploy/temp/";
+    string constant TEST_CONFIG_FILE = "test/deploy/temp/test-config.json";
+    string constant TEST_REGISTRY_DIR = "test/deploy/temp/test-registry/";
+
+    modifier withCleanup() {
+        // Ensure temp directory exists
+        if (!vm.exists(TEST_TEMP_DIR)) {
+            vm.createDir(TEST_TEMP_DIR, false);
+        }
+
+        _;
+
+        // Clean up test files after each test
+        try vm.removeFile(TEST_CONFIG_FILE) {} catch {}
+
+        // Also clean up any registry directory if it was created
+        try vm.removeDir(TEST_REGISTRY_DIR, true) {} catch {}
+    }
 
     function setUp() public {
         deployment = new DeployMain();
@@ -18,14 +34,7 @@ contract DeployConfigTest is Test {
         );
     }
 
-    function tearDown() public {
-        // Clean up test files after each test
-        if (vm.exists(TEST_CONFIG_FILE)) {
-            vm.removeFile(TEST_CONFIG_FILE);
-        }
-    }
-
-    function test_RevertOnMissingConfigFile() public {
+    function test_RevertOnMissingConfigFile() public withCleanup {
         uint256[] memory chainIds = new uint256[](0);
 
         vm.expectRevert();
@@ -102,7 +111,7 @@ contract DeployConfigTest is Test {
     //     deployment.run(chainIds, TEST_CONFIG_FILE, TEST_REGISTRY_DIR);
     // }
 
-    function test_ValidConfigDoesNotRevert() public {
+    function test_ValidConfigDoesNotRevert() public withCleanup {
         string memory json = _buildValidConfig();
         vm.writeFile(TEST_CONFIG_FILE, json);
 
@@ -114,7 +123,7 @@ contract DeployConfigTest is Test {
         deployment.run(chainIds, TEST_CONFIG_FILE, TEST_REGISTRY_DIR);
     }
 
-    function test_ValidConfigWithAllChainsDoesNotRevert() public {
+    function test_ValidConfigWithAllChainsDoesNotRevert() public withCleanup {
         string memory json = _buildValidConfig();
         vm.writeFile(TEST_CONFIG_FILE, json);
 
