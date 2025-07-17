@@ -28,21 +28,27 @@ contract DeployBasic is BaseDeployment {
         return "Basic";
     }
 
-    function run(string memory environment) external {
-        initializeDeployment(environment);
+    function run(uint256[] memory chainIds) external {
+        initializeDeployment(chainIds);
         executeDeployment();
     }
 
     function deployToChain(uint256 chainId) internal override {
+        // Check if this stage should be deployed
+        if (!shouldDeployStage(chainId, "basic")) {
+            console.log("Basic stage not configured for this chain");
+            return;
+        }
+
         console.log("Deploying basic contracts...");
 
         // Get configuration
-        ContractConfig memory contractConfig = getContractConfig();
+        ChainConfig memory chainConfig = getChainConfig(chainId);
         DeployedContracts memory existing = getDeployedContracts(chainId);
 
         // Deploy Orchestrator
         if (existing.orchestrator == address(0)) {
-            address orchestrator = deployOrchestrator(contractConfig.pauseAuthority);
+            address orchestrator = deployOrchestrator(chainConfig.pauseAuthority);
             console.log("Orchestrator deployed:", orchestrator);
             saveDeployedContract(chainId, "Orchestrator", orchestrator);
         } else {

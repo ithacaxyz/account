@@ -1,6 +1,0 @@
-{
-  "environment": "testnet",
-  "dryRun": false,
-  "maxRetries": 3,
-  "retryDelay": 5
-}

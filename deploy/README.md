@@ -1,284 +1,341 @@
-# Ithaca Account Multichain Deployment System
+# Deployment System
 
-A composable, retry-enabled deployment system for deploying Ithaca Account infrastructure across multiple EVM chains using Foundry scripts.
+This directory contains the unified deployment system for the Ithaca Account contracts.
 
 ## Overview
 
-The deployment system is split into four independent stages that can be run separately or together:
+The deployment system uses a single configuration file (`deploy-config.json`) that contains all chain-specific settings including contract addresses, deployment parameters, and stage configurations. This eliminates the previous separation between devnets, testnets, and mainnets, providing a simpler and more flexible deployment approach.
 
-1. **Basic** - Core contracts (Orchestrator, IthacaAccount, Proxy, Simulator)
-2. **Interop** - Interoperability contracts (SimpleFunder, Escrow)
-3. **Settlement** - Settlement contracts (SimpleSettler or LayerZeroSettler)
-4. **LayerZero Config** - Cross-chain peer configuration
+## Configuration Structure
 
-Each stage tracks its own deployment state and supports automatic retries on failure.
+All deployment configuration is stored in `deploy/deploy-config.json`:
 
-## Quick Start
+```json
+{
+  "chainId": {
+    "name": "Chain Name",
+    "layerZeroEndpoint": "0x...",
+    "layerZeroEid": 30101,
+    "isTestnet": false,
+    "pauseAuthority": "0x...",
+    "funderSigner": "0x...",
+    "funderOwner": "0x...",
+    "settlerOwner": "0x...",
+    "l0SettlerOwner": "0x...",
+    "stages": ["basic", "interop", "simpleSettler"],
+    "dryRun": false,
+    "maxRetries": 3,
+    "retryDelay": 5
+  }
+}
+```
 
-### Deploy Everything to Testnet
+### Configuration Fields
+
+- **name**: Human-readable chain name
+- **layerZeroEndpoint**: LayerZero endpoint address for cross-chain messaging
+- **layerZeroEid**: LayerZero endpoint ID for this chain
+- **isTestnet**: Boolean indicating if this is a testnet
+- **pauseAuthority**: Address that can pause contract operations
+- **funderSigner**: Address authorized to sign funding operations
+- **funderOwner**: Owner of the SimpleFunder contract
+- **settlerOwner**: Owner of the SimpleSettler contract
+- **l0SettlerOwner**: Owner of the LayerZeroSettler contract
+- **stages**: Array of deployment stages to execute for this chain
+- **dryRun**: If true, simulates deployment without broadcasting transactions
+- **maxRetries**: Maximum number of deployment retry attempts
+- **retryDelay**: Delay in seconds between retry attempts
+
+## Available Stages
+
+The deployment system is modular with the following stages:
+
+- **basic**: Core contracts (Orchestrator, IthacaAccount, Proxy, Simulator)
+- **interop**: Interoperability contracts (SimpleFunder, Escrow)
+- **simpleSettler**: Single-chain settlement contract
+- **layerzeroSettler**: Cross-chain settlement contract
+- **layerzeroConfig**: Configure LayerZero peer connections between deployed settlers
+
+### Stage Dependencies
+
+- **interop** requires **basic** to be deployed first
+- **layerzeroConfig** requires **layerzeroSettler** to be deployed on at least 2 chains
+
+## Deployment Scripts
+
+### Deploy All Configured Stages
+
+Deploy all stages configured for the specified chains:
 
 ```bash
-# Set up environment variables
-export TESTNET_PAUSE_AUTHORITY=0x...
-export TESTNET_FUNDER_SIGNER=0x...
-export TESTNET_FUNDER_OWNER=0x...
-export TESTNET_SETTLER_OWNER=0x...
-export TESTNET_L0_SETTLER_OWNER=0x...
-
-# Deploy all stages
+# Deploy to all chains in config
 forge script deploy/DeployAll.s.sol:DeployAll \
+  --rpc-url $RPC_URL \
   --broadcast \
-  --sig "run(string)" \
-  "deploy/config/deployment/testnet.json"
+  --sig "run(uint256[])" \
+  "[]"
+
+# Deploy to specific chains
+forge script deploy/DeployAll.s.sol:DeployAll \
+  --rpc-url $RPC_URL \
+  --broadcast \
+  --sig "run(uint256[])" \
+  "[1,42161,8453]"
+
+# With verification
+forge script deploy/DeployAll.s.sol:DeployAll \
+  --rpc-url $RPC_URL \
+  --broadcast \
+  --verify \
+  --sig "run(uint256[])" \
+  "[11155111]"
 ```
 
 ### Deploy Individual Stages
 
+Deploy specific stages only:
+
 ```bash
-# Deploy only basic contracts
+# Deploy basic contracts
 forge script deploy/DeployBasic.s.sol:DeployBasic \
+  --rpc-url $RPC_URL \
   --broadcast \
-  --sig "run(string)" \
-  "deploy/config/deployment/mainnet.json"
+  --sig "run(uint256[])" \
+  "[11155111]"
 
-# Deploy only interop contracts
+# Deploy interop contracts
 forge script deploy/DeployInterop.s.sol:DeployInterop \
+  --rpc-url $RPC_URL \
   --broadcast \
-  --sig "run(string)" \
-  "deploy/config/deployment/mainnet.json"
+  --sig "run(uint256[])" \
+  "[11155111]"
 
-# Deploy settlement contracts
-forge script deploy/DeploySettlement.s.sol:DeploySettlement \
+# Deploy SimpleSettler
+forge script deploy/DeploySimpleSettler.s.sol:DeploySimpleSettler \
+  --rpc-url $RPC_URL \
   --broadcast \
-  --sig "run(string)" \
-  "deploy/config/deployment/mainnet.json"
+  --sig "run(uint256[])" \
+  "[28404]"
+
+# Deploy LayerZeroSettler
+forge script deploy/DeployLayerZeroSettler.s.sol:DeployLayerZeroSettler \
+  --rpc-url $RPC_URL \
+  --broadcast \
+  --sig "run(uint256[])" \
+  "[1,42161,8453]"
 
 # Configure LayerZero peers
 forge script deploy/ConfigureLayerZero.s.sol:ConfigureLayerZero \
+  --rpc-url $RPC_URL \
   --broadcast \
-  --sig "run(string)" \
-  "deploy/config/deployment/mainnet.json"
+  --sig "run(uint256[])" \
+  "[1,42161,8453]"
 ```
 
-### Check Deployment Status
+## Environment Variables
 
-```bash
-# View comprehensive deployment status
-forge script deploy/DeploymentStatus.s.sol:DeploymentStatus \
-  --sig "run(string)" \
-  "mainnet"
-```
+### Required Environment Variables
 
-## Configuration
-
-### Directory Structure
-
-```
-deploy/
-├── config/
-│   ├── chains/               # Chain lists per environment
-│   │   ├── mainnet.json     # Mainnet chain IDs
-│   │   ├── testnet.json     # Testnet chain IDs
-│   │   └── devnet.json      # Local devnet configuration
-│   ├── contracts/            # Contract parameters per environment
-│   │   ├── mainnet.json     # Mainnet addresses and settings
-│   │   ├── testnet.json     # Testnet addresses and settings
-│   │   └── devnet.json      # Devnet addresses and settings
-│   └── deployment/           # Deployment behavior configuration
-│       ├── mainnet.json     # Mainnet deployment settings
-│       ├── testnet.json     # Testnet deployment settings
-│       └── devnet.json      # Devnet deployment settings
-├── registry/                 # Deployment state (auto-generated)
-│   ├── basic-contracts.json
-│   ├── interop-contracts.json
-│   ├── settlement-contracts.json
-│   └── lz-peer-config.json
-└── *.sol                     # Deployment scripts
-```
-
-### Environment Variables
-
-The system uses environment variables for sensitive configuration:
+#### RPC URLs
+Format: `RPC_{chainId}`
 
 ```bash
 # Mainnet
-export MAINNET_PAUSE_AUTHORITY=0x...
-export MAINNET_FUNDER_SIGNER=0x...
-export MAINNET_FUNDER_OWNER=0x...
-export MAINNET_SETTLER_OWNER=0x...
-export MAINNET_L0_SETTLER_OWNER=0x...
+RPC_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
+RPC_42161=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
+RPC_8453=https://base-mainnet.g.alchemy.com/v2/YOUR_KEY
 
-# Testnet (use TESTNET_ prefix)
-# Devnet (use DEVNET_ prefix or hardcoded in config)
+# Testnet
+RPC_11155111=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
+RPC_421614=https://arb-sepolia.g.alchemy.com/v2/YOUR_KEY
+RPC_84532=https://base-sepolia.g.alchemy.com/v2/YOUR_KEY
 
-# RPC URLs (required for each chain)
-export MAINNET_RPC_URL=https://...
-export SEPOLIA_RPC_URL=https://...
-# etc...
+# Local
+RPC_28404=http://localhost:8545
 ```
 
-### Adding New Chains
+#### Private Key
+```bash
+PRIVATE_KEY=0x... # Your deployment private key
+```
 
-1. Add chain to `/deploy/config/chains.json`:
+### Optional Environment Variables
+
+#### Verification API Keys
+Format: `VERIFICATION_KEY_{chainId}`
+
+```bash
+VERIFICATION_KEY_1=YOUR_ETHERSCAN_API_KEY
+VERIFICATION_KEY_42161=YOUR_ARBISCAN_API_KEY
+VERIFICATION_KEY_8453=YOUR_BASESCAN_API_KEY
+VERIFICATION_KEY_11155111=YOUR_SEPOLIA_ETHERSCAN_API_KEY
+VERIFICATION_KEY_421614=YOUR_ARBITRUM_SEPOLIA_API_KEY
+VERIFICATION_KEY_84532=YOUR_BASE_SEPOLIA_API_KEY
+```
+
+## Adding New Chains
+
+To add a new chain to the deployment system:
+
+1. **Add chain configuration** to `deploy-config.json`:
+   ```json
+   "137": {
+     "name": "Polygon",
+     "layerZeroEndpoint": "0x1a44076050125825900e736c501f859c50fE728c",
+     "layerZeroEid": 30109,
+     "isTestnet": false,
+     "pauseAuthority": "0x...",
+     "funderSigner": "0x...",
+     "funderOwner": "0x...",
+     "settlerOwner": "0x...",
+     "l0SettlerOwner": "0x...",
+     "stages": ["basic", "interop", "layerzeroSettler", "layerzeroConfig"],
+     "dryRun": false,
+     "maxRetries": 3,
+     "retryDelay": 5
+   }
+   ```
+
+2. **Set environment variables**:
+   ```bash
+   export RPC_137=https://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY
+   export VERIFICATION_KEY_137=YOUR_POLYGONSCAN_API_KEY
+   ```
+
+3. **Run deployment**:
+   ```bash
+   forge script deploy/DeployAll.s.sol:DeployAll \
+     --rpc-url $RPC_137 \
+     --broadcast \
+     --verify \
+     --sig "run(uint256[])" \
+     "[137]"
+   ```
+
+## Multi-Settler Support
+
+Chains can deploy both SimpleSettler and LayerZeroSettler by including both stages in the configuration:
+
+```json
+"stages": ["basic", "interop", "simpleSettler", "layerzeroSettler", "layerzeroConfig"]
+```
+
+This is useful for chains that need:
+- SimpleSettler for fast, single-chain settlements
+- LayerZeroSettler for cross-chain interoperability
+
+## Deployment State Management
+
+The deployment system maintains state in the `deploy/registry/` directory:
+
+- **Contract addresses**: `{chainName}-{chainId}.json`
+  - Contains deployed contract addresses for each chain
+  - Automatically updated after each successful deployment
+
+- **Deployment state**: `{stage}-state.json`
+  - Tracks deployment progress for each stage
+  - Allows resuming deployments if interrupted
+
+Example registry file (`Ethereum Mainnet-1.json`):
 ```json
 {
-  "250": {
-    "name": "Fantom",
-    "rpcUrl": "${FANTOM_RPC_URL}",
-    "layerZeroEndpoint": "0x...",
-    "layerZeroEid": 30112
+  "Orchestrator": "0x...",
+  "AccountImpl": "0x...",
+  "AccountProxy": "0x...",
+  "Simulator": "0x...",
+  "SimpleFunder": "0x...",
+  "Escrow": "0x...",
+  "SimpleSettler": "0x...",
+  "LayerZeroSettler": "0x..."
+}
+```
+
+## Dry Run Mode
+
+Test deployments without broadcasting transactions by setting `dryRun: true` in the configuration:
+
+```json
+{
+  "11155111": {
+    "name": "Sepolia",
+    "dryRun": true,
+    ...
   }
 }
 ```
 
-2. Add chain ID to environment config:
-```json
-// deploy/config/chains/mainnet.json
-{
-  "chains": [1, 42161, 8453, 250]
-}
-```
+Dry run mode will:
+- Simulate all deployment transactions
+- Display what would be deployed
+- Show configuration values
+- Not broadcast any transactions
 
-## Features
+## LayerZero Configuration
 
-### Automatic Retry
+For cross-chain functionality, the LayerZero configuration stage:
 
-Failed deployments automatically retry based on configuration:
-- `maxRetries`: Number of retry attempts (default: 3)
-- `retryDelay`: Seconds between retries (default: 5)
+1. Collects all deployed LayerZeroSettler contracts
+2. Sets up peer relationships between chains
+3. Configures trusted remote addresses
 
-### State Persistence
-
-Deployment state is saved to `registry/` allowing:
-- Resume from failure without re-deploying successful contracts
-- Track deployment progress across multiple runs
-- Audit trail of all deployments
-
-### Composable Settlement
-
-Choose settlement type per environment:
-- **SimpleSettler**: For devnets and testing
-- **LayerZeroSettler**: For cross-chain production deployments
-
-Configure in `contracts/{environment}.json`:
-```json
-{
-  "default": {
-    "settlerType": "simple"  // or "layerzero"
-  }
-}
-```
-
-### Clean Status Display
-
-The `DeploymentStatus` script provides:
-- Progress bars for each chain
-- Color-coded status indicators
-- Next steps guidance
-- Cross-chain configuration overview
-
-## Deployment Flow
-
-### 1. Basic Deployment
-- Deploys Orchestrator with pause authority
-- Deploys IthacaAccount implementation
-- Deploys account proxy
-- Deploys Simulator
-
-### 2. Interop Deployment
-- Requires Basic contracts
-- Deploys SimpleFunder with signer and owner
-- Deploys Escrow
-
-### 3. Settlement Deployment
-- Requires Basic contracts
-- Deploys SimpleSettler OR LayerZeroSettler based on config
-- For LayerZero: stores endpoint and EID information
-
-### 4. LayerZero Configuration
-- Requires 2+ LayerZero settlers
-- Sets up bidirectional peer connections
-- Enables cross-chain messaging
+Requirements:
+- LayerZeroSettler must be deployed on at least 2 chains
+- Valid LayerZero endpoints must be configured
+- `layerzeroConfig` stage must be included for participating chains
 
 ## Troubleshooting
 
-### Deployment Failures
+### Common Issues
 
-1. Check the specific error in console output
-2. Fix the issue (funding, configuration, etc.)
-3. Run the same command again - it will retry only failed deployments
+1. **"Chain ID mismatch"**
+   - Ensure RPC URL matches the chain ID in config
+   - Verify the RPC endpoint is correct
 
-### "Contract not found" Errors
+2. **"Orchestrator not found - run DeployBasic first"**
+   - Deploy stages in order: basic → interop → settlers
+   - Check registry files for missing contracts
 
-Ensure you run stages in order:
-1. Basic (always first)
-2. Interop and/or Settlement (can run in parallel)
-3. LayerZero Config (only after Settlement with LZ settlers)
+3. **"Less than 2 LayerZero settlers found"**
+   - Deploy LayerZeroSettler on multiple chains before configuring
+   - Ensure `layerzeroSettler` stage is included in chain configs
 
-### RPC Issues
+4. **Verification failures**
+   - Check VERIFICATION_KEY environment variables
+   - Ensure the chain is supported by the block explorer
+   - Verify API key has correct permissions
 
-- Ensure RPC URLs are set for all target chains
-- Check rate limits on your RPC provider
-- Consider using `--slow` flag for Forge
+### Recovery from Failed Deployments
 
-### Gas Issues
+The system automatically tracks deployment state and can resume from failures:
 
-- Ensure deployer has sufficient native tokens
-- Adjust gas settings in Foundry configuration
-- Use `--gas-price` flag if needed
+1. Fix the underlying issue (gas, RPC, configuration)
+2. Re-run the same deployment command
+3. The system will skip already-deployed contracts and continue
 
-## Advanced Usage
+To force a fresh deployment, delete the relevant files in `deploy/registry/`.
 
-### Dry Run Mode
+## Best Practices
 
-Test deployment without broadcasting:
-```json
-// deploy/config/deployment/testnet.json
-{
-  "dryRun": true
-}
-```
-
-### Custom Stage Selection
-
-Deploy only specific stages:
-```bash
-forge script deploy/DeployAll.s.sol:DeployAll \
-  --broadcast \
-  --sig "run(string,string[])" \
-  "deploy/config/deployment/mainnet.json" \
-  '["basic","settlement"]'
-```
-
-### Chain-Specific Configuration
-
-Override default settings per chain:
-```json
-// deploy/config/contracts/mainnet.json
-{
-  "default": {
-    "pauseAuthority": "0xAAA..."
-  },
-  "8453": {  // Base-specific override
-    "pauseAuthority": "0xBBB..."
-  }
-}
-```
+1. **Test on testnets first** - Use Sepolia, Arbitrum Sepolia, etc.
+2. **Use dry run mode** - Test configuration before mainnet deployment
+3. **Verify addresses** - Double-check all configured addresses
+4. **Monitor gas prices** - Ensure sufficient ETH for deployment
+5. **Keep registry files** - Back up the `deploy/registry/` directory
+6. **Use appropriate stages** - Only include necessary stages per chain
 
 ## Security Considerations
 
-1. **Never commit private keys** - Use hardware wallets or secure key management
-2. **Verify addresses** - Double-check all configuration before mainnet deployment
-3. **Test on testnet first** - Always deploy to testnet before mainnet
-4. **Review registry files** - Check deployed addresses match expectations
-5. **Validate cross-chain config** - Ensure correct peer addresses for LayerZero
+1. **Private Key Management**
+   - Never commit private keys to version control
+   - Use hardware wallets for mainnet deployments
+   - Consider using a dedicated deployment address
 
-## Contributing
+2. **Address Verification**
+   - Verify all owner and authority addresses before deployment
+   - Use multi-signature wallets for critical roles
+   - Document address ownership
 
-When adding new contracts or deployment stages:
-
-1. Extend `BaseDeployment` for retry and state management
-2. Follow the naming convention: `Deploy{Stage}.s.sol`
-3. Update `DeployAll` to include new stage
-4. Add registry file for state tracking
-5. Update `DeploymentStatus` to display new contracts
+3. **Post-Deployment**
+   - Verify all contracts on block explorers
+   - Test contract functionality after deployment
+   - Transfer ownership to final addresses if needed
