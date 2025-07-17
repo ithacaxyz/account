@@ -65,10 +65,6 @@ contract DeployMain is BaseDeployment {
             deployLayerZeroSettler(chainId, config, deployed);
         }
 
-        if (shouldDeployStage(chainId, "layerzeroConfig")) {
-            configureLayerZero(chainId, config, deployed);
-        }
-
         console.log(unicode"\n[✓] All configured stages deployed successfully");
     }
 
@@ -120,7 +116,18 @@ contract DeployMain is BaseDeployment {
             console.log("Simulator already deployed:", deployed.simulator);
         }
 
-        console.log(unicode"[✓] Basic contracts deployed");
+        // Verify deployments
+        console.log("[>] Verifying basic contracts...");
+        require(deployed.orchestrator.code.length > 0, "Orchestrator not deployed");
+        require(deployed.accountImpl.code.length > 0, "Account implementation not deployed");
+        require(deployed.accountProxy.code.length > 0, "Account proxy not deployed");
+        require(deployed.simulator.code.length > 0, "Simulator not deployed");
+
+        // Verify Account implementation points to correct orchestrator
+        IthacaAccount account = IthacaAccount(payable(deployed.accountImpl));
+        require(account.ORCHESTRATOR() == deployed.orchestrator, "Invalid orchestrator reference");
+
+        console.log(unicode"[✓] Basic contracts deployed and verified");
     }
 
     function deployInteropContracts(
@@ -153,7 +160,17 @@ contract DeployMain is BaseDeployment {
             console.log("Escrow already deployed:", deployed.escrow);
         }
 
-        console.log(unicode"[✓] Interop contracts deployed");
+        // Verify deployments
+        console.log("[>] Verifying interop contracts...");
+        require(deployed.simpleFunder.code.length > 0, "SimpleFunder not deployed");
+        require(deployed.escrow.code.length > 0, "Escrow not deployed");
+
+        SimpleFunder funder = SimpleFunder(payable(deployed.simpleFunder));
+        require(funder.funder() == config.funderSigner, "Invalid funder signer");
+        require(funder.ORCHESTRATOR() == deployed.orchestrator, "Invalid orchestrator reference");
+        require(funder.owner() == config.funderOwner, "Invalid funder owner");
+
+        console.log(unicode"[✓] Interop contracts deployed and verified");
     }
 
     function deploySimpleSettler(
@@ -172,7 +189,13 @@ contract DeployMain is BaseDeployment {
             console.log("SimpleSettler already deployed:", deployed.simpleSettler);
         }
 
-        console.log(unicode"[✓] Simple settler deployed");
+        // Verify deployment
+        console.log("[>] Verifying simple settler...");
+        require(deployed.simpleSettler != address(0), "SimpleSettler not deployed");
+        SimpleSettler settler = SimpleSettler(deployed.simpleSettler);
+        require(settler.owner() == config.settlerOwner, "Invalid SimpleSettler owner");
+
+        console.log(unicode"[✓] Simple settler deployed and verified");
     }
 
     function deployLayerZeroSettler(
@@ -194,20 +217,13 @@ contract DeployMain is BaseDeployment {
             console.log("LayerZeroSettler already deployed:", deployed.layerZeroSettler);
         }
 
-        console.log(unicode"[✓] LayerZero settler deployed");
-    }
+        // Verify deployment
+        console.log("[>] Verifying LayerZero settler...");
+        require(deployed.layerZeroSettler != address(0), "LayerZeroSettler not deployed");
+        LayerZeroSettler lzSettler = LayerZeroSettler(payable(deployed.layerZeroSettler));
+        require(lzSettler.owner() == config.l0SettlerOwner, "Invalid LayerZeroSettler owner");
+        require(address(lzSettler.endpoint()) == config.layerZeroEndpoint, "Invalid endpoint");
 
-    function configureLayerZero(uint256 chainId, ChainConfig memory, DeployedContracts memory)
-        internal
-        pure
-    {
-        console.log("\n[Stage: LayerZero Configuration]");
-
-        // LayerZero configuration requires coordination across multiple chains
-        // This is handled by the separate ConfigureLayerZero.s.sol script
-        console.log("[!] LayerZero peer configuration requires multi-chain coordination");
-        console.log("    Run ConfigureLayerZero.s.sol after deploying to multiple chains");
-
-        console.log(unicode"[✓] LayerZero configuration stage completed");
+        console.log(unicode"[✓] LayerZero settler deployed and verified");
     }
 }
