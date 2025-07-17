@@ -13,21 +13,24 @@ All deployment configuration is stored in `deploy/deploy-config.json`:
 ```json
 {
   "chainId": {
-    "name": "Chain Name",
+    "funderOwner": "0x...",
+    "funderSigner": "0x...",
+    "isTestnet": false,
+    "l0SettlerOwner": "0x...",
     "layerZeroEndpoint": "0x...",
     "layerZeroEid": 30101,
-    "isTestnet": false,
-    "pauseAuthority": "0x...",
-    "funderSigner": "0x...",
-    "funderOwner": "0x...",
-    "settlerOwner": "0x...",
-    "l0SettlerOwner": "0x...",
-    "stages": ["basic", "interop", "simpleSettler"],
     "maxRetries": 3,
-    "retryDelay": 5
+    "name": "Chain Name",
+    "pauseAuthority": "0x...",
+    "retryDelay": 5,
+    "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "settlerOwner": "0x...",
+    "stages": ["basic", "interop", "simpleSettler"]
   }
 }
 ```
+
+⚠️ **IMPORTANT**: Configuration fields MUST be in alphabetical order! Foundry's JSON parsing requires struct fields to match the alphabetical order of keys in the JSON file. Failure to maintain alphabetical ordering will cause deployment failures.
 
 ### Configuration Fields
 
@@ -40,6 +43,7 @@ All deployment configuration is stored in `deploy/deploy-config.json`:
 - **funderOwner**: Owner of the SimpleFunder contract
 - **settlerOwner**: Owner of the SimpleSettler contract
 - **l0SettlerOwner**: Owner of the LayerZeroSettler contract
+- **salt**: (Optional) Salt for deterministic CREATE2 deployment. If omitted or set to `0x0000...0000`, contracts will be deployed using regular CREATE
 - **stages**: Array of deployment stages to execute for this chain
 - **maxRetries**: Maximum number of deployment retry attempts
 - **retryDelay**: Delay in seconds between retry attempts
@@ -190,21 +194,22 @@ VERIFICATION_KEY_84532=YOUR_BASE_SEPOLIA_API_KEY
 
 To add a new chain to the deployment system:
 
-1. **Add chain configuration** to `deploy-config.json`:
+1. **Add chain configuration** to `deploy-config.json` (fields must be in alphabetical order):
    ```json
    "137": {
-     "name": "Polygon",
+     "funderOwner": "0x...",
+     "funderSigner": "0x...",
+     "isTestnet": false,
+     "l0SettlerOwner": "0x...",
      "layerZeroEndpoint": "0x1a44076050125825900e736c501f859c50fE728c",
      "layerZeroEid": 30109,
-     "isTestnet": false,
-     "pauseAuthority": "0x...",
-     "funderSigner": "0x...",
-     "funderOwner": "0x...",
-     "settlerOwner": "0x...",
-     "l0SettlerOwner": "0x...",
-     "stages": ["basic", "interop", "layerzeroSettler"],
      "maxRetries": 3,
-     "retryDelay": 5
+     "name": "Polygon",
+     "pauseAuthority": "0x...",
+     "retryDelay": 5,
+     "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
+     "settlerOwner": "0x...",
+     "stages": ["basic", "interop", "layerzeroSettler"]
    }
    ```
 
@@ -347,6 +352,52 @@ To force a fresh deployment, delete the relevant files in `deploy/registry/`.
 5. **Keep registry files** - Back up the `deploy/registry/` directory
 6. **Use appropriate stages** - Only include necessary stages per chain
 
+## CREATE2 Deterministic Deployments
+
+The deployment system supports deterministic address deployment using CREATE2 via the Safe Singleton Factory.
+
+### Using CREATE2
+
+To deploy contracts with deterministic addresses, add a `salt` field to your chain configuration:
+
+```json
+"1": {
+  "name": "Ethereum Mainnet",
+  "salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
+  // ... other fields
+}
+```
+
+### Benefits of CREATE2
+
+- **Deterministic addresses**: Contract addresses can be computed before deployment
+- **Cross-chain consistency**: Same addresses across multiple chains (with same salt)
+- **Pre-funding**: Addresses can receive funds before deployment
+- **Easier integration**: Partners can integrate with known addresses
+
+### CREATE2 Requirements
+
+1. **Safe Singleton Factory** must be deployed at `0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`
+2. The factory is deployed on most major chains
+3. If not deployed, the deployment will revert with `SafeSingletonFactoryNotDeployed()`
+
+### Salt Configuration Examples
+
+```json
+// Use regular CREATE (default)
+"salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+// Use CREATE2 with custom salt
+"salt": "0x0000000000000000000000000000000000000000000000000000000000000001"
+
+// Use CREATE2 with meaningful salt
+"salt": "0x697468616361000000000000000000000000000000000000000000000000001" // "ithaca" + version
+```
+
+### Computing Addresses
+
+When using CREATE2, addresses can be pre-computed. The deployment script will log both the deployed address and the predicted address for verification.
+
 ## Security Considerations
 
 1. **Private Key Management**
@@ -363,3 +414,9 @@ To force a fresh deployment, delete the relevant files in `deploy/registry/`.
    - Verify all contracts on block explorers
    - Test contract functionality after deployment
    - Transfer ownership to final addresses if needed
+
+4. **CREATE2 Considerations**
+   - Salt values should be carefully chosen and documented
+   - Same salt + same code = same address across chains
+   - Changing constructor parameters changes the address
+   - Lost salts cannot be recovered
