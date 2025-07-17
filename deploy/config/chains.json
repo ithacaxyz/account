@@ -1,90 +1,41 @@
 {
   "1": {
     "name": "Ethereum Mainnet",
-    "rpcUrl": "${MAINNET_RPC_URL}",
-    "explorer": "https://etherscan.io",
-    "explorerApiKey": "${ETHERSCAN_API_KEY}",
     "layerZeroEndpoint": "0x1a44076050125825900e736c501f859c50fE728c",
-    "layerZeroEid": 30101,
-    "gasSettings": {
-      "maxFeePerGas": "auto",
-      "maxPriorityFeePerGas": "auto"
-    }
+    "layerZeroEid": 30101
   },
   "42161": {
     "name": "Arbitrum One",
-    "rpcUrl": "${ARBITRUM_RPC_URL}",
-    "explorer": "https://arbiscan.io",
-    "explorerApiKey": "${ARBISCAN_API_KEY}",
     "layerZeroEndpoint": "0x1a44076050125825900e736c501f859c50fE728c",
-    "layerZeroEid": 30110,
-    "gasSettings": {
-      "maxFeePerGas": "auto",
-      "maxPriorityFeePerGas": "auto"
-    }
+    "layerZeroEid": 30110
   },
   "8453": {
     "name": "Base",
-    "rpcUrl": "${BASE_RPC_URL}",
-    "explorer": "https://basescan.org",
-    "explorerApiKey": "${BASESCAN_API_KEY}",
     "layerZeroEndpoint": "0x1a44076050125825900e736c501f859c50fE728c",
-    "layerZeroEid": 30184,
-    "gasSettings": {
-      "maxFeePerGas": "auto",
-      "maxPriorityFeePerGas": "auto"
-    }
+    "layerZeroEid": 30184
   },
   "11155111": {
     "name": "Sepolia",
-    "rpcUrl": "${SEPOLIA_RPC_URL}",
-    "explorer": "https://sepolia.etherscan.io",
-    "explorerApiKey": "${ETHERSCAN_API_KEY}",
     "layerZeroEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
     "layerZeroEid": 40161,
-    "gasSettings": {
-      "maxFeePerGas": "auto",
-      "maxPriorityFeePerGas": "auto"
-    },
     "isTestnet": true
   },
   "421614": {
     "name": "Arbitrum Sepolia",
-    "rpcUrl": "${ARBITRUM_SEPOLIA_RPC_URL}",
-    "explorer": "https://sepolia.arbiscan.io",
-    "explorerApiKey": "${ARBISCAN_API_KEY}",
     "layerZeroEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
     "layerZeroEid": 40231,
-    "gasSettings": {
-      "maxFeePerGas": "auto",
-      "maxPriorityFeePerGas": "auto"
-    },
     "isTestnet": true
   },
   "84532": {
     "name": "Base Sepolia",
-    "rpcUrl": "${BASE_SEPOLIA_RPC_URL}",
-    "explorer": "https://sepolia.basescan.org",
-    "explorerApiKey": "${BASESCAN_API_KEY}",
     "layerZeroEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
     "layerZeroEid": 40245,
-    "gasSettings": {
-      "maxFeePerGas": "auto",
-      "maxPriorityFeePerGas": "auto"
-    },
     "isTestnet": true
   },
   "28404": {
     "name": "Porto Devnet",
-    "rpcUrl": "https://porto-dev.rpc.ithaca.xyz/",
-    "explorer": "",
-    "explorerApiKey": "",
     "layerZeroEndpoint": "0x0000000000000000000000000000000000000000",
     "layerZeroEid": 0,
-    "gasSettings": {
-      "maxFeePerGas": "auto",
-      "maxPriorityFeePerGas": "auto"
-    },
     "isTestnet": true
   }
 }

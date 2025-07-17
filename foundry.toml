@@ -25,4 +25,17 @@ runs = 256
 depth = 15
 runs = 10
 
+# Etherscan verification configuration
+[etherscan]
+# Chain-specific API keys using standardized environment variables
+# Format: VERIFICATION_KEY_{chainId}
+mainnet = { key = "${VERIFICATION_KEY_1}" }
+arbitrum = { key = "${VERIFICATION_KEY_42161}" }
+base = { key = "${VERIFICATION_KEY_8453}" }
+polygon = { key = "${VERIFICATION_KEY_137}" }
+optimism = { key = "${VERIFICATION_KEY_10}" }
+sepolia = { key = "${VERIFICATION_KEY_11155111}" }
+arbitrum-sepolia = { key = "${VERIFICATION_KEY_421614}" }
+base-sepolia = { key = "${VERIFICATION_KEY_84532}" }
+
 

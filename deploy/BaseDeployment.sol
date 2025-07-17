@@ -352,19 +352,24 @@ abstract contract BaseDeployment is Script {
         console.log("Attempt:", deployment.attempts + 1, "/", config.deployment.maxRetries);
         console.log("=====================================\n");
 
-        // Switch to target chain
-        // For multi-chain deployments, we need the RPC URL for each chain
-        string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
-        vm.createSelectFork(rpcUrl);
-
-        // Verify chain ID
-        require(block.chainid == chainId, "Chain ID mismatch");
-
         // Execute deployment
         if (config.deployment.dryRun) {
             console.log("[DRY RUN] Would deploy to chain", chainId);
+            console.log("[DRY RUN] Configuration:");
+            console.log("  Pause Authority:", config.contracts.pauseAuthority);
+            console.log("  Funder Signer:", config.contracts.funderSigner);
+            console.log("  Funder Owner:", config.contracts.funderOwner);
+            console.log("  Settler Type:", config.contracts.settlerType);
             return true;
         } else {
+            // Switch to target chain for actual deployment
+            // For multi-chain deployments, we need the RPC URL for each chain
+            string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
+            vm.createSelectFork(rpcUrl);
+
+            // Verify chain ID
+            require(block.chainid == chainId, "Chain ID mismatch");
+
             vm.startBroadcast();
             deployToChain(chainId);
             vm.stopBroadcast();

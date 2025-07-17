@@ -146,7 +146,7 @@ contract DeployAll is Script {
         string memory fullChainsPath = string.concat(vm.projectRoot(), "/", chainsPath);
 
         try vm.readFile(fullChainsPath) returns (string memory chainsJson) {
-            uint256[] memory chains = chainsJson.readUintArray(".chains");
+            uint256[] memory chains = abi.decode(vm.parseJson(chainsJson, ".chains"), (uint256[]));
 
             // Look for any chain with orchestrator deployed
             for (uint256 i = 0; i < chains.length; i++) {
@@ -160,8 +160,13 @@ contract DeployAll is Script {
                 string memory registryPath = string.concat(vm.projectRoot(), "/", registryFile);
 
                 try vm.readFile(registryPath) returns (string memory registry) {
-                    try registry.readAddress(".Orchestrator") returns (address) {
-                        return true;
+                    try vm.parseJson(registry, ".Orchestrator") returns (bytes memory data) {
+                        if (data.length > 0) {
+                            address orchestrator = abi.decode(data, (address));
+                            if (orchestrator != address(0)) {
+                                return true;
+                            }
+                        }
                     } catch {}
                 } catch {}
             }
@@ -177,7 +182,8 @@ contract DeployAll is Script {
         string memory fullContractsPath = string.concat(vm.projectRoot(), "/", contractsPath);
 
         try vm.readFile(fullContractsPath) returns (string memory contractsJson) {
-            string memory settlerType = contractsJson.readString(".settlerType");
+            string memory settlerType =
+                abi.decode(vm.parseJson(contractsJson, ".settlerType"), (string));
 
             // Only run LZ config if settler type is layerzero and we have at least 2 chains
             if (keccak256(bytes(settlerType)) == keccak256(bytes("layerzero"))) {
@@ -185,7 +191,8 @@ contract DeployAll is Script {
                     string.concat("deploy/config/chains/", environment, ".json");
                 string memory fullChainsPath = string.concat(vm.projectRoot(), "/", chainsPath);
                 string memory chainsJson = vm.readFile(fullChainsPath);
-                uint256[] memory chains = chainsJson.readUintArray(".chains");
+                uint256[] memory chains =
+                    abi.decode(vm.parseJson(chainsJson, ".chains"), (uint256[]));
 
                 return chains.length >= 2;
             }
@@ -199,6 +206,8 @@ contract DeployAll is Script {
         string memory fullPath = string.concat(vm.projectRoot(), "/", chainsPath);
         string memory chainsJson = vm.readFile(fullPath);
 
-        return chainsJson.readString(string.concat(".", vm.toString(chainId), ".name"));
+        return abi.decode(
+            vm.parseJson(chainsJson, string.concat(".", vm.toString(chainId), ".name")), (string)
+        );
     }
 }

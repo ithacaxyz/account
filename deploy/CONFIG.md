@@ -24,18 +24,29 @@ deploy/config/
 ## Configuration File Formats
 
 ### chains.json
-Global chain configuration with network details:
+Global chain configuration with LayerZero details:
 
 ```json
 {
   "1": {
     "name": "Ethereum Mainnet",
     "layerZeroEndpoint": "0x1a44076050125825900e736c501f859c50fE728c",
-    "layerZeroEid": 30101,
-    "isTestnet": false
+    "layerZeroEid": 30101
+  },
+  "11155111": {
+    "name": "Sepolia",
+    "layerZeroEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
+    "layerZeroEid": 40161,
+    "isTestnet": true
   }
 }
 ```
+
+Fields:
+- `name`: Chain display name
+- `layerZeroEndpoint`: LayerZero endpoint address for cross-chain messaging
+- `layerZeroEid`: LayerZero endpoint ID
+- `isTestnet` (optional): Whether this is a testnet
 
 ### chains/{environment}.json
 Specifies which chains to deploy to:
@@ -74,7 +85,8 @@ Deployment execution parameters:
 
 ## Environment Variables
 
-Required format for RPC URLs:
+### RPC URLs
+Required format:
 ```bash
 RPC_{chainId}=https://rpc-url...
 ```
@@ -83,6 +95,19 @@ Example:
 ```bash
 RPC_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
 RPC_42161=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
+```
+
+### Verification API Keys
+Optional format for contract verification:
+```bash
+VERIFICATION_KEY_{chainId}=YOUR_API_KEY
+```
+
+Example:
+```bash
+VERIFICATION_KEY_1=YOUR_ETHERSCAN_API_KEY
+VERIFICATION_KEY_42161=YOUR_ARBISCAN_API_KEY
+VERIFICATION_KEY_8453=YOUR_BASESCAN_API_KEY
 ```
 
 ## Adding a New Environment

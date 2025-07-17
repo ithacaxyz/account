@@ -16,7 +16,7 @@ The deployment system uses Foundry scripts with JSON configuration files to mana
 
 ### 1. Chain Configuration (`deploy/config/chains.json`)
 
-Defines all supported chains with their network details:
+Defines LayerZero configuration for all supported chains:
 
 ```json
 {
@@ -32,6 +32,8 @@ Defines all supported chains with their network details:
   }
 }
 ```
+
+**Note**: RPC URLs and block explorer API keys are configured via environment variables, not in this file.
 
 ### 2. Contract Configuration (`deploy/config/contracts/{environment}.json`)
 
@@ -88,10 +90,11 @@ RPC_8453=https://base-mainnet.g.alchemy.com/v2/YOUR_KEY
 ### Optional for Verification
 
 ```bash
-# Block explorer API keys
-ETHERSCAN_API_KEY=YOUR_KEY
-ARBISCAN_API_KEY=YOUR_KEY
-BASESCAN_API_KEY=YOUR_KEY
+# Verification API keys (format: VERIFICATION_KEY_{chainId})
+VERIFICATION_KEY_1=YOUR_ETHERSCAN_API_KEY      # Ethereum Mainnet
+VERIFICATION_KEY_42161=YOUR_ARBISCAN_API_KEY   # Arbitrum One
+VERIFICATION_KEY_8453=YOUR_BASESCAN_API_KEY    # Base
+VERIFICATION_KEY_137=YOUR_POLYGONSCAN_API_KEY  # Polygon
 ```
 
 ## Deployment Scripts
@@ -169,12 +172,39 @@ export RPC_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
 export RPC_42161=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY  
 export RPC_8453=https://base-mainnet.g.alchemy.com/v2/YOUR_KEY
 
+# Optional: Set verification keys for automatic contract verification
+export VERIFICATION_KEY_1=YOUR_ETHERSCAN_API_KEY
+export VERIFICATION_KEY_42161=YOUR_ARBISCAN_API_KEY
+export VERIFICATION_KEY_8453=YOUR_BASESCAN_API_KEY
+
 # Run deployment
 forge script deploy/DeployAll.s.sol:DeployAll \
   --sig "run(string)" "mainnet" \
   --broadcast \
   --verify \
   --slow
+```
+
+### Contract Verification
+
+When using the `--verify` flag, the deployment scripts will automatically use the appropriate verification key based on the chain ID:
+
+```bash
+# The script internally uses:
+# For Ethereum (chainId: 1) → VERIFICATION_KEY_1
+# For Arbitrum (chainId: 42161) → VERIFICATION_KEY_42161
+# For Base (chainId: 8453) → VERIFICATION_KEY_8453
+```
+
+To manually verify a contract after deployment:
+
+```bash
+# Example for Base (chainId: 8453)
+forge verify-contract \
+  --chain 8453 \
+  --etherscan-api-key ${VERIFICATION_KEY_8453} \
+  <contract_address> \
+  src/MyContract.sol:MyContract
 ```
 
 ## Deployment Status
