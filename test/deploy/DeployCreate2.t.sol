@@ -3,16 +3,13 @@ pragma solidity ^0.8.23;
 
 import {Test, console} from "forge-std/Test.sol";
 import {DeployMain} from "../../deploy/DeployMain.s.sol";
-import {SafeSingletonDeployer} from "safe-singleton-deployer-sol/SafeSingletonDeployer.sol";
+import {SafeSingletonDeployer} from "../../deploy/SafeSingletonDeployer.sol";
 
-contract DeployCreate2Test is Test {
-    using SafeSingletonDeployer for bytes;
-
+contract DeployCreate2Test is Test, SafeSingletonDeployer {
     DeployMain deployment;
     string constant TEST_TEMP_DIR = "test/deploy/temp/";
     string constant TEST_CONFIG_FILE = "test/deploy/temp/test-create2-config.json";
     string constant TEST_REGISTRY_DIR = "test/deploy/temp/test-registry/";
-    address constant SAFE_SINGLETON_FACTORY = 0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7;
 
     modifier withCleanup() {
         // Ensure temp directory exists
