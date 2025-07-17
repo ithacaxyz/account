@@ -6,8 +6,8 @@ import {stdJson} from "forge-std/StdJson.sol";
 
 /**
  * @title BaseDeployment
- * @notice Base contract for all deployment scripts with retry capabilities and state tracking
- * @dev Provides common functionality for chain-aware deployments with proper error handling
+ * @notice Base contract for all deployment scripts with unified JSON configuration
+ * @dev Provides simplified configuration management using Foundry's JSON parsing
  */
 abstract contract BaseDeployment is Script {
     using stdJson for string;
@@ -20,6 +20,46 @@ abstract contract BaseDeployment is Script {
         FAILED
     }
 
+    enum SettlerType {
+        SIMPLE,
+        LAYERZERO
+    }
+
+    // Unified configuration structs (alphabetically ordered for JSON parsing)
+    struct ChainConfig {
+        uint256 chainId;
+        uint32 eid; // LayerZero endpoint ID
+        address endpoint; // LayerZero endpoint address
+        bool isTestnet;
+        string name;
+    }
+
+    struct ContractConfig {
+        address funderOwner;
+        address funderSigner;
+        address l0SettlerOwner;
+        address pauseAuthority;
+        address settlerOwner;
+        string settlerType;
+    }
+
+    struct DeploymentParams {
+        bool dryRun;
+        string environment;
+        uint256 maxRetries;
+        uint256 retryDelay;
+    }
+
+    struct DeployedContracts {
+        address accountImpl;
+        address accountProxy;
+        address escrow;
+        address orchestrator;
+        address settler;
+        address simpleFunder;
+        address simulator;
+    }
+
     struct ChainDeployment {
         uint256 chainId;
         string chainName;
@@ -29,20 +69,27 @@ abstract contract BaseDeployment is Script {
         uint256 lastAttemptTimestamp;
     }
 
-    struct DeploymentConfig {
-        string environment; // mainnet, testnet, devnet
-        bool dryRun;
-        uint256 maxRetries;
-        uint256 retryDelay;
+    // Main configuration object
+    struct Config {
+        DeploymentParams deployment;
+        ContractConfig contracts;
+        mapping(uint256 => ChainConfig) chains;
+        mapping(uint256 => DeployedContracts) deployed;
+        uint256[] targetChains;
     }
 
-    // State tracking
+    // State
+    Config internal config;
     mapping(uint256 => ChainDeployment) public chainDeployments;
-    uint256[] public targetChains;
-    DeploymentConfig public config;
 
     // Registry path for persistent state
     string constant REGISTRY_PATH = "deploy/registry/";
+
+    // Configuration file paths
+    string constant CHAINS_CONFIG = "deploy/config/chains.json";
+    string constant CONTRACTS_CONFIG_PATH = "deploy/config/contracts/";
+    string constant DEPLOYMENT_CONFIG_PATH = "deploy/config/deployment/";
+    string constant CHAIN_SELECTION_PATH = "deploy/config/chains/";
 
     // Events for tracking
     event DeploymentStarted(uint256 indexed chainId, string deploymentType);
@@ -60,44 +107,78 @@ abstract contract BaseDeployment is Script {
     }
 
     /**
-     * @notice Initialize base deployment with configuration
-     * @param configPath Path to deployment configuration file
+     * @notice Initialize deployment with environment
+     * @param environment Environment name (mainnet, testnet, devnet)
      */
-    function initializeDeployment(string memory configPath) internal {
-        loadConfig(configPath);
-        loadTargetChains();
+    function initializeDeployment(string memory environment) internal {
+        // Load all configuration at once
+        loadFullConfiguration(environment);
+
+        // Initialize deployment state for each chain
+        initializeChainDeployments();
+
+        // Load any existing deployment state
         loadDeploymentState();
     }
 
     /**
-     * @notice Load deployment configuration
+     * @notice Load all configuration from JSON files
      */
-    function loadConfig(string memory configPath) internal {
-        string memory configJson = vm.readFile(configPath);
+    function loadFullConfiguration(string memory environment) internal {
+        // 1. Load deployment parameters
+        string memory deploymentPath =
+            string.concat(vm.projectRoot(), "/", DEPLOYMENT_CONFIG_PATH, environment, ".json");
+        string memory deploymentJson = vm.readFile(deploymentPath);
+        config.deployment = abi.decode(vm.parseJson(deploymentJson), (DeploymentParams));
 
-        config.environment = configJson.readString(".environment");
-        config.dryRun = configJson.readBool(".dryRun");
-        config.maxRetries = configJson.readUint(".maxRetries");
-        config.retryDelay = configJson.readUint(".retryDelay");
+        // 2. Load contract configuration
+        string memory contractsPath =
+            string.concat(vm.projectRoot(), "/", CONTRACTS_CONFIG_PATH, environment, ".json");
+        string memory contractsJson = vm.readFile(contractsPath);
+        config.contracts = abi.decode(vm.parseJson(contractsJson), (ContractConfig));
+
+        // 3. Load target chains
+        string memory chainSelectionPath =
+            string.concat(vm.projectRoot(), "/", CHAIN_SELECTION_PATH, environment, ".json");
+        string memory chainSelectionJson = vm.readFile(chainSelectionPath);
+        config.targetChains = abi.decode(vm.parseJson(chainSelectionJson, ".chains"), (uint256[]));
+
+        // 4. Load chain configurations
+        string memory chainsPath = string.concat(vm.projectRoot(), "/", CHAINS_CONFIG);
+        string memory chainsJson = vm.readFile(chainsPath);
+
+        for (uint256 i = 0; i < config.targetChains.length; i++) {
+            uint256 chainId = config.targetChains[i];
+            string memory chainKey = string.concat(".", vm.toString(chainId));
+
+            // Parse individual chain config
+            // Note: RPC URLs should be passed via environment when running forge script
+            ChainConfig memory chainConfig;
+            chainConfig.chainId = chainId;
+            chainConfig.name = chainsJson.readString(string.concat(chainKey, ".name"));
+            chainConfig.endpoint =
+                chainsJson.readAddress(string.concat(chainKey, ".layerZeroEndpoint"));
+            chainConfig.eid = uint32(chainsJson.readUint(string.concat(chainKey, ".layerZeroEid")));
+
+            // Optional fields - check if key exists
+            chainConfig.isTestnet = tryReadBool(chainsJson, string.concat(chainKey, ".isTestnet"));
+
+            config.chains[chainId] = chainConfig;
+        }
+
+        // 5. Load existing deployed contracts from registry
+        loadDeployedContracts();
     }
 
     /**
-     * @notice Load target chains based on environment
+     * @notice Initialize chain deployment states
      */
-    function loadTargetChains() internal {
-        string memory chainsPath =
-            string.concat("deploy/config/chains/", config.environment, ".json");
-        string memory chainsJson = vm.readFile(chainsPath);
-
-        uint256[] memory chains = chainsJson.readUintArray(".chains");
-
-        for (uint256 i = 0; i < chains.length; i++) {
-            targetChains.push(chains[i]);
-
-            // Initialize chain deployment state
-            chainDeployments[chains[i]] = ChainDeployment({
-                chainId: chains[i],
-                chainName: getChainName(chains[i]),
+    function initializeChainDeployments() internal {
+        for (uint256 i = 0; i < config.targetChains.length; i++) {
+            uint256 chainId = config.targetChains[i];
+            chainDeployments[chainId] = ChainDeployment({
+                chainId: chainId,
+                chainName: config.chains[chainId].name,
                 state: DeploymentState.NOT_STARTED,
                 error: "",
                 attempts: 0,
@@ -107,30 +188,58 @@ abstract contract BaseDeployment is Script {
     }
 
     /**
+     * @notice Load deployed contracts from registry
+     */
+    function loadDeployedContracts() internal {
+        for (uint256 i = 0; i < config.targetChains.length; i++) {
+            uint256 chainId = config.targetChains[i];
+            string memory registryFile = string.concat(
+                vm.projectRoot(),
+                "/",
+                REGISTRY_PATH,
+                config.chains[chainId].name,
+                "-",
+                vm.toString(chainId),
+                ".json"
+            );
+
+            try vm.readFile(registryFile) returns (string memory registryJson) {
+                // Use individual parsing for flexibility with missing fields
+                DeployedContracts memory deployed;
+                deployed.accountImpl = tryReadAddress(registryJson, ".AccountImpl");
+                deployed.accountProxy = tryReadAddress(registryJson, ".AccountProxy");
+                deployed.escrow = tryReadAddress(registryJson, ".Escrow");
+                deployed.orchestrator = tryReadAddress(registryJson, ".Orchestrator");
+                deployed.settler = tryReadAddress(registryJson, ".Settler");
+                deployed.simpleFunder = tryReadAddress(registryJson, ".SimpleFunder");
+                deployed.simulator = tryReadAddress(registryJson, ".Simulator");
+
+                config.deployed[chainId] = deployed;
+            } catch {
+                // No registry file exists yet
+            }
+        }
+    }
+
+    /**
      * @notice Load existing deployment state from registry
      */
     function loadDeploymentState() internal {
         string memory statePath = string.concat(REGISTRY_PATH, deploymentType(), "-state.json");
+        string memory fullPath = string.concat(vm.projectRoot(), "/", statePath);
 
-        try vm.readFile(statePath) returns (string memory stateJson) {
-            // Load previous deployment states
-            for (uint256 i = 0; i < targetChains.length; i++) {
-                uint256 chainId = targetChains[i];
+        try vm.readFile(fullPath) returns (string memory stateJson) {
+            for (uint256 i = 0; i < config.targetChains.length; i++) {
+                uint256 chainId = config.targetChains[i];
                 string memory chainKey = vm.toString(chainId);
 
-                // Try to read state - if it fails, keep default
+                // Try to read state
                 string memory stateKey = string.concat(".", chainKey, ".state");
-                if (bytes(stateJson).length > 0) {
-                    chainDeployments[chainId].state =
-                        DeploymentState(abi.decode(vm.parseJson(stateJson, stateKey), (uint256)));
-                }
+                chainDeployments[chainId].state = DeploymentState(tryReadUint(stateJson, stateKey));
 
-                // Try to read attempts - if it fails, keep default
+                // Try to read attempts
                 string memory attemptsKey = string.concat(".", chainKey, ".attempts");
-                if (bytes(stateJson).length > 0) {
-                    chainDeployments[chainId].attempts =
-                        abi.decode(vm.parseJson(stateJson, attemptsKey), (uint256));
-                }
+                chainDeployments[chainId].attempts = tryReadUint(stateJson, attemptsKey);
             }
         } catch {
             // No previous state found
@@ -143,8 +252,8 @@ abstract contract BaseDeployment is Script {
     function saveDeploymentState() internal {
         string memory json = "{";
 
-        for (uint256 i = 0; i < targetChains.length; i++) {
-            uint256 chainId = targetChains[i];
+        for (uint256 i = 0; i < config.targetChains.length; i++) {
+            uint256 chainId = config.targetChains[i];
             ChainDeployment memory deployment = chainDeployments[chainId];
 
             if (i > 0) json = string.concat(json, ",");
@@ -159,7 +268,8 @@ abstract contract BaseDeployment is Script {
         json = string.concat(json, "}");
 
         string memory statePath = string.concat(REGISTRY_PATH, deploymentType(), "-state.json");
-        vm.writeFile(statePath, json);
+        string memory fullPath = string.concat(vm.projectRoot(), "/", statePath);
+        vm.writeFile(fullPath, json);
     }
 
     /**
@@ -168,8 +278,8 @@ abstract contract BaseDeployment is Script {
     function executeDeployment() internal {
         printHeader();
 
-        for (uint256 i = 0; i < targetChains.length; i++) {
-            uint256 chainId = targetChains[i];
+        for (uint256 i = 0; i < config.targetChains.length; i++) {
+            uint256 chainId = config.targetChains[i];
 
             if (shouldSkipChain(chainId)) {
                 continue;
@@ -177,7 +287,7 @@ abstract contract BaseDeployment is Script {
 
             bool success = deployToChainWithRetry(chainId);
 
-            if (!success && !config.dryRun) {
+            if (!success && !config.deployment.dryRun) {
                 console.log("\n[!] Deployment failed on chain", chainId);
                 console.log("[!] Fix the issue and run again to retry");
                 saveDeploymentState();
@@ -195,34 +305,31 @@ abstract contract BaseDeployment is Script {
     function deployToChainWithRetry(uint256 chainId) internal returns (bool success) {
         ChainDeployment storage deployment = chainDeployments[chainId];
 
-        while (deployment.attempts < config.maxRetries) {
+        while (deployment.attempts < config.deployment.maxRetries) {
             if (deployment.attempts > 0) {
                 console.log("\n[>] Retrying deployment on", deployment.chainName);
                 emit DeploymentRetrying(chainId, deployment.attempts + 1);
 
                 // Wait before retry
-                vm.sleep(config.retryDelay * 1000);
+                vm.sleep(config.deployment.retryDelay * 1000);
             }
 
-            try this.deployToChainExternal(chainId) {
+            // Execute deployment directly without try/catch
+            // In production, errors will cause the script to revert and can be retried
+            bool deploySuccess = executeChainDeployment(chainId);
+
+            if (deploySuccess) {
                 deployment.state = DeploymentState.COMPLETED;
                 deployment.error = "";
                 emit DeploymentCompleted(chainId, deploymentType());
                 return true;
-            } catch Error(string memory reason) {
+            } else {
                 deployment.state = DeploymentState.FAILED;
-                deployment.error = reason;
+                deployment.error = "Deployment failed";
                 deployment.attempts++;
 
-                console.log("\n[!] Error:", reason);
-                emit DeploymentFailed(chainId, deploymentType(), reason);
-            } catch {
-                deployment.state = DeploymentState.FAILED;
-                deployment.error = "Unknown error";
-                deployment.attempts++;
-
-                console.log("\n[!] Unknown error occurred");
-                emit DeploymentFailed(chainId, deploymentType(), "Unknown error");
+                console.log("\n[!] Deployment failed");
+                emit DeploymentFailed(chainId, deploymentType(), "Deployment failed");
             }
         }
 
@@ -230,33 +337,38 @@ abstract contract BaseDeployment is Script {
     }
 
     /**
-     * @notice External wrapper for deployment (enables try/catch)
+     * @notice Execute deployment for a specific chain
      */
-    function deployToChainExternal(uint256 chainId) external {
-        require(msg.sender == address(this), "Only callable internally");
-
+    function executeChainDeployment(uint256 chainId)
+        internal
+        trackDeployment(chainId)
+        returns (bool)
+    {
         ChainDeployment memory deployment = chainDeployments[chainId];
 
         console.log("\n=====================================");
         console.log("Deploying to:", deployment.chainName);
         console.log("Chain ID:", chainId);
-        console.log("Attempt:", deployment.attempts + 1, "/", config.maxRetries);
+        console.log("Attempt:", deployment.attempts + 1, "/", config.deployment.maxRetries);
         console.log("=====================================\n");
 
         // Switch to target chain
-        string memory rpcUrl = getRpcUrl(chainId);
+        // For multi-chain deployments, we need the RPC URL for each chain
+        string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
         vm.createSelectFork(rpcUrl);
 
         // Verify chain ID
         require(block.chainid == chainId, "Chain ID mismatch");
 
         // Execute deployment
-        if (config.dryRun) {
+        if (config.deployment.dryRun) {
             console.log("[DRY RUN] Would deploy to chain", chainId);
+            return true;
         } else {
             vm.startBroadcast();
             deployToChain(chainId);
             vm.stopBroadcast();
+            return true;
         }
     }
 
@@ -271,7 +383,7 @@ abstract contract BaseDeployment is Script {
             return true;
         }
 
-        if (deployment.attempts >= config.maxRetries) {
+        if (deployment.attempts >= config.deployment.maxRetries) {
             console.log("\n[!] Skipping", deployment.chainName, "- max retries exceeded");
             return true;
         }
@@ -286,9 +398,9 @@ abstract contract BaseDeployment is Script {
         console.log("\n========================================");
         console.log(deploymentType(), "Deployment");
         console.log("========================================");
-        console.log("Environment:", config.environment);
-        console.log("Target chains:", targetChains.length);
-        console.log("Dry run:", config.dryRun);
+        console.log("Environment:", config.deployment.environment);
+        console.log("Target chains:", config.targetChains.length);
+        console.log("Dry run:", config.deployment.dryRun);
         console.log("");
     }
 
@@ -303,8 +415,8 @@ abstract contract BaseDeployment is Script {
         uint256 completed = 0;
         uint256 failed = 0;
 
-        for (uint256 i = 0; i < targetChains.length; i++) {
-            uint256 chainId = targetChains[i];
+        for (uint256 i = 0; i < config.targetChains.length; i++) {
+            uint256 chainId = config.targetChains[i];
             ChainDeployment memory deployment = chainDeployments[chainId];
 
             string memory status;
@@ -331,38 +443,133 @@ abstract contract BaseDeployment is Script {
         }
 
         console.log("");
-        console.log("Total:", targetChains.length);
+        console.log("Total:", config.targetChains.length);
         console.log("Completed:", completed);
         console.log("Failed:", failed);
     }
 
     /**
-     * @notice Get chain name from chain ID
+     * @notice Save deployed contract address to registry
      */
-    function getChainName(uint256 chainId) internal view returns (string memory) {
-        string memory chainsPath = "deploy/config/chains.json";
-        string memory chainsJson = vm.readFile(chainsPath);
+    function saveDeployedContract(
+        uint256 chainId,
+        string memory contractName,
+        address contractAddress
+    ) internal {
+        // Update in-memory config
+        if (keccak256(bytes(contractName)) == keccak256("Orchestrator")) {
+            config.deployed[chainId].orchestrator = contractAddress;
+        } else if (keccak256(bytes(contractName)) == keccak256("AccountImpl")) {
+            config.deployed[chainId].accountImpl = contractAddress;
+        } else if (keccak256(bytes(contractName)) == keccak256("AccountProxy")) {
+            config.deployed[chainId].accountProxy = contractAddress;
+        } else if (keccak256(bytes(contractName)) == keccak256("Simulator")) {
+            config.deployed[chainId].simulator = contractAddress;
+        } else if (keccak256(bytes(contractName)) == keccak256("SimpleFunder")) {
+            config.deployed[chainId].simpleFunder = contractAddress;
+        } else if (keccak256(bytes(contractName)) == keccak256("Escrow")) {
+            config.deployed[chainId].escrow = contractAddress;
+        } else if (keccak256(bytes(contractName)) == keccak256("Settler")) {
+            config.deployed[chainId].settler = contractAddress;
+        }
 
-        return chainsJson.readString(string.concat(".", vm.toString(chainId), ".name"));
+        // Save to registry file
+        saveChainRegistry(chainId);
     }
 
     /**
-     * @notice Get RPC URL for chain
+     * @notice Save chain registry to file
      */
-    function getRpcUrl(uint256 chainId) internal view returns (string memory) {
-        string memory chainsPath = "deploy/config/chains.json";
-        string memory chainsJson = vm.readFile(chainsPath);
+    function saveChainRegistry(uint256 chainId) internal {
+        DeployedContracts memory deployed = config.deployed[chainId];
 
-        string memory rpcUrl =
-            chainsJson.readString(string.concat(".", vm.toString(chainId), ".rpcUrl"));
+        string memory json = "{";
 
-        // Handle environment variable substitution
-        if (bytes(rpcUrl).length > 0 && bytes(rpcUrl)[0] == "$") {
-            string memory envVar = substring(rpcUrl, 2, bytes(rpcUrl).length - 1);
-            return vm.envString(envVar);
+        // Build JSON with deployed addresses
+        bool first = true;
+
+        if (deployed.orchestrator != address(0)) {
+            json = string.concat(json, '"Orchestrator": "', vm.toString(deployed.orchestrator), '"');
+            first = false;
         }
 
-        return rpcUrl;
+        if (deployed.accountImpl != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(json, '"AccountImpl": "', vm.toString(deployed.accountImpl), '"');
+            first = false;
+        }
+
+        if (deployed.accountProxy != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(json, '"AccountProxy": "', vm.toString(deployed.accountProxy), '"');
+            first = false;
+        }
+
+        if (deployed.simulator != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(json, '"Simulator": "', vm.toString(deployed.simulator), '"');
+            first = false;
+        }
+
+        if (deployed.simpleFunder != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(json, '"SimpleFunder": "', vm.toString(deployed.simpleFunder), '"');
+            first = false;
+        }
+
+        if (deployed.escrow != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(json, '"Escrow": "', vm.toString(deployed.escrow), '"');
+            first = false;
+        }
+
+        if (deployed.settler != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(json, '"Settler": "', vm.toString(deployed.settler), '"');
+        }
+
+        json = string.concat(json, "}");
+
+        string memory registryFile = string.concat(
+            REGISTRY_PATH, config.chains[chainId].name, "-", vm.toString(chainId), ".json"
+        );
+        string memory fullPath = string.concat(vm.projectRoot(), "/", registryFile);
+        vm.writeFile(fullPath, json);
+    }
+
+    /**
+     * @notice Convert string to uppercase
+     */
+    function toUpper(string memory str) internal pure returns (string memory) {
+        bytes memory strBytes = bytes(str);
+        bytes memory result = new bytes(strBytes.length);
+
+        for (uint256 i = 0; i < strBytes.length; i++) {
+            if (strBytes[i] >= 0x61 && strBytes[i] <= 0x7A) {
+                result[i] = bytes1(uint8(strBytes[i]) - 32);
+            } else {
+                result[i] = strBytes[i];
+            }
+        }
+
+        return string(result);
+    }
+
+    // Configuration getters for derived contracts
+    function getChainConfig(uint256 chainId) internal view returns (ChainConfig memory) {
+        return config.chains[chainId];
+    }
+
+    function getContractConfig() internal view returns (ContractConfig memory) {
+        return config.contracts;
+    }
+
+    function getDeployedContracts(uint256 chainId)
+        internal
+        view
+        returns (DeployedContracts memory)
+    {
+        return config.deployed[chainId];
     }
 
     /**
@@ -384,7 +591,7 @@ abstract contract BaseDeployment is Script {
     // Helper functions for safe JSON parsing
     function tryReadAddress(string memory json, string memory key)
         internal
-        view
+        pure
         returns (address)
     {
         try vm.parseJson(json, key) returns (bytes memory data) {
@@ -397,7 +604,7 @@ abstract contract BaseDeployment is Script {
 
     function tryReadString(string memory json, string memory key)
         internal
-        view
+        pure
         returns (string memory)
     {
         try vm.parseJson(json, key) returns (bytes memory data) {
@@ -408,13 +615,22 @@ abstract contract BaseDeployment is Script {
         return "";
     }
 
-    function tryReadUint(string memory json, string memory key) internal view returns (uint256) {
+    function tryReadUint(string memory json, string memory key) internal pure returns (uint256) {
         try vm.parseJson(json, key) returns (bytes memory data) {
             if (data.length > 0) {
                 return abi.decode(data, (uint256));
             }
         } catch {}
         return 0;
+    }
+
+    function tryReadBool(string memory json, string memory key) internal pure returns (bool) {
+        try vm.parseJson(json, key) returns (bytes memory data) {
+            if (data.length > 0) {
+                return abi.decode(data, (bool));
+            }
+        } catch {}
+        return false;
     }
 
     // Abstract functions to be implemented by derived contracts

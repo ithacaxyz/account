@@ -32,7 +32,7 @@ contract DeploymentStatus is Script {
     struct ContractAddresses {
         // Basic
         address orchestrator;
-        address accountImplementation;
+        address accountImpl;
         address accountProxy;
         address simulator;
         // Interop
@@ -45,9 +45,6 @@ contract DeploymentStatus is Script {
         uint256 totalPeers;
     }
 
-    string constant BASIC_REGISTRY = "deploy/registry/basic-contracts.json";
-    string constant INTEROP_REGISTRY = "deploy/registry/interop-contracts.json";
-    string constant SETTLEMENT_REGISTRY = "deploy/registry/settlement-contracts.json";
     string constant LZ_CONFIG_REGISTRY = "deploy/registry/lz-peer-config.json";
 
     mapping(uint256 => ChainStatus) chainStatuses;
@@ -87,7 +84,8 @@ contract DeploymentStatus is Script {
 
     function loadTargetChains(string memory environment) internal view returns (uint256[] memory) {
         string memory chainsPath = string.concat("deploy/config/chains/", environment, ".json");
-        string memory chainsJson = vm.readFile(chainsPath);
+        string memory fullPath = string.concat(vm.projectRoot(), "/", chainsPath);
+        string memory chainsJson = vm.readFile(fullPath);
         return chainsJson.readUintArray(".chains");
     }
 
@@ -99,49 +97,48 @@ contract DeploymentStatus is Script {
         status.chainName = getChainName(chainId);
         status.totalContracts = 7; // Basic(4) + Interop(2) + Settlement(1)
 
-        // Check basic contracts
-        string memory basicJson = readRegistry(BASIC_REGISTRY);
-        if (bytes(basicJson).length > 0) {
-            string memory chainKey = vm.toString(chainId);
+        // Read chain-specific registry file
+        string memory registryPath =
+            string.concat("deploy/registry/", status.chainName, "-", vm.toString(chainId), ".json");
+        string memory registryJson = readRegistry(registryPath);
 
-            addresses.orchestrator = tryReadAddress(basicJson, chainKey, "orchestrator");
-            addresses.accountImplementation =
-                tryReadAddress(basicJson, chainKey, "accountImplementation");
-            addresses.accountProxy = tryReadAddress(basicJson, chainKey, "accountProxy");
-            addresses.simulator = tryReadAddress(basicJson, chainKey, "simulator");
+        if (bytes(registryJson).length > 0) {
+            // Read all contract addresses from the unified registry
+            addresses.orchestrator = tryReadAddressDirect(registryJson, "Orchestrator");
+            addresses.accountImpl = tryReadAddressDirect(registryJson, "AccountImpl");
+            addresses.accountProxy = tryReadAddressDirect(registryJson, "AccountProxy");
+            addresses.simulator = tryReadAddressDirect(registryJson, "Simulator");
+            addresses.simpleFunder = tryReadAddressDirect(registryJson, "SimpleFunder");
+            addresses.escrow = tryReadAddressDirect(registryJson, "Escrow");
+            addresses.settler = tryReadAddressDirect(registryJson, "Settler");
 
+            // Check deployment status based on which contracts are deployed
             if (addresses.orchestrator != address(0)) {
                 status.basicDeployed = true;
-                status.deployedContracts += 4;
+                status.deployedContracts = 4;
             }
-        }
-
-        // Check interop contracts
-        string memory interopJson = readRegistry(INTEROP_REGISTRY);
-        if (bytes(interopJson).length > 0) {
-            string memory chainKey = vm.toString(chainId);
-
-            addresses.simpleFunder = tryReadAddress(interopJson, chainKey, "simpleFunder");
-            addresses.escrow = tryReadAddress(interopJson, chainKey, "escrow");
 
             if (addresses.simpleFunder != address(0)) {
                 status.interopDeployed = true;
                 status.deployedContracts += 2;
             }
-        }
-
-        // Check settlement contracts
-        string memory settlementJson = readRegistry(SETTLEMENT_REGISTRY);
-        if (bytes(settlementJson).length > 0) {
-            string memory chainKey = vm.toString(chainId);
-
-            uint256 settlerType = tryReadUint(settlementJson, chainKey, "settlerType");
-            addresses.settler = tryReadAddress(settlementJson, chainKey, "settler");
 
             if (addresses.settler != address(0)) {
                 status.settlementDeployed = true;
                 status.deployedContracts += 1;
-                status.settlerType = settlerType == 0 ? "Simple" : "LayerZero";
+
+                // Determine settler type from contract config
+                string memory contractsPath = string.concat(
+                    "deploy/config/contracts/", vm.envOr("ENVIRONMENT", "mainnet"), ".json"
+                );
+                string memory contractsJson = readRegistry(contractsPath);
+                string memory settlerType = "";
+                try contractsJson.readString(".settlerType") returns (string memory st) {
+                    settlerType = st;
+                } catch {}
+                status.settlerType = keccak256(bytes(settlerType)) == keccak256(bytes("layerzero"))
+                    ? "LayerZero"
+                    : "Simple";
             }
         }
 
@@ -206,7 +203,7 @@ contract DeploymentStatus is Script {
         console.log("Basic Contracts:", status.basicDeployed ? unicode"✓" : unicode"✗");
         if (status.basicDeployed) {
             console.log("  Orchestrator:    ", addresses.orchestrator);
-            console.log("  Account Impl:    ", addresses.accountImplementation);
+            console.log("  Account Impl:    ", addresses.accountImpl);
             console.log("  Account Proxy:   ", addresses.accountProxy);
             console.log("  Simulator:       ", addresses.simulator);
         }
@@ -353,7 +350,8 @@ contract DeploymentStatus is Script {
     }
 
     function getChainName(uint256 chainId) internal view returns (string memory) {
-        try vm.readFile("deploy/config/chains.json") returns (string memory chainsJson) {
+        string memory fullPath = string.concat(vm.projectRoot(), "/deploy/config/chains.json");
+        try vm.readFile(fullPath) returns (string memory chainsJson) {
             return chainsJson.readString(string.concat(".", vm.toString(chainId), ".name"));
         } catch {
             return string.concat("Chain ", vm.toString(chainId));
@@ -361,7 +359,8 @@ contract DeploymentStatus is Script {
     }
 
     function readRegistry(string memory path) internal view returns (string memory) {
-        try vm.readFile(path) returns (string memory json) {
+        string memory fullPath = string.concat(vm.projectRoot(), "/", path);
+        try vm.readFile(fullPath) returns (string memory json) {
             return json;
         } catch {
             return "";
@@ -374,6 +373,18 @@ contract DeploymentStatus is Script {
         returns (address)
     {
         try json.readAddress(string.concat(".", chainKey, ".", field)) returns (address addr) {
+            return addr;
+        } catch {
+            return address(0);
+        }
+    }
+
+    function tryReadAddressDirect(string memory json, string memory field)
+        internal
+        pure
+        returns (address)
+    {
+        try json.readAddress(string.concat(".", field)) returns (address addr) {
             return addr;
         } catch {
             return address(0);

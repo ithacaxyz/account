@@ -17,75 +17,55 @@ import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
  *   --rpc-url $RPC_URL \
  *   --broadcast \
  *   --sig "run(string)" \
- *   "deploy/config/deployment/mainnet.json"
+ *   "mainnet"
  */
 contract DeploySettlement is BaseDeployment {
     using stdJson for string;
-
-    enum SettlerType {
-        SIMPLE,
-        LAYERZERO
-    }
-
-    struct SettlementContracts {
-        SettlerType settlerType;
-        address settler;
-        address layerZeroEndpoint; // Only for L0 settler
-        uint32 layerZeroEid; // Only for L0 settler
-    }
-
-    // Registry file
-    string constant SETTLEMENT_REGISTRY = "deploy/registry/settlement-contracts.json";
 
     function deploymentType() internal pure override returns (string memory) {
         return "Settlement";
     }
 
-    function run(string memory configPath) external {
-        initializeDeployment(configPath);
+    function run(string memory environment) external {
+        initializeDeployment(environment);
         executeDeployment();
     }
 
     function deployToChain(uint256 chainId) internal override {
         console.log("Deploying settlement contracts...");
 
+        // Get configuration
+        ContractConfig memory contractConfig = getContractConfig();
+        ChainConfig memory chainConfig = getChainConfig(chainId);
+        DeployedContracts memory existing = getDeployedContracts(chainId);
+
         // Determine settler type from configuration
-        SettlerType settlerType = getSettlerType(chainId);
+        SettlerType settlerType = getSettlerType();
         console.log(
             "Settler type:",
             settlerType == SettlerType.SIMPLE ? "SimpleSettler" : "LayerZeroSettler"
         );
 
-        // Check if already deployed
-        SettlementContracts memory existing = loadExistingContracts(chainId);
-        SettlementContracts memory deployed;
-
-        deployed.settlerType = settlerType;
-
-        if (existing.settler != address(0)) {
-            // Verify existing settler matches expected type
-            require(existing.settlerType == settlerType, "Existing settler type mismatch");
-            deployed = existing;
-            console.log("Settler already deployed:", deployed.settler);
-        } else {
+        if (existing.settler == address(0)) {
             // Deploy appropriate settler
             if (settlerType == SettlerType.SIMPLE) {
-                deployed.settler = deploySimpleSettler(chainId);
-                console.log("SimpleSettler deployed:", deployed.settler);
+                address settler = deploySimpleSettler(contractConfig.settlerOwner);
+                console.log("SimpleSettler deployed:", settler);
+                saveDeployedContract(chainId, "Settler", settler);
             } else {
-                (deployed.settler, deployed.layerZeroEndpoint, deployed.layerZeroEid) =
-                    deployLayerZeroSettler(chainId);
-                console.log("LayerZeroSettler deployed:", deployed.settler);
-                console.log("  Endpoint:", deployed.layerZeroEndpoint);
-                console.log("  EID:", deployed.layerZeroEid);
+                address settler =
+                    deployLayerZeroSettler(chainConfig.endpoint, contractConfig.l0SettlerOwner);
+                console.log("LayerZeroSettler deployed:", settler);
+                console.log("  Endpoint:", chainConfig.endpoint);
+                console.log("  EID:", chainConfig.eid);
+                saveDeployedContract(chainId, "Settler", settler);
             }
+        } else {
+            console.log("Settler already deployed:", existing.settler);
         }
 
-        // Save deployed addresses
-        saveDeployedContracts(chainId, deployed);
-
         // Verify deployments
-        verifyDeployments(chainId, deployed);
+        verifyDeployments(chainId, settlerType);
 
         console.log(unicode"\n[✓] Settlement contracts deployment completed");
 
@@ -94,30 +74,9 @@ contract DeploySettlement is BaseDeployment {
         }
     }
 
-    function getSettlerType(uint256 chainId) internal view returns (SettlerType) {
-        string memory configPath =
-            string.concat("deploy/config/contracts/", config.environment, ".json");
-        string memory configJson = vm.readFile(configPath);
-
-        // Check chain-specific settler type
-        string memory chainKey = vm.toString(chainId);
-        try configJson.readString(string.concat(".", chainKey, ".settlerType")) returns (
-            string memory settlerTypeStr
-        ) {
-            return parseSettlerType(settlerTypeStr);
-        } catch {}
-
-        // Fall back to default settler type
-        try configJson.readString(".default.settlerType") returns (string memory settlerTypeStr) {
-            return parseSettlerType(settlerTypeStr);
-        } catch {}
-
-        // Default based on environment
-        if (keccak256(bytes(config.environment)) == keccak256(bytes("devnet"))) {
-            return SettlerType.SIMPLE;
-        } else {
-            return SettlerType.LAYERZERO;
-        }
+    function getSettlerType() internal view returns (SettlerType) {
+        ContractConfig memory contractConfig = getContractConfig();
+        return parseSettlerType(contractConfig.settlerType);
     }
 
     function parseSettlerType(string memory settlerTypeStr) internal pure returns (SettlerType) {
@@ -130,187 +89,42 @@ contract DeploySettlement is BaseDeployment {
         }
     }
 
-    function deploySimpleSettler(uint256 chainId) internal returns (address) {
-        address settlerOwner = getChainConfig(chainId, "settlerOwner");
+    function deploySimpleSettler(address settlerOwner) internal returns (address) {
         SimpleSettler settler = new SimpleSettler(settlerOwner);
         return address(settler);
     }
 
-    function deployLayerZeroSettler(uint256 chainId)
+    function deployLayerZeroSettler(address endpoint, address l0SettlerOwner)
         internal
-        returns (address settler, address endpoint, uint32 eid)
+        returns (address)
     {
-        address settlerOwner = getChainConfig(chainId, "l0SettlerOwner");
-
-        // Get LayerZero endpoint and EID from chain config
-        string memory chainsPath = "deploy/config/chains.json";
-        string memory chainsJson = vm.readFile(chainsPath);
-        string memory chainKey = vm.toString(chainId);
-
-        endpoint = chainsJson.readAddress(string.concat(".", chainKey, ".layerZeroEndpoint"));
         require(endpoint != address(0), "LayerZero endpoint not configured for chain");
-
-        eid = uint32(chainsJson.readUint(string.concat(".", chainKey, ".layerZeroEid")));
-        require(eid != 0, "LayerZero EID not configured for chain");
-
-        LayerZeroSettler lzSettler = new LayerZeroSettler(endpoint, settlerOwner);
-        settler = address(lzSettler);
+        LayerZeroSettler lzSettler = new LayerZeroSettler(endpoint, l0SettlerOwner);
+        return address(lzSettler);
     }
 
-    function loadExistingContracts(uint256 chainId)
-        internal
-        view
-        returns (SettlementContracts memory)
-    {
-        try vm.readFile(SETTLEMENT_REGISTRY) returns (string memory json) {
-            string memory chainKey = vm.toString(chainId);
-
-            SettlementContracts memory contracts;
-
-            try json.readUint(string.concat(".", chainKey, ".settlerType")) returns (
-                uint256 typeInt
-            ) {
-                contracts.settlerType = SettlerType(typeInt);
-            } catch {
-                return contracts; // Return empty if no settler type found
-            }
-
-            try json.readAddress(string.concat(".", chainKey, ".settler")) returns (address addr) {
-                contracts.settler = addr;
-            } catch {}
-
-            if (contracts.settlerType == SettlerType.LAYERZERO) {
-                try json.readAddress(string.concat(".", chainKey, ".layerZeroEndpoint")) returns (
-                    address addr
-                ) {
-                    contracts.layerZeroEndpoint = addr;
-                } catch {}
-
-                try json.readUint(string.concat(".", chainKey, ".layerZeroEid")) returns (
-                    uint256 eid
-                ) {
-                    contracts.layerZeroEid = uint32(eid);
-                } catch {}
-            }
-
-            return contracts;
-        } catch {
-            return SettlementContracts(SettlerType.SIMPLE, address(0), address(0), 0);
-        }
-    }
-
-    function saveDeployedContracts(uint256 chainId, SettlementContracts memory contracts)
-        internal
-    {
-        // Read existing registry
-        string memory json;
-        try vm.readFile(SETTLEMENT_REGISTRY) returns (string memory existing) {
-            json = existing;
-        } catch {
-            json = "{}";
-        }
-
-        // Build contract JSON
-        string memory contractsJson = string.concat(
-            '{"settlerType":',
-            vm.toString(uint256(contracts.settlerType)),
-            ",",
-            '"settler":"',
-            vm.toString(contracts.settler),
-            '"'
-        );
-
-        if (contracts.settlerType == SettlerType.LAYERZERO) {
-            contractsJson = string.concat(
-                contractsJson,
-                ',"layerZeroEndpoint":"',
-                vm.toString(contracts.layerZeroEndpoint),
-                '",',
-                '"layerZeroEid":',
-                vm.toString(contracts.layerZeroEid)
-            );
-        }
-
-        contractsJson = string.concat(
-            contractsJson,
-            ',"timestamp":',
-            vm.toString(block.timestamp),
-            ",",
-            '"blockNumber":',
-            vm.toString(block.number),
-            "}"
-        );
-
-        // Write updated registry
-        string memory chainKey = vm.toString(chainId);
-        vm.writeJson(contractsJson, SETTLEMENT_REGISTRY, string.concat(".", chainKey));
-
-        console.log("\n[>] Registry updated:", SETTLEMENT_REGISTRY);
-    }
-
-    function verifyDeployments(uint256 chainId, SettlementContracts memory contracts)
-        internal
-        view
-    {
+    function verifyDeployments(uint256 chainId, SettlerType settlerType) internal view {
         console.log("\n[>] Verifying deployments...");
+
+        DeployedContracts memory contracts = getDeployedContracts(chainId);
+        ContractConfig memory contractConfig = getContractConfig();
+        ChainConfig memory chainConfig = getChainConfig(chainId);
 
         require(contracts.settler.code.length > 0, "Settler not deployed");
 
-        if (contracts.settlerType == SettlerType.SIMPLE) {
+        if (settlerType == SettlerType.SIMPLE) {
             // Verify SimpleSettler
             SimpleSettler settler = SimpleSettler(contracts.settler);
-            address expectedOwner = getChainConfig(chainId, "settlerOwner");
-            require(settler.owner() == expectedOwner, "Invalid settler owner");
+            require(settler.owner() == contractConfig.settlerOwner, "Invalid settler owner");
         } else {
             // Verify LayerZeroSettler
             LayerZeroSettler settler = LayerZeroSettler(payable(contracts.settler));
-            address expectedOwner = getChainConfig(chainId, "l0SettlerOwner");
-            require(settler.owner() == expectedOwner, "Invalid L0 settler owner");
+            require(settler.owner() == contractConfig.l0SettlerOwner, "Invalid L0 settler owner");
 
             // Verify endpoint
-            require(address(settler.endpoint()) == contracts.layerZeroEndpoint, "Invalid endpoint");
+            require(address(settler.endpoint()) == chainConfig.endpoint, "Invalid endpoint");
         }
 
         console.log(unicode"[✓] All verifications passed");
-    }
-
-    function getChainConfig(uint256 chainId, string memory key) internal view returns (address) {
-        string memory configPath =
-            string.concat("deploy/config/contracts/", config.environment, ".json");
-        string memory configJson = vm.readFile(configPath);
-
-        // Try chain-specific config first
-        string memory chainKey = vm.toString(chainId);
-        try configJson.readAddress(string.concat(".", chainKey, ".", key)) returns (address addr) {
-            return addr;
-        } catch {}
-
-        // Fall back to default config
-        try configJson.readAddress(string.concat(".default.", key)) returns (address addr) {
-            return addr;
-        } catch {}
-
-        // Try environment variable
-        string memory envVar = string.concat(toUpper(config.environment), "_", toUpper(key));
-        try vm.envAddress(envVar) returns (address addr) {
-            return addr;
-        } catch {}
-
-        revert(string.concat("Config not found: ", key));
-    }
-
-    function toUpper(string memory str) internal pure returns (string memory) {
-        bytes memory strBytes = bytes(str);
-        bytes memory result = new bytes(strBytes.length);
-
-        for (uint256 i = 0; i < strBytes.length; i++) {
-            if (strBytes[i] >= 0x61 && strBytes[i] <= 0x7A) {
-                result[i] = bytes1(uint8(strBytes[i]) - 32);
-            } else {
-                result[i] = strBytes[i];
-            }
-        }
-
-        return string(result);
     }
 }

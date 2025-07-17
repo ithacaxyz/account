@@ -1,10 +1,8 @@
 {
-  "default": {
-    "pauseAuthority": "${MAINNET_PAUSE_AUTHORITY}",
-    "funderSigner": "${MAINNET_FUNDER_SIGNER}",
-    "funderOwner": "${MAINNET_FUNDER_OWNER}",
-    "settlerOwner": "${MAINNET_SETTLER_OWNER}",
-    "l0SettlerOwner": "${MAINNET_L0_SETTLER_OWNER}",
-    "settlerType": "layerzero"
-  }
+  "pauseAuthority": "0x0000000000000000000000000000000000000001",
+  "funderSigner": "0x0000000000000000000000000000000000000002",
+  "funderOwner": "0x0000000000000000000000000000000000000003",
+  "settlerOwner": "0x0000000000000000000000000000000000000004",
+  "l0SettlerOwner": "0x0000000000000000000000000000000000000005",
+  "settlerType": "layerzero"
 }
