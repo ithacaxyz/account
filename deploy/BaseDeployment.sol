@@ -241,7 +241,10 @@ abstract contract BaseDeployment is Script {
      */
     function saveDeploymentState() internal {
         // Only save state during actual broadcasts, not dry runs
-        if (!vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) {
+        if (
+            !vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
+                && !vm.isContext(VmSafe.ForgeContext.ScriptResume)
+        ) {
             return;
         }
 
@@ -473,7 +476,10 @@ abstract contract BaseDeployment is Script {
      */
     function saveChainRegistry(uint256 chainId) internal {
         // Only save registry during actual broadcasts, not dry runs
-        if (!vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) {
+        if (
+            !vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
+                && !vm.isContext(VmSafe.ForgeContext.ScriptResume)
+        ) {
             return;
         }
 
