@@ -19,10 +19,8 @@ All deployment configuration is stored in `deploy/deploy-config.json`:
     "l0SettlerOwner": "0x...",
     "layerZeroEndpoint": "0x...",
     "layerZeroEid": 30101,
-    "maxRetries": 3,
     "name": "Chain Name",
     "pauseAuthority": "0x...",
-    "retryDelay": 5,
     "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "settlerOwner": "0x...",
     "stages": ["basic", "interop", "simpleSettler"]
@@ -45,8 +43,6 @@ All deployment configuration is stored in `deploy/deploy-config.json`:
 - **l0SettlerOwner**: Owner of the LayerZeroSettler contract
 - **salt**: (Optional) Salt for deterministic CREATE2 deployment. If omitted or set to `0x0000...0000`, contracts will be deployed using regular CREATE
 - **stages**: Array of deployment stages to execute for this chain
-- **maxRetries**: Maximum number of deployment retry attempts
-- **retryDelay**: Delay in seconds between retry attempts
 
 ## Available Stages
 
@@ -206,10 +202,8 @@ To add a new chain to the deployment system:
      "l0SettlerOwner": "0x...",
      "layerZeroEndpoint": "0x1a44076050125825900e736c501f859c50fE728c",
      "layerZeroEid": 30109,
-     "maxRetries": 3,
      "name": "Polygon",
      "pauseAuthority": "0x...",
-     "retryDelay": 5,
      "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
      "settlerOwner": "0x...",
      "stages": ["basic", "interop", "layerzeroSettler"]
@@ -253,19 +247,16 @@ This is useful for chains that need:
 - SimpleSettler for fast, single-chain settlements
 - LayerZeroSettler for cross-chain interoperability
 
-## Deployment State Management
+## Deployment Registry
 
-The deployment system maintains state in the `deploy/registry/` directory:
+The deployment system maintains deployed contract addresses in the `deploy/registry/` directory:
 
-- **Contract addresses**: `deployment_{chainId}.json`
-  - Contains deployed contract addresses for each chain
+- **Contract addresses**: `deployment_{chainId}_{salt}.json`
+  - Contains deployed contract addresses for each chain and salt combination
   - Automatically updated after each successful deployment
+  - For CREATE (salt = 0x0000...0000), deployments are skipped if file exists
 
-- **Deployment state**: `{stage}-state.json`
-  - Tracks deployment progress for each stage
-  - Allows resuming deployments if interrupted
-
-Example registry file (`deployment_1.json`):
+Example registry file (`deployment_1_0x0000000000000000000000000000000000000000000000000000000000000000.json`):
 ```json
 {
   "Orchestrator": "0x...",
@@ -336,15 +327,11 @@ Requirements:
    - Ensure the chain is supported by the block explorer
    - Verify API key has correct permissions
 
-### Recovery from Failed Deployments
+### CREATE2 and Redeployments
 
-The system automatically tracks deployment state and can resume from failures:
-
-1. Fix the underlying issue (gas, RPC, configuration)
-2. Re-run the same deployment command
-3. The system will skip already-deployed contracts and continue
-
-To force a fresh deployment, delete the relevant files in `deploy/registry/`.
+- **CREATE2 deployments**: Contracts with the same salt will always deploy to the same address. If a contract is already deployed at the predicted address, deployment is skipped with a blue status symbol (🔷).
+- **CREATE deployments**: When salt is 0x0000...0000, deployments are skipped if the registry file exists.
+- **Force redeployment**: Delete the relevant `deployment_{chainId}_{salt}.json` file in `deploy/registry/`.
 
 ## Best Practices
 

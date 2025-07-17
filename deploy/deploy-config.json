@@ -6,10 +6,8 @@
     "l0SettlerOwner": "0x0000000000000000000000000000000000000005",
     "layerZeroEndpoint": "0x1a44076050125825900e736c501f859c50fE728c",
     "layerZeroEid": 30101,
-    "maxRetries": 3,
     "name": "Ethereum Mainnet",
     "pauseAuthority": "0x0000000000000000000000000000000000000001",
-    "retryDelay": 5,
     "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "settlerOwner": "0x0000000000000000000000000000000000000004",
     "stages": ["basic", "interop", "simpleSettler", "layerzeroSettler"]
@@ -21,10 +19,8 @@
     "l0SettlerOwner": "0x0000000000000000000000000000000000000005",
     "layerZeroEndpoint": "0x1a44076050125825900e736c501f859c50fE728c",
     "layerZeroEid": 30110,
-    "maxRetries": 3,
     "name": "Arbitrum One",
     "pauseAuthority": "0x0000000000000000000000000000000000000001",
-    "retryDelay": 5,
     "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "settlerOwner": "0x0000000000000000000000000000000000000004",
     "stages": ["basic", "interop", "simpleSettler", "layerzeroSettler"]
@@ -36,10 +32,8 @@
     "l0SettlerOwner": "0x0000000000000000000000000000000000000005",
     "layerZeroEndpoint": "0x1a44076050125825900e736c501f859c50fE728c",
     "layerZeroEid": 30184,
-    "maxRetries": 3,
     "name": "Base",
     "pauseAuthority": "0x0000000000000000000000000000000000000001",
-    "retryDelay": 5,
     "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "settlerOwner": "0x0000000000000000000000000000000000000004",
     "stages": ["basic", "interop", "simpleSettler", "layerzeroSettler"]
@@ -51,10 +45,8 @@
     "l0SettlerOwner": "0x0000000000000000000000000000000000000005",
     "layerZeroEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
     "layerZeroEid": 40161,
-    "maxRetries": 3,
     "name": "Sepolia",
     "pauseAuthority": "0x0000000000000000000000000000000000000001",
-    "retryDelay": 5,
     "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "settlerOwner": "0x0000000000000000000000000000000000000004",
     "stages": ["basic", "interop", "simpleSettler", "layerzeroSettler"]
@@ -66,10 +58,8 @@
     "l0SettlerOwner": "0x0000000000000000000000000000000000000005",
     "layerZeroEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
     "layerZeroEid": 40231,
-    "maxRetries": 3,
     "name": "Arbitrum Sepolia",
     "pauseAuthority": "0x0000000000000000000000000000000000000001",
-    "retryDelay": 5,
     "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "settlerOwner": "0x0000000000000000000000000000000000000004",
     "stages": ["basic", "interop", "simpleSettler", "layerzeroSettler"]
@@ -81,10 +71,8 @@
     "l0SettlerOwner": "0x0000000000000000000000000000000000000005",
     "layerZeroEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
     "layerZeroEid": 40245,
-    "maxRetries": 3,
     "name": "Base Sepolia",
     "pauseAuthority": "0x0000000000000000000000000000000000000001",
-    "retryDelay": 5,
     "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "settlerOwner": "0x0000000000000000000000000000000000000004",
     "stages": ["basic", "interop", "simpleSettler", "layerzeroSettler"]
@@ -96,11 +84,9 @@
     "l0SettlerOwner": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
     "layerZeroEndpoint": "0x0000000000000000000000000000000000000000",
     "layerZeroEid": 0,
-    "maxRetries": 2,
     "name": "Porto Devnet",
     "pauseAuthority": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-    "retryDelay": 2,
-    "salt": "0x000000000000000000000000000000000000000000000000000000000000dead",
+    "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "settlerOwner": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
     "stages": ["basic", "interop", "simpleSettler"]
   }

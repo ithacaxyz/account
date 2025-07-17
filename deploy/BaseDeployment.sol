@@ -14,14 +14,6 @@ import {SafeSingletonDeployer} from "./SafeSingletonDeployer.sol";
 abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     using stdJson for string;
 
-    // Deployment states
-    enum DeploymentState {
-        NOT_STARTED,
-        IN_PROGRESS,
-        COMPLETED,
-        FAILED
-    }
-
     // Unified configuration struct (alphabetically ordered for JSON parsing)
     struct ChainConfig {
         address funderOwner;
@@ -30,10 +22,8 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         address l0SettlerOwner;
         address layerZeroEndpoint;
         uint32 layerZeroEid;
-        uint256 maxRetries;
         string name;
         address pauseAuthority;
-        uint256 retryDelay;
         bytes32 salt;
         address settlerOwner;
         string[] stages;
@@ -50,19 +40,9 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         address simulator;
     }
 
-    struct ChainDeployment {
-        uint256 chainId;
-        string chainName;
-        DeploymentState state;
-        string error;
-        uint256 attempts;
-        uint256 lastAttemptTimestamp;
-    }
-
     // State
     mapping(uint256 => ChainConfig) internal chainConfigs;
     mapping(uint256 => DeployedContracts) internal deployedContracts;
-    mapping(uint256 => ChainDeployment) public chainDeployments;
     uint256[] internal targetChainIds;
 
     // Configurable paths with defaults
@@ -72,17 +52,9 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     // Events for tracking
     event DeploymentStarted(uint256 indexed chainId, string deploymentType);
     event DeploymentCompleted(uint256 indexed chainId, string deploymentType);
-    event DeploymentFailed(uint256 indexed chainId, string deploymentType, string error);
-    event DeploymentRetrying(uint256 indexed chainId, uint256 attempt);
-
-    modifier trackDeployment(uint256 chainId) {
-        chainDeployments[chainId].state = DeploymentState.IN_PROGRESS;
-        chainDeployments[chainId].lastAttemptTimestamp = block.timestamp;
-        chainDeployments[chainId].attempts++;
-
-        emit DeploymentStarted(chainId, deploymentType());
-        _;
-    }
+    event ContractAlreadyDeployed(
+        uint256 indexed chainId, string contractName, address deployedAddress
+    );
 
     /**
      * @notice Initialize deployment with target chains
@@ -92,11 +64,8 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         // Load configuration
         loadFullConfiguration(chainIds);
 
-        // Initialize deployment state for each chain
-        initializeChainDeployments();
-
-        // Load any existing deployment state
-        loadDeploymentState();
+        // Load existing deployed contracts from registry
+        loadDeployedContracts();
     }
 
     /**
@@ -117,11 +86,8 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         // Load configuration
         loadFullConfiguration(chainIds);
 
-        // Initialize deployment state for each chain
-        initializeChainDeployments();
-
-        // Load any existing deployment state
-        loadDeploymentState();
+        // Load existing deployed contracts from registry
+        loadDeployedContracts();
     }
 
     /**
@@ -162,11 +128,9 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
                 configJson.readAddress(string.concat(chainKey, ".layerZeroEndpoint"));
             config.layerZeroEid =
                 uint32(configJson.readUint(string.concat(chainKey, ".layerZeroEid")));
-            config.maxRetries = configJson.readUint(string.concat(chainKey, ".maxRetries"));
             config.name = configJson.readString(string.concat(chainKey, ".name"));
             config.pauseAuthority =
                 configJson.readAddress(string.concat(chainKey, ".pauseAuthority"));
-            config.retryDelay = configJson.readUint(string.concat(chainKey, ".retryDelay"));
 
             // Salt is optional - if not present or empty, it will be bytes32(0)
             config.salt = tryReadBytes32(configJson, string.concat(chainKey, ".salt"));
@@ -195,31 +159,13 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     }
 
     /**
-     * @notice Initialize chain deployment states
-     */
-    function initializeChainDeployments() internal {
-        for (uint256 i = 0; i < targetChainIds.length; i++) {
-            uint256 chainId = targetChainIds[i];
-            chainDeployments[chainId] = ChainDeployment({
-                chainId: chainId,
-                chainName: chainConfigs[chainId].name,
-                state: DeploymentState.NOT_STARTED,
-                error: "",
-                attempts: 0,
-                lastAttemptTimestamp: 0
-            });
-        }
-    }
-
-    /**
      * @notice Load deployed contracts from registry
      */
     function loadDeployedContracts() internal {
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
-            string memory registryFile = string.concat(
-                vm.projectRoot(), "/", registryPath, "deployment_", vm.toString(chainId), ".json"
-            );
+            bytes32 salt = chainConfigs[chainId].salt;
+            string memory registryFile = getRegistryFilename(chainId, salt);
 
             try vm.readFile(registryFile) returns (string memory registryJson) {
                 // Use individual parsing for flexibility with missing fields
@@ -241,66 +187,7 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     }
 
     /**
-     * @notice Load existing deployment state from registry
-     */
-    function loadDeploymentState() internal {
-        string memory statePath = string.concat(registryPath, deploymentType(), "-state.json");
-        string memory fullPath = string.concat(vm.projectRoot(), "/", statePath);
-
-        try vm.readFile(fullPath) returns (string memory stateJson) {
-            for (uint256 i = 0; i < targetChainIds.length; i++) {
-                uint256 chainId = targetChainIds[i];
-                string memory chainKey = vm.toString(chainId);
-
-                // Try to read state
-                string memory stateKey = string.concat(".", chainKey, ".state");
-                chainDeployments[chainId].state = DeploymentState(tryReadUint(stateJson, stateKey));
-
-                // Try to read attempts
-                string memory attemptsKey = string.concat(".", chainKey, ".attempts");
-                chainDeployments[chainId].attempts = tryReadUint(stateJson, attemptsKey);
-            }
-        } catch {
-            // No previous state found
-        }
-    }
-
-    /**
-     * @notice Save deployment state to registry
-     */
-    function saveDeploymentState() internal {
-        // Only save state during actual broadcasts, not dry runs
-        if (
-            !vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
-                && !vm.isContext(VmSafe.ForgeContext.ScriptResume)
-        ) {
-            return;
-        }
-
-        string memory json = "{";
-
-        for (uint256 i = 0; i < targetChainIds.length; i++) {
-            uint256 chainId = targetChainIds[i];
-            ChainDeployment memory deployment = chainDeployments[chainId];
-
-            if (i > 0) json = string.concat(json, ",");
-
-            json = string.concat(json, '"', vm.toString(chainId), '": {');
-            json = string.concat(json, '"state": ', vm.toString(uint256(deployment.state)), ",");
-            json = string.concat(json, '"attempts": ', vm.toString(deployment.attempts), ",");
-            json = string.concat(json, '"error": "', deployment.error, '"');
-            json = string.concat(json, "}");
-        }
-
-        json = string.concat(json, "}");
-
-        string memory statePath = string.concat(registryPath, deploymentType(), "-state.json");
-        string memory fullPath = string.concat(vm.projectRoot(), "/", statePath);
-        vm.writeFile(fullPath, json);
-    }
-
-    /**
-     * @notice Execute deployment with retry logic
+     * @notice Execute deployment
      */
     function executeDeployment() internal {
         printHeader();
@@ -312,74 +199,24 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
                 continue;
             }
 
-            bool success = deployToChainWithRetry(chainId);
-
-            if (!success) {
-                console.log("\n[!] Deployment failed on chain", chainId);
-                console.log("[!] Fix the issue and run again to retry");
-                saveDeploymentState();
-                revert("Deployment failed");
-            }
+            executeChainDeployment(chainId);
         }
 
-        saveDeploymentState();
         printSummary();
-    }
-
-    /**
-     * @notice Deploy to a single chain with retry logic
-     */
-    function deployToChainWithRetry(uint256 chainId) internal returns (bool success) {
-        ChainDeployment storage deployment = chainDeployments[chainId];
-        ChainConfig memory config = chainConfigs[chainId];
-
-        while (deployment.attempts < config.maxRetries) {
-            if (deployment.attempts > 0) {
-                console.log("\n[>] Retrying deployment on", deployment.chainName);
-                emit DeploymentRetrying(chainId, deployment.attempts + 1);
-
-                // Wait before retry
-                vm.sleep(config.retryDelay * 1000);
-            }
-
-            // Execute deployment directly without try/catch
-            // In production, errors will cause the script to revert and can be retried
-            bool deploySuccess = executeChainDeployment(chainId);
-
-            if (deploySuccess) {
-                deployment.state = DeploymentState.COMPLETED;
-                deployment.error = "";
-                emit DeploymentCompleted(chainId, deploymentType());
-                return true;
-            } else {
-                deployment.state = DeploymentState.FAILED;
-                deployment.error = "Deployment failed";
-                deployment.attempts++;
-
-                console.log("\n[!] Deployment failed");
-                emit DeploymentFailed(chainId, deploymentType(), "Deployment failed");
-            }
-        }
-
-        return false;
     }
 
     /**
      * @notice Execute deployment for a specific chain
      */
-    function executeChainDeployment(uint256 chainId)
-        internal
-        trackDeployment(chainId)
-        returns (bool)
-    {
-        ChainDeployment memory deployment = chainDeployments[chainId];
+    function executeChainDeployment(uint256 chainId) internal {
         ChainConfig memory config = chainConfigs[chainId];
 
         console.log("\n=====================================");
-        console.log("Deploying to:", deployment.chainName);
+        console.log("Deploying to:", config.name);
         console.log("Chain ID:", chainId);
-        console.log("Attempt:", deployment.attempts + 1, "/", config.maxRetries);
         console.log("=====================================\n");
+
+        emit DeploymentStarted(chainId, deploymentType());
 
         // Switch to target chain for deployment
         // For multi-chain deployments, we need the RPC URL for each chain
@@ -392,23 +229,22 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         // Execute deployment
         deployToChain(chainId);
 
-        return true;
+        emit DeploymentCompleted(chainId, deploymentType());
     }
 
     /**
      * @notice Check if chain should be skipped
      */
     function shouldSkipChain(uint256 chainId) internal view returns (bool) {
-        ChainDeployment memory deployment = chainDeployments[chainId];
+        ChainConfig memory config = chainConfigs[chainId];
 
-        if (deployment.state == DeploymentState.COMPLETED) {
-            console.log(unicode"\n[✓] Skipping", deployment.chainName, "- already deployed");
-            return true;
-        }
-
-        if (deployment.attempts >= chainConfigs[chainId].maxRetries) {
-            console.log("\n[!] Skipping", deployment.chainName, "- max retries exceeded");
-            return true;
+        // For CREATE (salt = 0), check if deployment file exists to skip
+        if (config.salt == bytes32(0)) {
+            string memory registryFile = getRegistryFilename(chainId, config.salt);
+            if (vm.exists(registryFile)) {
+                console.log(unicode"\n[✓] Skipping", config.name, "- already deployed (CREATE)");
+                return true;
+            }
         }
 
         return false;
@@ -433,40 +269,15 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         console.log("Deployment Summary");
         console.log("========================================");
 
-        uint256 completed = 0;
-        uint256 failed = 0;
-
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
-            ChainDeployment memory deployment = chainDeployments[chainId];
+            ChainConfig memory config = chainConfigs[chainId];
 
-            string memory status;
-            string memory symbol;
-
-            if (deployment.state == DeploymentState.COMPLETED) {
-                status = "COMPLETED";
-                symbol = unicode"✓";
-                completed++;
-            } else if (deployment.state == DeploymentState.FAILED) {
-                status = "FAILED";
-                symbol = unicode"✗";
-                failed++;
-            } else {
-                status = "PENDING";
-                symbol = unicode"⋯";
-            }
-
-            console.log(string.concat("[", symbol, "] ", deployment.chainName, ": ", status));
-
-            if (bytes(deployment.error).length > 0) {
-                console.log("    Error:", deployment.error);
-            }
+            console.log(string.concat(unicode"[✓] ", config.name, " (", vm.toString(chainId), ")"));
         }
 
         console.log("");
-        console.log("Total:", targetChainIds.length);
-        console.log("Completed:", completed);
-        console.log("Failed:", failed);
+        console.log("Total chains:", targetChainIds.length);
     }
 
     /**
@@ -570,10 +381,9 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
 
         json = string.concat(json, "}");
 
-        string memory registryFile =
-            string.concat(registryPath, "deployment_", vm.toString(chainId), ".json");
-        string memory fullPath = string.concat(vm.projectRoot(), "/", registryFile);
-        vm.writeFile(fullPath, json);
+        bytes32 salt = chainConfigs[chainId].salt;
+        string memory registryFile = getRegistryFilename(chainId, salt);
+        vm.writeFile(registryFile, json);
     }
 
     // Configuration getters for derived contracts
@@ -629,6 +439,30 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     function deploymentType() internal pure virtual returns (string memory);
     function deployToChain(uint256 chainId) internal virtual;
 
+    /**
+     * @notice Get registry filename based on chainId and salt
+     * @param chainId The chain ID
+     * @param salt The deployment salt
+     * @return The full path to the registry file
+     */
+    function getRegistryFilename(uint256 chainId, bytes32 salt)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory filename = string.concat(
+            vm.projectRoot(),
+            "/",
+            registryPath,
+            "deployment_",
+            vm.toString(chainId),
+            "_",
+            vm.toString(salt),
+            ".json"
+        );
+        return filename;
+    }
+
     // ============================================
     // CREATE2 DEPLOYMENT HELPERS
     // ============================================
@@ -682,15 +516,31 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
             console.log(string.concat(contractName, " deployed with CREATE:"), deployed);
         } else {
             // Use CREATE2 via Safe Singleton Factory
+            // First compute the predicted address
+            address predicted;
+            if (args.length > 0) {
+                predicted = computeAddress(creationCode, args, salt);
+            } else {
+                predicted = computeAddress(creationCode, salt);
+            }
+
+            // Check if already deployed (CREATE2 collision)
+            if (predicted.code.length > 0) {
+                console.log(unicode"[🔷] ", contractName, "already deployed at:", predicted);
+                emit ContractAlreadyDeployed(chainId, contractName, predicted);
+                return predicted;
+            }
+
+            // Deploy using CREATE2
             if (args.length > 0) {
                 deployed = broadcastDeploy(creationCode, args, salt);
-                console.log("  Predicted:", computeAddress(creationCode, args, salt));
             } else {
                 deployed = broadcastDeploy(creationCode, salt);
-                console.log("  Predicted:", computeAddress(creationCode, salt));
             }
+
             console.log(string.concat(contractName, " deployed with CREATE2:"), deployed);
             console.log("  Salt:", vm.toString(salt));
+            console.log("  Predicted:", predicted);
         }
     }
 }
