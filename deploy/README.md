@@ -124,6 +124,7 @@ export PRIVATE_KEY=0x...
 forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
   --sig "run(uint256[])" \
+  --private-key $PRIVATE_KEY \
   "[11155111]"
 ```
 
@@ -135,11 +136,13 @@ The script will:
 
 **Note about multi-chain deployments**: When deploying to multiple chains, always use the `--multi` and `--slow` flags:
 ```bash
+export PRIVATE_KEY=0x...
 forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
   --multi \
   --slow \
   --sig "run(uint256[])" \
+  --private-key $PRIVATE_KEY \
   "[1,42161,8453]"
 ```
 
