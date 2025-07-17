@@ -61,35 +61,40 @@ The deployment system is modular with the following stages:
 
 ## Deployment Scripts
 
-### Deploy All Configured Stages
+### Main Deployment Script
 
-Deploy all stages configured for the specified chains:
+The primary way to deploy is using the main deployment script, which executes all configured stages for the specified chains:
 
 ```bash
 # Deploy to all chains in config
-forge script deploy/DeployAll.s.sol:DeployAll \
-  --rpc-url $RPC_URL \
+forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
   --sig "run(uint256[])" \
   "[]"
 
 # Deploy to specific chains
-forge script deploy/DeployAll.s.sol:DeployAll \
-  --rpc-url $RPC_URL \
+forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
   --sig "run(uint256[])" \
   "[1,42161,8453]"
 
 # With verification
-forge script deploy/DeployAll.s.sol:DeployAll \
-  --rpc-url $RPC_URL \
+forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
   --verify \
   --sig "run(uint256[])" \
   "[11155111]"
 ```
 
-### Deploy Individual Stages
+The script automatically deploys stages in the correct order:
+1. `basic` - Core contracts (Orchestrator, IthacaAccount, Proxy, Simulator)
+2. `interop` - Interoperability contracts (SimpleFunder, Escrow)
+3. `simpleSettler` and/or `layerzeroSettler` - Settlement contracts
+4. `layerzeroConfig` - Configure LayerZero peers (if using LayerZero)
+
+### Deploy Individual Stages (Advanced)
+
+For more control, you can also deploy individual stages
 
 Deploy specific stages only:
 
@@ -129,6 +134,29 @@ forge script deploy/ConfigureLayerZero.s.sol:ConfigureLayerZero \
   --sig "run(uint256[])" \
   "[1,42161,8453]"
 ```
+
+### Complete Deployment Example
+
+To deploy all configured stages for a chain:
+
+```bash
+# Set environment variables
+export RPC_11155111=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
+export PRIVATE_KEY=0x...
+
+# Deploy all stages configured in deploy-config.json
+forge script deploy/DeployMain.s.sol:DeployMain \
+  --sig "run(uint256[])" "[11155111]" \
+  --broadcast
+```
+
+The script will:
+- Check which stages are configured for the chain
+- Deploy contracts in the correct order
+- Skip already deployed contracts
+- Save deployment addresses to the registry
+
+**Note**: For LayerZero configuration across multiple chains, you may need to run the `ConfigureLayerZero.s.sol` script separately after deploying to all target chains.
 
 ## Environment Variables
 
@@ -201,7 +229,7 @@ To add a new chain to the deployment system:
 
 3. **Run deployment**:
    ```bash
-   forge script deploy/DeployAll.s.sol:DeployAll \
+   forge script deploy/DeployMain.s.sol:DeployMain \
      --rpc-url $RPC_137 \
      --broadcast \
      --verify \
@@ -253,10 +281,10 @@ To test deployments without broadcasting transactions, simply omit the `--broadc
 
 ```bash
 # Dry run (simulation only)
-forge script deploy/DeployAll.s.sol:DeployAll --sig "run(uint256[])" "[1,42161]"
+forge script deploy/DeployMain.s.sol:DeployMain --sig "run(uint256[])" "[1,42161]"
 
 # Actual deployment
-forge script deploy/DeployAll.s.sol:DeployAll --sig "run(uint256[])" "[1,42161]" --broadcast
+forge script deploy/DeployMain.s.sol:DeployMain --sig "run(uint256[])" "[1,42161]" --broadcast
 ```
 
 Dry run mode (without `--broadcast`) will:
