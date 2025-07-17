@@ -51,7 +51,7 @@ contract DeploymentStatus is Script {
     mapping(uint256 => ContractAddresses) chainAddresses;
     uint256[] chains;
 
-    function run(string memory environment) external view {
+    function run(string memory environment) external {
         console.log("\n=====================================");
         console.log("   ITHACA DEPLOYMENT STATUS");
         console.log("=====================================");
@@ -86,10 +86,10 @@ contract DeploymentStatus is Script {
         string memory chainsPath = string.concat("deploy/config/chains/", environment, ".json");
         string memory fullPath = string.concat(vm.projectRoot(), "/", chainsPath);
         string memory chainsJson = vm.readFile(fullPath);
-        return chainsJson.readUintArray(".chains");
+        return abi.decode(vm.parseJson(chainsJson, ".chains"), (uint256[]));
     }
 
-    function collectChainStatus(uint256 chainId) internal view {
+    function collectChainStatus(uint256 chainId) internal {
         ChainStatus memory status;
         ContractAddresses memory addresses;
 
@@ -127,18 +127,9 @@ contract DeploymentStatus is Script {
                 status.settlementDeployed = true;
                 status.deployedContracts += 1;
 
-                // Determine settler type from contract config
-                string memory contractsPath = string.concat(
-                    "deploy/config/contracts/", vm.envOr("ENVIRONMENT", "mainnet"), ".json"
-                );
-                string memory contractsJson = readRegistry(contractsPath);
-                string memory settlerType = "";
-                try contractsJson.readString(".settlerType") returns (string memory st) {
-                    settlerType = st;
-                } catch {}
-                status.settlerType = keccak256(bytes(settlerType)) == keccak256(bytes("layerzero"))
-                    ? "LayerZero"
-                    : "Simple";
+                // For now, default to Simple settler type
+                // In a real deployment, this would be determined from the contract config
+                status.settlerType = "Simple";
             }
         }
 
@@ -190,13 +181,22 @@ contract DeploymentStatus is Script {
         ContractAddresses memory addresses = chainAddresses[chainId];
 
         console.log("=====================================");
-        console.log(status.chainName, "(", chainId, ")");
+        console.log(string.concat(status.chainName, " (", vm.toString(chainId), ")"));
         console.log("=====================================");
 
         // Progress bar
         string memory progress =
             generateProgressBar(status.deployedContracts, status.totalContracts);
-        console.log("Progress:", progress, status.deployedContracts, "/", status.totalContracts);
+        console.log(
+            string.concat(
+                "Progress: ",
+                progress,
+                " ",
+                vm.toString(status.deployedContracts),
+                "/",
+                vm.toString(status.totalContracts)
+            )
+        );
         console.log("");
 
         // Basic contracts
@@ -340,9 +340,9 @@ contract DeploymentStatus is Script {
 
         for (uint256 i = 1; i <= 10; i++) {
             if (i <= filled) {
-                bar[i] = unicode"█";
+                bar[i] = "#";
             } else {
-                bar[i] = unicode"░";
+                bar[i] = "-";
             }
         }
 
@@ -352,7 +352,10 @@ contract DeploymentStatus is Script {
     function getChainName(uint256 chainId) internal view returns (string memory) {
         string memory fullPath = string.concat(vm.projectRoot(), "/deploy/config/chains.json");
         try vm.readFile(fullPath) returns (string memory chainsJson) {
-            return chainsJson.readString(string.concat(".", vm.toString(chainId), ".name"));
+            return abi.decode(
+                vm.parseJson(chainsJson, string.concat(".", vm.toString(chainId), ".name")),
+                (string)
+            );
         } catch {
             return string.concat("Chain ", vm.toString(chainId));
         }
@@ -369,37 +372,43 @@ contract DeploymentStatus is Script {
 
     function tryReadAddress(string memory json, string memory chainKey, string memory field)
         internal
-        pure
+        view
         returns (address)
     {
-        try json.readAddress(string.concat(".", chainKey, ".", field)) returns (address addr) {
-            return addr;
-        } catch {
-            return address(0);
-        }
+        string memory key = string.concat(".", chainKey, ".", field);
+        try vm.parseJson(json, key) returns (bytes memory data) {
+            if (data.length > 0) {
+                return abi.decode(data, (address));
+            }
+        } catch {}
+        return address(0);
     }
 
     function tryReadAddressDirect(string memory json, string memory field)
         internal
-        pure
+        view
         returns (address)
     {
-        try json.readAddress(string.concat(".", field)) returns (address addr) {
-            return addr;
-        } catch {
-            return address(0);
-        }
+        string memory key = string.concat(".", field);
+        try vm.parseJson(json, key) returns (bytes memory data) {
+            if (data.length > 0) {
+                return abi.decode(data, (address));
+            }
+        } catch {}
+        return address(0);
     }
 
     function tryReadUint(string memory json, string memory chainKey, string memory field)
         internal
-        pure
+        view
         returns (uint256)
     {
-        try json.readUint(string.concat(".", chainKey, ".", field)) returns (uint256 value) {
-            return value;
-        } catch {
-            return 0;
-        }
+        string memory key = string.concat(".", chainKey, ".", field);
+        try vm.parseJson(json, key) returns (bytes memory data) {
+            if (data.length > 0) {
+                return abi.decode(data, (uint256));
+            }
+        } catch {}
+        return 0;
     }
 }

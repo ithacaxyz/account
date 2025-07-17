@@ -190,7 +190,7 @@ contract ConfigureLayerZero is BaseDeployment {
         console.log(
             string.concat(
                 "    To:   ",
-                getChainName(peerConfig.targetChainId),
+                getTargetChainName(peerConfig.targetChainId),
                 " (",
                 vm.toString(peerConfig.targetChainId),
                 ")"
@@ -290,5 +290,15 @@ contract ConfigureLayerZero is BaseDeployment {
     // Override base functions that don't apply to configuration
     function deployToChain(uint256) internal override {
         // Not used - configuration handles its own logic
+    }
+
+    // Helper function to get chain name
+    function getTargetChainName(uint256 chainId) internal view returns (string memory) {
+        for (uint256 i = 0; i < lzSettlers.length; i++) {
+            if (lzSettlers[i].chainId == chainId) {
+                return lzSettlers[i].chainName;
+            }
+        }
+        return vm.toString(chainId);
     }
 }

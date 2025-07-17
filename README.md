@@ -46,6 +46,9 @@ The contracts use a simplified multi-chain deployment system with JSON configura
    export PRIVATE_KEY=0x...
    export RPC_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
    export RPC_42161=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
+   # Optional: Verification keys for contract verification
+   export VERIFICATION_KEY_1=YOUR_ETHERSCAN_API_KEY
+   export VERIFICATION_KEY_42161=YOUR_ARBISCAN_API_KEY
    ```
 3. **Deploy all contracts**:
    ```bash
