@@ -63,11 +63,9 @@ abstract contract BaseDeployment is Script {
     mapping(uint256 => ChainDeployment) public chainDeployments;
     uint256[] internal targetChainIds;
 
-    // Registry path for persistent state
-    string constant REGISTRY_PATH = "deploy/registry/";
-
-    // Configuration file path
-    string constant CONFIG_FILE = "deploy/deploy-config.json";
+    // Configurable paths with defaults
+    string internal configPath = "deploy/deploy-config.json";
+    string internal registryPath = "deploy/registry/";
 
     // Events for tracking
     event DeploymentStarted(uint256 indexed chainId, string deploymentType);
@@ -100,11 +98,36 @@ abstract contract BaseDeployment is Script {
     }
 
     /**
+     * @notice Initialize deployment with custom paths
+     * @param chainIds Array of chain IDs to deploy to (empty array = all chains)
+     * @param _configPath Path to the configuration JSON file
+     * @param _registryPath Path to the registry output directory
+     */
+    function initializeDeployment(
+        uint256[] memory chainIds,
+        string memory _configPath,
+        string memory _registryPath
+    ) internal {
+        // Set custom paths
+        configPath = _configPath;
+        registryPath = _registryPath;
+
+        // Load configuration
+        loadFullConfiguration(chainIds);
+
+        // Initialize deployment state for each chain
+        initializeChainDeployments();
+
+        // Load any existing deployment state
+        loadDeploymentState();
+    }
+
+    /**
      * @notice Load all configuration from unified JSON file
      */
     function loadFullConfiguration(uint256[] memory chainIds) internal {
-        string memory configPath = string.concat(vm.projectRoot(), "/", CONFIG_FILE);
-        string memory configJson = vm.readFile(configPath);
+        string memory fullConfigPath = string.concat(vm.projectRoot(), "/", configPath);
+        string memory configJson = vm.readFile(fullConfigPath);
 
         // Get all chain IDs from the config
         string[] memory keys = vm.parseJsonKeys(configJson, "$");
@@ -189,7 +212,7 @@ abstract contract BaseDeployment is Script {
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
             string memory registryFile = string.concat(
-                vm.projectRoot(), "/", REGISTRY_PATH, "deployment_", vm.toString(chainId), ".json"
+                vm.projectRoot(), "/", registryPath, "deployment_", vm.toString(chainId), ".json"
             );
 
             try vm.readFile(registryFile) returns (string memory registryJson) {
@@ -215,7 +238,7 @@ abstract contract BaseDeployment is Script {
      * @notice Load existing deployment state from registry
      */
     function loadDeploymentState() internal {
-        string memory statePath = string.concat(REGISTRY_PATH, deploymentType(), "-state.json");
+        string memory statePath = string.concat(registryPath, deploymentType(), "-state.json");
         string memory fullPath = string.concat(vm.projectRoot(), "/", statePath);
 
         try vm.readFile(fullPath) returns (string memory stateJson) {
@@ -265,7 +288,7 @@ abstract contract BaseDeployment is Script {
 
         json = string.concat(json, "}");
 
-        string memory statePath = string.concat(REGISTRY_PATH, deploymentType(), "-state.json");
+        string memory statePath = string.concat(registryPath, deploymentType(), "-state.json");
         string memory fullPath = string.concat(vm.projectRoot(), "/", statePath);
         vm.writeFile(fullPath, json);
     }
@@ -542,7 +565,7 @@ abstract contract BaseDeployment is Script {
         json = string.concat(json, "}");
 
         string memory registryFile =
-            string.concat(REGISTRY_PATH, "deployment_", vm.toString(chainId), ".json");
+            string.concat(registryPath, "deployment_", vm.toString(chainId), ".json");
         string memory fullPath = string.concat(vm.projectRoot(), "/", registryFile);
         vm.writeFile(fullPath, json);
     }
@@ -574,19 +597,6 @@ abstract contract BaseDeployment is Script {
         return address(0);
     }
 
-    function tryReadString(string memory json, string memory key)
-        internal
-        pure
-        returns (string memory)
-    {
-        try vm.parseJson(json, key) returns (bytes memory data) {
-            if (data.length > 0) {
-                return abi.decode(data, (string));
-            }
-        } catch {}
-        return "";
-    }
-
     function tryReadUint(string memory json, string memory key) internal pure returns (uint256) {
         try vm.parseJson(json, key) returns (bytes memory data) {
             if (data.length > 0) {
@@ -594,15 +604,6 @@ abstract contract BaseDeployment is Script {
             }
         } catch {}
         return 0;
-    }
-
-    function tryReadBool(string memory json, string memory key) internal pure returns (bool) {
-        try vm.parseJson(json, key) returns (bytes memory data) {
-            if (data.length > 0) {
-                return abi.decode(data, (bool));
-            }
-        } catch {}
-        return false;
     }
 
     // Abstract functions to be implemented by derived contracts

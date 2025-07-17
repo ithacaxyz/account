@@ -20,17 +20,23 @@ import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
  * @dev This script directly deploys contracts without creating intermediate deployer contracts
  *
  * Usage:
- * # Deploy to all chains
+ * # Deploy to all chains (using default paths)
  * forge script deploy/DeployMain.s.sol:DeployMain \
  *   --broadcast \
  *   --sig "run(uint256[])" \
  *   "[]"
  *
- * # Deploy to specific chains
+ * # Deploy to specific chains (using default paths)
  * forge script deploy/DeployMain.s.sol:DeployMain \
  *   --broadcast \
  *   --sig "run(uint256[])" \
  *   "[1,42161,8453]"
+ *
+ * # Deploy with custom config and registry paths
+ * forge script deploy/DeployMain.s.sol:DeployMain \
+ *   --broadcast \
+ *   --sig "run(uint256[],string,string)" \
+ *   "[1]" "path/to/config.json" "path/to/registry/"
  */
 contract DeployMain is BaseDeployment {
     function deploymentType() internal pure override returns (string memory) {
@@ -39,6 +45,19 @@ contract DeployMain is BaseDeployment {
 
     function run(uint256[] memory chainIds) external {
         initializeDeployment(chainIds);
+        executeDeployment();
+    }
+
+    /**
+     * @notice Run deployment with custom config and registry paths
+     * @param chainIds Array of chain IDs to deploy to (empty array = all chains)
+     * @param _configPath Path to the configuration JSON file
+     * @param _registryPath Path to the registry output directory
+     */
+    function run(uint256[] memory chainIds, string memory _configPath, string memory _registryPath)
+        external
+    {
+        initializeDeployment(chainIds, _configPath, _registryPath);
         executeDeployment();
     }
 
