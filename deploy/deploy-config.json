@@ -1,6 +1,5 @@
 {
   "1": {
-    "dryRun": false,
     "funderOwner": "0x0000000000000000000000000000000000000003",
     "funderSigner": "0x0000000000000000000000000000000000000002",
     "isTestnet": false,
@@ -15,7 +14,6 @@
     "stages": ["basic", "interop", "simpleSettler", "layerzeroSettler", "layerzeroConfig"]
   },
   "42161": {
-    "dryRun": false,
     "funderOwner": "0x0000000000000000000000000000000000000003",
     "funderSigner": "0x0000000000000000000000000000000000000002",
     "isTestnet": false,
@@ -30,7 +28,6 @@
     "stages": ["basic", "interop", "simpleSettler", "layerzeroSettler", "layerzeroConfig"]
   },
   "8453": {
-    "dryRun": false,
     "funderOwner": "0x0000000000000000000000000000000000000003",
     "funderSigner": "0x0000000000000000000000000000000000000002",
     "isTestnet": false,
@@ -45,7 +42,6 @@
     "stages": ["basic", "interop", "simpleSettler", "layerzeroSettler", "layerzeroConfig"]
   },
   "11155111": {
-    "dryRun": true,
     "funderOwner": "0x0000000000000000000000000000000000000003",
     "funderSigner": "0x0000000000000000000000000000000000000002",
     "isTestnet": true,
@@ -60,7 +56,6 @@
     "stages": ["basic", "interop", "simpleSettler", "layerzeroSettler", "layerzeroConfig"]
   },
   "421614": {
-    "dryRun": true,
     "funderOwner": "0x0000000000000000000000000000000000000003",
     "funderSigner": "0x0000000000000000000000000000000000000002",
     "isTestnet": true,
@@ -75,7 +70,6 @@
     "stages": ["basic", "interop", "simpleSettler", "layerzeroSettler", "layerzeroConfig"]
   },
   "84532": {
-    "dryRun": false,
     "funderOwner": "0x0000000000000000000000000000000000000003",
     "funderSigner": "0x0000000000000000000000000000000000000002",
     "isTestnet": true,
@@ -90,7 +84,6 @@
     "stages": ["basic", "interop", "simpleSettler", "layerzeroSettler", "layerzeroConfig"]
   },
   "28404": {
-    "dryRun": true,
     "funderOwner": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "funderSigner": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "isTestnet": true,

@@ -22,7 +22,6 @@ abstract contract BaseDeployment is Script {
 
     // Unified configuration struct (alphabetically ordered for JSON parsing)
     struct ChainConfig {
-        bool dryRun;
         address funderOwner;
         address funderSigner;
         bool isTestnet;
@@ -128,7 +127,6 @@ abstract contract BaseDeployment is Script {
 
             // Parse individual fields for flexibility
             ChainConfig memory config;
-            config.dryRun = configJson.readBool(string.concat(chainKey, ".dryRun"));
             config.funderOwner = configJson.readAddress(string.concat(chainKey, ".funderOwner"));
             config.funderSigner = configJson.readAddress(string.concat(chainKey, ".funderSigner"));
             config.isTestnet = configJson.readBool(string.concat(chainKey, ".isTestnet"));
@@ -284,7 +282,7 @@ abstract contract BaseDeployment is Script {
 
             bool success = deployToChainWithRetry(chainId);
 
-            if (!success && !chainConfigs[chainId].dryRun) {
+            if (!success) {
                 console.log("\n[!] Deployment failed on chain", chainId);
                 console.log("[!] Fix the issue and run again to retry");
                 saveDeploymentState();
@@ -351,32 +349,18 @@ abstract contract BaseDeployment is Script {
         console.log("Attempt:", deployment.attempts + 1, "/", config.maxRetries);
         console.log("=====================================\n");
 
+        // Switch to target chain for deployment
+        // For multi-chain deployments, we need the RPC URL for each chain
+        string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
+        vm.createSelectFork(rpcUrl);
+
+        // Verify chain ID
+        require(block.chainid == chainId, "Chain ID mismatch");
+
         // Execute deployment
-        if (config.dryRun) {
-            console.log("[DRY RUN] Would deploy to chain", chainId);
-            console.log("[DRY RUN] Configuration:");
-            console.log("  Pause Authority:", config.pauseAuthority);
-            console.log("  Funder Signer:", config.funderSigner);
-            console.log("  Funder Owner:", config.funderOwner);
-            console.log("  Stages:");
-            for (uint256 i = 0; i < config.stages.length; i++) {
-                console.log("    -", config.stages[i]);
-            }
-            return true;
-        } else {
-            // Switch to target chain for actual deployment
-            // For multi-chain deployments, we need the RPC URL for each chain
-            string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
-            vm.createSelectFork(rpcUrl);
+        deployToChain(chainId);
 
-            // Verify chain ID
-            require(block.chainid == chainId, "Chain ID mismatch");
-
-            vm.startBroadcast();
-            deployToChain(chainId);
-            vm.stopBroadcast();
-            return true;
-        }
+        return true;
     }
 
     /**
