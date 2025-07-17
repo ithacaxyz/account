@@ -4,6 +4,7 @@ pragma solidity ^0.8.23;
 import {Script, console} from "forge-std/Script.sol";
 import {stdJson} from "forge-std/StdJson.sol";
 import {VmSafe} from "forge-std/Vm.sol";
+import {SafeSingletonDeployer} from "safe-singleton-deployer-sol/SafeSingletonDeployer.sol";
 
 /**
  * @title BaseDeployment
@@ -12,6 +13,7 @@ import {VmSafe} from "forge-std/Vm.sol";
  */
 abstract contract BaseDeployment is Script {
     using stdJson for string;
+    using SafeSingletonDeployer for bytes;
 
     // Deployment states
     enum DeploymentState {
@@ -33,6 +35,7 @@ abstract contract BaseDeployment is Script {
         string name;
         address pauseAuthority;
         uint256 retryDelay;
+        bytes32 salt;
         address settlerOwner;
         string[] stages;
     }
@@ -66,6 +69,9 @@ abstract contract BaseDeployment is Script {
     // Configurable paths with defaults
     string internal configPath = "deploy/deploy-config.json";
     string internal registryPath = "deploy/registry/";
+
+    // Safe Singleton Factory address (same on all chains)
+    address constant SAFE_SINGLETON_FACTORY = 0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7;
 
     // Events for tracking
     event DeploymentStarted(uint256 indexed chainId, string deploymentType);
@@ -165,6 +171,10 @@ abstract contract BaseDeployment is Script {
             config.pauseAuthority =
                 configJson.readAddress(string.concat(chainKey, ".pauseAuthority"));
             config.retryDelay = configJson.readUint(string.concat(chainKey, ".retryDelay"));
+
+            // Salt is optional - if not present or empty, it will be bytes32(0)
+            config.salt = tryReadBytes32(configJson, string.concat(chainKey, ".salt"));
+
             config.settlerOwner = configJson.readAddress(string.concat(chainKey, ".settlerOwner"));
             config.stages = configJson.readStringArray(string.concat(chainKey, ".stages"));
 
@@ -606,7 +616,85 @@ abstract contract BaseDeployment is Script {
         return 0;
     }
 
+    function tryReadBytes32(string memory json, string memory key)
+        internal
+        pure
+        returns (bytes32)
+    {
+        try vm.parseJson(json, key) returns (bytes memory data) {
+            if (data.length > 0) {
+                return abi.decode(data, (bytes32));
+            }
+        } catch {}
+        return bytes32(0);
+    }
+
     // Abstract functions to be implemented by derived contracts
     function deploymentType() internal pure virtual returns (string memory);
     function deployToChain(uint256 chainId) internal virtual;
+
+    // ============================================
+    // CREATE2 DEPLOYMENT HELPERS
+    // ============================================
+
+    /**
+     * @notice Check if we should use CREATE2 based on salt configuration
+     * @param chainId The chain ID to check
+     * @return true if salt is set (non-zero), false otherwise
+     */
+    function shouldUseCreate2(uint256 chainId) internal view returns (bool) {
+        return chainConfigs[chainId].salt != bytes32(0);
+    }
+
+    /**
+     * @notice Verify Safe Singleton Factory is deployed
+     * @dev Reverts if factory is not deployed when CREATE2 is required
+     * @param chainId The chain ID to check
+     */
+    function verifySafeSingletonFactory(uint256 chainId) internal view {
+        if (shouldUseCreate2(chainId)) {
+            require(SAFE_SINGLETON_FACTORY.code.length > 0, "Safe Singleton Factory not deployed");
+            console.log("Safe Singleton Factory verified at:", SAFE_SINGLETON_FACTORY);
+        }
+    }
+
+    /**
+     * @notice Deploy contract using CREATE or CREATE2 based on configuration
+     * @param chainId The chain ID for configuration
+     * @param creationCode The contract creation code
+     * @param args The constructor arguments (can be empty)
+     * @param contractName Name of the contract for logging
+     * @return deployed The deployed contract address
+     */
+    function deployContract(
+        uint256 chainId,
+        bytes memory creationCode,
+        bytes memory args,
+        string memory contractName
+    ) internal returns (address deployed) {
+        bytes32 salt = chainConfigs[chainId].salt;
+
+        if (salt == bytes32(0)) {
+            // Use regular CREATE
+            bytes memory bytecode =
+                args.length > 0 ? abi.encodePacked(creationCode, args) : creationCode;
+
+            assembly {
+                deployed := create(0, add(bytecode, 0x20), mload(bytecode))
+            }
+            require(deployed != address(0), string.concat(contractName, " deployment failed"));
+            console.log(string.concat(contractName, " deployed with CREATE:"), deployed);
+        } else {
+            // Use CREATE2 via Safe Singleton Factory
+            if (args.length > 0) {
+                deployed = creationCode.broadcastDeploy(args, salt);
+                console.log("  Predicted:", creationCode.computeAddress(args, salt));
+            } else {
+                deployed = creationCode.broadcastDeploy(salt);
+                console.log("  Predicted:", creationCode.computeAddress(salt));
+            }
+            console.log(string.concat(contractName, " deployed with CREATE2:"), deployed);
+            console.log("  Salt:", vm.toString(salt));
+        }
+    }
 }

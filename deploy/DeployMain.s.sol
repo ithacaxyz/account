@@ -64,6 +64,9 @@ contract DeployMain is BaseDeployment {
     function deployToChain(uint256 chainId) internal override {
         console.log("Deploying all configured stages...");
 
+        // Verify Safe Singleton Factory if CREATE2 is needed
+        verifySafeSingletonFactory(chainId);
+
         ChainConfig memory config = getChainConfig(chainId);
         DeployedContracts memory deployed = getDeployedContracts(chainId);
 
@@ -96,29 +99,38 @@ contract DeployMain is BaseDeployment {
 
         // Deploy Orchestrator
         if (deployed.orchestrator == address(0)) {
-            Orchestrator orchestrator = new Orchestrator(config.pauseAuthority);
-            console.log("Orchestrator deployed:", address(orchestrator));
-            saveDeployedContract(chainId, "Orchestrator", address(orchestrator));
-            deployed.orchestrator = address(orchestrator);
+            bytes memory creationCode = type(Orchestrator).creationCode;
+            bytes memory args = abi.encode(config.pauseAuthority);
+            address orchestrator = deployContract(chainId, creationCode, args, "Orchestrator");
+            saveDeployedContract(chainId, "Orchestrator", orchestrator);
+            deployed.orchestrator = orchestrator;
         } else {
             console.log("Orchestrator already deployed:", deployed.orchestrator);
         }
 
         // Deploy Account Implementation
         if (deployed.accountImpl == address(0)) {
-            IthacaAccount accountImpl = new IthacaAccount(deployed.orchestrator);
-            console.log("Account implementation deployed:", address(accountImpl));
-            saveDeployedContract(chainId, "AccountImpl", address(accountImpl));
-            deployed.accountImpl = address(accountImpl);
+            bytes memory creationCode = type(IthacaAccount).creationCode;
+            bytes memory args = abi.encode(deployed.orchestrator);
+            address accountImpl = deployContract(chainId, creationCode, args, "IthacaAccount");
+            saveDeployedContract(chainId, "AccountImpl", accountImpl);
+            deployed.accountImpl = accountImpl;
         } else {
             console.log("Account implementation already deployed:", deployed.accountImpl);
         }
 
         // Deploy Account Proxy
         if (deployed.accountProxy == address(0)) {
-            address accountProxy = LibEIP7702.deployProxy(deployed.accountImpl, address(0));
+            address accountProxy;
+            if (shouldUseCreate2(chainId)) {
+                // For CREATE2, we need to use the proxy init code
+                bytes memory proxyCode = LibEIP7702.proxyInitCode(deployed.accountImpl, address(0));
+                accountProxy = deployContract(chainId, proxyCode, "", "AccountProxy");
+            } else {
+                // For regular CREATE, use the library's deployment method
+                accountProxy = LibEIP7702.deployProxy(deployed.accountImpl, address(0));
+            }
             require(accountProxy != address(0), "Account proxy deployment failed");
-            console.log("Account proxy deployed:", accountProxy);
             saveDeployedContract(chainId, "AccountProxy", accountProxy);
             deployed.accountProxy = accountProxy;
         } else {
@@ -127,10 +139,10 @@ contract DeployMain is BaseDeployment {
 
         // Deploy Simulator
         if (deployed.simulator == address(0)) {
-            Simulator simulator = new Simulator();
-            console.log("Simulator deployed:", address(simulator));
-            saveDeployedContract(chainId, "Simulator", address(simulator));
-            deployed.simulator = address(simulator);
+            bytes memory creationCode = type(Simulator).creationCode;
+            address simulator = deployContract(chainId, creationCode, "", "Simulator");
+            saveDeployedContract(chainId, "Simulator", simulator);
+            deployed.simulator = simulator;
         } else {
             console.log("Simulator already deployed:", deployed.simulator);
         }
@@ -152,21 +164,22 @@ contract DeployMain is BaseDeployment {
 
         // Deploy SimpleFunder
         if (deployed.simpleFunder == address(0)) {
-            SimpleFunder funder =
-                new SimpleFunder(config.funderSigner, deployed.orchestrator, config.funderOwner);
-            console.log("SimpleFunder deployed:", address(funder));
-            saveDeployedContract(chainId, "SimpleFunder", address(funder));
-            deployed.simpleFunder = address(funder);
+            bytes memory creationCode = type(SimpleFunder).creationCode;
+            bytes memory args =
+                abi.encode(config.funderSigner, deployed.orchestrator, config.funderOwner);
+            address funder = deployContract(chainId, creationCode, args, "SimpleFunder");
+            saveDeployedContract(chainId, "SimpleFunder", funder);
+            deployed.simpleFunder = funder;
         } else {
             console.log("SimpleFunder already deployed:", deployed.simpleFunder);
         }
 
         // Deploy Escrow
         if (deployed.escrow == address(0)) {
-            Escrow escrow = new Escrow();
-            console.log("Escrow deployed:", address(escrow));
-            saveDeployedContract(chainId, "Escrow", address(escrow));
-            deployed.escrow = address(escrow);
+            bytes memory creationCode = type(Escrow).creationCode;
+            address escrow = deployContract(chainId, creationCode, "", "Escrow");
+            saveDeployedContract(chainId, "Escrow", escrow);
+            deployed.escrow = escrow;
         } else {
             console.log("Escrow already deployed:", deployed.escrow);
         }
@@ -185,10 +198,11 @@ contract DeployMain is BaseDeployment {
         console.log("\n[Stage: Simple Settler]");
 
         if (deployed.simpleSettler == address(0)) {
-            SimpleSettler settler = new SimpleSettler(config.settlerOwner);
-            console.log("SimpleSettler deployed:", address(settler));
+            bytes memory creationCode = type(SimpleSettler).creationCode;
+            bytes memory args = abi.encode(config.settlerOwner);
+            address settler = deployContract(chainId, creationCode, args, "SimpleSettler");
             console.log("  Owner:", config.settlerOwner);
-            saveDeployedContract(chainId, "SimpleSettler", address(settler));
+            saveDeployedContract(chainId, "SimpleSettler", settler);
         } else {
             console.log("SimpleSettler already deployed:", deployed.simpleSettler);
         }
@@ -207,13 +221,13 @@ contract DeployMain is BaseDeployment {
         console.log("\n[Stage: LayerZero Settler]");
 
         if (deployed.layerZeroSettler == address(0)) {
-            LayerZeroSettler settler =
-                new LayerZeroSettler(config.layerZeroEndpoint, config.l0SettlerOwner);
-            console.log("LayerZeroSettler deployed:", address(settler));
+            bytes memory creationCode = type(LayerZeroSettler).creationCode;
+            bytes memory args = abi.encode(config.layerZeroEndpoint, config.l0SettlerOwner);
+            address settler = deployContract(chainId, creationCode, args, "LayerZeroSettler");
             console.log("  Endpoint:", config.layerZeroEndpoint);
             console.log("  Owner:", config.l0SettlerOwner);
             console.log("  EID:", config.layerZeroEid);
-            saveDeployedContract(chainId, "LayerZeroSettler", address(settler));
+            saveDeployedContract(chainId, "LayerZeroSettler", settler);
         } else {
             console.log("LayerZeroSettler already deployed:", deployed.layerZeroSettler);
         }
