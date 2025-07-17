@@ -23,7 +23,6 @@ All deployment configuration is stored in `deploy/deploy-config.json`:
     "settlerOwner": "0x...",
     "l0SettlerOwner": "0x...",
     "stages": ["basic", "interop", "simpleSettler"],
-    "dryRun": false,
     "maxRetries": 3,
     "retryDelay": 5
   }
@@ -42,7 +41,6 @@ All deployment configuration is stored in `deploy/deploy-config.json`:
 - **settlerOwner**: Owner of the SimpleSettler contract
 - **l0SettlerOwner**: Owner of the LayerZeroSettler contract
 - **stages**: Array of deployment stages to execute for this chain
-- **dryRun**: If true, simulates deployment without broadcasting transactions
 - **maxRetries**: Maximum number of deployment retry attempts
 - **retryDelay**: Delay in seconds between retry attempts
 
@@ -190,7 +188,6 @@ To add a new chain to the deployment system:
      "settlerOwner": "0x...",
      "l0SettlerOwner": "0x...",
      "stages": ["basic", "interop", "layerzeroSettler", "layerzeroConfig"],
-     "dryRun": false,
      "maxRetries": 3,
      "retryDelay": 5
    }
@@ -252,23 +249,21 @@ Example registry file (`Ethereum Mainnet-1.json`):
 
 ## Dry Run Mode
 
-Test deployments without broadcasting transactions by setting `dryRun: true` in the configuration:
+To test deployments without broadcasting transactions, simply omit the `--broadcast` flag when running forge scripts:
 
-```json
-{
-  "11155111": {
-    "name": "Sepolia",
-    "dryRun": true,
-    ...
-  }
-}
+```bash
+# Dry run (simulation only)
+forge script deploy/DeployAll.s.sol:DeployAll --sig "run(uint256[])" "[1,42161]"
+
+# Actual deployment
+forge script deploy/DeployAll.s.sol:DeployAll --sig "run(uint256[])" "[1,42161]" --broadcast
 ```
 
-Dry run mode will:
+Dry run mode (without `--broadcast`) will:
 - Simulate all deployment transactions
-- Display what would be deployed
-- Show configuration values
-- Not broadcast any transactions
+- Show gas estimates
+- Verify the deployment logic
+- Not send any actual transactions
 
 ## LayerZero Configuration
 

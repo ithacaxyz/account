@@ -217,18 +217,9 @@ contract ConfigureLayerZero is BaseDeployment {
         } catch {}
 
         // Configure peer
-        ChainConfig memory chainConfig = getChainConfig(sourceSettler.chainId);
-        if (chainConfig.dryRun) {
-            console.log("    [DRY RUN] Would set peer");
-            return true;
-        }
-
-        // Execute the peer configuration directly
-        vm.startBroadcast();
         LayerZeroSettler(payable(sourceSettler.settler)).setPeer(
             peerConfig.targetEid, bytes32(uint256(uint160(peerConfig.targetSettler)))
         );
-        vm.stopBroadcast();
 
         console.log(unicode"    [✓] Peer configured successfully");
         return true;
