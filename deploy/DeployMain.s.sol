@@ -99,9 +99,17 @@ contract DeployMain is BaseDeployment {
 
         // Deploy Orchestrator
         if (deployed.orchestrator == address(0)) {
-            bytes memory creationCode = type(Orchestrator).creationCode;
-            bytes memory args = abi.encode(config.pauseAuthority);
-            address orchestrator = deployContract(chainId, creationCode, args, "Orchestrator");
+            address orchestrator;
+            if (config.salt == bytes32(0)) {
+                // Use CREATE with new keyword
+                orchestrator = address(new Orchestrator(config.pauseAuthority));
+                console.log("Orchestrator deployed with CREATE:", orchestrator);
+            } else {
+                // Use CREATE2
+                bytes memory creationCode = type(Orchestrator).creationCode;
+                bytes memory args = abi.encode(config.pauseAuthority);
+                orchestrator = deployContract(chainId, creationCode, args, "Orchestrator");
+            }
             saveDeployedContract(chainId, "Orchestrator", orchestrator);
             deployed.orchestrator = orchestrator;
         } else {
@@ -110,9 +118,17 @@ contract DeployMain is BaseDeployment {
 
         // Deploy Account Implementation
         if (deployed.accountImpl == address(0)) {
-            bytes memory creationCode = type(IthacaAccount).creationCode;
-            bytes memory args = abi.encode(deployed.orchestrator);
-            address accountImpl = deployContract(chainId, creationCode, args, "IthacaAccount");
+            address accountImpl;
+            if (config.salt == bytes32(0)) {
+                // Use CREATE with new keyword
+                accountImpl = address(new IthacaAccount(deployed.orchestrator));
+                console.log("IthacaAccount deployed with CREATE:", accountImpl);
+            } else {
+                // Use CREATE2
+                bytes memory creationCode = type(IthacaAccount).creationCode;
+                bytes memory args = abi.encode(deployed.orchestrator);
+                accountImpl = deployContract(chainId, creationCode, args, "IthacaAccount");
+            }
             saveDeployedContract(chainId, "AccountImpl", accountImpl);
             deployed.accountImpl = accountImpl;
         } else {
@@ -122,13 +138,14 @@ contract DeployMain is BaseDeployment {
         // Deploy Account Proxy
         if (deployed.accountProxy == address(0)) {
             address accountProxy;
-            if (shouldUseCreate2(chainId)) {
+            if (config.salt == bytes32(0)) {
+                // For regular CREATE, use the library's deployment method
+                accountProxy = LibEIP7702.deployProxy(deployed.accountImpl, address(0));
+                console.log("AccountProxy deployed with CREATE:", accountProxy);
+            } else {
                 // For CREATE2, we need to use the proxy init code
                 bytes memory proxyCode = LibEIP7702.proxyInitCode(deployed.accountImpl, address(0));
                 accountProxy = deployContract(chainId, proxyCode, "", "AccountProxy");
-            } else {
-                // For regular CREATE, use the library's deployment method
-                accountProxy = LibEIP7702.deployProxy(deployed.accountImpl, address(0));
             }
             require(accountProxy != address(0), "Account proxy deployment failed");
             saveDeployedContract(chainId, "AccountProxy", accountProxy);
@@ -139,8 +156,16 @@ contract DeployMain is BaseDeployment {
 
         // Deploy Simulator
         if (deployed.simulator == address(0)) {
-            bytes memory creationCode = type(Simulator).creationCode;
-            address simulator = deployContract(chainId, creationCode, "", "Simulator");
+            address simulator;
+            if (config.salt == bytes32(0)) {
+                // Use CREATE with new keyword
+                simulator = address(new Simulator());
+                console.log("Simulator deployed with CREATE:", simulator);
+            } else {
+                // Use CREATE2
+                bytes memory creationCode = type(Simulator).creationCode;
+                simulator = deployContract(chainId, creationCode, "", "Simulator");
+            }
             saveDeployedContract(chainId, "Simulator", simulator);
             deployed.simulator = simulator;
         } else {
@@ -164,10 +189,20 @@ contract DeployMain is BaseDeployment {
 
         // Deploy SimpleFunder
         if (deployed.simpleFunder == address(0)) {
-            bytes memory creationCode = type(SimpleFunder).creationCode;
-            bytes memory args =
-                abi.encode(config.funderSigner, deployed.orchestrator, config.funderOwner);
-            address funder = deployContract(chainId, creationCode, args, "SimpleFunder");
+            address funder;
+            if (config.salt == bytes32(0)) {
+                // Use CREATE with new keyword
+                funder = address(
+                    new SimpleFunder(config.funderSigner, deployed.orchestrator, config.funderOwner)
+                );
+                console.log("SimpleFunder deployed with CREATE:", funder);
+            } else {
+                // Use CREATE2
+                bytes memory creationCode = type(SimpleFunder).creationCode;
+                bytes memory args =
+                    abi.encode(config.funderSigner, deployed.orchestrator, config.funderOwner);
+                funder = deployContract(chainId, creationCode, args, "SimpleFunder");
+            }
             saveDeployedContract(chainId, "SimpleFunder", funder);
             deployed.simpleFunder = funder;
         } else {
@@ -176,8 +211,16 @@ contract DeployMain is BaseDeployment {
 
         // Deploy Escrow
         if (deployed.escrow == address(0)) {
-            bytes memory creationCode = type(Escrow).creationCode;
-            address escrow = deployContract(chainId, creationCode, "", "Escrow");
+            address escrow;
+            if (config.salt == bytes32(0)) {
+                // Use CREATE with new keyword
+                escrow = address(new Escrow());
+                console.log("Escrow deployed with CREATE:", escrow);
+            } else {
+                // Use CREATE2
+                bytes memory creationCode = type(Escrow).creationCode;
+                escrow = deployContract(chainId, creationCode, "", "Escrow");
+            }
             saveDeployedContract(chainId, "Escrow", escrow);
             deployed.escrow = escrow;
         } else {
@@ -198,9 +241,17 @@ contract DeployMain is BaseDeployment {
         console.log("\n[Stage: Simple Settler]");
 
         if (deployed.simpleSettler == address(0)) {
-            bytes memory creationCode = type(SimpleSettler).creationCode;
-            bytes memory args = abi.encode(config.settlerOwner);
-            address settler = deployContract(chainId, creationCode, args, "SimpleSettler");
+            address settler;
+            if (config.salt == bytes32(0)) {
+                // Use CREATE with new keyword
+                settler = address(new SimpleSettler(config.settlerOwner));
+                console.log("SimpleSettler deployed with CREATE:", settler);
+            } else {
+                // Use CREATE2
+                bytes memory creationCode = type(SimpleSettler).creationCode;
+                bytes memory args = abi.encode(config.settlerOwner);
+                settler = deployContract(chainId, creationCode, args, "SimpleSettler");
+            }
             console.log("  Owner:", config.settlerOwner);
             saveDeployedContract(chainId, "SimpleSettler", settler);
         } else {
@@ -221,9 +272,18 @@ contract DeployMain is BaseDeployment {
         console.log("\n[Stage: LayerZero Settler]");
 
         if (deployed.layerZeroSettler == address(0)) {
-            bytes memory creationCode = type(LayerZeroSettler).creationCode;
-            bytes memory args = abi.encode(config.layerZeroEndpoint, config.l0SettlerOwner);
-            address settler = deployContract(chainId, creationCode, args, "LayerZeroSettler");
+            address settler;
+            if (config.salt == bytes32(0)) {
+                // Use CREATE with new keyword
+                settler =
+                    address(new LayerZeroSettler(config.layerZeroEndpoint, config.l0SettlerOwner));
+                console.log("LayerZeroSettler deployed with CREATE:", settler);
+            } else {
+                // Use CREATE2
+                bytes memory creationCode = type(LayerZeroSettler).creationCode;
+                bytes memory args = abi.encode(config.layerZeroEndpoint, config.l0SettlerOwner);
+                settler = deployContract(chainId, creationCode, args, "LayerZeroSettler");
+            }
             console.log("  Endpoint:", config.layerZeroEndpoint);
             console.log("  Owner:", config.l0SettlerOwner);
             console.log("  EID:", config.layerZeroEid);
