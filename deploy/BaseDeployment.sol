@@ -139,7 +139,27 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
             config.stages = configJson.readStringArray(string.concat(chainKey, ".stages"));
 
             chainConfigs[chainId] = config;
+
+            // Log the loaded configuration (excluding stages) for verification
+            console.log("-------------------------------------");
+            console.log("Loaded configuration for chain:", chainId);
+            console.log("Name:", config.name);
+            console.log("Funder Owner:", config.funderOwner);
+            console.log("Funder Signer:", config.funderSigner);
+            console.log("L0 Settler Owner:", config.l0SettlerOwner);
+            console.log("Settler Owner:", config.settlerOwner);
+            console.log("Pause Authority:", config.pauseAuthority);
+            console.log("LayerZero Endpoint:", config.layerZeroEndpoint);
+            console.log("LayerZero EID:", config.layerZeroEid);
+            console.log("Is Testnet:", config.isTestnet);
+            console.log("Salt: ");
+            console.logBytes32(config.salt);
         }
+
+        // Warn the operator to verify configuration before proceeding
+        console.log(
+            unicode"\n[⚠️] Please review the above configuration values and ensure they are correct before proceeding with deployment.\n"
+        );
 
         // Load existing deployed contracts from registry
         loadDeployedContracts();

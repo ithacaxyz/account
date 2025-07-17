@@ -5,6 +5,63 @@ This directory contains the unified deployment system for the Ithaca Account con
 ## Overview
 
 The deployment system uses a single configuration file (`deploy-config.json`) that contains all chain-specific settings including contract addresses, deployment parameters, and stage configurations. This eliminates the previous separation between devnets, testnets, and mainnets, providing a simpler and more flexible deployment approach.
+## Quickstart
+
+Follow these steps for your first deployment using the provided scripts.
+
+1. **Fill in `deploy/deploy-config.json`.**  
+   Below is an example configuration for chain **28404** (Porto Devnet). Copy-paste and adapt it to your needs.
+
+```json
+"28404": {
+  "funderOwner":    "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "funderSigner":   "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "isTestnet":      true,
+  "l0SettlerOwner": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "layerZeroEndpoint": "0x0000000000000000000000000000000000000000",
+  "layerZeroEid":   0,
+  "name":           "Porto Devnet",
+  "pauseAuthority": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "salt":          "0x00000000000000000000000000000000000000000000000000000000deadbeef",
+  "settlerOwner":   "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "stages":        ["basic", "interop", "simpleSettler"]
+}
+```
+
+2. **Dry-run the deployment script (no broadcast).**  
+   This prints the parsed configuration in the console.
+   IMP: Verify that the fields of the config are parsed & printed correctly.
+
+```bash
+# Export your private key
+export PRIVATE_KEY=0x...
+forge script deploy/DeployMain.s.sol:DeployMain \
+  --multi \
+  --slow \
+  --sig "run(uint256[])" \
+  --private-key $PRIVATE_KEY \
+  "[28404]"
+```
+
+> **Note**: Intentionally omit the `--broadcast` flag for this first run.
+
+3. **Broadcast the deployment.**  
+   Once satisfied, repeat the command **with** `--broadcast` to actually deploy:
+
+```bash
+forge script deploy/DeployMain.s.sol:DeployMain \
+  --broadcast \
+  --multi \
+  --slow \
+  --sig "run(uint256[])" \
+  --private-key $PRIVATE_KEY \
+  "[28404]"
+```
+
+After a successful deployment:
+
+- Record the **salt** you used (from the config) for reproducibility.
+- Commit the generated `deploy/registry/deployment_28404_<salt>.json` file so others (and CI) can reference the deployed addresses.
 
 ## Configuration Structure
 
