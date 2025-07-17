@@ -67,22 +67,38 @@ The primary way to deploy is using the main deployment script, which executes al
 # Deploy to all chains in config
 forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
+  --multi \
+  --slow \
   --sig "run(uint256[])" \
   "[]"
 
 # Deploy to specific chains
 forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
+  --multi \
+  --slow \
   --sig "run(uint256[])" \
   "[1,42161,8453]"
 
-# With verification
+# Single chain deployment (no --multi needed)
 forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
-  --verify \
   --sig "run(uint256[])" \
   "[11155111]"
+
+# With verification (multi-chain)
+forge script deploy/DeployMain.s.sol:DeployMain \
+  --broadcast \
+  --multi \
+  --slow \
+  --verify \
+  --sig "run(uint256[])" \
+  "[1,42161,8453]"
 ```
+
+**Important flags for multi-chain deployments:**
+- `--multi`: Enables multi-chain deployment sequences
+- `--slow`: Ensures transactions are sent only after previous ones are confirmed
 
 The script automatically deploys stages in the correct order:
 1. `basic` - Core contracts (Orchestrator, IthacaAccount, Proxy, Simulator)
@@ -102,8 +118,9 @@ export PRIVATE_KEY=0x...
 
 # Deploy all stages configured in deploy-config.json
 forge script deploy/DeployMain.s.sol:DeployMain \
-  --sig "run(uint256[])" "[11155111]" \
-  --broadcast
+  --broadcast \
+  --sig "run(uint256[])" \
+  "[11155111]"
 ```
 
 The script will:
@@ -111,6 +128,20 @@ The script will:
 - Deploy contracts in the correct order
 - Skip already deployed contracts
 - Save deployment addresses to the registry
+
+**Note about multi-chain deployments**: When deploying to multiple chains, always use the `--multi` and `--slow` flags:
+```bash
+forge script deploy/DeployMain.s.sol:DeployMain \
+  --broadcast \
+  --multi \
+  --slow \
+  --sig "run(uint256[])" \
+  "[1,42161,8453]"
+```
+
+These flags ensure:
+- `--multi`: Proper handling of multi-chain deployment sequences
+- `--slow`: Transactions are sent only after previous ones are confirmed
 
 **Note**: LayerZero peer configuration across multiple chains will be added in a future update.
 
@@ -185,12 +216,21 @@ To add a new chain to the deployment system:
 
 3. **Run deployment**:
    ```bash
+   # For single chain
    forge script deploy/DeployMain.s.sol:DeployMain \
-     --rpc-url $RPC_137 \
      --broadcast \
      --verify \
      --sig "run(uint256[])" \
      "[137]"
+   
+   # For multiple chains including this one
+   forge script deploy/DeployMain.s.sol:DeployMain \
+     --broadcast \
+     --multi \
+     --slow \
+     --verify \
+     --sig "run(uint256[])" \
+     "[137,42161,8453]"
    ```
 
 ## Multi-Settler Support
@@ -239,8 +279,13 @@ To test deployments without broadcasting transactions, simply omit the `--broadc
 # Dry run (simulation only)
 forge script deploy/DeployMain.s.sol:DeployMain --sig "run(uint256[])" "[1,42161]"
 
-# Actual deployment
-forge script deploy/DeployMain.s.sol:DeployMain --sig "run(uint256[])" "[1,42161]" --broadcast
+# Actual deployment (multi-chain)
+forge script deploy/DeployMain.s.sol:DeployMain \
+  --broadcast \
+  --multi \
+  --slow \
+  --sig "run(uint256[])" \
+  "[1,42161]"
 ```
 
 Dry run mode (without `--broadcast`) will:
