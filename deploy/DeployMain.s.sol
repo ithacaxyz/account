@@ -19,23 +19,35 @@ import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
  * @notice Main deployment script that executes all configured stages for specified chains
  * @dev This script directly deploys contracts without creating intermediate deployer contracts
  *
+ * ⚠️  IMPORTANT FOR CREATE2 DEPLOYMENTS:
+ * If you're using CREATE2 (salt != 0x0), you MUST save your salt values!
+ * The salt determines your contract addresses across chains.
+ * Lost salts = unable to deploy to same addresses on new chains.
+ * Store production salts securely with backups.
+ *
  * Usage:
+ * # Export your private key
+ * export PRIVATE_KEY=0x...
+ *
  * # Deploy to all chains (using default paths)
  * forge script deploy/DeployMain.s.sol:DeployMain \
  *   --broadcast \
  *   --sig "run(uint256[])" \
+ *   --private-key $PRIVATE_KEY \
  *   "[]"
  *
  * # Deploy to specific chains (using default paths)
  * forge script deploy/DeployMain.s.sol:DeployMain \
  *   --broadcast \
  *   --sig "run(uint256[])" \
+ *   --private-key $PRIVATE_KEY \
  *   "[1,42161,8453]"
  *
  * # Deploy with custom config and registry paths
  * forge script deploy/DeployMain.s.sol:DeployMain \
  *   --broadcast \
  *   --sig "run(uint256[],string,string)" \
+ *   --private-key $PRIVATE_KEY \
  *   "[1]" "path/to/config.json" "path/to/registry/"
  */
 contract DeployMain is BaseDeployment {
@@ -69,6 +81,14 @@ contract DeployMain is BaseDeployment {
 
         ChainConfig memory config = getChainConfig(chainId);
         DeployedContracts memory deployed = getDeployedContracts(chainId);
+
+        // Warning for CREATE2 deployments
+        if (config.salt != bytes32(0)) {
+            console.log(unicode"\n⚠️  CREATE2 DEPLOYMENT - SAVE YOUR SALT!");
+            console.log("Salt:", vm.toString(config.salt));
+            console.log("This salt is REQUIRED to deploy to same addresses on new chains");
+            console.log(unicode"Store it securely with backups!\n");
+        }
 
         // Deploy each stage if configured
         if (shouldDeployStage(chainId, "basic")) {
