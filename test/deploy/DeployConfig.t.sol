@@ -6,16 +6,10 @@ import {DeployMain} from "../../deploy/DeployMain.s.sol";
 
 contract DeployConfigTest is Test {
     DeployMain deployment;
-    string constant TEST_TEMP_DIR = "test/deploy/temp/";
-    string constant TEST_CONFIG_FILE = "test/deploy/temp/test-config.json";
-    string constant TEST_REGISTRY_DIR = "test/deploy/temp/test-registry/";
+    string constant TEST_CONFIG_FILE = "test-config.json";
+    string constant TEST_REGISTRY_DIR = "test-registry/";
 
     modifier withCleanup() {
-        // Ensure temp directory exists
-        if (!vm.exists(TEST_TEMP_DIR)) {
-            vm.createDir(TEST_TEMP_DIR, false);
-        }
-
         _;
 
         // Clean up test files after each test
@@ -145,11 +139,9 @@ contract DeployConfigTest is Test {
             json, '"layerZeroEndpoint": "0x0000000000000000000000000000000000000004",'
         );
         json = string.concat(json, '"layerZeroEid": 1,');
-        json = string.concat(json, '"maxRetries": 3,');
         json = string.concat(json, '"name": "Test",');
         json =
             string.concat(json, '"pauseAuthority": "0x0000000000000000000000000000000000000006",');
-        json = string.concat(json, '"retryDelay": 5,');
         json = string.concat(json, '"settlerOwner": "0x0000000000000000000000000000000000000005",');
         json = string.concat(json, '"stages": ["basic"]}}');
         return json;
