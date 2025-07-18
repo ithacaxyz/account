@@ -14,7 +14,7 @@ contract DefaultConfig {
      * @return configs Array of configurations matching the chain IDs
      */
     function getConfigs() public pure returns (BaseDeployment.ChainConfig[] memory configs) {
-        configs = new BaseDeployment.ChainConfig[](7);
+        configs = new BaseDeployment.ChainConfig[](10);
 
         // Ethereum Mainnet
         configs[0] = BaseDeployment.ChainConfig({
@@ -105,7 +105,6 @@ contract DefaultConfig {
             layerZeroEid: 40245,
             stages: _getAllStages()
         });
-
         // Porto Devnet
         configs[6] = BaseDeployment.ChainConfig({
             chainId: 28404,
@@ -115,6 +114,46 @@ contract DefaultConfig {
             funderOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
             funderSigner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
             settlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
+            l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
+            layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
+            layerZeroEid: 0,
+            stages: _getDevnetStages()
+        });
+        // Porto Interop Devnets
+        configs[7] = BaseDeployment.ChainConfig({
+            chainId: 28405,
+            name: "Porto Devnet Paros",
+            isTestnet: true,
+            pauseAuthority: 0x954d74c1F0581dBf4d80E8Fa89d211B2E3B92e52,
+            funderOwner: 0x53983Bb59AE9f0791323b9d79D55a7F7aDAF5783,
+            funderSigner: 0x74b298DE3D87F98C812dBb14F7a322beDbe3ce25,
+            settlerOwner: 0xb3528a2d52CCED72C92bf49D22522CCDE12fC599,
+            l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
+            layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
+            layerZeroEid: 0,
+            stages: _getDevnetStages()
+        });
+        configs[8] = BaseDeployment.ChainConfig({
+            chainId: 28406,
+            name: "Porto Devnet Tinos",
+            isTestnet: true,
+            pauseAuthority: 0x954d74c1F0581dBf4d80E8Fa89d211B2E3B92e52,
+            funderOwner: 0x53983Bb59AE9f0791323b9d79D55a7F7aDAF5783,
+            funderSigner: 0x74b298DE3D87F98C812dBb14F7a322beDbe3ce25,
+            settlerOwner: 0xb3528a2d52CCED72C92bf49D22522CCDE12fC599,
+            l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
+            layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
+            layerZeroEid: 0,
+            stages: _getDevnetStages()
+        });
+        configs[9] = BaseDeployment.ChainConfig({
+            chainId: 28407,
+            name: "Porto Devnet Leros",
+            isTestnet: true,
+            pauseAuthority: 0x954d74c1F0581dBf4d80E8Fa89d211B2E3B92e52,
+            funderOwner: 0x53983Bb59AE9f0791323b9d79D55a7F7aDAF5783,
+            funderSigner: 0x74b298DE3D87F98C812dBb14F7a322beDbe3ce25,
+            settlerOwner: 0xb3528a2d52CCED72C92bf49D22522CCDE12fC599,
             l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
             layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
             layerZeroEid: 0,
