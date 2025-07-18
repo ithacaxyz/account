@@ -313,6 +313,66 @@ contract OrchestratorTest is BaseTest {
         );
     }
 
+    function testPaymentValidationCombinations() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        paymentToken.mint(d.eoa, 1000 ether);
+
+        // Test all important combinations of payment validation
+        _testPaymentCase(d, 5, 10, 15, 20, false, "Valid: ascending order");
+        _testPaymentCase(d, 5, 5, 10, 10, false, "Valid: equal at limits");
+        _testPaymentCase(d, 0, 0, 0, 0, false, "Valid: all zeros");
+        _testPaymentCase(d, 5, 10, 10, 10, false, "Valid: total == max");
+        _testPaymentCase(d, 10, 10, 10, 10, false, "Valid: all equal");
+        _testPaymentCase(d, 0, 10, 5, 20, false, "Valid: zero prepayment");
+        _testPaymentCase(d, 5, 10, 5, 20, false, "Valid: pre == total");
+        _testPaymentCase(d, 0, 0, 10, 10, false, "Valid: no prepayment");
+
+        // Invalid cases
+        _testPaymentCase(d, 15, 10, 20, 30, true, "Invalid: preAmt > preMax");
+        _testPaymentCase(d, 5, 10, 25, 20, true, "Invalid: totalAmt > totalMax");
+        _testPaymentCase(d, 5, 25, 15, 20, true, "Invalid: preMax > totalMax");
+        _testPaymentCase(d, 15, 20, 10, 30, true, "Invalid: preAmt > totalAmt (underflow)");
+        _testPaymentCase(d, 10, 10, 5, 20, true, "Invalid: preAmt > totalAmt case 2");
+        _testPaymentCase(d, 10, 15, 5, 20, true, "Invalid: preAmt > totalAmt case 3");
+        _testPaymentCase(d, 25, 20, 15, 10, true, "Invalid: multiple violations");
+        _testPaymentCase(d, 30, 10, 20, 15, true, "Invalid: multiple violations 2");
+    }
+
+    function _testPaymentCase(
+        DelegatedEOA memory d,
+        uint256 preAmt,
+        uint256 preMax,
+        uint256 totalAmt,
+        uint256 totalMax,
+        bool shouldFail,
+        string memory desc
+    ) internal {
+        uint256 nonce = d.d.getNonce(0);
+
+        Orchestrator.Intent memory u;
+        u.eoa = d.eoa;
+        u.nonce = nonce;
+        u.executionData = _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
+        u.paymentToken = address(paymentToken);
+        u.paymentRecipient = address(this);
+        u.prePaymentAmount = preAmt * 1 ether;
+        u.prePaymentMaxAmount = preMax * 1 ether;
+        u.totalPaymentAmount = totalAmt * 1 ether;
+        u.totalPaymentMaxAmount = totalMax * 1 ether;
+        u.combinedGas = 10000000;
+        u.signature = _sig(d, u);
+
+        bytes4 result = oc.execute(abi.encode(u));
+
+        if (shouldFail) {
+            assertEq(result, bytes4(keccak256("PaymentError()")), desc);
+            assertEq(d.d.getNonce(0), nonce, string.concat(desc, ": nonce unchanged"));
+        } else {
+            assertEq(result, 0, desc);
+            assertEq(d.d.getNonce(0), nonce + 1, string.concat(desc, ": nonce incremented"));
+        }
+    }
+
     function testWithdrawTokens() public {
         // Anyone can withdraw tokens from the orchestrator.
         vm.deal(address(oc), 1 ether);
