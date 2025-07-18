@@ -3,7 +3,6 @@ pragma solidity ^0.8.23;
 
 import {Script, console} from "forge-std/Script.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {SafeSingletonDeployer} from "./SafeSingletonDeployer.sol";
 import {DefaultConfig} from "./DefaultConfig.sol";
 
 /**
@@ -11,7 +10,7 @@ import {DefaultConfig} from "./DefaultConfig.sol";
  * @notice Base contract for all deployment scripts with Solidity configuration
  * @dev Uses type-safe Solidity configuration instead of JSON parsing
  */
-abstract contract BaseDeployment is Script, SafeSingletonDeployer {
+abstract contract BaseDeployment is Script {
     // Deployment stages enum
     enum Stage {
         Core,
@@ -32,7 +31,6 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         address l0SettlerOwner;
         address layerZeroEndpoint;
         uint32 layerZeroEid;
-        bytes32 salt;
         Stage[] stages;
     }
 
@@ -151,8 +149,6 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
             console.log("LayerZero Endpoint:", config.layerZeroEndpoint);
             console.log("LayerZero EID:", config.layerZeroEid);
             console.log("Is Testnet:", config.isTestnet);
-            console.log("Salt: ");
-            console.logBytes32(config.salt);
         }
 
         // Warn the operator to verify configuration before proceeding
@@ -180,8 +176,7 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     function loadDeployedContracts() internal {
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
-            bytes32 salt = chainConfigs[chainId].salt;
-            string memory registryFile = getRegistryFilename(chainId, salt);
+            string memory registryFile = getRegistryFilename(chainId);
 
             try vm.readFile(registryFile) returns (string memory registryJson) {
                 // Use individual parsing for flexibility with missing fields
@@ -254,13 +249,11 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     function shouldSkipChain(uint256 chainId) internal view returns (bool) {
         ChainConfig memory config = chainConfigs[chainId];
 
-        // For CREATE (salt = 0), check if deployment file exists to skip
-        if (config.salt == bytes32(0)) {
-            string memory registryFile = getRegistryFilename(chainId, config.salt);
-            if (vm.exists(registryFile)) {
-                console.log(unicode"\n[✓] Skipping", config.name, "- already deployed (CREATE)");
-                return true;
-            }
+        // Check if deployment file exists to skip
+        string memory registryFile = getRegistryFilename(chainId);
+        if (vm.exists(registryFile)) {
+            console.log(unicode"\n[✓] Skipping", config.name, "- already deployed");
+            return true;
         }
 
         return false;
@@ -397,8 +390,7 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
 
         json = string.concat(json, "}");
 
-        bytes32 salt = chainConfigs[chainId].salt;
-        string memory registryFile = getRegistryFilename(chainId, salt);
+        string memory registryFile = getRegistryFilename(chainId);
         vm.writeFile(registryFile, json);
     }
 
@@ -434,96 +426,14 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     function deployToChain(uint256 chainId) internal virtual;
 
     /**
-     * @notice Get registry filename based on chainId and salt
+     * @notice Get registry filename based on chainId
      * @param chainId The chain ID
-     * @param salt The deployment salt
      * @return The full path to the registry file
      */
-    function getRegistryFilename(uint256 chainId, bytes32 salt)
-        internal
-        view
-        returns (string memory)
-    {
+    function getRegistryFilename(uint256 chainId) internal view returns (string memory) {
         string memory filename = string.concat(
-            vm.projectRoot(),
-            "/",
-            registryPath,
-            "deployment_",
-            vm.toString(chainId),
-            "_",
-            vm.toString(salt),
-            ".json"
+            vm.projectRoot(), "/", registryPath, "deployment_", vm.toString(chainId), ".json"
         );
         return filename;
-    }
-
-    // ============================================
-    // CREATE2 DEPLOYMENT HELPERS
-    // ============================================
-
-    /**
-     * @notice Check if we should use CREATE2 based on salt configuration
-     * @param chainId The chain ID to check
-     * @return true if salt is set (non-zero), false otherwise
-     */
-    function shouldUseCreate2(uint256 chainId) internal view returns (bool) {
-        return chainConfigs[chainId].salt != bytes32(0);
-    }
-
-    /**
-     * @notice Verify Safe Singleton Factory is deployed
-     * @dev Reverts if factory is not deployed when CREATE2 is required
-     * @param chainId The chain ID to check
-     */
-    function verifySafeSingletonFactory(uint256 chainId) internal view {
-        if (shouldUseCreate2(chainId)) {
-            require(SAFE_SINGLETON_FACTORY.code.length > 0, "Safe Singleton Factory not deployed");
-            console.log("Safe Singleton Factory verified at:", SAFE_SINGLETON_FACTORY);
-        }
-    }
-
-    /**
-     * @notice Deploy contract using CREATE or CREATE2 based on configuration
-     * @param chainId The chain ID for configuration
-     * @param creationCode The contract creation code
-     * @param args The constructor arguments (can be empty)
-     * @param contractName Name of the contract for logging
-     * @return deployed The deployed contract address
-     */
-    function deployContract(
-        uint256 chainId,
-        bytes memory creationCode,
-        bytes memory args,
-        string memory contractName
-    ) internal returns (address deployed) {
-        bytes32 salt = chainConfigs[chainId].salt;
-        require(salt != bytes32(0), "deployContract should only be used for CREATE2");
-
-        // Use CREATE2 via Safe Singleton Factory
-        // First compute the predicted address
-        address predicted;
-        if (args.length > 0) {
-            predicted = computeAddress(creationCode, args, salt);
-        } else {
-            predicted = computeAddress(creationCode, salt);
-        }
-
-        // Check if already deployed (CREATE2 collision)
-        if (predicted.code.length > 0) {
-            console.log(unicode"[🔷] ", contractName, "already deployed at:", predicted);
-            emit ContractAlreadyDeployed(chainId, contractName, predicted);
-            return predicted;
-        }
-
-        // Deploy using CREATE2
-        if (args.length > 0) {
-            deployed = broadcastDeploy(creationCode, args, salt);
-        } else {
-            deployed = broadcastDeploy(creationCode, salt);
-        }
-
-        console.log(string.concat(contractName, " deployed with CREATE2:"), deployed);
-        console.log("  Salt:", vm.toString(salt));
-        console.log("  Predicted:", predicted);
     }
 }

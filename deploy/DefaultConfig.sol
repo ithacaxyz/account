@@ -28,7 +28,6 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
             layerZeroEid: 30101,
-            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -44,7 +43,6 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
             layerZeroEid: 30110,
-            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -60,7 +58,6 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
             layerZeroEid: 30184,
-            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -76,7 +73,6 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
             layerZeroEid: 40161,
-            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -92,7 +88,6 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
             layerZeroEid: 40231,
-            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -108,7 +103,6 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
             layerZeroEid: 40245,
-            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -124,7 +118,6 @@ contract DefaultConfig {
             l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
             layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
             layerZeroEid: 0,
-            salt: bytes32(0),
             stages: _getDevnetStages()
         });
     }
