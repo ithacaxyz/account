@@ -2,31 +2,38 @@
 pragma solidity ^0.8.23;
 
 import {Script, console} from "forge-std/Script.sol";
-import {stdJson} from "forge-std/StdJson.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {SafeSingletonDeployer} from "./SafeSingletonDeployer.sol";
+import {DefaultConfig} from "./DefaultConfig.sol";
 
 /**
  * @title BaseDeployment
- * @notice Base contract for all deployment scripts with unified JSON configuration
- * @dev Provides simplified configuration management using Foundry's JSON parsing
+ * @notice Base contract for all deployment scripts with Solidity configuration
+ * @dev Uses type-safe Solidity configuration instead of JSON parsing
  */
 abstract contract BaseDeployment is Script, SafeSingletonDeployer {
-    using stdJson for string;
+    // Deployment stages enum
+    enum Stage {
+        Core,
+        Interop,
+        SimpleSettler,
+        LayerZeroSettler
+    }
 
-    // Unified configuration struct (alphabetically ordered for JSON parsing)
+    // Chain configuration struct
     struct ChainConfig {
+        uint256 chainId;
+        string name;
+        bool isTestnet;
+        address pauseAuthority;
         address funderOwner;
         address funderSigner;
-        bool isTestnet;
+        address settlerOwner;
         address l0SettlerOwner;
         address layerZeroEndpoint;
         uint32 layerZeroEid;
-        string name;
-        address pauseAuthority;
         bytes32 salt;
-        address settlerOwner;
-        string[] stages;
+        Stage[] stages;
     }
 
     struct DeployedContracts {
@@ -45,8 +52,7 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     mapping(uint256 => DeployedContracts) internal deployedContracts;
     uint256[] internal targetChainIds;
 
-    // Configurable paths with defaults
-    string internal configPath = "deploy/deploy-config.json";
+    // Paths
     string internal registryPath = "deploy/registry/";
 
     // Events for tracking
@@ -61,86 +67,79 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
      * @param chainIds Array of chain IDs to deploy to (empty array = all chains)
      */
     function initializeDeployment(uint256[] memory chainIds) internal {
-        // Load configuration
-        loadFullConfiguration(chainIds);
+        // Load configuration from Solidity config
+        loadConfiguration(chainIds);
 
         // Load existing deployed contracts from registry
         loadDeployedContracts();
     }
 
     /**
-     * @notice Initialize deployment with custom paths
+     * @notice Initialize deployment with custom registry path
      * @param chainIds Array of chain IDs to deploy to (empty array = all chains)
-     * @param _configPath Path to the configuration JSON file
      * @param _registryPath Path to the registry output directory
      */
-    function initializeDeployment(
-        uint256[] memory chainIds,
-        string memory _configPath,
-        string memory _registryPath
-    ) internal {
-        // Set custom paths
-        configPath = _configPath;
+    function initializeDeployment(uint256[] memory chainIds, string memory _registryPath)
+        internal
+    {
+        // Set custom registry path
         registryPath = _registryPath;
 
-        // Load configuration
-        loadFullConfiguration(chainIds);
+        // Load configuration from Solidity config
+        loadConfiguration(chainIds);
 
         // Load existing deployed contracts from registry
         loadDeployedContracts();
     }
 
     /**
-     * @notice Load all configuration from unified JSON file
+     * @notice Load configuration from Solidity config contract
      */
-    function loadFullConfiguration(uint256[] memory chainIds) internal {
-        string memory fullConfigPath = string.concat(vm.projectRoot(), "/", configPath);
-        string memory configJson = vm.readFile(fullConfigPath);
-
-        // Get all chain IDs from the config
-        string[] memory keys = vm.parseJsonKeys(configJson, "$");
+    function loadConfiguration(uint256[] memory chainIds) internal {
+        // Get configurations from DefaultConfig
+        DefaultConfig configContract = new DefaultConfig();
+        ChainConfig[] memory allConfigs = configContract.getConfigs();
 
         // Filter chains based on input
         if (chainIds.length == 0) {
             // Deploy to all chains
-            targetChainIds = new uint256[](keys.length);
-            for (uint256 i = 0; i < keys.length; i++) {
-                targetChainIds[i] = vm.parseUint(keys[i]);
+            targetChainIds = new uint256[](allConfigs.length);
+
+            // Load all configurations
+            for (uint256 i = 0; i < allConfigs.length; i++) {
+                uint256 chainId = allConfigs[i].chainId;
+                targetChainIds[i] = chainId;
+                chainConfigs[chainId] = allConfigs[i];
             }
         } else {
             // Deploy to specified chains only
             targetChainIds = chainIds;
+
+            // Load configurations for specified chains
+            for (uint256 i = 0; i < chainIds.length; i++) {
+                uint256 chainId = chainIds[i];
+                bool found = false;
+
+                // Find the configuration for this chain
+                for (uint256 j = 0; j < allConfigs.length; j++) {
+                    if (allConfigs[j].chainId == chainId) {
+                        chainConfigs[chainId] = allConfigs[j];
+                        found = true;
+                        break;
+                    }
+                }
+
+                require(
+                    found, string.concat("Chain ID not found in config: ", vm.toString(chainId))
+                );
+            }
         }
 
-        // Load configuration for each target chain
+        // Log the loaded configuration for verification
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
-            string memory chainKey = string.concat(".", vm.toString(chainId));
+            ChainConfig memory config = chainConfigs[chainId];
 
-            // Parse individual fields for flexibility
-            ChainConfig memory config;
-            config.funderOwner = configJson.readAddress(string.concat(chainKey, ".funderOwner"));
-            config.funderSigner = configJson.readAddress(string.concat(chainKey, ".funderSigner"));
-            config.isTestnet = configJson.readBool(string.concat(chainKey, ".isTestnet"));
-            config.l0SettlerOwner =
-                configJson.readAddress(string.concat(chainKey, ".l0SettlerOwner"));
-            config.layerZeroEndpoint =
-                configJson.readAddress(string.concat(chainKey, ".layerZeroEndpoint"));
-            config.layerZeroEid =
-                uint32(configJson.readUint(string.concat(chainKey, ".layerZeroEid")));
-            config.name = configJson.readString(string.concat(chainKey, ".name"));
-            config.pauseAuthority =
-                configJson.readAddress(string.concat(chainKey, ".pauseAuthority"));
-
-            // Salt is optional - if not present or empty, it will be bytes32(0)
-            config.salt = tryReadBytes32(configJson, string.concat(chainKey, ".salt"));
-
-            config.settlerOwner = configJson.readAddress(string.concat(chainKey, ".settlerOwner"));
-            config.stages = configJson.readStringArray(string.concat(chainKey, ".stages"));
-
-            chainConfigs[chainId] = config;
-
-            // Log the loaded configuration (excluding stages) for verification
             console.log("-------------------------------------");
             console.log("Loaded configuration for chain:", chainId);
             console.log("Name:", config.name);
@@ -160,18 +159,15 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         console.log(
             unicode"\n[⚠️] Please review the above configuration values and ensure they are correct before proceeding with deployment.\n"
         );
-
-        // Load existing deployed contracts from registry
-        loadDeployedContracts();
     }
 
     /**
      * @notice Check if a specific stage should be deployed for a chain
      */
-    function shouldDeployStage(uint256 chainId, string memory stage) internal view returns (bool) {
-        string[] memory stages = chainConfigs[chainId].stages;
+    function shouldDeployStage(uint256 chainId, Stage stage) internal view returns (bool) {
+        Stage[] memory stages = chainConfigs[chainId].stages;
         for (uint256 i = 0; i < stages.length; i++) {
-            if (keccak256(bytes(stages[i])) == keccak256(bytes(stage))) {
+            if (stages[i] == stage) {
                 return true;
             }
         }
@@ -419,7 +415,7 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         return deployedContracts[chainId];
     }
 
-    // Helper functions for safe JSON parsing
+    // Helper functions for safe JSON parsing (still needed for registry files)
     function tryReadAddress(string memory json, string memory key)
         internal
         pure
@@ -431,28 +427,6 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
             }
         } catch {}
         return address(0);
-    }
-
-    function tryReadUint(string memory json, string memory key) internal pure returns (uint256) {
-        try vm.parseJson(json, key) returns (bytes memory data) {
-            if (data.length > 0) {
-                return abi.decode(data, (uint256));
-            }
-        } catch {}
-        return 0;
-    }
-
-    function tryReadBytes32(string memory json, string memory key)
-        internal
-        pure
-        returns (bytes32)
-    {
-        try vm.parseJson(json, key) returns (bytes memory data) {
-            if (data.length > 0) {
-                return abi.decode(data, (bytes32));
-            }
-        } catch {}
-        return bytes32(0);
     }
 
     // Abstract functions to be implemented by derived contracts

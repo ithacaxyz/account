@@ -29,8 +29,8 @@ Follow these steps for your first deployment using the provided scripts.
 ```
 
 2. **Dry-run the deployment script (no broadcast).**  
-   This prints the parsed configuration in the console.
-   IMP: Verify that the fields of the config are parsed & printed correctly.
+   This prints the loaded configuration in the console.
+   IMPORTANT: Verify that the configuration values are correct before proceeding.
 
 ```bash
 # Export your private key
@@ -44,7 +44,7 @@ forge script deploy/DeployMain.s.sol:DeployMain \
   "[28404]"
 ```
 
-> **Note**: Intentionally omit the `--broadcast` flag for this first run.
+> **Note**: Intentionally omit the `--broadcast` flag for this first run to verify configuration.
 
 3. **Broadcast the deployment.**  
    Once satisfied, repeat the command **with** `--broadcast` to actually deploy:
@@ -61,7 +61,7 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 
 After a successful deployment:
 
-- Record the **salt** you used (from the config) for reproducibility.
+- Record the **salt** you used (from DefaultConfig.sol) for reproducibility if using CREATE2.
 - Commit the generated `deploy/registry/deployment_28404_<salt>.json` file so others (and CI) can reference the deployed addresses.
 
 ## Configuration Structure
@@ -363,6 +363,18 @@ Dry run mode (without `--broadcast`) will:
 - Show gas estimates
 - Verify the deployment logic
 - Not send any actual transactions
+
+## Custom Configuration
+
+To use a custom configuration:
+
+1. **Copy `DefaultConfig.sol`** to a new file (e.g., `MyConfig.sol`)
+2. **Modify the configuration** as needed
+3. **Update the import** in `BaseDeployment.sol` to use your config:
+   ```solidity
+   import {MyConfig as DefaultConfig} from "./MyConfig.sol";
+   ```
+4. **Deploy** using the standard commands
 
 ## LayerZero Configuration
 

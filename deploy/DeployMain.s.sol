@@ -29,26 +29,28 @@ import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
  * # Export your private key
  * export PRIVATE_KEY=0x...
  *
- * # Deploy to all chains (using default paths)
+ * # Deploy to all chains (using default config)
  * forge script deploy/DeployMain.s.sol:DeployMain \
  *   --broadcast \
  *   --sig "run(uint256[])" \
  *   --private-key $PRIVATE_KEY \
  *   "[]"
  *
- * # Deploy to specific chains (using default paths)
+ * # Deploy to specific chains (using default config)
  * forge script deploy/DeployMain.s.sol:DeployMain \
  *   --broadcast \
  *   --sig "run(uint256[])" \
  *   --private-key $PRIVATE_KEY \
  *   "[1,42161,8453]"
  *
- * # Deploy with custom config and registry paths
+ * # Deploy with custom registry path
  * forge script deploy/DeployMain.s.sol:DeployMain \
  *   --broadcast \
- *   --sig "run(uint256[],string,string)" \
+ *   --sig "run(uint256[],string)" \
  *   --private-key $PRIVATE_KEY \
- *   "[1]" "path/to/config.json" "path/to/registry/"
+ *   "[1]" "path/to/registry/"
+ *
+ * # Note: To use a custom config, modify DefaultConfig.sol directly
  */
 contract DeployMain is BaseDeployment {
     function deploymentType() internal pure override returns (string memory) {
@@ -61,15 +63,12 @@ contract DeployMain is BaseDeployment {
     }
 
     /**
-     * @notice Run deployment with custom config and registry paths
+     * @notice Run deployment with custom registry path
      * @param chainIds Array of chain IDs to deploy to (empty array = all chains)
-     * @param _configPath Path to the configuration JSON file
      * @param _registryPath Path to the registry output directory
      */
-    function run(uint256[] memory chainIds, string memory _configPath, string memory _registryPath)
-        external
-    {
-        initializeDeployment(chainIds, _configPath, _registryPath);
+    function run(uint256[] memory chainIds, string memory _registryPath) external {
+        initializeDeployment(chainIds, _registryPath);
         executeDeployment();
     }
 
@@ -91,31 +90,31 @@ contract DeployMain is BaseDeployment {
         }
 
         // Deploy each stage if configured
-        if (shouldDeployStage(chainId, "basic")) {
-            deployBasicContracts(chainId, config, deployed);
+        if (shouldDeployStage(chainId, Stage.Core)) {
+            deployCoreContracts(chainId, config, deployed);
         }
 
-        if (shouldDeployStage(chainId, "interop")) {
+        if (shouldDeployStage(chainId, Stage.Interop)) {
             deployInteropContracts(chainId, config, deployed);
         }
 
-        if (shouldDeployStage(chainId, "simpleSettler")) {
+        if (shouldDeployStage(chainId, Stage.SimpleSettler)) {
             deploySimpleSettler(chainId, config, deployed);
         }
 
-        if (shouldDeployStage(chainId, "layerzeroSettler")) {
+        if (shouldDeployStage(chainId, Stage.LayerZeroSettler)) {
             deployLayerZeroSettler(chainId, config, deployed);
         }
 
         console.log(unicode"\n[✓] All configured stages deployed successfully");
     }
 
-    function deployBasicContracts(
+    function deployCoreContracts(
         uint256 chainId,
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        console.log("\n[Stage: Basic Contracts]");
+        console.log("\n[Stage: Core Contracts]");
 
         // Deploy Orchestrator
         if (deployed.orchestrator == address(0)) {
@@ -197,9 +196,9 @@ contract DeployMain is BaseDeployment {
         }
 
         // Verify deployments
-        // verifyBasicContracts(deployed);
+        // verifyCoreContracts(deployed);
 
-        console.log(unicode"[✓] Basic contracts deployed and verified");
+        console.log(unicode"[✓] Core contracts deployed and verified");
     }
 
     function deployInteropContracts(
@@ -209,7 +208,7 @@ contract DeployMain is BaseDeployment {
     ) internal {
         console.log("\n[Stage: Interop Contracts]");
 
-        require(deployed.orchestrator != address(0), "Orchestrator not found - deploy basic first");
+        require(deployed.orchestrator != address(0), "Orchestrator not found - deploy core first");
 
         // Deploy SimpleFunder
         if (deployed.simpleFunder == address(0)) {
@@ -332,8 +331,8 @@ contract DeployMain is BaseDeployment {
     // Comment out these function calls in the deployment functions above
     // if you want to skip verification during deployment
 
-    function verifyBasicContracts(DeployedContracts memory deployed) internal view {
-        console.log("[>] Verifying basic contracts...");
+    function verifyCoreContracts(DeployedContracts memory deployed) internal view {
+        console.log("[>] Verifying core contracts...");
         require(deployed.orchestrator.code.length > 0, "Orchestrator not deployed");
         require(deployed.accountImpl.code.length > 0, "Account implementation not deployed");
         require(deployed.accountProxy.code.length > 0, "Account proxy not deployed");
