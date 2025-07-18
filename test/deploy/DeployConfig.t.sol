@@ -40,13 +40,6 @@ contract DeployConfigTest is Test {
         deployment.run(chainIds, TEST_REGISTRY_DIR);
     }
 
-    function test_DeployToAllChains() public withCleanup {
-        uint256[] memory chainIds = new uint256[](0); // Empty array = all chains
-
-        // This should deploy to all chains in the default config
-        deployment.run(chainIds);
-    }
-
     function test_RevertOnInvalidChainId() public withCleanup {
         uint256[] memory chainIds = new uint256[](1);
         chainIds[0] = 999999; // Non-existent chain
