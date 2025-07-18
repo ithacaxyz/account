@@ -9,32 +9,33 @@ The deployment system uses a single configuration file (`deploy-config.json`) th
 
 Follow these steps for your first deployment using the provided scripts.
 
-1. **Fill in `deploy/deploy-config.json`.**  
-   Below is an example configuration for chain **28404** (Porto Devnet). Copy-paste and adapt it to your needs.
+1. **Review the default configuration in `deploy/DefaultConfig.sol`.**  
+   The configuration for all chains is defined in Solidity. For example, chain **28404** (Porto Devnet) is configured as:
 
-```json
-"28404": {
-  "funderOwner":    "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-  "funderSigner":   "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-  "isTestnet":      true,
-  "l0SettlerOwner": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-  "layerZeroEndpoint": "0x0000000000000000000000000000000000000000",
-  "layerZeroEid":   0,
-  "name":           "Porto Devnet",
-  "pauseAuthority": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-  "salt":          "0x00000000000000000000000000000000000000000000000000000000deadbeef",
-  "settlerOwner":   "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-  "stages":        ["basic", "interop", "simpleSettler"]
-}
+```solidity
+configs[6] = BaseDeployment.ChainConfig({
+    chainId: 28404,
+    name: "Porto Devnet",
+    isTestnet: true,
+    pauseAuthority: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
+    funderOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
+    funderSigner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
+    settlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
+    l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
+    layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
+    layerZeroEid: 0,
+    stages: _getDevnetStages() // Returns [Core, Interop, SimpleSettler]
+});
 ```
 
 2. **Dry-run the deployment script (no broadcast).**  
-   This prints the parsed configuration in the console.
-   IMP: Verify that the fields of the config are parsed & printed correctly.
+   This prints the loaded configuration in the console.
+   IMPORTANT: Verify that the configuration values are correct before proceeding.
 
 ```bash
 # Export your private key
 export PRIVATE_KEY=0x...
+export RPC_28404=https://porto-dev.rpc.ithaca.xyz/
 forge script deploy/DeployMain.s.sol:DeployMain \
   --multi \
   --slow \
@@ -43,7 +44,7 @@ forge script deploy/DeployMain.s.sol:DeployMain \
   "[28404]"
 ```
 
-> **Note**: Intentionally omit the `--broadcast` flag for this first run.
+> **Note**: Intentionally omit the `--broadcast` flag for this first run to verify configuration.
 
 3. **Broadcast the deployment.**  
    Once satisfied, repeat the command **with** `--broadcast` to actually deploy:
@@ -60,32 +61,29 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 
 After a successful deployment:
 
-- Record the **salt** you used (from the config) for reproducibility.
-- Commit the generated `deploy/registry/deployment_28404_<salt>.json` file so others (and CI) can reference the deployed addresses.
+- Commit the generated `deploy/registry/deployment_28404.json` file so others (and CI) can reference the deployed addresses.
 
 ## Configuration Structure
 
-All deployment configuration is stored in `deploy/deploy-config.json`:
+All deployment configuration is defined in `deploy/DefaultConfig.sol` using Solidity structs:
 
-```json
-{
-  "chainId": {
-    "funderOwner": "0x...",
-    "funderSigner": "0x...",
-    "isTestnet": false,
-    "l0SettlerOwner": "0x...",
-    "layerZeroEndpoint": "0x...",
-    "layerZeroEid": 30101,
-    "name": "Chain Name",
-    "pauseAuthority": "0x...",
-    "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
-    "settlerOwner": "0x...",
-    "stages": ["basic", "interop", "simpleSettler"]
-  }
+```solidity
+struct ChainConfig {
+    uint256 chainId;
+    string name;
+    bool isTestnet;
+    address pauseAuthority;
+    address funderOwner;
+    address funderSigner;
+    address settlerOwner;
+    address l0SettlerOwner;
+    address layerZeroEndpoint;
+    uint32 layerZeroEid;
+    Stage[] stages;
 }
 ```
 
-⚠️ **IMPORTANT**: Configuration fields MUST be in alphabetical order! Foundry's JSON parsing requires struct fields to match the alphabetical order of keys in the JSON file. Failure to maintain alphabetical ordering will cause deployment failures.
+The configuration is type-safe and validated at compile time, eliminating JSON parsing errors.
 
 ### Configuration Fields
 
@@ -98,7 +96,6 @@ All deployment configuration is stored in `deploy/deploy-config.json`:
 - **funderOwner**: Owner of the SimpleFunder contract
 - **settlerOwner**: Owner of the SimpleSettler contract
 - **l0SettlerOwner**: Owner of the LayerZeroSettler contract
-- **salt**: (Optional) Salt for deterministic CREATE2 deployment. If omitted or set to `0x0000...0000`, contracts will be deployed using regular CREATE
 - **stages**: Array of deployment stages to execute for this chain
 
 ## Available Stages
@@ -257,21 +254,25 @@ VERIFICATION_KEY_84532=YOUR_BASE_SEPOLIA_API_KEY
 
 To add a new chain to the deployment system:
 
-1. **Add chain configuration** to `deploy-config.json` (fields must be in alphabetical order):
-   ```json
-   "137": {
-     "funderOwner": "0x...",
-     "funderSigner": "0x...",
-     "isTestnet": false,
-     "l0SettlerOwner": "0x...",
-     "layerZeroEndpoint": "0x1a44076050125825900e736c501f859c50fE728c",
-     "layerZeroEid": 30109,
-     "name": "Polygon",
-     "pauseAuthority": "0x...",
-     "salt": "0x0000000000000000000000000000000000000000000000000000000000000000",
-     "settlerOwner": "0x...",
-     "stages": ["basic", "interop", "layerzeroSettler"]
-   }
+1. **Modify `deploy/DefaultConfig.sol`** to add the new chain configuration:
+   ```solidity
+   // In getConfigs() function, increase the array size
+   configs = new BaseDeployment.ChainConfig[](8); // was 7
+   
+   // Add new chain configuration
+   configs[7] = BaseDeployment.ChainConfig({
+       chainId: 137,
+       name: "Polygon",
+       isTestnet: false,
+       pauseAuthority: 0x...,
+       funderOwner: 0x...,
+       funderSigner: 0x...,
+       settlerOwner: 0x...,
+       l0SettlerOwner: 0x...,
+       layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
+       layerZeroEid: 30109,
+       stages: _getAllStages() // or custom stages array
+   });
    ```
 
 2. **Set environment variables**:
@@ -319,12 +320,12 @@ This is useful for chains that need:
 
 The deployment system maintains deployed contract addresses in the `deploy/registry/` directory:
 
-- **Contract addresses**: `deployment_{chainId}_{salt}.json`
-  - Contains deployed contract addresses for each chain and salt combination
+- **Contract addresses**: `deployment_{chainId}.json`
+  - Contains deployed contract addresses for each chain
   - Automatically updated after each successful deployment
-  - For CREATE (salt = 0x0000...0000), deployments are skipped if file exists
+  - Deployments are skipped if file exists
 
-Example registry file (`deployment_1_0x0000000000000000000000000000000000000000000000000000000000000000.json`):
+Example registry file (`deployment_1.json`):
 ```json
 {
   "Orchestrator": "0x...",
@@ -363,6 +364,18 @@ Dry run mode (without `--broadcast`) will:
 - Verify the deployment logic
 - Not send any actual transactions
 
+## Custom Configuration
+
+To use a custom configuration:
+
+1. **Copy `DefaultConfig.sol`** to a new file (e.g., `MyConfig.sol`)
+2. **Modify the configuration** as needed
+3. **Update the import** in `BaseDeployment.sol` to use your config:
+   ```solidity
+   import {MyConfig as DefaultConfig} from "./MyConfig.sol";
+   ```
+4. **Deploy** using the standard commands
+
 ## LayerZero Configuration
 
 For cross-chain functionality, the LayerZero configuration stage:
@@ -397,11 +410,10 @@ Requirements:
    - Ensure the chain is supported by the block explorer
    - Verify API key has correct permissions
 
-### CREATE2 and Redeployments
+### Redeployments
 
-- **CREATE2 deployments**: Contracts with the same salt will always deploy to the same address. If a contract is already deployed at the predicted address, deployment is skipped with a blue status symbol (🔷).
-- **CREATE deployments**: When salt is 0x0000...0000, deployments are skipped if the registry file exists.
-- **Force redeployment**: Delete the relevant `deployment_{chainId}_{salt}.json` file in `deploy/registry/`.
+- **Deployments**: Deployments are skipped if the registry file exists.
+- **Force redeployment**: Delete the relevant `deployment_{chainId}.json` file in `deploy/registry/`.
 
 ## Best Practices
 
@@ -411,51 +423,6 @@ Requirements:
 4. **Monitor gas prices** - Ensure sufficient ETH for deployment
 5. **Keep registry files** - Back up the `deploy/registry/` directory
 6. **Use appropriate stages** - Only include necessary stages per chain
-
-## CREATE2 Deterministic Deployments
-
-⚠️ **WARNING**: When using CREATE2 deployments, you MUST save your salt values! The salt determines your contract addresses. If you lose the salt, you cannot redeploy to the same addresses on new chains. Store your production salt values securely and back them up.
-
-The deployment system supports deterministic address deployment using CREATE2 via the Safe Singleton Factory.
-
-### Using CREATE2
-
-To deploy contracts with deterministic addresses, add a `salt` field to your chain configuration:
-
-```json
-"1": {
-  "name": "Ethereum Mainnet",
-  "salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
-  // ... other fields
-}
-```
-
-### Benefits of CREATE2
-
-- **Deterministic addresses**: Contract addresses can be computed before deployment
-- **Cross-chain consistency**: Same addresses across multiple chains (with same salt)
-- **Pre-funding**: Addresses can receive funds before deployment
-- **Easier integration**: Partners can integrate with known addresses
-
-### CREATE2 Requirements
-
-1. **Safe Singleton Factory** must be deployed at `0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`
-2. The factory is deployed on most major chains. It is also available on our devnets automatically.
-3. If not deployed, the deployment will revert with `SafeSingletonFactoryNotDeployed()`
-
-### Salt Configuration Examples
-
-```json
-// Use regular CREATE (default)
-"salt": "0x0000000000000000000000000000000000000000000000000000000000000000"
-
-// Use CREATE2 with meaningful salt
-"salt": "0x697468616361000000000000000000000000000000000000000000000000001" // "ithaca" + version
-```
-
-### Computing Addresses
-
-When using CREATE2, addresses can be pre-computed. The deployment script will log both the deployed address and the predicted address for verification.
 
 ## Security Considerations
 
@@ -474,10 +441,3 @@ When using CREATE2, addresses can be pre-computed. The deployment script will lo
    - Test contract functionality after deployment
    - Transfer ownership to final addresses if needed
 
-4. **CREATE2 Considerations**
-   - **ALWAYS SAVE YOUR SALT VALUES** - Lost salts cannot be recovered
-   - Salt values should be carefully chosen and documented
-   - Same salt + same code = same address across chains
-   - Changing constructor parameters changes the address
-   - Store production salts in a secure location with backups
-   - Consider using meaningful salts that can be reconstructed if needed
