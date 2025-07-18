@@ -28,6 +28,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
             layerZeroEid: 30101,
+            salt: bytes32(0),
             stages: _getAllStages()
         });
 
