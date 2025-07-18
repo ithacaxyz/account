@@ -2,31 +2,36 @@
 pragma solidity ^0.8.23;
 
 import {Script, console} from "forge-std/Script.sol";
-import {stdJson} from "forge-std/StdJson.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {SafeSingletonDeployer} from "./SafeSingletonDeployer.sol";
+import {DefaultConfig} from "./DefaultConfig.sol";
 
 /**
  * @title BaseDeployment
- * @notice Base contract for all deployment scripts with unified JSON configuration
- * @dev Provides simplified configuration management using Foundry's JSON parsing
+ * @notice Base contract for all deployment scripts with Solidity configuration
+ * @dev Uses type-safe Solidity configuration instead of JSON parsing
  */
-abstract contract BaseDeployment is Script, SafeSingletonDeployer {
-    using stdJson for string;
+abstract contract BaseDeployment is Script {
+    // Deployment stages enum
+    enum Stage {
+        Core,
+        Interop,
+        SimpleSettler,
+        LayerZeroSettler
+    }
 
-    // Unified configuration struct (alphabetically ordered for JSON parsing)
+    // Chain configuration struct
     struct ChainConfig {
+        uint256 chainId;
+        string name;
+        bool isTestnet;
+        address pauseAuthority;
         address funderOwner;
         address funderSigner;
-        bool isTestnet;
+        address settlerOwner;
         address l0SettlerOwner;
         address layerZeroEndpoint;
         uint32 layerZeroEid;
-        string name;
-        address pauseAuthority;
-        bytes32 salt;
-        address settlerOwner;
-        string[] stages;
+        Stage[] stages;
     }
 
     struct DeployedContracts {
@@ -45,8 +50,7 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     mapping(uint256 => DeployedContracts) internal deployedContracts;
     uint256[] internal targetChainIds;
 
-    // Configurable paths with defaults
-    string internal configPath = "deploy/deploy-config.json";
+    // Paths
     string internal registryPath = "deploy/registry/";
 
     // Events for tracking
@@ -61,86 +65,79 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
      * @param chainIds Array of chain IDs to deploy to (empty array = all chains)
      */
     function initializeDeployment(uint256[] memory chainIds) internal {
-        // Load configuration
-        loadFullConfiguration(chainIds);
+        // Load configuration from Solidity config
+        loadConfiguration(chainIds);
 
         // Load existing deployed contracts from registry
         loadDeployedContracts();
     }
 
     /**
-     * @notice Initialize deployment with custom paths
+     * @notice Initialize deployment with custom registry path
      * @param chainIds Array of chain IDs to deploy to (empty array = all chains)
-     * @param _configPath Path to the configuration JSON file
      * @param _registryPath Path to the registry output directory
      */
-    function initializeDeployment(
-        uint256[] memory chainIds,
-        string memory _configPath,
-        string memory _registryPath
-    ) internal {
-        // Set custom paths
-        configPath = _configPath;
+    function initializeDeployment(uint256[] memory chainIds, string memory _registryPath)
+        internal
+    {
+        // Set custom registry path
         registryPath = _registryPath;
 
-        // Load configuration
-        loadFullConfiguration(chainIds);
+        // Load configuration from Solidity config
+        loadConfiguration(chainIds);
 
         // Load existing deployed contracts from registry
         loadDeployedContracts();
     }
 
     /**
-     * @notice Load all configuration from unified JSON file
+     * @notice Load configuration from Solidity config contract
      */
-    function loadFullConfiguration(uint256[] memory chainIds) internal {
-        string memory fullConfigPath = string.concat(vm.projectRoot(), "/", configPath);
-        string memory configJson = vm.readFile(fullConfigPath);
-
-        // Get all chain IDs from the config
-        string[] memory keys = vm.parseJsonKeys(configJson, "$");
+    function loadConfiguration(uint256[] memory chainIds) internal {
+        // Get configurations from DefaultConfig
+        DefaultConfig configContract = new DefaultConfig();
+        ChainConfig[] memory allConfigs = configContract.getConfigs();
 
         // Filter chains based on input
         if (chainIds.length == 0) {
             // Deploy to all chains
-            targetChainIds = new uint256[](keys.length);
-            for (uint256 i = 0; i < keys.length; i++) {
-                targetChainIds[i] = vm.parseUint(keys[i]);
+            targetChainIds = new uint256[](allConfigs.length);
+
+            // Load all configurations
+            for (uint256 i = 0; i < allConfigs.length; i++) {
+                uint256 chainId = allConfigs[i].chainId;
+                targetChainIds[i] = chainId;
+                chainConfigs[chainId] = allConfigs[i];
             }
         } else {
             // Deploy to specified chains only
             targetChainIds = chainIds;
+
+            // Load configurations for specified chains
+            for (uint256 i = 0; i < chainIds.length; i++) {
+                uint256 chainId = chainIds[i];
+                bool found = false;
+
+                // Find the configuration for this chain
+                for (uint256 j = 0; j < allConfigs.length; j++) {
+                    if (allConfigs[j].chainId == chainId) {
+                        chainConfigs[chainId] = allConfigs[j];
+                        found = true;
+                        break;
+                    }
+                }
+
+                require(
+                    found, string.concat("Chain ID not found in config: ", vm.toString(chainId))
+                );
+            }
         }
 
-        // Load configuration for each target chain
+        // Log the loaded configuration for verification
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
-            string memory chainKey = string.concat(".", vm.toString(chainId));
+            ChainConfig memory config = chainConfigs[chainId];
 
-            // Parse individual fields for flexibility
-            ChainConfig memory config;
-            config.funderOwner = configJson.readAddress(string.concat(chainKey, ".funderOwner"));
-            config.funderSigner = configJson.readAddress(string.concat(chainKey, ".funderSigner"));
-            config.isTestnet = configJson.readBool(string.concat(chainKey, ".isTestnet"));
-            config.l0SettlerOwner =
-                configJson.readAddress(string.concat(chainKey, ".l0SettlerOwner"));
-            config.layerZeroEndpoint =
-                configJson.readAddress(string.concat(chainKey, ".layerZeroEndpoint"));
-            config.layerZeroEid =
-                uint32(configJson.readUint(string.concat(chainKey, ".layerZeroEid")));
-            config.name = configJson.readString(string.concat(chainKey, ".name"));
-            config.pauseAuthority =
-                configJson.readAddress(string.concat(chainKey, ".pauseAuthority"));
-
-            // Salt is optional - if not present or empty, it will be bytes32(0)
-            config.salt = tryReadBytes32(configJson, string.concat(chainKey, ".salt"));
-
-            config.settlerOwner = configJson.readAddress(string.concat(chainKey, ".settlerOwner"));
-            config.stages = configJson.readStringArray(string.concat(chainKey, ".stages"));
-
-            chainConfigs[chainId] = config;
-
-            // Log the loaded configuration (excluding stages) for verification
             console.log("-------------------------------------");
             console.log("Loaded configuration for chain:", chainId);
             console.log("Name:", config.name);
@@ -152,26 +149,21 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
             console.log("LayerZero Endpoint:", config.layerZeroEndpoint);
             console.log("LayerZero EID:", config.layerZeroEid);
             console.log("Is Testnet:", config.isTestnet);
-            console.log("Salt: ");
-            console.logBytes32(config.salt);
         }
 
         // Warn the operator to verify configuration before proceeding
         console.log(
             unicode"\n[⚠️] Please review the above configuration values and ensure they are correct before proceeding with deployment.\n"
         );
-
-        // Load existing deployed contracts from registry
-        loadDeployedContracts();
     }
 
     /**
      * @notice Check if a specific stage should be deployed for a chain
      */
-    function shouldDeployStage(uint256 chainId, string memory stage) internal view returns (bool) {
-        string[] memory stages = chainConfigs[chainId].stages;
+    function shouldDeployStage(uint256 chainId, Stage stage) internal view returns (bool) {
+        Stage[] memory stages = chainConfigs[chainId].stages;
         for (uint256 i = 0; i < stages.length; i++) {
-            if (keccak256(bytes(stages[i])) == keccak256(bytes(stage))) {
+            if (stages[i] == stage) {
                 return true;
             }
         }
@@ -184,8 +176,7 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     function loadDeployedContracts() internal {
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
-            bytes32 salt = chainConfigs[chainId].salt;
-            string memory registryFile = getRegistryFilename(chainId, salt);
+            string memory registryFile = getRegistryFilename(chainId);
 
             try vm.readFile(registryFile) returns (string memory registryJson) {
                 // Use individual parsing for flexibility with missing fields
@@ -258,13 +249,11 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     function shouldSkipChain(uint256 chainId) internal view returns (bool) {
         ChainConfig memory config = chainConfigs[chainId];
 
-        // For CREATE (salt = 0), check if deployment file exists to skip
-        if (config.salt == bytes32(0)) {
-            string memory registryFile = getRegistryFilename(chainId, config.salt);
-            if (vm.exists(registryFile)) {
-                console.log(unicode"\n[✓] Skipping", config.name, "- already deployed (CREATE)");
-                return true;
-            }
+        // Check if deployment file exists to skip
+        string memory registryFile = getRegistryFilename(chainId);
+        if (vm.exists(registryFile)) {
+            console.log(unicode"\n[✓] Skipping", config.name, "- already deployed");
+            return true;
         }
 
         return false;
@@ -401,8 +390,7 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
 
         json = string.concat(json, "}");
 
-        bytes32 salt = chainConfigs[chainId].salt;
-        string memory registryFile = getRegistryFilename(chainId, salt);
+        string memory registryFile = getRegistryFilename(chainId);
         vm.writeFile(registryFile, json);
     }
 
@@ -419,7 +407,7 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         return deployedContracts[chainId];
     }
 
-    // Helper functions for safe JSON parsing
+    // Helper functions for safe JSON parsing (still needed for registry files)
     function tryReadAddress(string memory json, string memory key)
         internal
         pure
@@ -433,123 +421,19 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         return address(0);
     }
 
-    function tryReadUint(string memory json, string memory key) internal pure returns (uint256) {
-        try vm.parseJson(json, key) returns (bytes memory data) {
-            if (data.length > 0) {
-                return abi.decode(data, (uint256));
-            }
-        } catch {}
-        return 0;
-    }
-
-    function tryReadBytes32(string memory json, string memory key)
-        internal
-        pure
-        returns (bytes32)
-    {
-        try vm.parseJson(json, key) returns (bytes memory data) {
-            if (data.length > 0) {
-                return abi.decode(data, (bytes32));
-            }
-        } catch {}
-        return bytes32(0);
-    }
-
     // Abstract functions to be implemented by derived contracts
     function deploymentType() internal pure virtual returns (string memory);
     function deployToChain(uint256 chainId) internal virtual;
 
     /**
-     * @notice Get registry filename based on chainId and salt
+     * @notice Get registry filename based on chainId
      * @param chainId The chain ID
-     * @param salt The deployment salt
      * @return The full path to the registry file
      */
-    function getRegistryFilename(uint256 chainId, bytes32 salt)
-        internal
-        view
-        returns (string memory)
-    {
+    function getRegistryFilename(uint256 chainId) internal view returns (string memory) {
         string memory filename = string.concat(
-            vm.projectRoot(),
-            "/",
-            registryPath,
-            "deployment_",
-            vm.toString(chainId),
-            "_",
-            vm.toString(salt),
-            ".json"
+            vm.projectRoot(), "/", registryPath, "deployment_", vm.toString(chainId), ".json"
         );
         return filename;
-    }
-
-    // ============================================
-    // CREATE2 DEPLOYMENT HELPERS
-    // ============================================
-
-    /**
-     * @notice Check if we should use CREATE2 based on salt configuration
-     * @param chainId The chain ID to check
-     * @return true if salt is set (non-zero), false otherwise
-     */
-    function shouldUseCreate2(uint256 chainId) internal view returns (bool) {
-        return chainConfigs[chainId].salt != bytes32(0);
-    }
-
-    /**
-     * @notice Verify Safe Singleton Factory is deployed
-     * @dev Reverts if factory is not deployed when CREATE2 is required
-     * @param chainId The chain ID to check
-     */
-    function verifySafeSingletonFactory(uint256 chainId) internal view {
-        if (shouldUseCreate2(chainId)) {
-            require(SAFE_SINGLETON_FACTORY.code.length > 0, "Safe Singleton Factory not deployed");
-            console.log("Safe Singleton Factory verified at:", SAFE_SINGLETON_FACTORY);
-        }
-    }
-
-    /**
-     * @notice Deploy contract using CREATE or CREATE2 based on configuration
-     * @param chainId The chain ID for configuration
-     * @param creationCode The contract creation code
-     * @param args The constructor arguments (can be empty)
-     * @param contractName Name of the contract for logging
-     * @return deployed The deployed contract address
-     */
-    function deployContract(
-        uint256 chainId,
-        bytes memory creationCode,
-        bytes memory args,
-        string memory contractName
-    ) internal returns (address deployed) {
-        bytes32 salt = chainConfigs[chainId].salt;
-        require(salt != bytes32(0), "deployContract should only be used for CREATE2");
-
-        // Use CREATE2 via Safe Singleton Factory
-        // First compute the predicted address
-        address predicted;
-        if (args.length > 0) {
-            predicted = computeAddress(creationCode, args, salt);
-        } else {
-            predicted = computeAddress(creationCode, salt);
-        }
-
-        // Check if already deployed (CREATE2 collision)
-        if (predicted.code.length > 0) {
-            console.log(unicode"[🔷] ", contractName, "already deployed at:", predicted);
-            emit ContractAlreadyDeployed(chainId, contractName, predicted);
-            return predicted;
-        }
-
-        // Deploy using CREATE2
-        if (args.length > 0) {
-            deployed = broadcastDeploy(creationCode, args, salt);
-        } else {
-            deployed = broadcastDeploy(creationCode, salt);
-        }
-
-        console.log(string.concat(contractName, " deployed with CREATE2:"), deployed);
-        console.log("  Salt:", vm.toString(salt));
-        console.log("  Predicted:", predicted);
     }
 }
