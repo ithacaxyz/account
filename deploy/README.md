@@ -35,6 +35,7 @@ Follow these steps for your first deployment using the provided scripts.
 ```bash
 # Export your private key
 export PRIVATE_KEY=0x...
+export RPC_28404=https://porto-dev.rpc.ithaca.xyz/
 forge script deploy/DeployMain.s.sol:DeployMain \
   --multi \
   --slow \
