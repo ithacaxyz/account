@@ -534,6 +534,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
                 mstore(add(m, 0x80), signature.length) // signature length
                 calldatacopy(add(m, 0xa0), signature.offset, signature.length) // copy data to memory offset
 
+                mstore(0x00, 0) // Zeroize return data memory.
                 let size := add(signature.length, 0x84)
                 let success := staticcall(gas(), signer, add(m, 0x1c), size, 0x00, 0x20)
 
