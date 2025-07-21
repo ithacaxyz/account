@@ -267,7 +267,7 @@ contract BenchmarkTest is BaseTest {
 
         vm.resumeGasMetering();
 
-        oc.execute(false, encodedIntents);
+        oc.execute(encodedIntents);
     }
 
     function testERC20TransferViaPortoOrchestratorWithSpendLimits() public {
@@ -308,7 +308,7 @@ contract BenchmarkTest is BaseTest {
 
         vm.resumeGasMetering();
 
-        oc.execute(false, encodedIntents);
+        oc.execute(encodedIntents);
 
         vm.pauseGasMetering();
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);

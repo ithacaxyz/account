@@ -4,7 +4,7 @@
 
 > 🚧 **Work In Progress**  
 > This repository is under active development. Contracts are **unaudited**, and the codebase may have **breaking changes** without notice.  
-> A bug bounty is live on Base Mainnet — [details here](docs/bug-bounty.md). 
+> A bug bounty is live on Base Mainnet — [details here](docs/bug-bounty.md).
 
 **All-in-one EIP-7702 powered account contract, coupled with [Porto](https://github.com/ithacaxyz/porto)**
 
@@ -35,5 +35,6 @@ We believe that unstoppable crypto-powered accounts should be excellent througho
 - [ ] Account Recovery & Identity: Using ZK {Email, OAUth, Passport} and more.
 
 ## Getting Help
+
 Have questions or building something cool with Porto Accounts?  
 Join the Telegram group to chat with the team and other devs: [@porto_devs](https://t.me/porto_devs)

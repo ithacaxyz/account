@@ -148,6 +148,28 @@ contract AccountTest is BaseTest {
         assertEq(MockSampleDelegateCallTarget(d.eoa).upgradeHookCounter(), 1);
     }
 
+    function testUpgradeAccountToZeroAddressReverts() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        PassKey memory k = _randomSecp256k1PassKey();
+
+        k.k.isSuperAdmin = true;
+
+        vm.prank(d.eoa);
+        d.d.authorize(k.k);
+
+        _TestUpgradeAccountWithPassKeyTemps memory t;
+        t.calls = new ERC7821.Call[](1);
+        t.calls[0].data = abi.encodeWithSignature("upgradeProxyAccount(address)", address(0));
+
+        t.nonce = d.d.getNonce(0);
+        bytes memory signature = _sig(d, d.d.computeDigest(t.calls, t.nonce));
+        t.opData = abi.encodePacked(t.nonce, signature);
+        t.executionData = abi.encode(t.calls, t.opData);
+
+        vm.expectRevert(IthacaAccount.NewImplementationIsZero.selector);
+        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
+    }
+
     function testApproveAndRevokeKey(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         IthacaAccount.Key memory k;
@@ -310,7 +332,7 @@ contract AccountTest is BaseTest {
         u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
         u.signature = _eoaSig(d.privateKey, u);
 
-        assertEq(oc.execute(false, abi.encode(u)), bytes4(keccak256("VerificationError()")));
+        assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("VerificationError()")));
 
         vm.startPrank(pauseAuthority);
         // Try to pause already paused account.
@@ -330,7 +352,7 @@ contract AccountTest is BaseTest {
         vm.stopPrank();
 
         // Intent should now succeed.
-        assertEq(oc.execute(false, abi.encode(u)), 0);
+        assertEq(oc.execute(abi.encode(u)), 0);
 
         // Can pause again, after the cooldown period.
         vm.warp(lastPaused + 5 weeks + 1);
@@ -437,7 +459,7 @@ contract AccountTest is BaseTest {
         u1.signature = _sig(adminKey, u1);
 
         // Execute on chain 1 - should succeed
-        assertEq(oc.execute(false, abi.encode(u1)), 0, "Execution should succeed on chain 1");
+        assertEq(oc.execute(abi.encode(u1)), 0, "Execution should succeed on chain 1");
 
         // Verify keys were added on chain 1
         uint256 keysCount1 = IthacaAccount(eoaAddress).keyCount();
@@ -453,9 +475,7 @@ contract AccountTest is BaseTest {
         vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
 
         // Execution should succeed due to multichain nonce in pre-calls
-        assertEq(
-            oc.execute(false, abi.encode(baseIntent)), 0, "Should succeed due to multichain nonce"
-        );
+        assertEq(oc.execute(abi.encode(baseIntent)), 0, "Should succeed due to multichain nonce");
 
         // Verify keys were added on chain 137
         uint256 keysCount137 = IthacaAccount(eoaAddress).keyCount();

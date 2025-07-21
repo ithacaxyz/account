@@ -17,6 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Setup Node.js
@@ -43,7 +44,7 @@ jobs:
       
       - name: Build contracts on PR branch
         run: |
-          git checkout ${{ github.head_ref }}
+          git checkout ${{ github.event.pull_request.head.sha }}
           forge clean
           forge install
           forge build --force
@@ -60,37 +61,37 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           
-          # Get current version
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          # Get the contracts that need bumping
+          CONTRACTS_TO_BUMP="${{ steps.check.outputs.contracts_to_bump }}"
           
-          # Bump patch version
-          IFS='.' read -r -a version_parts <<< "$CURRENT_VERSION"
-          PATCH=$((version_parts[2] + 1))
-          NEW_VERSION="${version_parts[0]}.${version_parts[1]}.$PATCH"
+          echo "Bumping versions for contracts: $CONTRACTS_TO_BUMP"
           
-          echo "Bumping version from $CURRENT_VERSION to $NEW_VERSION"
+          # Update Solidity files using the upgrade script with specific contracts
+          CONTRACTS_TO_BUMP="$CONTRACTS_TO_BUMP" node prep/update-version.js
           
-          # Update package.json
-          npm version $NEW_VERSION --no-git-tag-version
+          # Commit changes (only Solidity files, not package.json)
+          git add src/*.sol
+          git commit -m "chore: bump contract versions due to bytecode changes - Contracts updated: $CONTRACTS_TO_BUMP"
           
-          # Update Solidity files using the upgrade script
-          node prep/update-version.js
-          
-          # Commit changes
-          git add .
-          git commit -m "chore: bump version to $NEW_VERSION due to bytecode changes"
+          # Pull latest changes and rebase
+          # Pull latest changes and rebase
+          if ! git pull origin ${{ github.event.pull_request.head.ref }} --rebase; then
+            echo "Failed to rebase version bump changes. Manual intervention required."
+            exit 1
+          fi
           
           # Push to the PR branch
-          git push origin HEAD:${{ github.head_ref }}
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
       
       - name: Create PR comment
         if: steps.check.outputs.needs_version_bump == 'true'
         uses: actions/github-script@v7
         with:
           script: |
+            const contractsToBump = '${{ steps.check.outputs.contracts_to_bump }}';
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '🤖 Bytecode changes detected! Version has been automatically bumped and EIP-712 domain versions have been updated.'
+              body: `🤖 Bytecode changes detected! EIP-712 domain versions have been automatically updated for: ${contractsToBump}`
             })

@@ -8,19 +8,14 @@ import {ICommon} from "../interfaces/ICommon.sol";
 interface IOrchestrator is ICommon {
     /// @dev Executes a single encoded intent.
     /// @param encodedIntent The encoded intent
-    /// @param isMultichain Whether to execute intent in multichain mode.
     /// @return err The error selector (non-zero if there is an error)
 
-    function execute(bool isMultichain, bytes calldata encodedIntent)
-        external
-        payable
-        returns (bytes4 err);
+    function execute(bytes calldata encodedIntent) external payable returns (bytes4 err);
 
     /// @dev Executes an array of encoded intents.
     /// @param encodedIntents Array of encoded intents
-    /// @param isMultichain Whether to execute intents in multichain mode.
     /// @return errs Array of error selectors (non-zero if there are errors)
-    function execute(bool isMultichain, bytes[] calldata encodedIntents)
+    function execute(bytes[] calldata encodedIntents)
         external
         payable
         returns (bytes4[] memory errs);

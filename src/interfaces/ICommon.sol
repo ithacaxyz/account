@@ -52,9 +52,15 @@ interface ICommon {
         bytes[] encodedFundTransfers;
         /// @dev The settler address.
         address settler;
+        /// @dev The expiry timestamp for the intent. The intent is invalid after this timestamp.
+        /// If expiry timestamp is set to 0, then expiry is considered to be infinite.
+        uint256 expiry;
         ////////////////////////////////////////////////////////////////////////
         // Additional Fields (Not included in EIP-712)
         ////////////////////////////////////////////////////////////////////////
+        /// @dev Whether the intent should use the multichain mode - i.e verify with merkle sigs
+        /// and send the cross chain message.
+        bool isMultichain;
         /// @dev The funder address.
         address funder;
         /// @dev The funder signature.

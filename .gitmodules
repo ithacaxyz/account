@@ -4,10 +4,16 @@
 [submodule "lib/murky"]
 	path = lib/murky
 	url = https://github.com/dmfxyz/murky
-[submodule "lib/safe-singleton-deployer-sol"]
-	path = lib/safe-singleton-deployer-sol
-	url = https://github.com/wilsoncusack/safe-singleton-deployer-sol
 [submodule "lib/solady"]
 	path = lib/solady
 	url = https://github.com/vectorized/solady
 	branch = main
+[submodule "lib/LayerZero-v2"]
+	path = lib/LayerZero-v2
+	url = https://github.com/LayerZero-Labs/LayerZero-v2
+[submodule "lib/devtools"]
+	path = lib/devtools
+	url = https://github.com/LayerZero-Labs/devtools
+[submodule "lib/openzeppelin-contracts"]
+	path = lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts

@@ -14,6 +14,7 @@ import {ICommon} from "../src/interfaces/ICommon.sol";
 import {Merkle} from "murky/Merkle.sol";
 import {SimpleFunder} from "../src/SimpleFunder.sol";
 import {SimpleSettler} from "../src/SimpleSettler.sol";
+
 import {Escrow} from "../src/Escrow.sol";
 import {IEscrow} from "../src/interfaces/IEscrow.sol";
 
@@ -58,7 +59,7 @@ contract OrchestratorTest is BaseTest {
             t.encodedIntents[i] = abi.encode(u);
         }
 
-        bytes4[] memory errors = oc.execute(false, t.encodedIntents);
+        bytes4[] memory errors = oc.execute(t.encodedIntents);
         assertEq(errors.length, t.intents.length);
         for (uint256 i; i != errors.length; ++i) {
             assertEq(errors[i], 0);
@@ -95,7 +96,7 @@ contract OrchestratorTest is BaseTest {
 
         u.signature = _sig(alice, u);
 
-        assertEq(oc.execute(false, abi.encode(u)), bytes4(keccak256("PaymentError()")));
+        assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("PaymentError()")));
     }
 
     function testExecuteWithSecp256k1PassKey() public {
@@ -137,7 +138,7 @@ contract OrchestratorTest is BaseTest {
                 combinedGasVerificationOffset: 0
             })
         );
-        assertEq(oc.execute(false, abi.encode(u)), 0);
+        assertEq(oc.execute(abi.encode(u)), 0);
         uint256 actualAmount = 0.1 ether;
         assertEq(paymentToken.balanceOf(address(oc)), actualAmount);
         assertEq(paymentToken.balanceOf(d.eoa), 50 ether - actualAmount - 1 ether);
@@ -204,7 +205,7 @@ contract OrchestratorTest is BaseTest {
             })
         );
 
-        assertEq(oc.execute(false, abi.encode(u)), 0);
+        assertEq(oc.execute(abi.encode(u)), 0);
         uint256 actualAmount = 10 ether;
         assertEq(paymentToken.balanceOf(address(this)), actualAmount);
         assertEq(paymentToken.balanceOf(d.eoa), 500 ether - actualAmount - 1 ether);
@@ -238,7 +239,7 @@ contract OrchestratorTest is BaseTest {
             encodedIntents[i] = abi.encode(u);
         }
 
-        bytes4[] memory errs = oc.execute(false, encodedIntents);
+        bytes4[] memory errs = oc.execute(encodedIntents);
 
         for (uint256 i; i < n; ++i) {
             assertEq(errs[i], 0);
@@ -273,7 +274,7 @@ contract OrchestratorTest is BaseTest {
 
         (uint256 gExecute,,) = _estimateGas(u);
 
-        assertEq(oc.execute{gas: gExecute}(false, abi.encode(u)), 0);
+        assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether * n);
         assertEq(paymentToken.balanceOf(d.eoa), 100 ether - (u.prePaymentAmount + 0.5 ether * n));
         assertEq(d.d.getNonce(0), 1);
@@ -312,12 +313,184 @@ contract OrchestratorTest is BaseTest {
         );
     }
 
+    function testPaymentValidationCombinations() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        paymentToken.mint(d.eoa, 1000 ether);
+
+        // Test all important combinations of payment validation
+        _testPaymentCase(d, 5, 10, 15, 20, false, "Valid: ascending order");
+        _testPaymentCase(d, 5, 5, 10, 10, false, "Valid: equal at limits");
+        _testPaymentCase(d, 0, 0, 0, 0, false, "Valid: all zeros");
+        _testPaymentCase(d, 5, 10, 10, 10, false, "Valid: total == max");
+        _testPaymentCase(d, 10, 10, 10, 10, false, "Valid: all equal");
+        _testPaymentCase(d, 0, 10, 5, 20, false, "Valid: zero prepayment");
+        _testPaymentCase(d, 5, 10, 5, 20, false, "Valid: pre == total");
+        _testPaymentCase(d, 0, 0, 10, 10, false, "Valid: no prepayment");
+
+        // Invalid cases
+        _testPaymentCase(d, 15, 10, 20, 30, true, "Invalid: preAmt > preMax");
+        _testPaymentCase(d, 5, 10, 25, 20, true, "Invalid: totalAmt > totalMax");
+        _testPaymentCase(d, 5, 25, 15, 20, true, "Invalid: preMax > totalMax");
+        _testPaymentCase(d, 15, 20, 10, 30, true, "Invalid: preAmt > totalAmt (underflow)");
+        _testPaymentCase(d, 10, 10, 5, 20, true, "Invalid: preAmt > totalAmt case 2");
+        _testPaymentCase(d, 10, 15, 5, 20, true, "Invalid: preAmt > totalAmt case 3");
+        _testPaymentCase(d, 25, 20, 15, 10, true, "Invalid: multiple violations");
+        _testPaymentCase(d, 30, 10, 20, 15, true, "Invalid: multiple violations 2");
+    }
+
+    function _testPaymentCase(
+        DelegatedEOA memory d,
+        uint256 preAmt,
+        uint256 preMax,
+        uint256 totalAmt,
+        uint256 totalMax,
+        bool shouldFail,
+        string memory desc
+    ) internal {
+        uint256 nonce = d.d.getNonce(0);
+
+        Orchestrator.Intent memory u;
+        u.eoa = d.eoa;
+        u.nonce = nonce;
+        u.executionData = _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
+        u.paymentToken = address(paymentToken);
+        u.paymentRecipient = address(this);
+        u.prePaymentAmount = preAmt * 1 ether;
+        u.prePaymentMaxAmount = preMax * 1 ether;
+        u.totalPaymentAmount = totalAmt * 1 ether;
+        u.totalPaymentMaxAmount = totalMax * 1 ether;
+        u.combinedGas = 10000000;
+        u.signature = _sig(d, u);
+
+        bytes4 result = oc.execute(abi.encode(u));
+
+        if (shouldFail) {
+            assertEq(result, bytes4(keccak256("PaymentError()")), desc);
+            assertEq(d.d.getNonce(0), nonce, string.concat(desc, ": nonce unchanged"));
+        } else {
+            assertEq(result, 0, desc);
+            assertEq(d.d.getNonce(0), nonce + 1, string.concat(desc, ": nonce incremented"));
+        }
+    }
+
     function testWithdrawTokens() public {
         // Anyone can withdraw tokens from the orchestrator.
         vm.deal(address(oc), 1 ether);
         paymentToken.mint(address(oc), 10 ether);
         oc.withdrawTokens(address(0), address(0xabcd), 1 ether);
         oc.withdrawTokens(address(paymentToken), address(0xabcd), 10 ether);
+    }
+
+    function testIntentExpiry() public {
+        // Warp time forward to ensure we have reasonable timestamps to work with
+        vm.warp(1000);
+
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 1 ether);
+        paymentToken.mint(d.eoa, 10 ether);
+
+        // Create base intent with common fields
+        Orchestrator.Intent memory baseIntent;
+        baseIntent.eoa = d.eoa;
+        baseIntent.paymentToken = address(paymentToken);
+        baseIntent.prePaymentAmount = 0.1 ether;
+        baseIntent.prePaymentMaxAmount = 0.1 ether;
+        baseIntent.totalPaymentAmount = 0.1 ether;
+        baseIntent.totalPaymentMaxAmount = 0.1 ether;
+        baseIntent.combinedGas = 10000000;
+
+        // Test case 1: Intent with no expiry (expiry = 0) should always be valid
+        {
+            Orchestrator.Intent memory u = baseIntent;
+            u.nonce = d.d.getNonce(0);
+            u.executionData =
+                _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
+            u.expiry = 0; // No expiry
+            u.signature = _sig(d, u);
+
+            assertEq(oc.execute(abi.encode(u)), 0);
+            assertEq(paymentToken.balanceOf(address(0xabcd)), 1 ether);
+        }
+
+        // Test case 2: Intent with future expiry should be valid
+        {
+            Orchestrator.Intent memory u = baseIntent;
+            u.nonce = d.d.getNonce(0);
+            u.executionData =
+                _transferExecutionData(address(paymentToken), address(0xbcde), 1 ether);
+            u.expiry = block.timestamp + 1 hours; // Future expiry
+            u.signature = _sig(d, u);
+
+            assertEq(oc.execute(abi.encode(u)), 0);
+            assertEq(paymentToken.balanceOf(address(0xbcde)), 1 ether);
+        }
+
+        // Test case 3: Intent with past expiry should fail
+        {
+            Orchestrator.Intent memory u = baseIntent;
+            u.nonce = d.d.getNonce(0); // This will be 2 after the previous two intents
+            u.executionData =
+                _transferExecutionData(address(paymentToken), address(0xcdef), 1 ether);
+            u.expiry = block.timestamp - 1; // Past expiry
+            u.signature = _sig(d, u);
+
+            bytes4 result = oc.execute(abi.encode(u));
+            assertEq(result, bytes4(keccak256("IntentExpired()")));
+            assertEq(paymentToken.balanceOf(address(0xcdef)), 0); // Transfer should not happen
+        }
+
+        // Test case 4: Batch execution with mixed expired and valid intents
+        {
+            bytes[] memory encodedIntents = new bytes[](3);
+
+            // Create base intent for batch with smaller amounts
+            Orchestrator.Intent memory batchBase;
+            batchBase.eoa = d.eoa;
+            batchBase.paymentToken = address(paymentToken);
+            batchBase.prePaymentAmount = 0.05 ether;
+            batchBase.prePaymentMaxAmount = 0.05 ether;
+            batchBase.totalPaymentAmount = 0.05 ether;
+            batchBase.totalPaymentMaxAmount = 0.05 ether;
+            batchBase.combinedGas = 10000000;
+
+            // Valid intent with nonce 2
+            Orchestrator.Intent memory u1 = batchBase;
+            u1.nonce = 2;
+            u1.executionData =
+                _transferExecutionData(address(paymentToken), address(0x1111), 0.5 ether);
+            u1.expiry = block.timestamp + 1 hours;
+            u1.signature = _sig(d, u1);
+            encodedIntents[0] = abi.encode(u1);
+
+            // Expired intent with nonce 3
+            Orchestrator.Intent memory u2 = batchBase;
+            u2.nonce = 3;
+            u2.executionData =
+                _transferExecutionData(address(paymentToken), address(0x2222), 0.5 ether);
+            u2.expiry = block.timestamp - 1;
+            u2.signature = _sig(d, u2);
+            encodedIntents[1] = abi.encode(u2);
+
+            // Another valid intent with nonce 3 (since nonce 3 wasn't consumed due to expiry)
+            Orchestrator.Intent memory u3 = batchBase;
+            u3.nonce = 3;
+            u3.executionData =
+                _transferExecutionData(address(paymentToken), address(0x3333), 0.5 ether);
+            u3.expiry = 0; // No expiry
+            u3.signature = _sig(d, u3);
+            encodedIntents[2] = abi.encode(u3);
+
+            bytes4[] memory errors = oc.execute(encodedIntents);
+            assertEq(errors.length, 3);
+            assertEq(errors[0], 0); // First intent succeeded
+            assertEq(errors[1], bytes4(keccak256("IntentExpired()"))); // Second intent expired
+            assertEq(errors[2], 0); // Third intent succeeded
+
+            // Verify transfers
+            assertEq(paymentToken.balanceOf(address(0x1111)), 0.5 ether);
+            assertEq(paymentToken.balanceOf(address(0x2222)), 0); // Expired intent didn't transfer
+            assertEq(paymentToken.balanceOf(address(0x3333)), 0.5 ether);
+        }
     }
 
     function testExceuteGasUsed() public {
@@ -350,7 +523,7 @@ contract OrchestratorTest is BaseTest {
             encodeIntents[i] = abi.encode(u);
         }
 
-        bytes memory data = abi.encodeWithSignature("execute(bool,bytes[])", false, encodeIntents);
+        bytes memory data = abi.encodeWithSignature("execute(bytes[])", encodeIntents);
         address _ep = address(oc);
         uint256 g;
         vm.resumeGasMetering();
@@ -385,7 +558,7 @@ contract OrchestratorTest is BaseTest {
         u.combinedGas = 20000000;
         u.signature = _sig(k, u);
 
-        oc.execute(false, abi.encode(u));
+        oc.execute(abi.encode(u));
     }
 
     function testInvalidateNonce(uint96 seqKey, uint64 seq, uint64 seq2) public {
@@ -432,9 +605,9 @@ contract OrchestratorTest is BaseTest {
         u.signature = _sig(d, u);
 
         if (seq > type(uint64).max - 2) {
-            assertEq(oc.execute(false, abi.encode(u)), bytes4(keccak256("InvalidNonce()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("InvalidNonce()")));
         } else {
-            assertEq(oc.execute(false, abi.encode(u)), 0);
+            assertEq(oc.execute(abi.encode(u)), 0);
         }
     }
 
@@ -574,7 +747,7 @@ contract OrchestratorTest is BaseTest {
         // Test without gas estimation.
         u.combinedGas = 10000000;
         u.signature = _sig(kSession, u);
-        assertEq(oc.execute(false, abi.encode(u)), 0);
+        assertEq(oc.execute(abi.encode(u)), 0);
 
         assertEq(_balanceOf(tokenToTransfer, address(0xabcd)), 0.5 ether);
     }
@@ -733,23 +906,21 @@ contract OrchestratorTest is BaseTest {
         if (t.testInvalidPreCallEOA) {
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(oc.execute(false, abi.encode(u)), bytes4(keccak256("InvalidPreCallEOA()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("InvalidPreCallEOA()")));
             return; // Skip the rest.
         }
 
         if (t.testPreCallVerificationError) {
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(
-                oc.execute(false, abi.encode(u)), bytes4(keccak256("PreCallVerificationError()"))
-            );
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("PreCallVerificationError()")));
             return; // Skip the rest.
         }
 
         if (t.testPreCallError) {
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(oc.execute(false, abi.encode(u)), bytes4(keccak256("PreCallError()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("PreCallError()")));
             return; // Skip the rest.
         }
 
@@ -765,12 +936,12 @@ contract OrchestratorTest is BaseTest {
             u.combinedGas = t.gCombined;
             u.signature = _sig(kSession, u);
 
-            assertEq(oc.execute{gas: t.gExecute}(false, abi.encode(u)), 0);
+            assertEq(oc.execute{gas: t.gExecute}(abi.encode(u)), 0);
         } else {
             // Otherwise, test without gas estimation.
             u.combinedGas = 10000000;
             u.signature = _sig(kSession, u);
-            assertEq(oc.execute(false, abi.encode(u)), 0);
+            assertEq(oc.execute(abi.encode(u)), 0);
         }
 
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether);
@@ -844,7 +1015,7 @@ contract OrchestratorTest is BaseTest {
         u.paymentSignature = _eoaSig(payer.privateKey, digest);
 
         uint256 payerBalanceBefore = _balanceOf(u.paymentToken, address(payer.d));
-        assertEq(oc.execute{gas: gExecute}(false, abi.encode(u)), 0);
+        assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
         assertEq(d.d.getNonce(0), u.nonce + 1);
         assertEq(_balanceOf(u.paymentToken, u.paymentRecipient), u.totalPaymentAmount);
         assertEq(
@@ -927,7 +1098,7 @@ contract OrchestratorTest is BaseTest {
             t.withSignature.setApprovedOrchestrator(address(oc), false);
         }
         if ((t.unapprovedOrchestrator && u.totalPaymentAmount != 0)) {
-            assertEq(oc.execute(false, abi.encode(u)), bytes4(keccak256("Unauthorized()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("Unauthorized()")));
 
             if (u.prePaymentAmount != 0) {
                 assertEq(t.d.d.getNonce(0), u.nonce);
@@ -940,7 +1111,7 @@ contract OrchestratorTest is BaseTest {
         } else if (t.isWithState && u.totalPaymentAmount > t.funds && u.totalPaymentAmount != 0) {
             // Arithmetic underflow error
             assertEq(
-                oc.execute(false, abi.encode(u)),
+                oc.execute(abi.encode(u)),
                 0x4e487b7100000000000000000000000000000000000000000000000000000000
             );
 
@@ -958,7 +1129,7 @@ contract OrchestratorTest is BaseTest {
             }
         } else if ((!t.isWithState && t.corruptSignature && u.totalPaymentAmount != 0)) {
             // Pre payment will not happen
-            assertEq(oc.execute(false, abi.encode(u)), bytes4(keccak256("InvalidSignature()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("InvalidSignature()")));
             // If prePayment is 0, then nonce is incremented, because the prePayment doesn't fail.
             if (u.prePaymentAmount == 0) {
                 assertEq(t.d.d.getNonce(0), u.nonce + 1);
@@ -968,7 +1139,7 @@ contract OrchestratorTest is BaseTest {
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
             assertEq(_balanceOf(address(0), address(0xabcd)), 0);
         } else {
-            assertEq(oc.execute(false, abi.encode(u)), 0);
+            assertEq(oc.execute(abi.encode(u)), 0);
             assertEq(t.d.d.getNonce(0), u.nonce + 1);
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.totalPaymentAmount);
             assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
@@ -1007,13 +1178,12 @@ contract OrchestratorTest is BaseTest {
 
         if (t.testImplementationCheck && t.requireWrongImplementation) {
             assertEq(
-                oc.execute(false, abi.encode(u)),
-                bytes4(keccak256("UnsupportedAccountImplementation()"))
+                oc.execute(abi.encode(u)), bytes4(keccak256("UnsupportedAccountImplementation()"))
             );
             assertEq(t.d.d.getNonce(0), u.nonce);
             assertEq(_balanceOf(address(0), address(0xabcd)), 0);
         } else {
-            assertEq(oc.execute(false, abi.encode(u)), 0);
+            assertEq(oc.execute(abi.encode(u)), 0);
             assertEq(t.d.d.getNonce(0), u.nonce + 1);
             assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
         }
@@ -1117,7 +1287,7 @@ contract OrchestratorTest is BaseTest {
         assertEq(isValid, true);
         assertEq(keyHash, _hash(t.multiSigKey.k));
 
-        assertEq(oc.execute{gas: gExecute}(false, abi.encode(u)), 0);
+        assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
         (uint256 _threshold, bytes32[] memory o) =
             t.multiSigSigner.getConfig(address(t.d.d), _hash(t.multiSigKey.k));
 
@@ -1148,7 +1318,7 @@ contract OrchestratorTest is BaseTest {
             u.signature = _sig(t.multiSigKey, u);
 
             if (newThreshold > 0) {
-                assertEq(oc.execute{gas: gExecute}(false, abi.encode(u)), 0);
+                assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
                 (_threshold, o) = t.multiSigSigner.getConfig(address(t.d.d), _hash(t.multiSigKey.k));
 
                 assertEq(_threshold, newThreshold);
@@ -1176,7 +1346,7 @@ contract OrchestratorTest is BaseTest {
             u.combinedGas = gCombined;
             u.signature = _sig(t.multiSigKey, u);
 
-            assertEq(oc.execute{gas: gExecute}(false, abi.encode(u)), 0);
+            assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
             (_threshold, o) = t.multiSigSigner.getConfig(address(t.d.d), _hash(t.multiSigKey.k));
 
             assertEq(o.length, t.multiSigKey.owners.length);
@@ -1287,6 +1457,7 @@ contract OrchestratorTest is BaseTest {
             _transferExecutionData(address(t.usdcMainnet), t.friend, 1000);
         t.outputIntent.combinedGas = 1000000;
         t.outputIntent.settler = address(t.settler);
+        t.outputIntent.isMultichain = true;
 
         {
             bytes[] memory encodedFundTransfers = new bytes[](1);
@@ -1297,10 +1468,10 @@ contract OrchestratorTest is BaseTest {
             t.outputIntent.funder = address(t.funder);
 
             // Set settlerContext with input chains
-            uint256[] memory inputChains = new uint256[](2);
-            inputChains[0] = 8453; // Base
-            inputChains[1] = 42161; // Arbitrum
-            t.outputIntent.settlerContext = abi.encode(inputChains);
+            uint256[] memory _inputChains = new uint256[](2);
+            _inputChains[0] = 8453; // Base
+            _inputChains[1] = 42161; // Arbitrum
+            t.outputIntent.settlerContext = abi.encode(_inputChains);
         }
 
         // Compute the output intent digest to use as settlementId
@@ -1311,6 +1482,7 @@ contract OrchestratorTest is BaseTest {
         t.baseIntent.eoa = t.d.eoa;
         t.baseIntent.nonce = t.d.d.getNonce(0);
         t.baseIntent.combinedGas = 1000000;
+        t.baseIntent.isMultichain = true;
 
         // Create Base escrow execution data
         {
@@ -1350,7 +1522,7 @@ contract OrchestratorTest is BaseTest {
         t.arbIntent.eoa = t.d.eoa;
         t.arbIntent.nonce = t.d.d.getNonce(0);
         t.arbIntent.combinedGas = 1000000;
-
+        t.arbIntent.isMultichain = true;
         // Create Arbitrum escrow execution data
         {
             IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](1);
@@ -1402,7 +1574,7 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, false, false, false, address(t.escrowBase));
         emit Escrow.EscrowCreated(t.escrowIdBase);
         vm.prank(t.gasWallet);
-        t.errs = oc.execute(true, t.encodedIntents);
+        t.errs = oc.execute(t.encodedIntents);
         assertEq(uint256(bytes32(t.errs[0])), 0);
         // Verify funds are escrowed, not transferred yet
         vm.assertEq(t.usdcBase.balanceOf(address(t.escrowBase)), 600);
@@ -1416,7 +1588,7 @@ contract OrchestratorTest is BaseTest {
         // Unhappy case, try to send base intent to arb
         t.encodedIntents[0] = abi.encode(t.baseIntent);
         vm.prank(t.gasWallet);
-        t.errs = oc.execute(true, t.encodedIntents);
+        t.errs = oc.execute(t.encodedIntents);
         assertEq(
             uint256(bytes32(t.errs[0])), uint256(bytes32(bytes4(keccak256("VerificationError()"))))
         );
@@ -1436,7 +1608,7 @@ contract OrchestratorTest is BaseTest {
                 abi.encode(merkleHelper.getProof(wrongLeafs, 1), t.root, t.rootSig);
             t.encodedIntents[0] = abi.encode(t.arbIntent);
             vm.prank(t.gasWallet);
-            t.errs = oc.execute(true, t.encodedIntents);
+            t.errs = oc.execute(t.encodedIntents);
             assertEq(
                 uint256(bytes32(t.errs[0])),
                 uint256(bytes32(bytes4(keccak256("VerificationError()"))))
@@ -1451,7 +1623,7 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, false, false, false, address(t.escrowArb));
         emit Escrow.EscrowCreated(t.escrowIdArb);
         vm.prank(t.gasWallet);
-        t.errs = oc.execute(true, t.encodedIntents);
+        t.errs = oc.execute(t.encodedIntents);
         assertEq(uint256(bytes32(t.errs[0])), 0);
         // Verify funds are escrowed, not transferred yet
         vm.assertEq(t.usdcArb.balanceOf(address(t.escrowArb)), 500);
@@ -1475,12 +1647,26 @@ contract OrchestratorTest is BaseTest {
         // Relay funds the user account, and the intended execution happens.
         t.encodedIntents[0] = abi.encode(t.outputIntent);
         vm.prank(t.gasWallet);
-        t.errs = oc.execute(true, t.encodedIntents);
+        t.errs = oc.execute(t.encodedIntents);
         assertEq(uint256(bytes32(t.errs[0])), 0);
         vm.assertEq(t.usdcMainnet.balanceOf(t.friend), 1000);
 
         // 6. Settlement Phase - After outputIntent is executed successfully
-        // The orchestrator has already emitted Sent events during execution
+        // The orchestrator emits Sent events using the output intent digest as settlementId
+
+        // First, let's check that the Sent events were emitted
+        uint256[] memory inputChains = new uint256[](2);
+        inputChains[0] = 8453; // Base
+        inputChains[1] = 42161; // Arbitrum
+
+        // The orchestrator calls send on the settler to emit events
+        // Using the output intent digest as the settlementId
+        vm.expectEmit(true, true, true, false, address(t.settler));
+        emit SimpleSettler.Sent(address(oc), t.settlementId, 8453); // Base
+        vm.expectEmit(true, true, true, false, address(t.settler));
+        emit SimpleSettler.Sent(address(oc), t.settlementId, 42161); // Arbitrum
+        vm.prank(address(oc));
+        t.settler.send(t.settlementId, abi.encode(inputChains));
 
         // Now the settler owner (settlement oracle) writes the settlement attestation
         // This represents the off-chain process where the oracle verifies the Sent events
@@ -1498,7 +1684,7 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, false, false, false, address(t.escrowBase));
         emit Escrow.EscrowCreated(t.escrowIdBase);
         vm.prank(t.gasWallet);
-        oc.execute(true, t.encodedIntents);
+        oc.execute(t.encodedIntents);
 
         // Settler owner needs to write the settlement on Base chain too
         vm.prank(t.settlementOracle);
@@ -1508,6 +1694,7 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, false, false, false, address(t.escrowBase));
         emit Escrow.EscrowSettled(t.escrowIdBase);
         vm.prank(t.relay); // Relay can call settle
+
         bytes32[] memory escrowIds = new bytes32[](1);
         escrowIds[0] = t.escrowIdBase;
         t.escrowBase.settle(escrowIds);
@@ -1526,7 +1713,7 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, false, false, false, address(t.escrowArb));
         emit Escrow.EscrowCreated(t.escrowIdArb);
         vm.prank(t.gasWallet);
-        oc.execute(true, t.encodedIntents);
+        oc.execute(t.encodedIntents);
 
         // Settler owner needs to write the settlement on Arbitrum chain too
         vm.prank(t.settlementOracle);
@@ -1536,6 +1723,7 @@ contract OrchestratorTest is BaseTest {
         vm.expectEmit(true, false, false, false, address(t.escrowArb));
         emit Escrow.EscrowSettled(t.escrowIdArb);
         vm.prank(t.relay); // Relay can call settle
+
         bytes32[] memory escrowIdsArb = new bytes32[](1);
         escrowIdsArb[0] = t.escrowIdArb;
         t.escrowArb.settle(escrowIdsArb);
@@ -1563,7 +1751,7 @@ contract OrchestratorTest is BaseTest {
 
             t.encodedIntents[0] = abi.encode(t.outputIntent);
             vm.prank(t.gasWallet);
-            t.errs = oc.execute(true, t.encodedIntents);
+            t.errs = oc.execute(t.encodedIntents);
             assertEq(
                 uint256(bytes32(t.errs[0])),
                 uint256(bytes32(bytes4(keccak256("InvalidTransferOrder()"))))
@@ -1581,7 +1769,7 @@ contract OrchestratorTest is BaseTest {
 
             t.encodedIntents[0] = abi.encode(t.outputIntent);
             vm.prank(t.gasWallet);
-            t.errs = oc.execute(true, t.encodedIntents);
+            t.errs = oc.execute(t.encodedIntents);
             assertEq(
                 uint256(bytes32(t.errs[0])),
                 uint256(bytes32(bytes4(keccak256("InvalidTransferOrder()"))))
@@ -1614,7 +1802,7 @@ contract OrchestratorTest is BaseTest {
 
             t.encodedIntents[0] = abi.encode(t.outputIntent);
             vm.prank(t.gasWallet);
-            t.errs = oc.execute(true, t.encodedIntents);
+            t.errs = oc.execute(t.encodedIntents);
 
             // Check that it reverted with InvalidFunderSignature error
             assertEq(t.errs[0], bytes4(keccak256("InvalidFunderSignature()")));

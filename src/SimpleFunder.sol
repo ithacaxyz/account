@@ -157,4 +157,6 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
 
         TokenTransferLib.safeTransfer(address(0), msg.sender, amount);
     }
+
+    receive() external payable {}
 }
