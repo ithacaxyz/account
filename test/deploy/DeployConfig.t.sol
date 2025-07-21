@@ -6,7 +6,7 @@ import {DeployMain} from "../../deploy/DeployMain.s.sol";
 
 contract DeployConfigTest is Test {
     DeployMain deployment;
-    string constant TEST_REGISTRY_DIR = "test-registry/";
+    string constant TEST_REGISTRY_DIR = "deploy/registry/test/";
 
     modifier withCleanup() {
         _;
