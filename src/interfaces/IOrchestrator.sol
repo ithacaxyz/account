@@ -18,11 +18,10 @@ interface IOrchestrator is ICommon {
     /// But the balance of msg.sender has to be equal to type(uint256).max, to prove that a state override has been made offchain,
     /// and this is not an onchain call. This mode has been added so that receipt logs can be generated for `eth_simulateV1`
     /// @return gasUsed The amount of gas used by the execution. (Only returned if `isStateOverride` is true)
-    function simulateExecute(
-        bool isStateOverride,
-        uint256 combinedGasOverride,
-        bytes calldata encodedIntent
-    ) external payable returns (uint256 gasUsed);
+    function simulateExecute(bool isStateOverride, bytes calldata encodedIntent)
+        external
+        payable
+        returns (uint256 gasUsed);
 
     /// @dev Allows the orchestrator owner to withdraw tokens.
     /// @param token The token address (0 for native token)

@@ -35,8 +35,8 @@ interface ICommon {
         uint256 prePaymentMaxAmount;
         /// @dev The maximum amount of the token to pay.
         uint256 totalPaymentMaxAmount;
-        /// @dev The combined gas limit for payment, verification, and calling the EOA.
-        uint256 combinedGas;
+        /// @dev The gas provided to the execute call on the account.
+        uint256 executeGas;
         /// @dev Optional array of encoded SignedCalls that will be verified and executed
         /// before the validation of the overall Intent.
         /// A PreCall will NOT have its gas limit or payment applied.
