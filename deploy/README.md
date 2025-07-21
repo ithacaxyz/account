@@ -4,7 +4,7 @@ This directory contains the unified deployment system for the Ithaca Account con
 
 ## Overview
 
-The deployment system uses a single configuration file (`deploy-config.json`) that contains all chain-specific settings including contract addresses, deployment parameters, and stage configurations. This eliminates the previous separation between devnets, testnets, and mainnets, providing a simpler and more flexible deployment approach.
+The deployment system uses a single configuration file (`DefaultConfig.sol`) that contains all chain-specific settings including contract addresses, deployment parameters, and stage configurations. This eliminates the previous separation between devnets, testnets, and mainnets, providing a simpler and more flexible deployment approach.
 ## Quickstart
 
 Follow these steps for your first deployment using the provided scripts.
@@ -102,14 +102,14 @@ The configuration is type-safe and validated at compile time, eliminating JSON p
 
 The deployment system is modular with the following stages:
 
-- **basic**: Core contracts (Orchestrator, IthacaAccount, Proxy, Simulator)
+- **core**: Core contracts (Orchestrator, IthacaAccount, Proxy, Simulator)
 - **interop**: Interoperability contracts (SimpleFunder, Escrow)
 - **simpleSettler**: Single-chain settlement contract
 - **layerzeroSettler**: Cross-chain settlement contract
 
 ### Stage Dependencies
 
-- **interop** requires **basic** to be deployed first
+- **interop** requires **core** to be deployed first
 
 ## Deployment Scripts
 
@@ -162,11 +162,11 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 - `--slow`: Ensures transactions are sent only after previous ones are confirmed
 
 The script automatically deploys stages in the correct order:
-1. `basic` - Core contracts (Orchestrator, IthacaAccount, Proxy, Simulator)
+1. `core` - Core contracts (Orchestrator, IthacaAccount, Proxy, Simulator)
 2. `interop` - Interoperability contracts (SimpleFunder, Escrow)
 3. `simpleSettler` and/or `layerzeroSettler` - Settlement contracts
 
-The DeployMain script handles all deployment stages automatically based on the configuration in `deploy-config.json`. Each chain will only deploy the stages specified in its configuration.
+The DeployMain script handles all deployment stages automatically based on the configuration in `DefaultConfig.sol`. Each chain will only deploy the stages specified in its configuration.
 
 ### Complete Deployment Example
 
@@ -177,7 +177,7 @@ To deploy all configured stages for a chain:
 export RPC_11155111=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
 export PRIVATE_KEY=0x...
 
-# Deploy all stages configured in deploy-config.json
+# Deploy all stages configured in DefaultConfig.sol
 forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
   --sig "run(uint256[])" \
@@ -309,7 +309,7 @@ To add a new chain to the deployment system:
 Chains can deploy both SimpleSettler and LayerZeroSettler by including both stages in the configuration:
 
 ```json
-"stages": ["basic", "interop", "simpleSettler", "layerzeroSettler"]
+"stages": ["core", "interop", "simpleSettler", "layerzeroSettler"]
 ```
 
 This is useful for chains that need:
@@ -398,7 +398,7 @@ Requirements:
    - Verify the RPC endpoint is correct
 
 2. **"Orchestrator not found"**
-   - Ensure `basic` stage is included in the chain's stages configuration
+   - Ensure `core` stage is included in the chain's stages configuration
    - The DeployMain script automatically handles stage ordering
 
 3. **"Less than 2 LayerZero settlers found"**
