@@ -323,7 +323,25 @@ The deployment system maintains deployed contract addresses in the `deploy/regis
 - **Contract addresses**: `deployment_{chainId}.json`
   - Contains deployed contract addresses for each chain
   - Automatically updated after each successful deployment
-  - Deployments are skipped if file exists
+  - **Deployments are skipped if file exists** (footgun prevention)
+
+### Important: Fresh Deployments
+
+**To perform a fresh deployment, you must manually delete the `deployment_{chainId}.json` file from the `deploy/registry/` directory.**
+
+This safety mechanism prevents accidental redeployments to chains that already have contracts deployed. The deployment script will skip any chain that has an existing registry file.
+
+```bash
+# To redeploy to chain 11155111 (Sepolia)
+rm deploy/registry/deployment_11155111.json
+
+# Then run the deployment
+forge script deploy/DeployMain.s.sol:DeployMain \
+  --broadcast \
+  --sig "run(uint256[])" \
+  --private-key $PRIVATE_KEY \
+  "[11155111]"
+```
 
 Example registry file (`deployment_1.json`):
 ```json
@@ -412,8 +430,9 @@ Requirements:
 
 ### Redeployments
 
-- **Deployments**: Deployments are skipped if the registry file exists.
-- **Force redeployment**: Delete the relevant `deployment_{chainId}.json` file in `deploy/registry/`.
+- **Deployments are automatically skipped** if the registry file exists (footgun prevention)
+- **To force redeployment**: You must manually delete the relevant `deployment_{chainId}.json` file from `deploy/registry/`
+- **Warning**: Only delete registry files if you intend to perform a fresh deployment. This safety mechanism prevents accidental double deployments.
 
 ## Best Practices
 

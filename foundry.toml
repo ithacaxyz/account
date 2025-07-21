@@ -10,9 +10,7 @@ optimizer = true
 optimizer_runs = 200
 gas_limit = 100_000_000 # ETH is 30M, but we use a higher value.
 fs_permissions = [
-    { access = "read-write", path = "deploy" },
-    { access = "read-write", path = "./deploy" },
-    { access = "read-write", path = "." }
+    { access = "read-write", path = "deploy/registry" }
 ]
 
 [fmt]
@@ -32,10 +30,5 @@ runs = 10
 mainnet = { key = "${VERIFICATION_KEY_1}" }
 arbitrum = { key = "${VERIFICATION_KEY_42161}" }
 base = { key = "${VERIFICATION_KEY_8453}" }
-polygon = { key = "${VERIFICATION_KEY_137}" }
-optimism = { key = "${VERIFICATION_KEY_10}" }
-sepolia = { key = "${VERIFICATION_KEY_11155111}" }
-arbitrum-sepolia = { key = "${VERIFICATION_KEY_421614}" }
-base-sepolia = { key = "${VERIFICATION_KEY_84532}" }
 
 
