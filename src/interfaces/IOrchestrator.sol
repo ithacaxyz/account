@@ -8,17 +8,7 @@ import {ICommon} from "../interfaces/ICommon.sol";
 interface IOrchestrator is ICommon {
     /// @dev Executes a single encoded intent.
     /// @param encodedIntent The encoded intent
-    /// @return err The error selector (non-zero if there is an error)
-
-    function execute(bytes calldata encodedIntent) external payable returns (bytes4 err);
-
-    /// @dev Executes an array of encoded intents.
-    /// @param encodedIntents Array of encoded intents
-    /// @return errs Array of error selectors (non-zero if there are errors)
-    function execute(bytes[] calldata encodedIntents)
-        external
-        payable
-        returns (bytes4[] memory errs);
+    function execute(bytes calldata encodedIntent) external payable;
 
     /// @dev Minimal function, to allow hooking into the _execute function with the simulation flags set to true.
     /// When simulationFlags is set to true, all errors are bubbled up. Also signature verification always returns true.
