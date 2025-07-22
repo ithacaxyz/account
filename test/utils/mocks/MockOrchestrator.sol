@@ -20,7 +20,7 @@ contract MockOrchestrator is Orchestrator, Brutalizer {
     }
 
     function simulateFailed(bytes calldata encodedIntent) public payable virtual {
-        _execute(encodedIntent, 1);
+        _execute(encodedIntent);
         revert NoRevertEncountered();
     }
 }
