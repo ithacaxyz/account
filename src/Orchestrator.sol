@@ -164,14 +164,6 @@ contract Orchestrator is
         TokenTransferLib.safeTransfer(token, recipient, amount);
     }
 
-    /// @dev Executes a single encoded intent.
-    /// `encodedIntent` is given by `abi.encode(intent)`, where `intent` is a struct of type `Intent`.
-    /// If sufficient gas is provided, returns an error selector that is non-zero
-    /// if there is an error during the payment, verification, and call execution.
-    function execute(bytes calldata encodedIntent) public payable virtual nonReentrant {
-        _execute(encodedIntent);
-    }
-
     /// @dev Extracts the Intent from the calldata bytes, with minimal checks.
     function _extractIntent(bytes calldata encodedIntent)
         internal
@@ -204,10 +196,14 @@ contract Orchestrator is
     }
 
     /// @dev Executes a single encoded intent.
-    /// Currently there can only be 2 modes - simulation mode, and execution mode.
-    /// But we use a uint256 for efficient stack operations, and more flexiblity in the future.
     // TODO: do we need something like the combinedGasOverride anymore?
-    function _execute(bytes calldata encodedIntent) internal virtual returns (uint256 gUsed) {
+    function execute(bytes calldata encodedIntent)
+        public
+        payable
+        virtual
+        nonReentrant
+        returns (uint256 gUsed)
+    {
         uint256 gStart = gasleft();
 
         Intent calldata i = _extractIntent(encodedIntent);
@@ -371,8 +367,6 @@ contract Orchestrator is
             // TODO: Is this correct?
             i := add(0x44, calldataload(0x44))
         }
-        address eoa = i.eoa;
-        uint256 executeGas = i.executeGas;
 
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
         // We expect that the account supports ERC7821
@@ -383,6 +377,15 @@ contract Orchestrator is
             abi.encode(keyHash) // `opData`.
         );
 
+        _accountExecute(i.eoa, data, i.executeGas);
+
+        uint256 remainingPaymentAmount = Math.rawSub(i.totalPaymentAmount, i.prePaymentAmount);
+        if (remainingPaymentAmount != 0) {
+            _pay(remainingPaymentAmount, keyHash, digest, i);
+        }
+    }
+
+    function _accountExecute(address eoa, bytes memory data, uint256 executeGas) internal virtual {
         if (gasleft() < Math.mulDiv(executeGas, 63, 64) + 1000) {
             revert InsufficientGas();
         }
@@ -393,11 +396,6 @@ contract Orchestrator is
                 returndatacopy(mload(0x40), 0x00, returndatasize())
                 revert(mload(0x40), returndatasize())
             }
-        }
-
-        uint256 remainingPaymentAmount = Math.rawSub(i.totalPaymentAmount, i.prePaymentAmount);
-        if (remainingPaymentAmount != 0) {
-            _pay(remainingPaymentAmount, keyHash, digest, i);
         }
     }
 
