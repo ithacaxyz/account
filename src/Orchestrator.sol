@@ -74,9 +74,6 @@ contract Orchestrator is
     /// @dev The order has already been filled.
     error OrderAlreadyFilled();
 
-    /// @dev The simulate execute run has failed. Try passing in more gas to the simulation.
-    error SimulateExecuteFailed();
-
     /// @dev A PreCall's EOA must be the same as its parent Intent's.
     error InvalidPreCallEOA();
 
@@ -88,9 +85,6 @@ contract Orchestrator is
 
     /// @dev The EOA's account implementation is not supported.
     error UnsupportedAccountImplementation();
-
-    /// @dev The simulation has passed.
-    error SimulationPassed(uint256 gUsed);
 
     /// @dev The state override has not happened.
     error StateOverrideError();
@@ -110,11 +104,9 @@ contract Orchestrator is
 
     /// @dev Emitted when an Intent (including PreCalls) is executed.
     /// This event is emitted in the `execute` function.
-    /// - `incremented` denotes that `nonce`'s sequence has been incremented to invalidate `nonce`,
-    /// - `err` denotes the resultant error selector.
-    /// If `incremented` is true and `err` is non-zero, the Intent was successful.
-    /// For PreCalls where the nonce is skipped, this event will NOT be emitted..
-    event IntentExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
+    /// - `nonce` denotes the nonce that has been incremented to invalidate `nonce`.
+    /// For PreCalls where the nonce is skipped, this event will NOT be emitted.
+    event IntentExecuted(address indexed eoa, uint256 indexed nonce);
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
@@ -122,7 +114,7 @@ contract Orchestrator is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers,address settler,uint256 expiry)Call(address to,uint256 value,bytes data)"
+        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 executeGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers,address settler,uint256 expiry)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for SignedCalls
@@ -154,9 +146,6 @@ contract Orchestrator is
     /// @dev Flag for normal execution mode.
     uint256 internal constant _NORMAL_MODE_FLAG = 0;
 
-    /// @dev Flag for simulation mode.
-    uint256 internal constant _SIMULATION_MODE_FLAG = 1;
-
     ////////////////////////////////////////////////////////////////////////
     // Constructor
     ////////////////////////////////////////////////////////////////////////
@@ -179,70 +168,8 @@ contract Orchestrator is
     /// `encodedIntent` is given by `abi.encode(intent)`, where `intent` is a struct of type `Intent`.
     /// If sufficient gas is provided, returns an error selector that is non-zero
     /// if there is an error during the payment, verification, and call execution.
-    function execute(bytes calldata encodedIntent)
-        public
-        payable
-        virtual
-        nonReentrant
-        returns (bytes4 err)
-    {
-        (, err) = _execute(encodedIntent, 0, _NORMAL_MODE_FLAG);
-    }
-
-    /// @dev Executes the array of encoded intents.
-    /// Each element in `encodedIntents` is given by `abi.encode(intent)`,
-    /// where `intent` is a struct of type `Intent`.
-    function execute(bytes[] calldata encodedIntents)
-        public
-        payable
-        virtual
-        nonReentrant
-        returns (bytes4[] memory errs)
-    {
-        // This allocation and loop was initially in assembly, but I've normified it for now.
-        errs = new bytes4[](encodedIntents.length);
-        for (uint256 i; i < encodedIntents.length; ++i) {
-            // We reluctantly use regular Solidity to access `encodedIntents[i]`.
-            // This generates an unnecessary check for `i < encodedIntents.length`, but helps
-            // generate all the implicit calldata bound checks on `encodedIntents[i]`.
-            (, errs[i]) = _execute(encodedIntents[i], 0, _NORMAL_MODE_FLAG);
-        }
-    }
-
-    /// @dev Minimal function, to allow hooking into the _execute function with the simulation flags set to true.
-    /// When flags is set to true, all errors are bubbled up. Also signature verification always returns true.
-    /// But the codepaths for signature verification are still hit, for correct gas measurement.
-    /// @dev If `isStateOverride` is false, then this function will always revert. If the simulation is successful, then it reverts with `SimulationPassed` error.
-    /// If `isStateOverride` is true, then this function will not revert if the simulation is successful.
-    /// But the balance of msg.sender has to be equal to type(uint256).max, to prove that a state override has been made offchain,
-    /// and this is not an onchain call. This mode has been added so that receipt logs can be generated for `eth_simulateV1`
-    /// @return gasUsed The amount of gas used by the execution. (Only returned if `isStateOverride` is true)
-    function simulateExecute(
-        bool isStateOverride,
-        uint256 combinedGasOverride,
-        bytes calldata encodedIntent
-    ) external payable returns (uint256) {
-        // If Simulation Fails, then it will revert here.
-        (uint256 gUsed, bytes4 err) =
-            _execute(encodedIntent, combinedGasOverride, _SIMULATION_MODE_FLAG);
-
-        if (err != 0) {
-            assembly ("memory-safe") {
-                mstore(0x00, err)
-                revert(0x00, 0x20)
-            }
-        }
-
-        if (isStateOverride) {
-            if (msg.sender.balance == type(uint256).max) {
-                return gUsed;
-            } else {
-                revert StateOverrideError();
-            }
-        } else {
-            // If Simulation Passes, then it will revert here.
-            revert SimulationPassed(gUsed);
-        }
+    function execute(bytes calldata encodedIntent) public payable virtual nonReentrant {
+        _execute(encodedIntent);
     }
 
     /// @dev Extracts the Intent from the calldata bytes, with minimal checks.
@@ -277,20 +204,13 @@ contract Orchestrator is
     }
 
     /// @dev Executes a single encoded intent.
-    /// @dev If flags is non-zero, then all errors are bubbled up.
     /// Currently there can only be 2 modes - simulation mode, and execution mode.
     /// But we use a uint256 for efficient stack operations, and more flexiblity in the future.
-    /// Note: We keep the flags in the stack/memory (TSTORE doesn't work) to make sure they are reset in each new call context,
-    /// to provide protection against attacks which could spoof the execute function to believe it is in simulation mode.
-    function _execute(bytes calldata encodedIntent, uint256 combinedGasOverride, uint256 flags)
-        internal
-        virtual
-        returns (uint256 gUsed, bytes4 err)
-    {
-        Intent calldata i = _extractIntent(encodedIntent);
-
-        uint256 g = Math.coalesce(uint96(combinedGasOverride), i.combinedGas);
+    // TODO: do we need something like the combinedGasOverride anymore?
+    function _execute(bytes calldata encodedIntent) internal virtual returns (uint256 gUsed) {
         uint256 gStart = gasleft();
+
+        Intent calldata i = _extractIntent(encodedIntent);
 
         if (
             LibBit.or(
@@ -300,119 +220,25 @@ contract Orchestrator is
                 i.prePaymentAmount > i.totalPaymentAmount
             )
         ) {
-            err = PaymentError.selector;
-
-            if (flags == _SIMULATION_MODE_FLAG) {
-                revert PaymentError();
-            }
-        }
-
-        unchecked {
-            // Check if there's sufficient gas left for the gas-limited self calls
-            // via the 63/64 rule. This is for gas estimation. If the total amount of gas
-            // for the whole transaction is insufficient, revert.
-            if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
-                if (flags != _SIMULATION_MODE_FLAG) {
-                    revert InsufficientGas();
-                }
-            }
+            revert PaymentError();
         }
 
         if (i.supportedAccountImplementation != address(0)) {
             if (accountImplementationOf(i.eoa) != i.supportedAccountImplementation) {
-                err = UnsupportedAccountImplementation.selector;
-                if (flags == _SIMULATION_MODE_FLAG) {
-                    revert UnsupportedAccountImplementation();
-                }
+                revert UnsupportedAccountImplementation();
             }
         }
 
         address payer = Math.coalesce(i.payer, i.eoa);
 
+        // TODO: This can potentially be removed.
         // Early skip the entire pay-verify-call workflow if the payer lacks tokens,
         // so that less gas is wasted when the Intent fails.
         // For multi chain mode, we skip this check, as the funding happens inside the self call.
-        if (!i.isMultichain && LibBit.and(i.prePaymentAmount != 0, err == 0)) {
+        if (!i.isMultichain && i.prePaymentAmount != 0) {
             if (TokenTransferLib.balanceOf(i.paymentToken, payer) < i.prePaymentAmount) {
-                err = PaymentError.selector;
-
-                if (flags == _SIMULATION_MODE_FLAG) {
-                    revert PaymentError();
-                }
+                revert PaymentError();
             }
-        }
-
-        bool selfCallSuccess;
-        // We'll use assembly for frequently used call related stuff to save massive memory gas.
-        assembly ("memory-safe") {
-            let m := mload(0x40) // Grab the free memory pointer.
-            if iszero(err) {
-                // Copy the encoded user op to the memory to be ready to pass to the self call.
-                calldatacopy(add(m, 0x40), encodedIntent.offset, encodedIntent.length)
-                mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
-                // The word after the function selector contains the simulation flags.
-                mstore(add(m, 0x20), flags)
-                mstore(0x00, 0) // Zeroize the return slot.
-
-                // To prevent griefing, we need to do a non-reverting gas-limited self call.
-                // If the self call is successful, we know that the payment has been made,
-                // and the sequence for `nonce` has been incremented.
-                // For more information, see `selfCallPayVerifyCall537021665()`.
-                selfCallSuccess :=
-                    call(g, address(), 0, add(m, 0x1c), add(encodedIntent.length, 0x24), 0x00, 0x20)
-                err := mload(0x00) // The self call will do another self call to execute.
-
-                if iszero(selfCallSuccess) {
-                    // If it is a simulation, we simply revert with the full error.
-                    if eq(flags, _SIMULATION_MODE_FLAG) {
-                        returndatacopy(mload(0x40), 0x00, returndatasize())
-                        revert(mload(0x40), returndatasize())
-                    }
-
-                    // If we don't get an error selector, then we set this one.
-                    if iszero(err) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
-                }
-            }
-        }
-
-        emit IntentExecuted(i.eoa, i.nonce, selfCallSuccess, err);
-        if (selfCallSuccess) {
-            gUsed = Math.rawSub(gStart, gasleft());
-        }
-    }
-
-    /// @dev This function is only intended for self-call.
-    /// The name is mined to give a function selector of `0x00000000`, which makes it
-    /// more efficient to call by placing it at the leftmost part of the function dispatch tree.
-    ///
-    /// We perform a gas-limited self-call to this function via `_execute(bytes,uint256)`
-    /// with assembly for the following reasons:
-    /// - Allow recovery from out-of-gas errors.
-    ///   When a transaction is actually mined, an `executionData` payload that takes 100k gas
-    ///   to execute during simulation might require 1M gas to actually execute
-    ///   (e.g. a sale contract that auto-distributes tokens at the very last sale).
-    ///   If we do simply let this consume all gas, then the relayer's compensation
-    ///   which is determined to be sufficient during simulation might not be actually sufficient.
-    ///   We can only know how much gas a payload costs by actually executing it, but once it
-    ///   has been executed, the gas burned cannot be returned and will be debited from the relayer.
-    /// - Avoid the overheads of `abi.encode`, `abi.decode`, and memory allocation.
-    ///   Doing `(bool success, bytes memory result) = address(this).call(abi.encodeCall(...))`
-    ///   incurs unnecessary ABI encoding, decoding, and memory allocation.
-    ///   Quadratic memory expansion costs will make Intents in later parts of a batch
-    ///   unfairly punished, while making gas estimates unreliable.
-    /// - For even more efficiency, we directly rip the Intent from the calldata instead
-    ///   of making it as an argument to this function.
-    ///
-    /// This function reverts if the PREP initialization or the Intent validation fails.
-    /// This is to prevent incorrect compensation (the Intent's signature defines what is correct).
-    function selfCallPayVerifyCall537021665() public payable {
-        require(msg.sender == address(this));
-
-        Intent calldata i;
-        uint256 flags;
-        assembly ("memory-safe") {
-            i := add(0x24, calldataload(0x24))
-            flags := calldataload(0x04)
         }
 
         // Check if intent has expired (only if expiry is set)
@@ -442,7 +268,7 @@ contract Orchestrator is
         // simulation, and suggests banning users that intentionally grief the simulation.
 
         // Handle the sub Intents after initialize (if any), and before the `_verify`.
-        if (i.encodedPreCalls.length != 0) _handlePreCalls(eoa, flags, i.encodedPreCalls);
+        if (i.encodedPreCalls.length != 0) _handlePreCalls(eoa, i.encodedPreCalls);
 
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the account logic.
@@ -466,10 +292,6 @@ contract Orchestrator is
             (isValid, keyHash) = _verify(digest, eoa, i.signature);
         }
 
-        if (flags == _SIMULATION_MODE_FLAG) {
-            isValid = true;
-        }
-
         if (!isValid) revert VerificationError();
 
         _checkAndIncrementNonce(eoa, nonce);
@@ -481,8 +303,20 @@ contract Orchestrator is
         // off-chain simulation and on-chain execution.
         if (i.prePaymentAmount != 0) _pay(i.prePaymentAmount, keyHash, digest, i);
 
+        unchecked {
+            // We do this check to ensure that the execute call does not happen at a very high calldepth.
+            // This ensures that a relayer cannot grief the user's execution, by making the execute fail
+            // because of the maximum allowed call depth in the EVM.
+            // This also ensures that there is enough gas left after the execute to complete the
+            // remaining flow after the self call.
+            // TODO: Maybe this can be moved or merged wih the other InsufficientGas check.
+            if (((gasleft() * 63) >> 6) < Math.saturatingAdd(i.executeGas, _INNER_GAS_OVERHEAD)) {
+                revert InsufficientGas();
+            }
+        }
+
         // Equivalent Solidity code:
-        // try this.selfCallExecutePay(flags, keyHash, i) {}
+        // try this.selfCallExecutePay( keyHash, i) {}
         // catch {
         //     assembly ("memory-safe") {
         //         returndatacopy(0x00, 0x00, 0x20)
@@ -495,31 +329,29 @@ contract Orchestrator is
             let m := mload(0x40) // Load the free memory pointer
             mstore(0x00, 0) // Zeroize the return slot.
             mstore(m, 0x00000001) // `selfCallExecutePay1395256087()`
-            mstore(add(m, 0x20), flags) // Add flags as first param
-            mstore(add(m, 0x40), keyHash) // Add keyHash as second param
-            mstore(add(m, 0x60), digest) // Add digest as third param
+            mstore(add(m, 0x20), keyHash) // Add keyHash as second param
+            mstore(add(m, 0x40), digest) // Add digest as third param
 
             let encodedIntentLength := sub(calldatasize(), 0x24)
             // NOTE: The intent encoding here is non standard, because the data offset does not start from the beginning of the calldata.
             // The data offset starts from the location of the intent offset itself. The decoding is done accordingly in the receiving function.
             // TODO: Make the intent encoding standard.
-            calldatacopy(add(m, 0x80), 0x24, encodedIntentLength) // Add intent starting from the fourth param.
+            calldatacopy(add(m, 0x60), 0x24, encodedIntentLength) // Add intent starting from the fourth param.
 
-            // We call the selfCallExecutePay function with all the remaining gas,
-            // because `selfCallPayVerifyCall537021665` is already gas-limited to the combined gas specified in the Intent.
             // We don't revert if the selfCallExecutePay reverts,
             // Because we don't want to return the prePayment, since the relay has already paid for the gas.
             // TODO: Should we add some identifier here, either using a return flag, or an event, that informs the caller that execute/post-payment has failed.
             if iszero(
-                call(gas(), address(), 0, add(m, 0x1c), add(0x64, encodedIntentLength), m, 0x20)
+                call(gas(), address(), 0, add(m, 0x1c), add(0x44, encodedIntentLength), m, 0x20)
             ) {
-                if eq(flags, _SIMULATION_MODE_FLAG) {
-                    returndatacopy(mload(0x40), 0x00, returndatasize())
-                    revert(mload(0x40), returndatasize())
-                }
-                return(m, 0x20)
+                returndatacopy(mload(0x40), 0x00, returndatasize())
+                revert(mload(0x40), returndatasize())
             }
         }
+
+        emit IntentExecuted(i.eoa, i.nonce);
+
+        gUsed = Math.rawSub(gStart, gasleft());
     }
 
     /// @dev This function is only intended for self-call. The name is mined to give a function selector of `0x00000001`
@@ -528,19 +360,19 @@ contract Orchestrator is
     function selfCallExecutePay1395256087() public payable {
         require(msg.sender == address(this));
 
-        uint256 flags;
         bytes32 keyHash;
         bytes32 digest;
         Intent calldata i;
 
         assembly ("memory-safe") {
-            flags := calldataload(0x04)
-            keyHash := calldataload(0x24)
-            digest := calldataload(0x44)
+            keyHash := calldataload(0x04)
+            digest := calldataload(0x24)
             // Non standard decoding of the intent.
-            i := add(0x64, calldataload(0x64))
+            // TODO: Is this correct?
+            i := add(0x44, calldataload(0x44))
         }
         address eoa = i.eoa;
+        uint256 executeGas = i.executeGas;
 
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
         // We expect that the account supports ERC7821
@@ -551,26 +383,21 @@ contract Orchestrator is
             abi.encode(keyHash) // `opData`.
         );
 
+        if (gasleft() < Math.mulDiv(executeGas, 63, 64) + 1000) {
+            revert InsufficientGas();
+        }
+
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
-            if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
-                if eq(flags, _SIMULATION_MODE_FLAG) {
-                    returndatacopy(mload(0x40), 0x00, returndatasize())
-                    revert(mload(0x40), returndatasize())
-                }
-                if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x6c9d47e8)) } // `CallError()`.
-                revert(0x00, 0x20) // Revert with the `err`.
+            if iszero(call(executeGas, eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
+                returndatacopy(mload(0x40), 0x00, returndatasize())
+                revert(mload(0x40), returndatasize())
             }
         }
 
         uint256 remainingPaymentAmount = Math.rawSub(i.totalPaymentAmount, i.prePaymentAmount);
         if (remainingPaymentAmount != 0) {
             _pay(remainingPaymentAmount, keyHash, digest, i);
-        }
-
-        assembly ("memory-safe") {
-            mstore(0x00, 0) // Zeroize the return slot.
-            return(0x00, 0x20) // If all success, returns with zero `err`.
         }
     }
 
@@ -582,7 +409,7 @@ contract Orchestrator is
     /// - Call the Account with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
     /// - Emit an {IntentExecuted} event.
-    function _handlePreCalls(address parentEOA, uint256 flags, bytes[] calldata encodedPreCalls)
+    function _handlePreCalls(address parentEOA, bytes[] calldata encodedPreCalls)
         internal
         virtual
     {
@@ -595,9 +422,6 @@ contract Orchestrator is
 
             (bool isValid, bytes32 keyHash) = _verify(_computeDigest(p), eoa, p.signature);
 
-            if (flags == _SIMULATION_MODE_FLAG) {
-                isValid = true;
-            }
             if (!isValid) revert PreCallVerificationError();
 
             _checkAndIncrementNonce(eoa, nonce);
@@ -613,19 +437,14 @@ contract Orchestrator is
             assembly ("memory-safe") {
                 mstore(0x00, 0) // Zeroize the return slot.
                 if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
-                    // If this is a simulation via `simulateFailed`, bubble up the whole revert.
-                    if eq(flags, _SIMULATION_MODE_FLAG) {
-                        returndatacopy(mload(0x40), 0x00, returndatasize())
-                        revert(mload(0x40), returndatasize())
-                    }
-                    if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x2228d5db)) } // `PreCallError()`.
-                    revert(0x00, 0x20) // Revert the `err` (NOT return).
+                    returndatacopy(mload(0x40), 0x00, returndatasize())
+                    revert(mload(0x40), returndatasize())
                 }
             }
 
             // Event so that indexers can know that the nonce is used.
             // Reaching here means there's no error in the PreCall.
-            emit IntentExecuted(eoa, p.nonce, true, 0); // `incremented = true`, `err = 0`.
+            emit IntentExecuted(eoa, p.nonce);
         }
     }
 
@@ -838,7 +657,7 @@ contract Orchestrator is
         f.set(6, uint160(i.paymentToken));
         f.set(7, i.prePaymentMaxAmount);
         f.set(8, i.totalPaymentMaxAmount);
-        f.set(9, i.combinedGas);
+        f.set(9, i.executeGas);
         f.set(10, _encodedArrHash(i.encodedPreCalls));
         f.set(11, _encodedArrHash(i.encodedFundTransfers));
         f.set(12, uint160(i.settler));

@@ -628,13 +628,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             // Set the target key hash to the payer's.
             keyHash = k;
 
-            // If this is a simulation, signature validation errors are skipped.
-            /// @dev to simulate a paymaster, state override the balance of the msg.sender
-            /// to type(uint256).max. In this case, the msg.sender is the ORCHESTRATOR.
-            if (address(ORCHESTRATOR).balance == type(uint256).max) {
-                isValid = true;
-            }
-
             if (!isValid) {
                 revert Unauthorized();
             }
