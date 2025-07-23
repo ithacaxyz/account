@@ -114,7 +114,7 @@ contract Orchestrator is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 executeGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers,address settler,uint256 expiry)Call(address to,uint256 value,bytes data)"
+        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 accountExecuteGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers,address settler,uint256 expiry)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for SignedCalls
@@ -197,15 +197,7 @@ contract Orchestrator is
 
     /// @dev Executes a single encoded intent.
     // TODO: do we need something like the combinedGasOverride anymore?
-    function execute(bytes calldata encodedIntent)
-        public
-        payable
-        virtual
-        nonReentrant
-        returns (uint256 gUsed)
-    {
-        uint256 gStart = gasleft();
-
+    function execute(bytes calldata encodedIntent) public payable virtual nonReentrant {
         Intent calldata i = _extractIntent(encodedIntent);
 
         if (
@@ -306,7 +298,10 @@ contract Orchestrator is
             // This also ensures that there is enough gas left after the execute to complete the
             // remaining flow after the self call.
             // TODO: Maybe this can be moved or merged wih the other InsufficientGas check.
-            if (((gasleft() * 63) >> 6) < Math.saturatingAdd(i.executeGas, _INNER_GAS_OVERHEAD)) {
+            if (
+                ((gasleft() * 63) >> 6)
+                    < Math.saturatingAdd(i.accountExecuteGas, _INNER_GAS_OVERHEAD)
+            ) {
                 revert InsufficientGas();
             }
         }
@@ -346,8 +341,6 @@ contract Orchestrator is
         }
 
         emit IntentExecuted(i.eoa, i.nonce);
-
-        gUsed = Math.rawSub(gStart, gasleft());
     }
 
     /// @dev This function is only intended for self-call. The name is mined to give a function selector of `0x00000001`
@@ -377,7 +370,7 @@ contract Orchestrator is
             abi.encode(keyHash) // `opData`.
         );
 
-        _accountExecute(i.eoa, data, i.executeGas);
+        _accountExecute(i.eoa, data, i.accountExecuteGas);
 
         uint256 remainingPaymentAmount = Math.rawSub(i.totalPaymentAmount, i.prePaymentAmount);
         if (remainingPaymentAmount != 0) {
@@ -385,14 +378,17 @@ contract Orchestrator is
         }
     }
 
-    function _accountExecute(address eoa, bytes memory data, uint256 executeGas) internal virtual {
-        if (gasleft() < Math.mulDiv(executeGas, 63, 64) + 1000) {
+    function _accountExecute(address eoa, bytes memory data, uint256 accountExecuteGas)
+        internal
+        virtual
+    {
+        if (gasleft() < Math.mulDiv(accountExecuteGas, 63, 64) + 1000) {
             revert InsufficientGas();
         }
 
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
-            if iszero(call(executeGas, eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
+            if iszero(call(accountExecuteGas, eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
                 returndatacopy(mload(0x40), 0x00, returndatasize())
                 revert(mload(0x40), returndatasize())
             }
@@ -655,7 +651,7 @@ contract Orchestrator is
         f.set(6, uint160(i.paymentToken));
         f.set(7, i.prePaymentMaxAmount);
         f.set(8, i.totalPaymentMaxAmount);
-        f.set(9, i.executeGas);
+        f.set(9, i.accountExecuteGas);
         f.set(10, _encodedArrHash(i.encodedPreCalls));
         f.set(11, _encodedArrHash(i.encodedFundTransfers));
         f.set(12, uint160(i.settler));

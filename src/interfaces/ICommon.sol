@@ -36,7 +36,7 @@ interface ICommon {
         /// @dev The maximum amount of the token to pay.
         uint256 totalPaymentMaxAmount;
         /// @dev The gas provided to the execute call on the account.
-        uint256 executeGas;
+        uint256 accountExecuteGas;
         /// @dev Optional array of encoded SignedCalls that will be verified and executed
         /// before the validation of the overall Intent.
         /// A PreCall will NOT have its gas limit or payment applied.
