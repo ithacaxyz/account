@@ -318,7 +318,7 @@ contract BaseTest is SoladyTest {
 
         vm.revertToStateAndDelete(snapshot);
 
-        gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
+        gExecute = Math.mulDiv(gCombined + 110_000, 64, 63) + 30_000;
     }
 
     struct _EstimateGasParams {
@@ -354,7 +354,7 @@ contract BaseTest is SoladyTest {
         }
 
         // gExecute > (100k + combinedGas) * 64/63
-        gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
+        gExecute = Math.mulDiv(gCombined + 110_000, 64, 63) + 30_000;
     }
 
     function _mint(address token, address to, uint256 amount) internal {
