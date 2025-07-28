@@ -62,7 +62,7 @@ contract Escrow is IEscrow {
     {
         fields = hex"0f"; // `0b01111` - has name, version, chainId, verifyingContract
         name = "Escrow";
-        version = "0.4.4";
+        version = "0.0.1";
         chainId = block.chainid;
         verifyingContract = address(this);
         salt = bytes32(0);
