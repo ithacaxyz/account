@@ -76,19 +76,19 @@ contract DefaultConfig {
             stages: _getAllStages()
         });
 
-        // Arbitrum Sepolia
+        // Optimism Sepolia
         configs[4] = BaseDeployment.ChainConfig({
-            chainId: 421614,
-            name: "Arbitrum Sepolia",
+            chainId: 11155420,
+            name: "Optimism Sepolia",
             isTestnet: true,
             pauseAuthority: 0x0000000000000000000000000000000000000001,
             funderOwner: 0x0000000000000000000000000000000000000003,
             funderSigner: 0x0000000000000000000000000000000000000002,
             settlerOwner: 0x0000000000000000000000000000000000000004,
-            l0SettlerOwner: 0x0000000000000000000000000000000000000005,
+            l0SettlerOwner: 0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4,
             layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
-            layerZeroEid: 40231,
-            stages: _getAllStages()
+            layerZeroEid: 40232,
+            stages: _getLayerZeroStages()
         });
 
         // Base Sepolia
@@ -100,10 +100,10 @@ contract DefaultConfig {
             funderOwner: 0x0000000000000000000000000000000000000003,
             funderSigner: 0x0000000000000000000000000000000000000002,
             settlerOwner: 0x0000000000000000000000000000000000000004,
-            l0SettlerOwner: 0x0000000000000000000000000000000000000005,
+            l0SettlerOwner: 0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4,
             layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
             layerZeroEid: 40245,
-            stages: _getAllStages()
+            stages: _getLayerZeroStages()
         });
         // Porto Devnet
         configs[6] = BaseDeployment.ChainConfig({
@@ -181,6 +181,12 @@ contract DefaultConfig {
         stages[0] = BaseDeployment.Stage.Core;
         stages[1] = BaseDeployment.Stage.Interop;
         stages[2] = BaseDeployment.Stage.SimpleSettler;
+        return stages;
+    }
+
+    function _getLayerZeroStages() private pure returns (BaseDeployment.Stage[] memory) {
+        BaseDeployment.Stage[] memory stages = new BaseDeployment.Stage[](1);
+        stages[0] = BaseDeployment.Stage.LayerZeroSettler;
         return stages;
     }
 }

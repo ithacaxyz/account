@@ -44,9 +44,11 @@ contract LayerZeroSettler is OApp, OAppOptionsType3, ISettler {
 
         bytes memory payload = abi.encode(settlementId, sender, block.chainid);
 
-        // Minimal Type 3 options - just the header, no worker options
-        // This is valid for self-execution where you don't need to specify gas limits
-        bytes memory options = hex"0003";
+        // Type 3 options with minimal executor configuration for self-execution
+        // Even for self-execution, we need to provide executor options for fee calculation
+        // Format: [type_3_header][worker_id][option_size][option_type][gas_limit]
+        // Using 200k gas as a reasonable default for lzReceive
+        bytes memory options = hex"00030100110100000000000000000000000000030D40";
 
         // If the fee sent as msg.value is incorrect, then one of these _lzSends will revert.
         for (uint256 i = 0; i < endpointIds.length; i++) {
