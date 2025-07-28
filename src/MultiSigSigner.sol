@@ -137,6 +137,34 @@ contract MultiSigSigner is ISigner {
     }
 
     ////////////////////////////////////////////////////////////////////////
+    // EIP-5267 Support
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev See: https://eips.ethereum.org/EIPS/eip-5267
+    /// Returns the fields and values that describe the domain separator used for signing.
+    function eip712Domain()
+        public
+        view
+        returns (
+            bytes1 fields,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,
+            bytes32 salt,
+            uint256[] memory extensions
+        )
+    {
+        fields = hex"0f"; // `0b01111` - has name, version, chainId, verifyingContract
+        name = "MultiSigSigner";
+        version = "0.4.4";
+        chainId = block.chainid;
+        verifyingContract = address(this);
+        salt = bytes32(0);
+        extensions = new uint256[](0);
+    }
+
+    ////////////////////////////////////////////////////////////////////////
     // Signature Validation
     ////////////////////////////////////////////////////////////////////////
 

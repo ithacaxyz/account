@@ -22,6 +22,34 @@ contract LayerZeroSettler is OApp, ISettler {
 
     constructor(address _endpoint, address _owner) OApp(_endpoint, _owner) Ownable(_owner) {}
 
+    ////////////////////////////////////////////////////////////////////////
+    // EIP-5267 Support
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev See: https://eips.ethereum.org/EIPS/eip-5267
+    /// Returns the fields and values that describe the domain separator used for signing.
+    function eip712Domain()
+        public
+        view
+        returns (
+            bytes1 fields,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,
+            bytes32 salt,
+            uint256[] memory extensions
+        )
+    {
+        fields = hex"0f"; // `0b01111` - has name, version, chainId, verifyingContract
+        name = "LayerZeroSettler";
+        version = "0.4.4";
+        chainId = block.chainid;
+        verifyingContract = address(this);
+        salt = bytes32(0);
+        extensions = new uint256[](0);
+    }
+
     /// @notice Mark the settlement as valid to be sent
     function send(bytes32 settlementId, bytes calldata settlerContext) external payable override {
         validSend[keccak256(abi.encode(msg.sender, settlementId, settlerContext))] = true;
