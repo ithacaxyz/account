@@ -2,6 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {OApp, MessagingFee, Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+import {OAppOptionsType3} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OAppOptionsType3.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
@@ -9,7 +10,7 @@ import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 /// @title LayerZeroSettler
 /// @notice Cross-chain settlement using LayerZero v2 with self-execution model
 /// @dev Uses msg.value to pay for cross-chain messaging fees
-contract LayerZeroSettler is OApp, ISettler {
+contract LayerZeroSettler is OApp, OAppOptionsType3, ISettler {
     event Settled(address indexed sender, bytes32 indexed settlementId, uint256 senderChainId);
 
     error InvalidEndpointId();
