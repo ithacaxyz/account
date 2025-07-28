@@ -17,6 +17,7 @@ import {
 import {SendLibMock} from "./mocks/SendLibMock.sol";
 import {EnforcedOptionParam} from
     "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppOptionsType3.sol";
+import {UlnOptionsTestHelper} from "./helpers/UlnOptionsTestHelper.sol";
 
 contract LayerZeroSettlerTest is Test {
     SendLibMock public sendLib;
@@ -697,5 +698,61 @@ contract LayerZeroSettlerTest is Test {
         // Test with no enforced options set - should return extra options
         bytes memory onlyExtra = settlerA.combineOptions(EID_C, 2, extraOption);
         assertEq(onlyExtra, extraOption);
+    }
+
+    function test_minimalType3Options() public {
+        // Test that minimal Type 3 options (just the header) work correctly
+        // First, let's verify our options format directly
+        bytes memory minimalOptions = hex"0003";
+        bytes memory emptyOptions = "";
+
+        // Import and deploy the UlnOptions test helper
+        UlnOptionsTestHelper helper = new UlnOptionsTestHelper();
+
+        // Test 1: Empty options should revert with LZ_ULN_InvalidWorkerOptions(0)
+        vm.expectRevert(
+            abi.encodeWithSelector(UlnOptionsTestHelper.LZ_ULN_InvalidWorkerOptions.selector, 0)
+        );
+        helper.decodeOptions(emptyOptions);
+
+        // Test 2: Minimal options (just type 3 header) should work
+        (uint16 optionType, bool hasWorkerOptions) = helper.decodeOptions(minimalOptions);
+        assertEq(optionType, 3, "Option type should be 3");
+        assertFalse(hasWorkerOptions, "Should have no worker options");
+
+        // Test 3: Now test the actual LayerZeroSettler flow
+        bytes32 settlementId = keccak256("test-minimal-options");
+        uint32[] memory endpointIds = new uint32[](1);
+        endpointIds[0] = EID_B;
+        bytes memory settlerContext = abi.encode(endpointIds);
+
+        // Authorize the settlement
+        vm.prank(orchestrator);
+        settlerA.send(settlementId, settlerContext);
+
+        // Get the fee quote - this internally uses the minimal hex"0003" options
+        uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
+
+        // Execute send - this should work without LZ_ULN_InvalidWorkerOptions error
+        vm.deal(orchestrator, fee);
+        vm.prank(orchestrator);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext);
+
+        // Verify message was sent
+        assertEq(sendLib.getPacketCount(), 1);
+
+        // Deliver the message
+        _deliverCrossChainMessage(
+            EID_A,
+            EID_B,
+            address(settlerA),
+            payable(address(settlerB)),
+            settlementId,
+            orchestrator,
+            block.chainid
+        );
+
+        // Verify settlement was recorded
+        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
     }
 }
