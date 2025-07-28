@@ -28,6 +28,8 @@ contract LayerZeroSettler is OApp, ISettler {
 
     /// @dev See: https://eips.ethereum.org/EIPS/eip-5267
     /// Returns the fields and values that describe the domain separator used for signing.
+    /// Note: This is just for labelling and offchain verification purposes.
+    /// This contract does not use EIP712 signatures anywhere else.
     function eip712Domain()
         public
         view
