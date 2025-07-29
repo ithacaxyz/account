@@ -45,10 +45,7 @@ contract LayerZeroSettler is OApp, OAppOptionsType3, ISettler {
         bytes memory payload = abi.encode(settlementId, sender, block.chainid);
 
         // Type 3 options with minimal executor configuration for self-execution
-        // Even for self-execution, we need to provide executor options for fee calculation
-        // Format: [type_3_header][worker_id][option_size][option_type][gas_limit]
-        // Using 200k gas as a reasonable default for lzReceive
-        bytes memory options = hex"00030100110100000000000000000000000000030D40";
+        bytes memory options = hex"0003";
 
         // If the fee sent as msg.value is incorrect, then one of these _lzSends will revert.
         for (uint256 i = 0; i < endpointIds.length; i++) {
@@ -107,4 +104,31 @@ contract LayerZeroSettler is OApp, OAppOptionsType3, ISettler {
 
     /// @notice Allow contract to receive ETH from refunds
     receive() external payable {}
+
+    // @notice query price and assign jobs at the same time
+    // @param _dstEid - the destination endpoint identifier
+    // @param _sender - the source sending contract address. executors may apply price discrimination to senders
+    // @param _calldataSize - dynamic data size of message + caller params
+    // @param _options - optional parameters for extra service plugins, e.g. sending dust tokens at the destination chain
+    function assignJob(
+        uint32 _dstEid,
+        address _sender,
+        uint256 _calldataSize,
+        bytes calldata _options
+    ) external returns (uint256 price) {
+        return 0;
+    }
+
+    // @notice query the executor price for relaying the payload and its proof to the destination chain
+    // @param _dstEid - the destination endpoint identifier
+    // @param _sender - the source sending contract address. executors may apply price discrimination to senders
+    // @param _calldataSize - dynamic data size of message + caller params
+    // @param _options - optional parameters for extra service plugins, e.g. sending dust tokens at the destination chain
+    function getFee(uint32 _dstEid, address _sender, uint256 _calldataSize, bytes calldata _options)
+        external
+        view
+        returns (uint256 price)
+    {
+        return 0;
+    }
 }
