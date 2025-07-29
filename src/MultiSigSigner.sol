@@ -75,8 +75,8 @@ contract MultiSigSigner is ISigner {
     function initConfig(bytes32 keyHash, uint256 threshold, bytes32[] memory ownerKeyHashes)
         public
     {
-        // Threshold can't be zero
-        if (threshold == 0) revert InvalidThreshold();
+        // Threshold can't be zero or greater than the number of owners
+        if (threshold == 0 || threshold > ownerKeyHashes.length) revert InvalidThreshold();
 
         Config storage config = _configs[msg.sender][keyHash];
 
