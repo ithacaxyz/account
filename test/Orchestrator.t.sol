@@ -1255,7 +1255,7 @@ contract OrchestratorTest is BaseTest {
         // Try to set config again
         vm.startPrank(t.d.eoa);
         vm.expectRevert(bytes4(keccak256("ConfigAlreadySet()")));
-        t.multiSigSigner.initConfig(_hash(t.multiSigKey.k), 5, ownerKeyHashes);
+        t.multiSigSigner.initConfig(_hash(t.multiSigKey.k), 1, ownerKeyHashes);
         vm.stopPrank();
 
         calls[0] = ERC7821.Call({
