@@ -13,6 +13,7 @@ import {LibStorage} from "solady/utils/LibStorage.sol";
 import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
 import {ICommon} from "./interfaces/ICommon.sol";
@@ -98,11 +99,11 @@ contract Orchestrator is
     /// @dev The funding has failed.
     error FundingError();
 
-    /// @dev The encoded fund transfers are not striclty increasing.
-    error InvalidTransferOrder();
-
     /// @dev The intent has expired.
     error IntentExpired();
+
+    /// @dev Native tokens were not sent during a call to `fund`
+    error NativeTokensNotFunded();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -686,28 +687,26 @@ contract Orchestrator is
 
         Transfer[] memory transfers = new Transfer[](encodedFundTransfers.length);
 
-        uint256[] memory preBalances = new uint256[](encodedFundTransfers.length);
-        address lastToken;
         for (uint256 i; i < encodedFundTransfers.length; ++i) {
             transfers[i] = abi.decode(encodedFundTransfers[i], (Transfer));
-            address tokenAddr = transfers[i].token;
-
-            // Ensure strictly ascending order by token address without duplicates.
-            if (i != 0 && tokenAddr <= lastToken) revert InvalidTransferOrder();
-
-            lastToken = tokenAddr;
-            preBalances[i] = TokenTransferLib.balanceOf(tokenAddr, eoa);
         }
 
-        IFunder(funder).fund(eoa, digest, transfers, funderSignature);
+        IFunder(funder).fund(digest, transfers, funderSignature);
 
-        for (uint256 i; i < encodedFundTransfers.length; ++i) {
-            if (
-                TokenTransferLib.balanceOf(transfers[i].token, eoa) - preBalances[i]
-                    < transfers[i].amount
-            ) {
-                revert FundingError();
+        uint256 j;
+
+        if (transfers[0].token == address(0)) {
+            if (address(this).balance < transfers[0].amount) {
+                revert NativeTokensNotFunded();
             }
+            // Send native asset to the EOA, ignore any reverts.
+            (bool success,) = eoa.call{value: transfers[0].amount}("");
+            (success);
+            j++;
+        }
+
+        for (j; j < transfers.length; ++j) {
+            SafeTransferLib.safeTransferFrom(transfers[j].token, funder, eoa, transfers[j].amount);
         }
     }
 
