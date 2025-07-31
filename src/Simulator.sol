@@ -41,22 +41,27 @@ contract Simulator {
     }
 
     /// @dev Performs a call to the Orchestrator, and returns the gas used by the Intent.
-    /// This function expects that the `data` is correctly encoded.
-    function _callOrchestrator(address oc, bool isRevert, bytes memory data)
-        internal
-        returns (uint256 gasUsed, uint256 accountExecuteGas)
-    {
+    /// This function is for forwarding the re-encoded Intent.
+    function _callOrchestrator(
+        address oc,
+        bool isRevert,
+        uint256 combinedGasOverride,
+        ICommon.Intent memory u
+    ) internal freeTempMemory returns (uint256 gasUsed, uint256 accountExecuteGas) {
+        bytes memory data =
+            abi.encodeWithSignature("simulateExecute(bool,bytes)", isRevert, abi.encode(u));
+
         assembly ("memory-safe") {
             // Zeroize return slots.
             mstore(0x00, 0)
             mstore(0x20, 0)
 
-            gasUsed := gasleft()
+            gasUsed := gas()
 
             let success :=
                 call(combinedGasOverride, oc, 0, add(data, 0x20), mload(data), 0x00, 0x40)
 
-            gasUsed := sub(gasUsed, gasleft())
+            gasUsed := sub(gasUsed, gas())
 
             switch isRevert
             case 0 {
@@ -70,33 +75,8 @@ contract Simulator {
                 if success { accountExecuteGas := mload(0x00) }
             }
         }
-    }
 
-    /// @dev Performs a call to the Orchestrator, and returns the gas used by the Intent.
-    /// This function is for directly forwarding the Intent in the calldata.
-    function _callOrchestratorCalldata(
-        address oc,
-        bool isRevert,
-        uint256 combinedGasOverride,
-        bytes calldata encodedIntent
-    ) internal freeTempMemory returns (uint256, uint256) {
-        bytes memory data =
-            abi.encodeWithSignature("simulateExecute(bool,bytes)", isRevert, encodedIntent);
-
-        return _callOrchestrator(oc, combinedGasOverride, isRevert, data);
-    }
-
-    /// @dev Performs a call to the Orchestrator, and returns the gas used by the Intent.
-    /// This function is for forwarding the re-encoded Intent.
-    function _callOrchestratorMemory(
-        address oc,
-        bool isRevert,
-        uint256 combinedGasOverride,
-        ICommon.Intent memory u
-    ) internal freeTempMemory returns (uint256, uint256) {
-        bytes memory data =
-            abi.encodeWithSignature("simulateExecute(bool,bytes)", isRevert, abi.encode(u));
-        return _callOrchestrator(oc, combinedGasOverride, isRevert, data);
+        return (gasUsed, combinedGasOverride);
     }
 
     function simulateAccountExecuteGas(
@@ -105,10 +85,10 @@ contract Simulator {
         ICommon.Intent memory i
     ) public payable virtual returns (uint256 accountExecuteGas) {
         uint256 accountExecuteGasPreOffset = i.accountExecuteGas;
-        i.accountExecuteGas = type(uint256).max;
 
-        // 1. Primary Simulation Run to get initial gasUsed value with combinedGasOverride
-        (gasUsed, accountExecuteGas) = _callOrchestratorMemory(oc, false, type(uint256).max, i);
+        // 1. Primary Simulation Run to get initial accountExecuteGas value with combinedGasOverride
+        i.accountExecuteGas = type(uint256).max;
+        (, accountExecuteGas) = _callOrchestrator(oc, false, type(uint256).max, i);
 
         // If the simulation failed, bubble up the full revert.
         assembly ("memory-safe") {
@@ -122,7 +102,7 @@ contract Simulator {
         i.accountExecuteGas = accountExecuteGas + accountExecuteGasPreOffset;
 
         while (true) {
-            accountExecuteGas = _callOrchestratorMemory(oc, false, 0, i);
+            (, accountExecuteGas) = _callOrchestrator(oc, false, type(uint256).max, i);
 
             if (accountExecuteGas != 0) {
                 return (i.accountExecuteGas);
@@ -147,8 +127,6 @@ contract Simulator {
     /// @dev The closer this number is to 10_000, the more precise combined gas will be. But more iterations will be needed.
     /// @dev This number should always be > 10_000, to get correct results.
     //// If the increment is too small, the function might run out of gas while finding the combined gas value.
-    /// @param encodedIntent The encoded user operation
-    /// @return gasUsed The gas used in the successful simulation
     /// @return combinedGas The first combined gas value that gives a successful simulation.
     /// This function reverts if the primary simulation run with max combinedGas fails.
     /// If the primary run is successful, it itertively increases u.combinedGas by `combinedGasIncrement` until the simulation passes.
@@ -160,13 +138,12 @@ contract Simulator {
         uint256 paymentPerGas,
         uint256 combinedGasIncrement,
         ICommon.Intent memory i
-    ) public payable virtual returns (uint256 gasUsed, uint256 combinedGas) {
-        i.executeGas = type(uint256).max;
-
-        uint256 accountExecuteGas;
+    ) public payable virtual returns (uint256 combinedGas) {
+        i.accountExecuteGas = type(uint256).max;
 
         // 1. Primary Simulation Run to get initial gasUsed value with combinedGasOverride
-        (gasUsed, accountExecuteGas) = _callOrchestratorMemory(oc, false, type(uint256).max, i);
+        (uint256 gasUsed, uint256 accountExecuteGas) =
+            _callOrchestrator(oc, false, type(uint256).max, i);
 
         // If the simulation failed, bubble up the full revert.
         assembly ("memory-safe") {
@@ -177,15 +154,12 @@ contract Simulator {
             }
         }
 
-        // Update payment amounts using the gasUsed value
-        ICommon.Intent memory i = abi.decode(encodedIntent, (ICommon.Intent));
+        combinedGas += gasUsed;
 
-        i.combinedGas += gasUsed;
-
-        _updatePaymentAmounts(i, isPrePayment, i.combinedGas, paymentPerGasPrecision, paymentPerGas);
+        _updatePaymentAmounts(i, isPrePayment, combinedGas, paymentPerGasPrecision, paymentPerGas);
 
         while (true) {
-            (gasUsed, accountExecuteGas) = _callOrchestratorMemory(oc, false, 0, i);
+            (gasUsed, accountExecuteGas) = _callOrchestrator(oc, false, 0, i);
 
             // If the simulation failed, bubble up the full revert.
             assembly ("memory-safe") {
@@ -200,17 +174,17 @@ contract Simulator {
             }
 
             if (accountExecuteGas != 0) {
-                return (gasUsed, i.combinedGas);
+                return combinedGas;
             }
 
-            uint256 gasIncrement = Math.mulDiv(i.combinedGas, combinedGasIncrement, 10_000);
+            uint256 gasIncrement = Math.mulDiv(combinedGas, combinedGasIncrement, 10_000);
 
             _updatePaymentAmounts(
                 i, isPrePayment, gasIncrement, paymentPerGasPrecision, paymentPerGas
             );
 
             // Step up the combined gas, until we see a simulation passing
-            i.combinedGas += gasIncrement;
+            combinedGas += gasIncrement;
         }
     }
 
@@ -232,28 +206,22 @@ contract Simulator {
         uint256 accountExecuteGasIncrement,
         uint256 accountExecuteGasOffset,
         bytes calldata encodedIntent
-    ) public payable virtual returns (uint256, /*accountExecuteGas*/ uint256 /*combinedGas*/ ) {
+    ) public payable virtual returns (uint256, /*accountExecuteGas*/ uint256 combinedGas) {
         ICommon.Intent memory i = abi.decode(encodedIntent, (ICommon.Intent));
 
-        i.accountExecuteGas =
-            simulateAccountExecuteGas(oc, accountExecuteGasIncrement, encodedIntent);
+        i.accountExecuteGas = simulateAccountExecuteGas(oc, accountExecuteGasIncrement, i);
         i.accountExecuteGas += accountExecuteGasOffset;
 
-        i.combinedGas = simulateCombinedGas(
-            oc,
-            isPrePayment,
-            paymentPerGasPrecision,
-            paymentPerGas,
-            combinedGasIncrement,
-            encodedIntent
+        combinedGas = simulateCombinedGas(
+            oc, isPrePayment, paymentPerGasPrecision, paymentPerGas, combinedGasIncrement, i
         );
 
-        i.combinedGas += combinedGasOffset;
+        combinedGas += combinedGasOffset;
 
-        _updatePaymentAmounts(i, isPrePayment, i.combinedGas, paymentPerGasPrecision, paymentPerGas);
+        _updatePaymentAmounts(i, isPrePayment, combinedGas, paymentPerGasPrecision, paymentPerGas);
 
         // Verification Run to generate the logs with the correct combinedGas and payment amounts.
-        (, accountExecuteGas) = _callOrchestratorMemory(oc, true, 0, i);
+        (, uint256 accountExecuteGas) = _callOrchestrator(oc, true, 0, i);
 
         // If the simulation failed, bubble up full revert
         assembly ("memory-safe") {
@@ -264,6 +232,6 @@ contract Simulator {
             }
         }
 
-        return (i.accountExecuteGas, i.combinedGas);
+        return (i.accountExecuteGas, combinedGas);
     }
 }

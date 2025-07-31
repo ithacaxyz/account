@@ -23,7 +23,8 @@ contract OrchestratorSim is Orchestrator {
     /// If `isRevert` is true, then this function will not revert if the simulation is successful.
     /// This mode has been added so that receipt logs can be generated for `eth_simulateV1`
     /// @return gasUsed The amount of gas used by the execution. (Only returned if `isRevert` is true)
-    /// @return gAccountExecute The amount of gas used by the account.execute function. (Includes the gas cost, to make the call)
+    /// gAccountExecute is the amount of gas used by the account.execute function.
+    /// (Includes the gas cost, to make the call)
     function simulateExecute(bool isRevert, bytes calldata encodedIntent)
         external
         payable
