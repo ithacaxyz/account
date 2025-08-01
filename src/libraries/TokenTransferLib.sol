@@ -2,10 +2,17 @@
 pragma solidity ^0.8.23;
 
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
+import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
+
+interface IERC20Allowance {
+    function allowance(address owner, address spender) external view returns (uint256);
+}
 
 /// @title TokenTransferLib
 /// @notice A library to handle token transfers.
 library TokenTransferLib {
+    error InsufficientBalanceOrAllowance(address token, address from, address to, uint256 amount);
+
     ////////////////////////////////////////////////////////////////////////
     // Operations
     ////////////////////////////////////////////////////////////////////////
@@ -25,5 +32,23 @@ library TokenTransferLib {
         } else {
             SafeTransferLib.safeTransfer(token, to, amount);
         }
+    }
+
+    /// @dev Custom ERC20 token transfer function.
+    /// If there is insufficient balance or allowance, it reverts.
+    /// @return success True if the transfer was successful, false otherwise.
+    function safeTransferFromERC20(address token, address from, address to, uint256 amount)
+        internal
+        returns (bool)
+    {
+        // TODO: turn into assembly to improve memory usage
+        uint256 transferrableAmount = Math.min(
+            IERC20Allowance(token).allowance(from, address(this)),
+            SafeTransferLib.balanceOf(token, from)
+        );
+        if (transferrableAmount < amount) {
+            revert InsufficientBalanceOrAllowance(token, from, to, amount);
+        }
+        return SafeTransferLib.trySafeTransferFrom(token, from, to, amount);
     }
 }
