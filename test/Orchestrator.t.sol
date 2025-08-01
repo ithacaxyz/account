@@ -1098,6 +1098,7 @@ contract OrchestratorTest is BaseTest {
             t.withSignature.setApprovedOrchestrator(address(oc), false);
         }
         if ((t.unapprovedOrchestrator && u.totalPaymentAmount != 0)) {
+            console.log("1");
             assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("Unauthorized()")));
 
             if (u.prePaymentAmount != 0) {
@@ -1109,18 +1110,21 @@ contract OrchestratorTest is BaseTest {
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
             assertEq(_balanceOf(address(0), address(0xabcd)), 0);
         } else if (t.isWithState && u.totalPaymentAmount > t.funds && u.totalPaymentAmount != 0) {
+            console.log("2");
             // Arithmetic underflow error
-            assertEq(
-                oc.execute(abi.encode(u)),
-                0x4e487b7100000000000000000000000000000000000000000000000000000000
-            );
+            assertEq(oc.execute(abi.encode(u)), Orchestrator.PaymentError.selector);
+            console.log("2.1");
 
             if (u.prePaymentAmount > t.funds) {
+                console.log("2.2");
+
                 // Pre payment will not happen
                 assertEq(t.d.d.getNonce(0), u.nonce);
                 assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
                 assertEq(_balanceOf(address(0), address(0xabcd)), 0);
             } else {
+                console.log("2.3");
+
                 // Pre payment will happen, post payment will fail
                 assertEq(t.d.d.getNonce(0), u.nonce + 1);
                 assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.prePaymentAmount);
@@ -1128,6 +1132,8 @@ contract OrchestratorTest is BaseTest {
                 assertEq(_balanceOf(address(0), address(0xabcd)), 0);
             }
         } else if ((!t.isWithState && t.corruptSignature && u.totalPaymentAmount != 0)) {
+            console.log("3");
+
             // Pre payment will not happen
             assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("InvalidSignature()")));
             // If prePayment is 0, then nonce is incremented, because the prePayment doesn't fail.
@@ -1139,6 +1145,7 @@ contract OrchestratorTest is BaseTest {
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
             assertEq(_balanceOf(address(0), address(0xabcd)), 0);
         } else {
+            console.log("4");
             assertEq(oc.execute(abi.encode(u)), 0);
             assertEq(t.d.d.getNonce(0), u.nonce + 1);
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.totalPaymentAmount);

@@ -21,6 +21,7 @@ import {PauseAuthority} from "./PauseAuthority.sol";
 import {IFunder} from "./interfaces/IFunder.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
+import {console} from "forge-std/console.sol";
 
 /// @title Orchestrator
 /// @notice Enables atomic verification, gas compensation and execution across eoas.
@@ -480,7 +481,7 @@ contract Orchestrator is
         // Off-chain simulation of `_pay` should suffice,
         // provided that the token balance does not decrease in the window between
         // off-chain simulation and on-chain execution.
-        if (i.prePaymentAmount != 0) _pay(i.prePaymentAmount, keyHash, digest, i);
+        if (i.prePaymentAmount != 0) _pay(i.prePaymentAmount, keyHash, digest, i, true);
 
         // Equivalent Solidity code:
         // try this.selfCallExecutePay(flags, keyHash, i) {}
@@ -566,7 +567,7 @@ contract Orchestrator is
 
         uint256 remainingPaymentAmount = Math.rawSub(i.totalPaymentAmount, i.prePaymentAmount);
         if (remainingPaymentAmount != 0) {
-            _pay(remainingPaymentAmount, keyHash, digest, i);
+            _pay(remainingPaymentAmount, keyHash, digest, i, false);
         }
 
         assembly ("memory-safe") {
@@ -716,14 +717,13 @@ contract Orchestrator is
 
     /// @dev Makes the `eoa` perform a payment to the `paymentRecipient` directly.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
-    function _pay(uint256 paymentAmount, bytes32 keyHash, bytes32 digest, Intent calldata i)
-        internal
-        virtual
-    {
-        uint256 requiredBalanceAfter = Math.saturatingAdd(
-            TokenTransferLib.balanceOf(i.paymentToken, i.paymentRecipient), paymentAmount
-        );
-
+    function _pay(
+        uint256 paymentAmount,
+        bytes32 keyHash,
+        bytes32 digest,
+        Intent calldata i,
+        bool revertOnFailure
+    ) internal virtual {
         address payer = Math.coalesce(i.payer, i.eoa);
 
         // Call the pay function on the account contract
@@ -763,7 +763,17 @@ contract Orchestrator is
             ) { revert(0x00, 0x20) }
         }
 
-        if (TokenTransferLib.balanceOf(i.paymentToken, i.paymentRecipient) < requiredBalanceAfter) {
+        bool success;
+
+        if (i.paymentToken == address(0)) {
+            // (success,) = i.paymentRecipient.call{value: paymentAmount}("");
+        } else {
+            success = TokenTransferLib.safeTransferFromERC20(
+                i.paymentToken, payer, i.paymentRecipient, paymentAmount
+            );
+        }
+        // We only revert here for post-validation payment and not post-execution payment.
+        if (!success && revertOnFailure) {
             revert PaymentError();
         }
     }

@@ -21,6 +21,7 @@ import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {LibNonce} from "./libraries/LibNonce.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 
@@ -640,7 +641,12 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             }
         }
 
-        TokenTransferLib.safeTransfer(intent.paymentToken, intent.paymentRecipient, paymentAmount);
+        if (intent.paymentToken == address(0)) {
+            (bool success,) = (intent.paymentRecipient).call{value: paymentAmount}("");
+            (success);
+        } else {
+            SafeTransferLib.safeApprove(intent.paymentToken, ORCHESTRATOR, paymentAmount);
+        }
         // Increase spend.
         if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
             SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
