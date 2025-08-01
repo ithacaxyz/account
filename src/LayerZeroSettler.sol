@@ -2,7 +2,6 @@
 pragma solidity ^0.8.23;
 
 import {OApp, MessagingFee, Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
-import {OAppOptionsType3} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OAppOptionsType3.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
@@ -10,7 +9,7 @@ import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 /// @title LayerZeroSettler
 /// @notice Cross-chain settlement using LayerZero v2 with self-execution model
 /// @dev Uses msg.value to pay for cross-chain messaging fees
-contract LayerZeroSettler is OApp, OAppOptionsType3, ISettler {
+contract LayerZeroSettler is OApp, ISettler {
     event Settled(address indexed sender, bytes32 indexed settlementId, uint256 senderChainId);
 
     error InvalidEndpointId();
@@ -90,8 +89,42 @@ contract LayerZeroSettler is OApp, OAppOptionsType3, ISettler {
         }
     }
 
+    function _getPeerOrRevert(uint32 _eid) internal view virtual override returns (bytes32) {
+        bytes32 peer = peers[_eid];
+        // If no peer is set, use default peer (address(this))
+        if (peer == bytes32(0)) {
+            // The peer address for all chains is automatically set to `address(this)`
+            return bytes32(uint256(uint160(address(this))));
+        }
+        return peer;
+    }
+
+    /// @notice Allow initialization path from configured peers
+    /// @dev Checks if the origin sender matches the configured peer for that endpoint
+    /// @param _origin The origin information containing the source endpoint and sender address
+    /// @return True if origin sender is the configured peer, false otherwise
+    function allowInitializePath(Origin calldata _origin)
+        public
+        view
+        virtual
+        override
+        returns (bool)
+    {
+        // Get the configured peer for this source endpoint
+        bytes32 peer = peers[_origin.srcEid];
+
+        // If no peer is set, use the default peer (address(this))
+        if (peer == bytes32(0)) {
+            peer = _getPeerOrRevert(_origin.srcEid);
+        }
+
+        // Allow initialization if the sender matches the configured peer
+        return _origin.sender == peer;
+    }
+
     /// @notice Receive settlement attestation from another chain
     /// @dev Called by LayerZero endpoint after message verification
+
     function _lzReceive(
         Origin calldata, /*_origin*/
         bytes32, /*_guid*/
