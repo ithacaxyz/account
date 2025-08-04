@@ -214,7 +214,7 @@ contract Orchestrator is
     /// But the codepaths for signature verification are still hit, for correct gas measurement.
     /// @dev If `isStateOverride` is false, then this function will always revert. If the simulation is successful, then it reverts with `SimulationPassed` error.
     /// If `isStateOverride` is true, then this function will not revert if the simulation is successful.
-    /// But the balance of msg.sender has to be equal to type(uint256).max, to prove that a state override has been made offchain,
+    /// But the balance of address(0) has to be equal to type(uint256).max, to prove that a state override has been made offchain,
     /// and this is not an onchain call. This mode has been added so that receipt logs can be generated for `eth_simulateV1`
     /// @return gasUsed The amount of gas used by the execution. (Only returned if `isStateOverride` is true)
     function simulateExecute(
@@ -234,7 +234,7 @@ contract Orchestrator is
         }
 
         if (isStateOverride) {
-            if (msg.sender.balance == type(uint256).max) {
+            if (address(0).balance == type(uint256).max) {
                 return gUsed;
             } else {
                 revert StateOverrideError();
