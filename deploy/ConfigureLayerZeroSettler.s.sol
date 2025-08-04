@@ -7,6 +7,8 @@ import {ILayerZeroEndpointV2} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {SetConfigParam} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
+import {UlnConfig} from
+    "../lib/LayerZero-v2/packages/layerzero-v2/evm/messagelib/contracts/uln/UlnBase.sol";
 import {LayerZeroConfig} from "./LayerZeroConfig.sol";
 import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
 
@@ -239,16 +241,18 @@ contract ConfigureLayerZeroSettler is Script {
             // Executor configuration (maxMessageSize first, then executor)
             bytes memory executorConfig = abi.encode(config.maxMessageSize, config.executor);
 
-            // ULN configuration - use 0 for confirmations to use default
-            bytes memory ulnConfig = abi.encode(
-                // TODO: Set this to config.confirmations
-                uint64(0), // Back to 1 confirmation
-                configData.requiredDVNCount,
-                configData.optionalDVNCount,
-                config.optionalDVNThreshold,
-                configData.requiredDVNAddresses,
-                configData.optionalDVNAddresses
-            );
+            // Create UlnConfig struct first
+            UlnConfig memory ulnConfigStruct = UlnConfig({
+                confirmations: uint64(1), // TODO: Set this to config.confirmations
+                requiredDVNCount: configData.requiredDVNCount,
+                optionalDVNCount: configData.optionalDVNCount,
+                optionalDVNThreshold: config.optionalDVNThreshold,
+                requiredDVNs: configData.requiredDVNAddresses,
+                optionalDVNs: configData.optionalDVNAddresses
+            });
+
+            // Encode the struct
+            bytes memory ulnConfig = abi.encode(ulnConfigStruct);
 
             sendParams[i * 2] = SetConfigParam({
                 eid: remoteEid,
@@ -291,16 +295,18 @@ contract ConfigureLayerZeroSettler is Script {
         // Get source EID
         uint32 sourceEid = configContract.getEid(sourceChainId);
 
-        // ULN configuration for receiving - use 0 for confirmations to use default
-        bytes memory ulnConfig = abi.encode(
-            // TODO: Set this to destConfig.confirmations
-            uint64(0),
-            configData.requiredDVNCount,
-            configData.optionalDVNCount,
-            destConfig.optionalDVNThreshold,
-            configData.requiredDVNAddresses,
-            configData.optionalDVNAddresses
-        );
+        // Create UlnConfig struct first
+        UlnConfig memory ulnConfigStruct = UlnConfig({
+            confirmations: uint64(1), // TODO: Set this to destConfig.confirmations
+            requiredDVNCount: configData.requiredDVNCount,
+            optionalDVNCount: configData.optionalDVNCount,
+            optionalDVNThreshold: destConfig.optionalDVNThreshold,
+            requiredDVNs: configData.requiredDVNAddresses,
+            optionalDVNs: configData.optionalDVNAddresses
+        });
+
+        // Encode the struct
+        bytes memory ulnConfig = abi.encode(ulnConfigStruct);
 
         // Prepare single receive configuration
         SetConfigParam[] memory receiveParams = new SetConfigParam[](1);
