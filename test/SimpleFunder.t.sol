@@ -50,11 +50,13 @@ contract SimpleFunderTest is Test {
         uint256 deadline,
         uint256 nonce
     ) internal view returns (bytes32) {
+        (,, string memory version,,,,) = simpleFunder.eip712Domain();
+
         bytes32 domainSeparator = keccak256(
             abi.encode(
                 DOMAIN_TYPEHASH,
                 keccak256(bytes("SimpleFunder")),
-                keccak256(bytes("0.1.1")),
+                keccak256(bytes(version)),
                 block.chainid,
                 address(simpleFunder)
             )
@@ -240,7 +242,6 @@ contract SimpleFunderTest is Test {
         simpleFunder.withdrawTokensWithSignature(
             address(token), recipient, amount, deadline, nonce, signature
         );
-
         // Second withdrawal with same nonce should fail
         vm.expectRevert(abi.encodeWithSelector(SimpleFunder.InvalidNonce.selector));
         simpleFunder.withdrawTokensWithSignature(
