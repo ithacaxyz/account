@@ -314,7 +314,7 @@ contract BaseTest is SoladyTest {
         vm.deal(_SIMULATION_ADDRESS, type(uint256).max);
 
         (gUsed, gCombined) =
-            simulator.simulateV1Logs(address(oc), true, 0, 1, 11_000, 15_000, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), true, 0, 1, 11_000, 11_200, abi.encode(i));
 
         // gExecute > (100k + combinedGas) * 64/63
         gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
