@@ -23,7 +23,6 @@ import {LibNonce} from "./libraries/LibNonce.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
-import {console} from "forge-std/console.sol";
 
 /// @title Account
 /// @notice A account contract for EOAs with EIP7702.
