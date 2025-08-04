@@ -6,6 +6,7 @@ import {ICommon} from "./interfaces/ICommon.sol";
 import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
 
 /// @title SimpleFunder
@@ -117,12 +118,9 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
 
     /// @dev Allows the orchestrator to fund an account.
     /// The `digest` includes the intent nonce and the transfers.
-    function fund(
-        address account,
-        bytes32 digest,
-        ICommon.Transfer[] memory transfers,
-        bytes memory funderSignature
-    ) external {
+    function fund(bytes32 digest, ICommon.Transfer[] memory transfers, bytes memory funderSignature)
+        external
+    {
         if (msg.sender != ORCHESTRATOR) {
             revert OnlyOrchestrator();
         }
@@ -139,8 +137,16 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
             revert InvalidFunderSignature();
         }
 
-        for (uint256 i; i < transfers.length; ++i) {
-            TokenTransferLib.safeTransfer(transfers[i].token, account, transfers[i].amount);
+        uint256 i = 0;
+        if (transfers[0].token == address(0)) {
+            // Since we know the orchestrator implements a clean `Receive()` we don't need to check if the call was successful.
+            (bool success,) = ORCHESTRATOR.call{value: transfers[0].amount}("");
+            (success);
+            i++;
+        }
+
+        for (i; i < transfers.length; ++i) {
+            SafeTransferLib.safeApprove(transfers[i].token, ORCHESTRATOR, transfers[i].amount);
         }
     }
 

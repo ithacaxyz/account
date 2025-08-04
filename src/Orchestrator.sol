@@ -13,6 +13,7 @@ import {LibStorage} from "solady/utils/LibStorage.sol";
 import {CallContextChecker} from "solady/utils/CallContextChecker.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
 import {ICommon} from "./interfaces/ICommon.sol";
@@ -98,11 +99,11 @@ contract Orchestrator is
     /// @dev The funding has failed.
     error FundingError();
 
-    /// @dev The encoded fund transfers are not striclty increasing.
-    error InvalidTransferOrder();
-
     /// @dev The intent has expired.
     error IntentExpired();
+
+    /// @dev Native tokens were not sent during a call to `fund`
+    error NativeTokensNotFunded();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -214,7 +215,7 @@ contract Orchestrator is
     /// But the codepaths for signature verification are still hit, for correct gas measurement.
     /// @dev If `isStateOverride` is false, then this function will always revert. If the simulation is successful, then it reverts with `SimulationPassed` error.
     /// If `isStateOverride` is true, then this function will not revert if the simulation is successful.
-    /// But the balance of tx.origin has to be greater than type(uint192).max, to prove that a state override has been made offchain,
+    /// But the balance of tx.origin has to be greater than or equal to type(uint192).max, to prove that a state override has been made offchain,
     /// and this is not an onchain call. This mode has been added so that receipt logs can be generated for `eth_simulateV1`
     /// @return gasUsed The amount of gas used by the execution. (Only returned if `isStateOverride` is true)
     function simulateExecute(
@@ -479,7 +480,7 @@ contract Orchestrator is
         // Off-chain simulation of `_pay` should suffice,
         // provided that the token balance does not decrease in the window between
         // off-chain simulation and on-chain execution.
-        if (i.prePaymentAmount != 0) _pay(i.prePaymentAmount, keyHash, digest, i);
+        if (i.prePaymentAmount != 0) _pay(i.prePaymentAmount, keyHash, digest, i, true);
 
         // Equivalent Solidity code:
         // try this.selfCallExecutePay(flags, keyHash, i) {}
@@ -565,7 +566,7 @@ contract Orchestrator is
 
         uint256 remainingPaymentAmount = Math.rawSub(i.totalPaymentAmount, i.prePaymentAmount);
         if (remainingPaymentAmount != 0) {
-            _pay(remainingPaymentAmount, keyHash, digest, i);
+            _pay(remainingPaymentAmount, keyHash, digest, i, false);
         }
 
         assembly ("memory-safe") {
@@ -686,28 +687,26 @@ contract Orchestrator is
 
         Transfer[] memory transfers = new Transfer[](encodedFundTransfers.length);
 
-        uint256[] memory preBalances = new uint256[](encodedFundTransfers.length);
-        address lastToken;
         for (uint256 i; i < encodedFundTransfers.length; ++i) {
             transfers[i] = abi.decode(encodedFundTransfers[i], (Transfer));
-            address tokenAddr = transfers[i].token;
-
-            // Ensure strictly ascending order by token address without duplicates.
-            if (i != 0 && tokenAddr <= lastToken) revert InvalidTransferOrder();
-
-            lastToken = tokenAddr;
-            preBalances[i] = TokenTransferLib.balanceOf(tokenAddr, eoa);
         }
 
-        IFunder(funder).fund(eoa, digest, transfers, funderSignature);
+        IFunder(funder).fund(digest, transfers, funderSignature);
 
-        for (uint256 i; i < encodedFundTransfers.length; ++i) {
-            if (
-                TokenTransferLib.balanceOf(transfers[i].token, eoa) - preBalances[i]
-                    < transfers[i].amount
-            ) {
-                revert FundingError();
+        uint256 j;
+
+        if (transfers[0].token == address(0)) {
+            if (address(this).balance < transfers[0].amount) {
+                revert NativeTokensNotFunded();
             }
+            // Send native asset to the EOA, ignore any reverts.
+            (bool success,) = eoa.call{value: transfers[0].amount}("");
+            (success);
+            j++;
+        }
+
+        for (j; j < transfers.length; ++j) {
+            SafeTransferLib.safeTransferFrom(transfers[j].token, funder, eoa, transfers[j].amount);
         }
     }
 
@@ -717,14 +716,13 @@ contract Orchestrator is
 
     /// @dev Makes the `eoa` perform a payment to the `paymentRecipient` directly.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
-    function _pay(uint256 paymentAmount, bytes32 keyHash, bytes32 digest, Intent calldata i)
-        internal
-        virtual
-    {
-        uint256 requiredBalanceAfter = Math.saturatingAdd(
-            TokenTransferLib.balanceOf(i.paymentToken, i.paymentRecipient), paymentAmount
-        );
-
+    function _pay(
+        uint256 paymentAmount,
+        bytes32 keyHash,
+        bytes32 digest,
+        Intent calldata i,
+        bool revertOnFailure
+    ) internal virtual {
         address payer = Math.coalesce(i.payer, i.eoa);
 
         // Call the pay function on the account contract
@@ -764,7 +762,17 @@ contract Orchestrator is
             ) { revert(0x00, 0x20) }
         }
 
-        if (TokenTransferLib.balanceOf(i.paymentToken, i.paymentRecipient) < requiredBalanceAfter) {
+        bool success;
+        if (i.paymentToken == address(0)) {
+            (success,) = i.paymentRecipient.call{value: paymentAmount}("");
+        } else {
+            success = TokenTransferLib.safeTransferFromERC20(
+                i.paymentToken, payer, i.paymentRecipient, paymentAmount
+            );
+        }
+
+        // We only revert here for post-validation payment and not post-execution payment.
+        if (!success && revertOnFailure) {
             revert PaymentError();
         }
     }

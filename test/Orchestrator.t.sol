@@ -14,6 +14,7 @@ import {ICommon} from "../src/interfaces/ICommon.sol";
 import {Merkle} from "murky/Merkle.sol";
 import {SimpleFunder} from "../src/SimpleFunder.sol";
 import {SimpleSettler} from "../src/SimpleSettler.sol";
+import {TokenTransferLib} from "../src/libraries/TokenTransferLib.sol";
 
 import {Escrow} from "../src/Escrow.sol";
 import {IEscrow} from "../src/interfaces/IEscrow.sol";
@@ -1719,50 +1720,6 @@ contract OrchestratorTest is BaseTest {
         // Verify funds are transferred to relay
         vm.assertEq(t.usdcArb.balanceOf(t.relay), 500);
         vm.assertEq(t.usdcArb.balanceOf(address(t.escrowArb)), 0);
-
-        // 6. Attempt execution with duplicated or unordered `encodedFundTransfers` (should fail).
-        vm.revertToState(t.snapshot);
-        vm.chainId(1);
-        {
-            // Relay funds setup on Mainnet again.
-            t.usdcMainnet.mint(t.relay, 1000);
-            vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
-            t.usdcMainnet.mint(address(t.funder), 1000);
-
-            {
-                // Construct a duplicated transfers array to violate the strictly ascending order check.
-                bytes[] memory dupTransfers = new bytes[](2);
-                dupTransfers[0] = t.outputIntent.encodedFundTransfers[0];
-                dupTransfers[1] = t.outputIntent.encodedFundTransfers[0];
-                t.outputIntent.encodedFundTransfers = dupTransfers;
-            }
-
-            t.encodedIntents[0] = abi.encode(t.outputIntent);
-            vm.prank(t.gasWallet);
-            t.errs = oc.execute(t.encodedIntents);
-            assertEq(
-                uint256(bytes32(t.errs[0])),
-                uint256(bytes32(bytes4(keccak256("InvalidTransferOrder()"))))
-            );
-
-            // Try to send unordered transfers
-            {
-                bytes[] memory unorderedTransfers = new bytes[](2);
-                unorderedTransfers[0] =
-                    abi.encode(ICommon.Transfer({token: address(t.usdcMainnet), amount: 500}));
-                unorderedTransfers[1] =
-                    abi.encode(ICommon.Transfer({token: address(0), amount: 0.5 ether}));
-                t.outputIntent.encodedFundTransfers = unorderedTransfers;
-            }
-
-            t.encodedIntents[0] = abi.encode(t.outputIntent);
-            vm.prank(t.gasWallet);
-            t.errs = oc.execute(t.encodedIntents);
-            assertEq(
-                uint256(bytes32(t.errs[0])),
-                uint256(bytes32(bytes4(keccak256("InvalidTransferOrder()"))))
-            );
-        }
 
         // ------------------------------------------------------------------
         // Test invalid funder signature - should revert
