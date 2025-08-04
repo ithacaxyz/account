@@ -32,58 +32,29 @@ contract LayerZeroConfig is LayerZeroRegistry {
         uint32 maxMessageSize; // Max message size in bytes
     }
 
-    address public constant LAYER_ZERO_SETTLER = 0x0000000000000000000000000000000000000000;
+    address public constant LAYER_ZERO_SETTLER = 0x4225041FF3DB1C7d7a1029406bB80C7298767aca;
 
     /**
      * @notice Get configuration for all supported chains
      * @return configs Array of configurations for all chains
      */
     function getConfigs() public pure returns (ChainConfig[] memory configs) {
-        configs = new ChainConfig[](4);
+        configs = new ChainConfig[](2);
 
         // Get all chain IDs
         // TODO: Set all chain IDs that will be wired with each other here.
-        uint256[] memory allChainIds = new uint256[](4);
-        allChainIds[0] = 8453; // Base
-        allChainIds[1] = 10; // Optimism
-        allChainIds[2] = 84532; // Base Sepolia
-        allChainIds[3] = 11155420; // Optimism Sepolia
+        uint256[] memory allChainIds = new uint256[](2);
 
-        // Base
-        configs[0] = ChainConfig({
-            chainId: 8453,
-            destinationChainIds: _getDestinationChainIds(allChainIds, 8453),
-            sendUln302: 0x0000000000000000000000000000000000000000, // TODO: SendUln302 on Base
-            receiveUln302: 0x0000000000000000000000000000000000000000, // TODO: ReceiveUln302 on Base
-            executor: LAYER_ZERO_SETTLER,
-            requiredDVNs: _getRequiredDVNs(),
-            optionalDVNs: _getOptionalDVNs(),
-            optionalDVNThreshold: 0,
-            confirmations: 1, // Base has near-instant finality
-            maxMessageSize: 10000
-        });
-
-        // Optimism
-        configs[1] = ChainConfig({
-            chainId: 10,
-            destinationChainIds: _getDestinationChainIds(allChainIds, 10),
-            sendUln302: 0x0000000000000000000000000000000000000000, // TODO: SendUln302 on Optimism
-            receiveUln302: 0x0000000000000000000000000000000000000000, // TODO: ReceiveUln302 on Optimism
-            executor: LAYER_ZERO_SETTLER,
-            requiredDVNs: _getRequiredDVNs(),
-            optionalDVNs: _getOptionalDVNs(),
-            optionalDVNThreshold: 0,
-            confirmations: 1, // Optimism has near-instant finality
-            maxMessageSize: 10000
-        });
+        allChainIds[0] = 84532; // Base Sepolia
+        allChainIds[1] = 11155420; // Optimism Sepolia
 
         // Base Sepolia
-        configs[2] = ChainConfig({
+        configs[0] = ChainConfig({
             chainId: 84532,
             destinationChainIds: _getDestinationChainIds(allChainIds, 84532),
-            sendUln302: 0x0000000000000000000000000000000000000000, // TODO: SendUln302 on Base Sepolia
-            receiveUln302: 0x0000000000000000000000000000000000000000, // TODO: ReceiveUln302 on Base Sepolia
-            executor: LAYER_ZERO_SETTLER,
+            sendUln302: 0xC1868e054425D378095A003EcbA3823a5D0135C9, // SendUln302 on Base Sepolia
+            receiveUln302: 0x12523de19dc41c91F7d2093E0CFbB76b17012C8d, // ReceiveUln302 on Base Sepolia
+            executor: 0x8A3D588D9f6AC041476b094f97FF94ec30169d3D, // Use default LayerZero executor
             requiredDVNs: _getRequiredDVNs(),
             optionalDVNs: _getOptionalDVNs(),
             optionalDVNThreshold: 0,
@@ -92,11 +63,11 @@ contract LayerZeroConfig is LayerZeroRegistry {
         });
 
         // Optimism Sepolia
-        configs[3] = ChainConfig({
+        configs[1] = ChainConfig({
             chainId: 11155420,
             destinationChainIds: _getDestinationChainIds(allChainIds, 11155420),
-            sendUln302: 0x0000000000000000000000000000000000000000, // TODO: SendUln302 on OP Sepolia
-            receiveUln302: 0x0000000000000000000000000000000000000000, // TODO: ReceiveUln302 on OP Sepolia
+            sendUln302: 0xB31D2cb502E25B30C651842C7C3293c51Fe6d16f, // SendUln302 on OP Sepolia
+            receiveUln302: 0x9284fd59B95b9143AF0b9795CAC16eb3C723C9Ca, // ReceiveUln302 on OP Sepolia
             executor: LAYER_ZERO_SETTLER,
             requiredDVNs: _getRequiredDVNs(),
             optionalDVNs: _getOptionalDVNs(),

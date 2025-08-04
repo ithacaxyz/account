@@ -28,11 +28,10 @@ import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
  * Usage:
  * # Configure all chains in LayerZeroConfig
  * forge script deploy/ConfigureLayerZeroSettler.s.sol:ConfigureLayerZeroSettler \
- *   --broadcast \
- *   --multi \
- *   --slow \
- *   --sig "run()" \
- *   --private-key $PRIVATE_KEY
+ *  --broadcast \
+ * --slow \
+ * --sig "run()" \
+ * --private-key $PRIVATE_KEY
  *
  * # Configure specific chains
  * forge script deploy/ConfigureLayerZeroSettler.s.sol:ConfigureLayerZeroSettler \
@@ -70,7 +69,7 @@ contract ConfigureLayerZeroSettler is Script {
     }
 
     function configureChains(uint256[] memory requestedChainIds) internal {
-        // Deploy config contract once (it's a pure contract, chain-independent)
+        // Deploy config contract once BEFORE any fork (it's a pure contract, chain-independent)
         configContract = new LayerZeroConfig();
         LayerZeroConfig.ChainConfig[] memory allConfigs = configContract.getConfigs();
 
@@ -237,12 +236,13 @@ contract ConfigureLayerZeroSettler is Script {
 
             console.log("  -> Configuring send to", configContract.getChainName(remoteChainId));
 
-            // Executor configuration
-            bytes memory executorConfig = abi.encode(config.executor, config.maxMessageSize);
+            // Executor configuration (maxMessageSize first, then executor)
+            bytes memory executorConfig = abi.encode(config.maxMessageSize, config.executor);
 
-            // ULN configuration
+            // ULN configuration - use 0 for confirmations to use default
             bytes memory ulnConfig = abi.encode(
-                config.confirmations,
+                // TODO: Set this to config.confirmations
+                uint64(0), // Back to 1 confirmation
                 configData.requiredDVNCount,
                 configData.optionalDVNCount,
                 config.optionalDVNThreshold,
@@ -291,9 +291,10 @@ contract ConfigureLayerZeroSettler is Script {
         // Get source EID
         uint32 sourceEid = configContract.getEid(sourceChainId);
 
-        // ULN configuration for receiving from this specific source
+        // ULN configuration for receiving - use 0 for confirmations to use default
         bytes memory ulnConfig = abi.encode(
-            destConfig.confirmations,
+            // TODO: Set this to destConfig.confirmations
+            uint64(0),
             configData.requiredDVNCount,
             configData.optionalDVNCount,
             destConfig.optionalDVNThreshold,
