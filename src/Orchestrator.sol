@@ -157,6 +157,9 @@ contract Orchestrator is
     /// @dev Flag for simulation mode.
     uint256 internal constant _SIMULATION_MODE_FLAG = 1;
 
+    /// @dev Address to do a balance-check on for simulation mode.
+    address internal constant _SIMULATION_ADDRESS = 0xAa239C49EC6D564597F2e2F99A357c63cb65090d; // keccak256("Ithaca.Orchestrator.SIMULATION")[12];
+
     ////////////////////////////////////////////////////////////////////////
     // Constructor
     ////////////////////////////////////////////////////////////////////////
@@ -234,7 +237,7 @@ contract Orchestrator is
         }
 
         if (isStateOverride) {
-            if (address(0).balance == type(uint256).max) {
+            if (address(_SIMULATION_ADDRESS).balance == type(uint256).max) {
                 return gUsed;
             } else {
                 revert StateOverrideError();

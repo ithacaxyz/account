@@ -18,6 +18,8 @@ contract SimpleFunderTest is Test {
     uint256 public funderPrivateKey = 0x1234;
     uint256 public ownerPrivateKey = 0x5678;
 
+    address internal constant _SIMULATION_ADDRESS = 0xAa239C49EC6D564597F2e2F99A357c63cb65090d; // keccak256("Ithaca.Orchestrator.SIMULATION")[12];
+
     // EIP712 constants
     bytes32 constant DOMAIN_TYPEHASH = keccak256(
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
@@ -98,7 +100,7 @@ contract SimpleFunderTest is Test {
 
     function test_fund_simulationMode_bypasses_signatureValidation() public {
         // Set caller balance to max uint256 to simulate state override
-        vm.deal(address(0), type(uint256).max);
+        vm.deal(_SIMULATION_ADDRESS, type(uint256).max);
 
         ICommon.Transfer[] memory transfers = new ICommon.Transfer[](1);
         transfers[0] = ICommon.Transfer({token: address(token), amount: 100 ether});
@@ -168,7 +170,7 @@ contract SimpleFunderTest is Test {
 
     function testFuzz_fund_simulationMode_anySignature(bytes memory randomSignature) public {
         // Set caller balance to max uint256 to simulate state override
-        vm.deal(address(0), type(uint256).max);
+        vm.deal(_SIMULATION_ADDRESS, type(uint256).max);
 
         ICommon.Transfer[] memory transfers = new ICommon.Transfer[](1);
         transfers[0] = ICommon.Transfer({token: address(token), amount: 100 ether});

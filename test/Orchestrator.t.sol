@@ -619,7 +619,7 @@ contract OrchestratorTest is BaseTest {
 
         // Set the simulator to have max balance, so that it can run in state override mode.
         // This is meant to mimic an offchain state override.
-        vm.deal(address(0), type(uint256).max);
+        vm.deal(_SIMULATION_ADDRESS, type(uint256).max);
         (gUsed, gCombined) = simulator.simulateV1Logs(
             address(oc),
             p.isPrePayment,
@@ -991,21 +991,13 @@ contract OrchestratorTest is BaseTest {
 
         bytes32 digest = oc.computeDigest(u);
 
-        _simulateExecute(
-            _EstimateGasParams({
-                u: u,
-                isPrePayment: false,
-                paymentPerGasPrecision: 0,
-                paymentPerGas: 1,
-                combinedGasIncrement: 11_000,
-                combinedGasVerificationOffset: 0
-            })
-        );
-
         uint256 snapshot = vm.snapshotState();
         // To allow paymasters to be used in simulation mode.
-        vm.deal(address(0), type(uint256).max);
+        vm.deal(_SIMULATION_ADDRESS, type(uint256).max);
         (uint256 gExecute, uint256 gCombined,) = _estimateGas(u);
+        console.log("Gas vals");
+        console.log(gExecute);
+        console.log(gCombined);
         vm.revertToStateAndDelete(snapshot);
         u.combinedGas = gCombined;
 
@@ -1016,6 +1008,7 @@ contract OrchestratorTest is BaseTest {
         uint256 payerBalanceBefore = _balanceOf(u.paymentToken, address(payer.d));
         assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
         assertEq(d.d.getNonce(0), u.nonce + 1);
+        console.log("test");
         assertEq(_balanceOf(u.paymentToken, u.paymentRecipient), u.totalPaymentAmount);
         assertEq(
             _balanceOf(u.paymentToken, address(payer.d)), payerBalanceBefore - u.totalPaymentAmount

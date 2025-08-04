@@ -23,6 +23,7 @@ import {LibNonce} from "./libraries/LibNonce.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
+import {console} from "forge-std/console.sol";
 
 /// @title Account
 /// @notice A account contract for EOAs with EIP7702.
@@ -209,6 +210,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev General capacity for enumerable sets,
     /// to prevent off-chain full enumeration from running out-of-gas.
     uint256 internal constant _CAP = 512;
+
+    /// @dev Address to do a balance-check on for simulation mode.
+    address internal constant _SIMULATION_ADDRESS = 0xAa239C49EC6D564597F2e2F99A357c63cb65090d; // keccak256("Ithaca.Orchestrator.SIMULATION")[12];
 
     ////////////////////////////////////////////////////////////////////////
     // Constructor
@@ -631,7 +635,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             // If this is a simulation, signature validation errors are skipped.
             /// @dev to simulate a paymaster, state override the balance of address(0)
             /// to type(uint256).max. In this case, the msg.sender is the ORCHESTRATOR.
-            if (address(0).balance == type(uint256).max) {
+            if (address(_SIMULATION_ADDRESS).balance == type(uint256).max) {
                 isValid = true;
             }
 
