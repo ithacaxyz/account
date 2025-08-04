@@ -27,7 +27,7 @@ contract GuardedExecutorTest is BaseTest {
 
         Orchestrator.Intent memory u;
         u.eoa = d.eoa;
-        u.combinedGas = 10000000;
+        u.accountExecuteGas = 10000000;
 
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
         calls[0].to = address(counter);
@@ -37,9 +37,8 @@ contract GuardedExecutorTest is BaseTest {
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-        assertEq(
-            oc.execute(abi.encode(u)), bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)"))
-        );
+        vm.expectRevert(bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")));
+        oc.execute(abi.encode(u));
         // Set the call checker.
         bytes32 forKeyHash = _randomChance(2) ? k.keyHash : _ANY_KEYHASH;
         address forTarget = _randomChance(2) ? address(counter) : _ANY_TARGET;
@@ -55,9 +54,8 @@ contract GuardedExecutorTest is BaseTest {
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-        assertEq(
-            oc.execute(abi.encode(u)), bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)"))
-        );
+        vm.expectRevert(bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")));
+        oc.execute(abi.encode(u));
 
         // Try, now with the checker configured to authorize the call..
         checker.setAuthorized(
@@ -66,7 +64,7 @@ contract GuardedExecutorTest is BaseTest {
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-        assertEq(oc.execute(abi.encode(u)), bytes4(0));
+        oc.execute(abi.encode(u));
         assertEq(counter.counter(), 1);
 
         // Try, now with the checker removed.
@@ -78,9 +76,8 @@ contract GuardedExecutorTest is BaseTest {
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-        assertEq(
-            oc.execute(abi.encode(u)), bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)"))
-        );
+        vm.expectRevert(bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")));
+        oc.execute(abi.encode(u));
     }
 
     function testApproveIncreaseSpent(bytes32) public {
@@ -96,7 +93,7 @@ contract GuardedExecutorTest is BaseTest {
 
         Orchestrator.Intent memory u;
         u.eoa = d.eoa;
-        u.combinedGas = 10000000;
+        u.accountExecuteGas = 10000000;
 
         ERC7821.Call[] memory calls = new ERC7821.Call[](2);
 
@@ -112,7 +109,8 @@ contract GuardedExecutorTest is BaseTest {
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-        assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("NoSpendPermissions()")));
+        vm.expectRevert(bytes4(keccak256("NoSpendPermissions()")));
+        oc.execute(abi.encode(u));
 
         // Check that after the spend permission has been done, the token can be approved
         // and moved via `transferFrom`.
@@ -126,7 +124,7 @@ contract GuardedExecutorTest is BaseTest {
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-        assertEq(oc.execute(abi.encode(u)), 0);
+        oc.execute(abi.encode(u));
         assertEq(paymentToken.balanceOf(address(0xb0b)), 0.1 ether);
 
         // Check that the spent has been increased.
@@ -232,7 +230,7 @@ contract GuardedExecutorTest is BaseTest {
         Orchestrator.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         u.eoa = d.eoa;
-        u.combinedGas = 10000000;
+        u.accountExecuteGas = 10000000;
 
         PassKey memory kRegular = _randomSecp256r1PassKey();
         kRegular.k.isSuperAdmin = false;
@@ -271,25 +269,22 @@ contract GuardedExecutorTest is BaseTest {
             u.executionData = abi.encode(calls);
 
             u.signature = _eoaSig(d.privateKey, u);
-            assertEq(oc.execute(abi.encode(u)), 0, "2");
+            oc.execute(abi.encode(u)); // 2
             assertEq(d.d.x(), x, "3");
 
             d.d.resetX();
 
             u.nonce = d.d.getNonce(0);
             u.signature = _sig(kSuperAdmin, u);
-            assertEq(oc.execute(abi.encode(u)), 0, "4");
+            oc.execute(abi.encode(u)); // 4
             assertEq(d.d.x(), x, "5");
 
             d.d.resetX();
 
             u.nonce = d.d.getNonce(0);
             u.signature = _sig(kRegular, u);
-            assertEq(
-                oc.execute(abi.encode(u)),
-                bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")),
-                "6"
-            );
+            vm.expectRevert(bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")));
+            oc.execute(abi.encode(u)); // 6
             assertEq(d.d.x(), 0, "7");
 
             d.d.resetX();
@@ -301,7 +296,7 @@ contract GuardedExecutorTest is BaseTest {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
-        u.combinedGas = 1000000;
+        u.accountExecuteGas = 1000000;
         u.nonce = d.d.getNonce(0);
 
         PassKey memory k = _randomSecp256k1PassKey();
@@ -319,7 +314,7 @@ contract GuardedExecutorTest is BaseTest {
 
             u.signature = _sig(d, u);
 
-            assertEq(oc.execute(abi.encode(u)), 0);
+            oc.execute(abi.encode(u));
         }
         // Set spend limits.
         {
@@ -330,7 +325,8 @@ contract GuardedExecutorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.signature = _sig(d, u);
 
-            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("SuperAdminCanSpendAnything()")));
+            vm.expectRevert(bytes4(keccak256("SuperAdminCanSpendAnything()")));
+            oc.execute(abi.encode(u));
         }
         // Remove spend limits.
         {
@@ -341,7 +337,8 @@ contract GuardedExecutorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.signature = _sig(d, u);
 
-            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("SuperAdminCanSpendAnything()")));
+            vm.expectRevert(bytes4(keccak256("SuperAdminCanSpendAnything()")));
+            oc.execute(abi.encode(u));
         }
     }
 
@@ -352,7 +349,7 @@ contract GuardedExecutorTest is BaseTest {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
-        u.combinedGas = 1000000;
+        u.accountExecuteGas = 1000000;
         u.nonce = d.d.getNonce(0);
 
         PassKey memory k = _randomSecp256k1PassKey();
@@ -390,7 +387,7 @@ contract GuardedExecutorTest is BaseTest {
 
             u.signature = _eoaSig(d.privateKey, u);
 
-            assertEq(oc.execute(abi.encode(u)), 0);
+            oc.execute(abi.encode(u));
             assertEq(d.d.spendInfos(k.keyHash).length, 2);
         }
 
@@ -402,7 +399,7 @@ contract GuardedExecutorTest is BaseTest {
             u.nonce = d.d.getNonce(0);
             u.executionData = abi.encode(calls);
             u.signature = _sig(k, u);
-            assertEq(oc.execute(abi.encode(u)), 0);
+            oc.execute(abi.encode(u));
 
             infos = d.d.spendInfos(k.keyHash);
             for (uint256 i; i < infos.length; ++i) {
@@ -418,7 +415,7 @@ contract GuardedExecutorTest is BaseTest {
             u.nonce = d.d.getNonce(0);
             u.executionData = abi.encode(calls);
             u.signature = _sig(k, u);
-            assertEq(oc.execute(abi.encode(u)), 0);
+            oc.execute(abi.encode(u));
 
             infos = d.d.spendInfos(k.keyHash);
             assertEq(infos.length, 1);
@@ -434,7 +431,7 @@ contract GuardedExecutorTest is BaseTest {
             u.nonce = d.d.getNonce(0);
             u.executionData = abi.encode(calls);
             u.signature = _sig(k, u);
-            assertEq(oc.execute(abi.encode(u)), 0);
+            oc.execute(abi.encode(u));
             infos = d.d.spendInfos(k.keyHash);
             for (uint256 i; i < infos.length; ++i) {
                 if (infos[i].period == periods[0]) {
@@ -457,7 +454,7 @@ contract GuardedExecutorTest is BaseTest {
             u.nonce = d.d.getNonce(0);
             u.executionData = abi.encode(calls);
             u.signature = _sig(k, u);
-            assertEq(oc.execute(abi.encode(u)), 0);
+            oc.execute(abi.encode(u));
 
             infos = d.d.spendInfos(k.keyHash);
             for (uint256 i; i < infos.length; ++i) {
@@ -478,7 +475,7 @@ contract GuardedExecutorTest is BaseTest {
             u.nonce = d.d.getNonce(0);
             u.executionData = abi.encode(calls);
             u.signature = _sig(k, u);
-            assertEq(oc.execute(abi.encode(u)), 0);
+            oc.execute(abi.encode(u));
 
             assertEq(d.d.spendInfos(k.keyHash).length, 0);
         }
@@ -501,9 +498,10 @@ contract GuardedExecutorTest is BaseTest {
                         && calls[0].data[3] == bytes1(uint8(0xd5))
                 ) || amount == 0
             ) {
-                assertEq(oc.execute(abi.encode(u)), 0);
+                oc.execute(abi.encode(u));
             } else {
-                assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("NoSpendPermissions()")));
+                vm.expectRevert(bytes4(keccak256("NoSpendPermissions()")));
+                oc.execute(abi.encode(u));
             }
         }
 
@@ -516,7 +514,7 @@ contract GuardedExecutorTest is BaseTest {
             u.nonce = d.d.getNonce(0);
             u.executionData = abi.encode(calls);
             u.signature = _sig(k, u);
-            assertEq(oc.execute(abi.encode(u)), 0);
+            oc.execute(abi.encode(u));
 
             infos = d.d.spendInfos(k.keyHash);
             for (uint256 i; i < infos.length; ++i) {
@@ -533,7 +531,7 @@ contract GuardedExecutorTest is BaseTest {
             u.nonce = d.d.getNonce(0);
             u.executionData = abi.encode(calls);
             u.signature = _sig(k, u);
-            assertEq(oc.execute(abi.encode(u)), 0);
+            oc.execute(abi.encode(u));
 
             infos = d.d.spendInfos(k.keyHash);
             for (uint256 i; i < infos.length; ++i) {
@@ -547,7 +545,7 @@ contract GuardedExecutorTest is BaseTest {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
-        u.combinedGas = 1000000;
+        u.accountExecuteGas = 1000000;
         u.nonce = d.d.getNonce(0);
 
         PassKey memory k = _randomSecp256k1PassKey();
@@ -578,7 +576,7 @@ contract GuardedExecutorTest is BaseTest {
 
             u.signature = _eoaSig(d.privateKey, u);
 
-            assertEq(oc.execute(abi.encode(u)), 0);
+            oc.execute(abi.encode(u));
             assertEq(d.d.spendInfos(k.keyHash).length, 4);
         }
 
@@ -592,7 +590,7 @@ contract GuardedExecutorTest is BaseTest {
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
 
-        assertEq(oc.execute(abi.encode(u)), 0);
+        oc.execute(abi.encode(u));
         GuardedExecutor.SpendInfo[] memory infos = d.d.spendInfos(k.keyHash);
         for (uint256 i; i < infos.length; ++i) {
             if (infos[i].token == token0) assertEq(infos[i].spent, amount0);
@@ -605,7 +603,7 @@ contract GuardedExecutorTest is BaseTest {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
-        u.combinedGas = 1000000;
+        u.accountExecuteGas = 1000000;
         u.nonce = d.d.getNonce(0);
 
         PassKey memory k = _randomSecp256k1PassKey();
@@ -640,7 +638,7 @@ contract GuardedExecutorTest is BaseTest {
 
             u.signature = _eoaSig(d.privateKey, u);
 
-            assertEq(oc.execute(abi.encode(u)), 0);
+            oc.execute(abi.encode(u));
             assertEq(d.d.spendInfos(k.keyHash).length, tokens.length);
         }
 
@@ -698,7 +696,7 @@ contract GuardedExecutorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.signature = _sig(k, u);
 
-            assertEq(oc.execute(abi.encode(u)), 0);
+            oc.execute(abi.encode(u));
             GuardedExecutor.SpendInfo[] memory infos = d.d.spendInfos(k.keyHash);
             for (uint256 i; i < infos.length; ++i) {
                 assertEq(infos[i].spent, expectedSpents[0][infos[i].token]);
@@ -787,10 +785,10 @@ contract GuardedExecutorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.nonce = 0xc1d0 << 240;
 
-            (gExecute, u.combinedGas,) = _estimateGasForEOAKey(u);
+            (gExecute,,) = _estimateGasForEOAKey(u);
             u.signature = _eoaSig(d.privateKey, u);
 
-            assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
+            oc.execute{gas: gExecute}(abi.encode(u));
             assertEq(d.d.spendInfos(k.keyHash).length, 2);
             assertEq(d.d.spendInfos(k.keyHash)[0].spent, 0);
 
@@ -806,11 +804,11 @@ contract GuardedExecutorTest is BaseTest {
             calls[0] = _transferCall2(tokenToSpend, address(0xb0b), 0.6 ether);
             u.executionData = abi.encode(calls);
 
-            (gExecute, u.combinedGas,) = _estimateGas(k, u);
+            (gExecute,,) = _estimateGas(k, u);
             u.signature = _sig(k, u);
 
             // Intent should pass.
-            assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
+            oc.execute{gas: gExecute}(abi.encode(u));
             assertEq(_balanceOf(tokenToSpend, address(0xb0b)), 0.6 ether);
             assertEq(d.d.spendInfos(k.keyHash)[0].spent, 0.6 ether);
 
@@ -824,7 +822,8 @@ contract GuardedExecutorTest is BaseTest {
             u.signature = _sig(k, u);
 
             // Intent should fail.
-            assertEq(oc.execute(abi.encode(u)), GuardedExecutor.ExceededSpendLimit.selector);
+            vm.expectRevert(GuardedExecutor.ExceededSpendLimit.selector);
+            oc.execute(abi.encode(u));
         }
 
         // Prep Intent to try to exactly hit daily spend limit. This Intent should pass.
@@ -835,10 +834,10 @@ contract GuardedExecutorTest is BaseTest {
             calls[0] = _transferCall2(tokenToSpend, address(0xb0b), 0.4 ether);
             u.executionData = abi.encode(calls);
 
-            (gExecute, u.combinedGas,) = _estimateGas(k, u);
+            (gExecute,,) = _estimateGas(k, u);
             u.signature = _sig(k, u);
 
-            assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
+            oc.execute{gas: gExecute}(abi.encode(u));
             assertEq(_balanceOf(tokenToSpend, address(0xb0b)), 1 ether);
             assertEq(d.d.spendInfos(k.keyHash)[0].spent, 1 ether);
         }
@@ -874,11 +873,11 @@ contract GuardedExecutorTest is BaseTest {
             calls[0] = _transferCall2(tokenToSpend, address(0xb0b), 0.5 ether);
             u.executionData = abi.encode(calls);
 
-            (gExecute, u.combinedGas,) = _estimateGas(k, u);
+            (gExecute,,) = _estimateGas(k, u);
 
             u.signature = _sig(k, u);
 
-            assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
+            oc.execute{gas: gExecute}(abi.encode(u));
             assertEq(_balanceOf(tokenToSpend, address(0xb0b)), 1.5 ether);
             assertEq(d.d.spendInfos(k.keyHash)[0].spent, 0.5 ether);
         }

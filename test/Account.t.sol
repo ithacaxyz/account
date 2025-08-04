@@ -328,11 +328,12 @@ contract AccountTest is BaseTest {
         Orchestrator.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = d.d.getNonce(0);
-        u.combinedGas = 1000000;
+        u.accountExecuteGas = 1000000;
         u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
         u.signature = _eoaSig(d.privateKey, u);
 
-        assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("VerificationError()")));
+        vm.expectRevert(bytes4(keccak256("VerificationError()")));
+        oc.execute(abi.encode(u));
 
         vm.startPrank(pauseAuthority);
         // Try to pause already paused account.
@@ -352,7 +353,7 @@ contract AccountTest is BaseTest {
         vm.stopPrank();
 
         // Intent should now succeed.
-        assertEq(oc.execute(abi.encode(u)), 0);
+        oc.execute(abi.encode(u));
 
         // Can pause again, after the cooldown period.
         vm.warp(lastPaused + 5 weeks + 1);
@@ -435,7 +436,7 @@ contract AccountTest is BaseTest {
         baseIntent.prePaymentMaxAmount = baseIntent.prePaymentAmount;
         baseIntent.totalPaymentAmount = baseIntent.prePaymentAmount;
         baseIntent.totalPaymentMaxAmount = baseIntent.prePaymentMaxAmount;
-        baseIntent.combinedGas = 10000000;
+        baseIntent.accountExecuteGas = 10000000;
 
         // Encode the pre-calls once (to be reused on both chains)
         baseIntent.encodedPreCalls = new bytes[](2);
@@ -459,7 +460,7 @@ contract AccountTest is BaseTest {
         u1.signature = _sig(adminKey, u1);
 
         // Execute on chain 1 - should succeed
-        assertEq(oc.execute(abi.encode(u1)), 0, "Execution should succeed on chain 1");
+        oc.execute(abi.encode(u1)); // Execution should succeed on chain 1
 
         // Verify keys were added on chain 1
         uint256 keysCount1 = IthacaAccount(eoaAddress).keyCount();
@@ -475,7 +476,7 @@ contract AccountTest is BaseTest {
         vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
 
         // Execution should succeed due to multichain nonce in pre-calls
-        assertEq(oc.execute(abi.encode(baseIntent)), 0, "Should succeed due to multichain nonce");
+        oc.execute(abi.encode(baseIntent)); // Should succeed due to multichain nonce
 
         // Verify keys were added on chain 137
         uint256 keysCount137 = IthacaAccount(eoaAddress).keyCount();

@@ -250,7 +250,7 @@ contract BenchmarkTest is BaseTest {
         Orchestrator.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
-        u.combinedGas = 1000000;
+        u.accountExecuteGas = 1000000;
         u.prePaymentAmount = 0 ether;
         u.prePaymentMaxAmount = 0 ether;
         u.totalPaymentAmount = 0.01 ether;
@@ -262,12 +262,11 @@ contract BenchmarkTest is BaseTest {
         u.paymentRecipient = address(oc);
         u.signature = _sig(d, u);
 
-        bytes[] memory encodedIntents = new bytes[](1);
-        encodedIntents[0] = abi.encodePacked(abi.encode(u), junk);
+        bytes memory encodedIntent = abi.encodePacked(abi.encode(u), junk);
 
         vm.resumeGasMetering();
 
-        oc.execute(encodedIntents);
+        oc.execute(encodedIntent);
     }
 
     function testERC20TransferViaPortoOrchestratorWithSpendLimits() public {
@@ -293,7 +292,7 @@ contract BenchmarkTest is BaseTest {
         Orchestrator.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
-        u.combinedGas = 1000000;
+        u.accountExecuteGas = 1000000;
         u.prePaymentAmount = 0 ether;
         u.prePaymentMaxAmount = 0 ether;
         u.totalPaymentAmount = 0.01 ether;
@@ -306,9 +305,12 @@ contract BenchmarkTest is BaseTest {
         bytes[] memory encodedIntents = new bytes[](1);
         encodedIntents[0] = abi.encode(u);
 
+        uint256[] memory intentGas = new uint256[](1);
+        intentGas[0] = 10_000_000;
+
         vm.resumeGasMetering();
 
-        oc.execute(encodedIntents);
+        batcher.batchExecute(address(oc), encodedIntents, intentGas);
 
         vm.pauseGasMetering();
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);

@@ -22,6 +22,9 @@ import {GuardedExecutor} from "../src/IthacaAccount.sol";
 
 import {IOrchestrator} from "../src/interfaces/IOrchestrator.sol";
 import {Simulator} from "../src/Simulator.sol";
+import {Batcher} from "../src/Batcher.sol";
+import {OrchestratorSim} from "../src/simulation/OrchestratorSim.sol";
+import {IthacaAccountSim} from "../src/simulation/IthacaAccountSim.sol";
 
 contract BaseTest is SoladyTest {
     using LibRLP for LibRLP.List;
@@ -33,6 +36,7 @@ contract BaseTest is SoladyTest {
     EIP7702Proxy eip7702Proxy;
     TargetFunctionPayload[] targetFunctionPayloads;
     Simulator simulator;
+    Batcher batcher;
 
     struct TargetFunctionPayload {
         address by;
@@ -83,6 +87,7 @@ contract BaseTest is SoladyTest {
             EIP7702Proxy(payable(LibEIP7702.deployProxy(accountImplementation, address(this))));
         account = MockAccount(payable(eip7702Proxy));
         simulator = new Simulator();
+        batcher = new Batcher();
 
         _etchP256Verifier();
     }
@@ -297,10 +302,20 @@ contract BaseTest is SoladyTest {
                 isPrePayment: true,
                 paymentPerGasPrecision: 0,
                 paymentPerGas: 1,
-                combinedGasIncrement: 110_000,
-                combinedGasVerificationOffset: 10_000 * k.threshold
+                accountExecuteGasIncrement: 110_000,
+                accountExecuteGasVerificationOffset: 10_000 * k.threshold
             })
         );
+    }
+
+    function _overrideSimCodes(address orchestrator, address ithacaAccount) internal {
+        // Deploy simulation contracts with matching constructor args
+        OrchestratorSim ocSim = new OrchestratorSim(address(this)); // pauseAuthority = address(this)
+        IthacaAccountSim accountSim = new IthacaAccountSim(orchestrator);
+
+        // Replace bytecode of existing contracts with simulation bytecode
+        vm.etch(orchestrator, address(ocSim).code);
+        vm.etch(ithacaAccount, address(accountSim).code);
     }
 
     function _estimateGas(Orchestrator.Intent memory i)
@@ -308,16 +323,19 @@ contract BaseTest is SoladyTest {
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
         uint256 snapshot = vm.snapshotState();
-        vm.deal(address(simulator), type(uint256).max);
 
-        (gUsed, gCombined) =
-            simulator.simulateV1Logs(address(oc), true, 0, 1, 11_000, 10_000, abi.encode(i));
+        _overrideSimCodes(address(oc), address(account));
 
-        // gExecute > (100k + combinedGas) * 64/63
-        gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
+        uint256 accountExecuteGas;
+        (accountExecuteGas, gCombined) = simulator.simulateV1Logs(
+            address(oc), true, 0, 1, 11_000, 10_000, 11_000, 10_000, abi.encode(i)
+        );
 
         vm.revertToStateAndDelete(snapshot);
 
+        gUsed = gCombined; // For compatibility
+
+        // gExecute > (100k + accountExecuteGas) * 64/63
         gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
     }
 
@@ -326,8 +344,8 @@ contract BaseTest is SoladyTest {
         bool isPrePayment;
         uint8 paymentPerGasPrecision;
         uint256 paymentPerGas;
-        uint256 combinedGasIncrement;
-        uint256 combinedGasVerificationOffset;
+        uint256 accountExecuteGasIncrement;
+        uint256 accountExecuteGasVerificationOffset;
     }
 
     function _estimateGas(_EstimateGasParams memory p)
@@ -337,23 +355,26 @@ contract BaseTest is SoladyTest {
         {
             uint256 snapshot = vm.snapshotState();
 
-            // Set the simulator to have max balance, so that it can run in state override mode.
-            // This is meant to mimic an offchain state override.
-            vm.deal(address(simulator), type(uint256).max);
+            _overrideSimCodes(address(oc), address(account));
 
-            (gUsed, gCombined) = simulator.simulateV1Logs(
+            uint256 accountExecuteGas;
+            (accountExecuteGas, gCombined) = simulator.simulateV1Logs(
                 address(oc),
                 p.isPrePayment,
                 p.paymentPerGasPrecision,
                 p.paymentPerGas,
-                p.combinedGasIncrement,
-                p.combinedGasVerificationOffset,
+                11_000,
+                10_000,
+                p.accountExecuteGasVerificationOffset,
+                p.accountExecuteGasIncrement,
                 abi.encode(p.u)
             );
             vm.revertToStateAndDelete(snapshot);
+
+            gUsed = gCombined; // For compatibility with existing tests
         }
 
-        // gExecute > (100k + combinedGas) * 64/63
+        // gExecute > (100k + accountExecuteGas) * 64/63
         gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
     }
 

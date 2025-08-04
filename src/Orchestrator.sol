@@ -21,6 +21,8 @@ import {IFunder} from "./interfaces/IFunder.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 
+import "forge-std/console.sol";
+
 /// @title Orchestrator
 /// @notice Enables atomic verification, gas compensation and execution across eoas.
 /// @dev
@@ -306,6 +308,8 @@ contract Orchestrator is
             }
         }
 
+        console.log("B EOA: ", i.eoa);
+
         // Equivalent Solidity code:
         // try this.selfCallExecutePay( keyHash, i) {}
         // catch {
@@ -370,6 +374,8 @@ contract Orchestrator is
             abi.encode(keyHash) // `opData`.
         );
 
+        console.log("A EOA: ", i.eoa);
+
         _accountExecute(i.eoa, data, i.accountExecuteGas);
 
         uint256 remainingPaymentAmount = Math.rawSub(i.totalPaymentAmount, i.prePaymentAmount);
@@ -382,6 +388,7 @@ contract Orchestrator is
         internal
         virtual
     {
+        console.log("Executing on EOA: ", eoa);
         if (gasleft() < Math.mulDiv(accountExecuteGas, 63, 64) + 1000) {
             revert InsufficientGas();
         }
