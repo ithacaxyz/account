@@ -6,6 +6,7 @@ import {Ownable} from "solady/auth/Ownable.sol";
 import {ECDSA} from "solady/utils/ECDSA.sol";
 import {ICommon} from "../../../src/interfaces/ICommon.sol";
 import {IOrchestrator} from "../../../src/interfaces/IOrchestrator.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 /// @dev WARNING! This mock is strictly intended for testing purposes only.
 /// Do NOT copy anything here into production code unless you really know what you are doing.
 
@@ -69,7 +70,12 @@ contract MockPayerWithSignature is Ownable {
             revert InvalidSignature();
         }
 
-        TokenTransferLib.safeTransfer(u.paymentToken, u.paymentRecipient, paymentAmount);
+        if (u.paymentToken == address(0)) {
+            (bool success,) = msg.sender.call{value: paymentAmount}("");
+            (success);
+        } else {
+            SafeTransferLib.safeApprove(u.paymentToken, msg.sender, paymentAmount);
+        }
 
         emit Compensated(u.paymentToken, u.paymentRecipient, paymentAmount, u.eoa, keyHash);
     }

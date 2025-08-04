@@ -21,6 +21,7 @@ import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {GuardedExecutor} from "./GuardedExecutor.sol";
 import {LibNonce} from "./libraries/LibNonce.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
+import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 
@@ -630,7 +631,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
             // If this is a simulation, signature validation errors are skipped.
             /// @dev to simulate a paymaster, state override the balance of the relayer
-            /// to uint256(type(uint192).max).
+            /// to type(uint192).max.
             if (tx.origin.balance >= type(uint192).max) {
                 isValid = true;
             }
@@ -640,7 +641,13 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             }
         }
 
-        TokenTransferLib.safeTransfer(intent.paymentToken, intent.paymentRecipient, paymentAmount);
+        if (intent.paymentToken == address(0)) {
+            assembly ("memory-safe") {
+                pop(call(gas(), caller(), paymentAmount, 0x00, 0x00, 0x00, 0x00))
+            }
+        } else {
+            SafeTransferLib.safeApprove(intent.paymentToken, msg.sender, paymentAmount);
+        }
         // Increase spend.
         if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
             SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
