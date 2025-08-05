@@ -234,7 +234,7 @@ contract Orchestrator is
         }
 
         if (isStateOverride) {
-            if (tx.origin.balance > type(uint192).max) {
+            if (tx.origin.balance >= type(uint192).max) {
                 return gUsed;
             } else {
                 revert StateOverrideError();

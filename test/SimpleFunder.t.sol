@@ -102,7 +102,7 @@ contract SimpleFunderTest is Test {
 
     function test_fund_simulationMode_bypasses_signatureValidation() public {
         // Set caller balance to max uint256 to simulate state override
-        vm.deal(_ORIGIN_ADDRESS, uint256(type(uint192).max) + 1);
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         ICommon.Transfer[] memory transfers = new ICommon.Transfer[](1);
         transfers[0] = ICommon.Transfer({token: address(token), amount: 100 ether});
@@ -172,7 +172,7 @@ contract SimpleFunderTest is Test {
 
     function testFuzz_fund_simulationMode_anySignature(bytes memory randomSignature) public {
         // Set caller balance to max uint256 to simulate state override
-        vm.deal(_ORIGIN_ADDRESS, uint256(type(uint192).max) + 1);
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         ICommon.Transfer[] memory transfers = new ICommon.Transfer[](1);
         transfers[0] = ICommon.Transfer({token: address(token), amount: 100 ether});
@@ -242,6 +242,7 @@ contract SimpleFunderTest is Test {
         simpleFunder.withdrawTokensWithSignature(
             address(token), recipient, amount, deadline, nonce, signature
         );
+
         // Second withdrawal with same nonce should fail
         vm.expectRevert(abi.encodeWithSelector(SimpleFunder.InvalidNonce.selector));
         simpleFunder.withdrawTokensWithSignature(

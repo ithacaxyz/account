@@ -131,7 +131,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
 
         // Override signature validation result in simulation mode
         // This allows relayers to simulate multi-chain intents successfully
-        if (tx.origin.balance > type(uint192).max) {
+        if (tx.origin.balance >= type(uint192).max) {
             isValid = true;
         }
 

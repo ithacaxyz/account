@@ -311,7 +311,7 @@ contract BaseTest is SoladyTest {
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
         uint256 snapshot = vm.snapshotState();
-        vm.deal(_ORIGIN_ADDRESS, uint256(type(uint192).max) + 1);
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (gUsed, gCombined) =
             simulator.simulateV1Logs(address(oc), true, 0, 1, 11_000, 10_000, abi.encode(i));
@@ -342,7 +342,7 @@ contract BaseTest is SoladyTest {
 
             // Set the simulator to have max balance, so that it can run in state override mode.
             // This is meant to mimic an offchain state override.
-            vm.deal(_ORIGIN_ADDRESS, uint256(type(uint192).max) + 1);
+            vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
             (gUsed, gCombined) = simulator.simulateV1Logs(
                 address(oc),

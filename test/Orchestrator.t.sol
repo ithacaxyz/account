@@ -619,7 +619,7 @@ contract OrchestratorTest is BaseTest {
 
         // Set the simulator to have max balance, so that it can run in state override mode.
         // This is meant to mimic an offchain state override.
-        vm.deal(_ORIGIN_ADDRESS, uint256(type(uint192).max) + 1);
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
         (gUsed, gCombined) = simulator.simulateV1Logs(
             address(oc),
             p.isPrePayment,
@@ -993,11 +993,8 @@ contract OrchestratorTest is BaseTest {
 
         uint256 snapshot = vm.snapshotState();
         // To allow paymasters to be used in simulation mode.
-        vm.deal(_ORIGIN_ADDRESS, uint256(type(uint192).max) + 1);
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
         (uint256 gExecute, uint256 gCombined,) = _estimateGas(u);
-        console.log("Gas vals");
-        console.log(gExecute);
-        console.log(gCombined);
         vm.revertToStateAndDelete(snapshot);
         u.combinedGas = gCombined;
 
@@ -1008,7 +1005,6 @@ contract OrchestratorTest is BaseTest {
         uint256 payerBalanceBefore = _balanceOf(u.paymentToken, address(payer.d));
         assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
         assertEq(d.d.getNonce(0), u.nonce + 1);
-        console.log("test");
         assertEq(_balanceOf(u.paymentToken, u.paymentRecipient), u.totalPaymentAmount);
         assertEq(
             _balanceOf(u.paymentToken, address(payer.d)), payerBalanceBefore - u.totalPaymentAmount
@@ -1267,7 +1263,6 @@ contract OrchestratorTest is BaseTest {
         u.nonce = t.d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(t.multiSigKey, bytes32(_random()));
-        u.paymentRecipient = address(1);
         (uint256 gExecute, uint256 gCombined,) = _estimateGasForMultiSigKey(t.multiSigKey, u);
         u.combinedGas = gCombined;
         u.signature = _sig(t.multiSigKey, u);
@@ -1301,7 +1296,6 @@ contract OrchestratorTest is BaseTest {
             u.nonce = t.d.d.getNonce(0);
             u.executionData = abi.encode(calls);
             u.signature = _sig(t.multiSigKey, bytes32(_random()));
-
             if (newThreshold == 0) {
                 vm.expectRevert(bytes4(keccak256("InvalidThreshold()")));
             }
