@@ -52,15 +52,15 @@ contract ConfigureLayerZeroSettler is Script {
     // LayerZero configuration
     LayerZeroConfig public configContract;
 
+    // Fork ids
+    mapping(uint256 => uint256) public forkIds;
+
     struct ConfigData {
         address[] requiredDVNAddresses;
         address[] optionalDVNAddresses;
         uint8 requiredDVNCount;
         uint8 optionalDVNCount;
     }
-
-    // Fork ids
-    mapping(uint256 => uint256) public forkId;
 
     function run() external {
         // Configure all chains
@@ -92,6 +92,9 @@ contract ConfigureLayerZeroSettler is Script {
         console.log("Configuring", chainIds.length, "chains");
 
         // Configure each chain
+        for (uint256 i = 0; i < chainIds.length; i++) {
+            forkIds[chainIds[i]] = type(uint256).max;
+        }
         for (uint256 i = 0; i < chainIds.length; i++) {
             configureChain(chainIds[i], layerZeroSettler);
         }
@@ -166,11 +169,12 @@ contract ConfigureLayerZeroSettler is Script {
         console.log("EID:", configContract.getEid(sourceChainId));
 
         // Step 1: Fork to source chain and configure SEND pathways
-        uint256 id = forkId[sourceChainId]; 
-        if (id == 0) {
+        uint256 id = forkIds[sourceChainId]; 
+        if (id == type(uint256).max) {
+          console.log("New chain, making rpc call to create fork...");
           string memory sourceRpcUrl = vm.envString(string.concat("RPC_", vm.toString(sourceChainId)));
           id = vm.createSelectFork(sourceRpcUrl);
-          forkId[sourceChainId] = id;
+          forkIds[sourceChainId] = id;
         } else {
           vm.selectFork(id);
         }
@@ -198,11 +202,12 @@ contract ConfigureLayerZeroSettler is Script {
             );
 
             // Fork to destination chain
-            uint256 id = forkId[destChainId]; 
-            if (id == 0) {
+            uint256 id = forkIds[destChainId]; 
+            if (id == type(uint256).max) {
+              console.log("New chain, making rpc call to create fork...");
               string memory destRpcUrl = vm.envString(string.concat("RPC_", vm.toString(destChainId)));
               id = vm.createSelectFork(destRpcUrl);
-              forkId[destChainId] = id;
+              forkIds[destChainId] = id;
             } else {
               vm.selectFork(id);
             }
