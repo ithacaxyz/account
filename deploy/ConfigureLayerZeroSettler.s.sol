@@ -53,7 +53,7 @@ contract ConfigureLayerZeroSettler is Script {
     LayerZeroConfig public configContract;
 
     // Fork ids
-    mapping(uint256 => uint256) public forkId;
+    mapping(uint256 => uint256) public forkIds;
 
     struct ConfigData {
         address[] requiredDVNAddresses;
@@ -61,9 +61,6 @@ contract ConfigureLayerZeroSettler is Script {
         uint8 requiredDVNCount;
         uint8 optionalDVNCount;
     }
-
-    // Fork ids
-    mapping(uint256 => uint256) public forkId;
 
     function run() external {
         // Configure all chains
@@ -96,7 +93,7 @@ contract ConfigureLayerZeroSettler is Script {
 
         // Configure each chain
         for (uint256 i = 0; i < chainIds.length; i++) {
-            forkId[chainIds[i]] = type(uint256).max;
+            forkIds[chainIds[i]] = type(uint256).max;
         }
         for (uint256 i = 0; i < chainIds.length; i++) {
             configureChain(chainIds[i], layerZeroSettler);
@@ -172,12 +169,12 @@ contract ConfigureLayerZeroSettler is Script {
         console.log("EID:", configContract.getEid(sourceChainId));
 
         // Step 1: Fork to source chain and configure SEND pathways
-        uint256 id = forkId[sourceChainId]; 
+        uint256 id = forkIds[sourceChainId]; 
         if (id == type(uint256).max) {
           console.log("New chain, making rpc call to create fork...");
           string memory sourceRpcUrl = vm.envString(string.concat("RPC_", vm.toString(sourceChainId)));
           id = vm.createSelectFork(sourceRpcUrl);
-          forkId[sourceChainId] = id;
+          forkIds[sourceChainId] = id;
         } else {
           vm.selectFork(id);
         }
@@ -205,12 +202,12 @@ contract ConfigureLayerZeroSettler is Script {
             );
 
             // Fork to destination chain
-            uint256 id = forkId[destChainId]; 
+            uint256 id = forkIds[destChainId]; 
             if (id == type(uint256).max) {
               console.log("New chain, making rpc call to create fork...");
               string memory destRpcUrl = vm.envString(string.concat("RPC_", vm.toString(destChainId)));
               id = vm.createSelectFork(destRpcUrl);
-              forkId[destChainId] = id;
+              forkIds[destChainId] = id;
             } else {
               vm.selectFork(id);
             }
@@ -288,12 +285,10 @@ contract ConfigureLayerZeroSettler is Script {
         }
 
         // Execute send configuration
-        console.log("     [Deployer nonce (pre)]:", vm.getNonce(deployer));
         vm.startBroadcast();
         console.log("Setting send configurations...");
         endpoint.setConfig(address(settler), config.sendUln302, sendParams);
         vm.stopBroadcast();
-        console.log("    [Deployer nonce (post)]:", vm.getNonce(deployer));
 
         console.log(unicode"✓ Send pathways configured");
     }
@@ -339,12 +334,10 @@ contract ConfigureLayerZeroSettler is Script {
             SetConfigParam({eid: sourceEid, configType: CONFIG_TYPE_ULN, config: ulnConfig});
 
         // Execute receive configuration
-        console.log("    [Deployer nonce (pre)]:", vm.getNonce(deployer));
         vm.startBroadcast();
         console.log("    Setting receive configuration...");
         endpoint.setConfig(address(settler), destConfig.receiveUln302, receiveParams);
         vm.stopBroadcast();
-        console.log("    [Deployer nonce (post)]:", vm.getNonce(deployer));
 
         console.log(unicode"    ✓ Receive pathway configured");
     }
