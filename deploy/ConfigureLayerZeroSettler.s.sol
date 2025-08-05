@@ -59,6 +59,9 @@ contract ConfigureLayerZeroSettler is Script {
         uint8 optionalDVNCount;
     }
 
+    // Fork ids
+    mapping(uint256 => uint256) public forkId;
+
     function run() external {
         // Configure all chains
         uint256[] memory chainIds = new uint256[](0);
@@ -163,8 +166,14 @@ contract ConfigureLayerZeroSettler is Script {
         console.log("EID:", configContract.getEid(sourceChainId));
 
         // Step 1: Fork to source chain and configure SEND pathways
-        string memory sourceRpcUrl = vm.envString(string.concat("RPC_", vm.toString(sourceChainId)));
-        vm.createSelectFork(sourceRpcUrl);
+        uint256 id = forkId[sourceChainId]; 
+        if (id == 0) {
+          string memory sourceRpcUrl = vm.envString(string.concat("RPC_", vm.toString(sourceChainId)));
+          id = vm.createSelectFork(sourceRpcUrl);
+          forkId[sourceChainId] = id;
+        } else {
+          vm.selectFork(id);
+        }
 
         // Verify we're on the correct chain
         require(block.chainid == sourceChainId, "Source chain ID mismatch");
@@ -189,8 +198,14 @@ contract ConfigureLayerZeroSettler is Script {
             );
 
             // Fork to destination chain
-            string memory destRpcUrl = vm.envString(string.concat("RPC_", vm.toString(destChainId)));
-            vm.createSelectFork(destRpcUrl);
+            uint256 id = forkId[destChainId]; 
+            if (id == 0) {
+              string memory destRpcUrl = vm.envString(string.concat("RPC_", vm.toString(destChainId)));
+              id = vm.createSelectFork(destRpcUrl);
+              forkId[destChainId] = id;
+            } else {
+              vm.selectFork(id);
+            }
 
             // Verify we're on the correct destination chain
             require(block.chainid == destChainId, "Destination chain ID mismatch");
