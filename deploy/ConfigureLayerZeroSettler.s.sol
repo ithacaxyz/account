@@ -62,6 +62,9 @@ contract ConfigureLayerZeroSettler is Script {
         uint8 optionalDVNCount;
     }
 
+    // Fork ids
+    mapping(uint256 => uint256) public forkId;
+
     function run() external {
         // Configure all chains
         uint256[] memory chainIds = new uint256[](0);
@@ -174,9 +177,7 @@ contract ConfigureLayerZeroSettler is Script {
           console.log("New chain, making rpc call to create fork...");
           string memory sourceRpcUrl = vm.envString(string.concat("RPC_", vm.toString(sourceChainId)));
           id = vm.createSelectFork(sourceRpcUrl);
-          console.log("Created fork id:", id);
           forkId[sourceChainId] = id;
-          console.log("Stored fork id:", forkId[sourceChainId] = id);
         } else {
           vm.selectFork(id);
         }
@@ -209,9 +210,7 @@ contract ConfigureLayerZeroSettler is Script {
               console.log("New chain, making rpc call to create fork...");
               string memory destRpcUrl = vm.envString(string.concat("RPC_", vm.toString(destChainId)));
               id = vm.createSelectFork(destRpcUrl);
-              console.log("Created fork id:", id);
               forkId[destChainId] = id;
-              console.log("Stored fork id:", forkId[destChainId] = id);
             } else {
               vm.selectFork(id);
             }
