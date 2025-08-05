@@ -62,4 +62,10 @@ contract OrchestratorSim is Orchestrator {
 
         _gAccountExecute = Math.rawSub(gStart, gasleft());
     }
+
+    /// @dev Guards a function such that it can only be called by `address(this)`.
+    modifier onlyThis() virtual override {
+        if (msg.sender != address(this)) revert Unauthorized();
+        _;
+    }
 }

@@ -20,4 +20,10 @@ contract IthacaAccountSim is IthacaAccount {
 
         return (true, keyHash);
     }
+
+    /// @dev Guards a function such that it can only be called by `address(this)`.
+    modifier onlyThis() virtual override {
+        if (msg.sender != address(this)) revert Unauthorized();
+        _;
+    }
 }

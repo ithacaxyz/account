@@ -46,10 +46,10 @@ contract Simulator {
         address oc,
         bool isRevert,
         uint256 combinedGasOverride,
-        ICommon.Intent memory u
+        ICommon.Intent memory i
     ) internal freeTempMemory returns (uint256 gasUsed, uint256 accountExecuteGas) {
         bytes memory data =
-            abi.encodeWithSignature("simulateExecute(bool,bytes)", isRevert, abi.encode(u));
+            abi.encodeWithSignature("simulateExecute(bool,bytes)", isRevert, abi.encode(i));
 
         assembly ("memory-safe") {
             // Zeroize return slots.
@@ -61,7 +61,7 @@ contract Simulator {
             let success :=
                 call(combinedGasOverride, oc, 0, add(data, 0x20), mload(data), 0x00, 0x40)
 
-            gasUsed := sub(gasUsed, gas())
+            gasUsed := sub(gas(), gasUsed)
 
             switch isRevert
             case 0 {
@@ -76,7 +76,7 @@ contract Simulator {
             }
         }
 
-        return (gasUsed, combinedGasOverride);
+        return (gasUsed, accountExecuteGas);
     }
 
     function simulateAccountExecuteGas(

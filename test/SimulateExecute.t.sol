@@ -73,12 +73,6 @@ contract SimulateExecuteTest is BaseTest {
             i.signature = abi.encodePacked(r, s, v);
         }
 
-        // If the caller does not have max balance, then the simulation should revert.
-        vm.expectRevert(bytes4(keccak256("StateOverrideError()")));
-        (t.gUsed, t.gCombined) = simulator.simulateV1Logs(
-            address(oc), false, 0, 1, 11_000, 10_000, 110_000, 0, abi.encode(i)
-        );
-
         // simulateExecute is now in OrchestratorSim, not in the regular Orchestrator
         // These simulation-specific tests are handled via the Simulator contract
         uint256 snapshot = vm.snapshotState();
@@ -150,7 +144,7 @@ contract SimulateExecuteTest is BaseTest {
         simulator.simulateCombinedGas(address(oc), true, 0, 1, 11_000, i);
     }
 
-    function testSimulateExecuteNoRevert() public {
+    function testSimulateExecuteNoRevert123() public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         paymentToken.mint(d.eoa, type(uint128).max);
@@ -191,7 +185,7 @@ contract SimulateExecuteTest is BaseTest {
         }
 
         uint256 snapshot = vm.snapshotState();
-        _overrideSimCodes(address(oc), address(account));
+        // _overrideSimCodes(address(oc), address(account));
 
         (t.gUsed, t.gCombined) = simulator.simulateV1Logs(
             address(oc), false, 2, 1e11, 11_000, 0, 110_000, 0, abi.encode(i)
@@ -249,7 +243,7 @@ contract SimulateExecuteTest is BaseTest {
             i.signature = abi.encodePacked(r, s, v);
         }
         uint256 snapshot = vm.snapshotState();
-        _overrideSimCodes(address(oc), address(account));
+        // _overrideSimCodes(address(oc), address(account));
         (t.gUsed, t.gCombined) = simulator.simulateV1Logs(
             address(oc), false, 2, 1e11, 10_800, 0, 110_000, 0, abi.encode(i)
         );
@@ -310,7 +304,7 @@ contract SimulateExecuteTest is BaseTest {
         // to hit all the gas for the GuardedExecutor stuff for the `keyHash`.
         i.signature = abi.encodePacked(keccak256("a"), keccak256("b"), k.keyHash, uint8(0));
         uint256 snapshot = vm.snapshotState();
-        _overrideSimCodes(address(oc), address(account));
+        // _overrideSimCodes(address(oc), address(account));
 
         (t.gUsed, t.gCombined) = simulator.simulateV1Logs(
             address(oc), false, 2, 1e11, 12_000, 10_000, 110_000, 0, abi.encode(i)

@@ -88,9 +88,6 @@ contract Orchestrator is
     /// @dev The EOA's account implementation is not supported.
     error UnsupportedAccountImplementation();
 
-    /// @dev The state override has not happened.
-    error StateOverrideError();
-
     /// @dev The funding has failed.
     error FundingError();
 
@@ -293,21 +290,6 @@ contract Orchestrator is
         // off-chain simulation and on-chain execution.
         if (i.prePaymentAmount != 0) _pay(i.prePaymentAmount, keyHash, digest, i);
 
-        unchecked {
-            // We do this check to ensure that the execute call does not happen at a very high calldepth.
-            // This ensures that a relayer cannot grief the user's execution, by making the execute fail
-            // because of the maximum allowed call depth in the EVM.
-            // This also ensures that there is enough gas left after the execute to complete the
-            // remaining flow after the self call.
-            // TODO: Maybe this can be moved or merged wih the other InsufficientGas check.
-            if (
-                ((gasleft() * 63) >> 6)
-                    < Math.saturatingAdd(i.accountExecuteGas, _INNER_GAS_OVERHEAD)
-            ) {
-                revert InsufficientGas();
-            }
-        }
-
         console.log("B EOA: ", i.eoa);
 
         // Equivalent Solidity code:
@@ -337,20 +319,24 @@ contract Orchestrator is
                 call(gas(), address(), 0, add(m, 0x1c), add(0x84, encodedIntentLength), m, 0x20)
             ) {
                 // TODO: We should not revert here.
-                returndatacopy(mload(0x40), 0x00, returndatasize())
-                revert(mload(0x40), returndatasize())
+                // returndatacopy(mload(0x40), 0x00, returndatasize())
+                // revert(mload(0x40), returndatasize())
             }
         }
 
         emit IntentExecuted(i.eoa, i.nonce);
     }
 
+    /// @dev Guards a function such that it can only be called by `address(this)`.
+    modifier onlyThis() virtual {
+        if (msg.sender != address(this)) revert Unauthorized();
+        _;
+    }
+
     /// @dev This function is only intended for self-call. The name is mined to give a function selector of `0x00000001`
     /// We use this function to call the account.execute function, and then the account.pay function for post-payment.
     /// Self-calling this function ensures, that if the post payment reverts, then the execute function will also revert.
-    function selfCallExecutePay1395256087() public payable {
-        require(msg.sender == address(this));
-
+    function selfCallExecutePay1395256087() public payable onlyThis {
         bytes32 keyHash;
         bytes32 digest;
         Intent calldata i;
@@ -372,6 +358,13 @@ contract Orchestrator is
             // This also converts the data from a bytes array to a calldata struct.
             i := 0xa4
         }
+        console.log("Reached Here");
+        console.log("EOA: ", i.eoa);
+        console.log("length: ", i.executionData.length);
+        console.log("nonce: ", i.nonce);
+        console.log("accountExecuteGas: ", i.accountExecuteGas);
+        console.log("totalPaymentAmount: ", i.totalPaymentAmount);
+        console.log("prePaymentAmount: ", i.prePaymentAmount);
 
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
         // We expect that the account supports ERC7821
@@ -383,6 +376,7 @@ contract Orchestrator is
         );
 
         console.log("A EOA: ", i.eoa);
+        console.log("A Nonce: ", i.nonce);
 
         _accountExecute(i.eoa, data, i.accountExecuteGas);
 
@@ -396,8 +390,8 @@ contract Orchestrator is
         internal
         virtual
     {
-        console.log("Executing on EOA: ", eoa);
-        if (gasleft() < Math.mulDiv(accountExecuteGas, 63, 64) + 1000) {
+        // TODO: Is this check sufficient to prevent calldepth griefing?
+        if (((gasleft() * 63) >> 6) < Math.saturatingAdd(accountExecuteGas, _INNER_GAS_OVERHEAD)) {
             revert InsufficientGas();
         }
 

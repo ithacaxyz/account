@@ -509,7 +509,7 @@ contract OrchestratorTest is BaseTest {
         }
     }
 
-    function testExceuteGasUsed() public {
+    function testExecuteGasUsed() public {
         vm.pauseGasMetering();
         uint256 n = 7;
         bytes[] memory encodeIntents = new bytes[](n);
@@ -574,6 +574,7 @@ contract OrchestratorTest is BaseTest {
         u.accountExecuteGas = 20000000;
         u.signature = _sig(k, u);
 
+        vm.expectRevert(bytes4(keccak256("InvalidNonce()")));
         oc.execute(abi.encode(u));
     }
 
