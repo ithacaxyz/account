@@ -91,15 +91,21 @@ contract ConfigureLayerZeroSettler is Script {
         uint256[] memory chainIds = getChainIdsToProcess(requestedChainIds, allConfigs);
         console.log("Configuring", chainIds.length, "chains");
 
-        // Configure each chain
-        for (uint256 i = 0; i < chainIds.length; i++) {
-            forkIds[chainIds[i]] = type(uint256).max;
-        }
+        populateChainForks(chainIds);
+
         for (uint256 i = 0; i < chainIds.length; i++) {
             configureChain(chainIds[i], layerZeroSettler);
         }
 
         console.log("\n=== LayerZero Configuration Complete ===");
+    }
+
+    function populateChainForks(uint256[] memory chainIds) internal {
+        for (uint256 i = 0; i < chainIds.length; i++) {
+            string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainIds[i])));
+            uint256 id = vm.createSelectFork(rpcUrl);
+            forkIds[chainIds[i]] = id;
+        }
     }
 
     function getChainIdsToProcess(
@@ -168,16 +174,7 @@ contract ConfigureLayerZeroSettler is Script {
         console.log("Chain ID:", sourceChainId);
         console.log("EID:", configContract.getEid(sourceChainId));
 
-        // Step 1: Fork to source chain and configure SEND pathways
-        uint256 id = forkIds[sourceChainId]; 
-        if (id == type(uint256).max) {
-          console.log("New chain, making rpc call to create fork...");
-          string memory sourceRpcUrl = vm.envString(string.concat("RPC_", vm.toString(sourceChainId)));
-          id = vm.createSelectFork(sourceRpcUrl);
-          forkIds[sourceChainId] = id;
-        } else {
-          vm.selectFork(id);
-        }
+        vm.selectFork(forkIds[sourceChainId]);
 
         // Verify we're on the correct chain
         require(block.chainid == sourceChainId, "Source chain ID mismatch");
@@ -201,16 +198,7 @@ contract ConfigureLayerZeroSettler is Script {
                 "for receive configuration"
             );
 
-            // Fork to destination chain
-            uint256 id = forkIds[destChainId]; 
-            if (id == type(uint256).max) {
-              console.log("New chain, making rpc call to create fork...");
-              string memory destRpcUrl = vm.envString(string.concat("RPC_", vm.toString(destChainId)));
-              id = vm.createSelectFork(destRpcUrl);
-              forkIds[destChainId] = id;
-            } else {
-              vm.selectFork(id);
-            }
+            vm.selectFork(forkIds[destChainId]);
 
             // Verify we're on the correct destination chain
             require(block.chainid == destChainId, "Destination chain ID mismatch");
