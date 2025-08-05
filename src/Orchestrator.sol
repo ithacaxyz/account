@@ -326,19 +326,17 @@ contract Orchestrator is
             mstore(m, 0x00000001) // `selfCallExecutePay1395256087()`
             mstore(add(m, 0x20), keyHash) // Add keyHash as second param
             mstore(add(m, 0x40), digest) // Add digest as third param
-
-            let encodedIntentLength := sub(calldatasize(), 0x24)
-            // NOTE: The intent encoding here is non standard, because the data offset does not start from the beginning of the calldata.
-            // The data offset starts from the location of the intent offset itself. The decoding is done accordingly in the receiving function.
-            // TODO: Make the intent encoding standard.
-            calldatacopy(add(m, 0x60), 0x24, encodedIntentLength) // Add intent starting from the fourth param.
+            mstore(add(m, 0x60), 0x80) // Add offset of encoded Intent as third param
+            let encodedIntentLength := sub(calldatasize(), 0x44)
+            mstore(add(m, 0x80), encodedIntentLength) // Add length of encoded Intent at offset.
+            calldatacopy(add(m, 0xa0), 0x44, encodedIntentLength) // Add actual intent data.
 
             // We don't revert if the selfCallExecutePay reverts,
             // Because we don't want to return the prePayment, since the relay has already paid for the gas.
-            // TODO: Should we add some identifier here, either using a return flag, or an event, that informs the caller that execute/post-payment has failed.
             if iszero(
-                call(gas(), address(), 0, add(m, 0x1c), add(0x44, encodedIntentLength), m, 0x20)
+                call(gas(), address(), 0, add(m, 0x1c), add(0x84, encodedIntentLength), m, 0x20)
             ) {
+                // TODO: We should not revert here.
                 returndatacopy(mload(0x40), 0x00, returndatasize())
                 revert(mload(0x40), returndatasize())
             }
@@ -358,11 +356,21 @@ contract Orchestrator is
         Intent calldata i;
 
         assembly ("memory-safe") {
+            /*
+            calldata:
+            0x00: 0x00000001
+            0x04: keyHash
+            0x24: digest
+            0x44: 0x80 ( offset of encodedIntent)
+            0x64: encodedIntentLength
+            0x84: encodedIntent data
+                0x84: 0x20 ( offset of intent struct data, from starting of encodedIntent)
+                0xa4: intent struct data 
+             */
             keyHash := calldataload(0x04)
             digest := calldataload(0x24)
-            // Non standard decoding of the intent.
-            // TODO: Is this correct?
-            i := add(0x44, calldataload(0x44))
+            // This also converts the data from a bytes array to a calldata struct.
+            i := 0xa4
         }
 
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
