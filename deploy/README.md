@@ -24,6 +24,7 @@ configs[6] = BaseDeployment.ChainConfig({
     l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
     layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
     layerZeroEid: 0,
+    salt: bytes32(0),  // Use any value for deterministic addresses
     stages: _getDevnetStages() // Returns [Core, Interop, SimpleSettler]
 });
 ```
@@ -61,7 +62,8 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 
 After a successful deployment:
 
-- Commit the generated `deploy/registry/deployment_28404.json` file so others (and CI) can reference the deployed addresses.
+- Commit the generated `deploy/registry/deployment_28404_{salt}.json` file so others (and CI) can reference the deployed addresses.
+- Note: The registry file is for reference only and does not affect future deployment decisions.
 
 ## Configuration Structure
 
@@ -79,6 +81,7 @@ struct ChainConfig {
     address l0SettlerOwner;
     address layerZeroEndpoint;
     uint32 layerZeroEid;
+    bytes32 salt;  // Salt for CREATE2 deployments
     Stage[] stages;
 }
 ```
@@ -96,6 +99,7 @@ The configuration is type-safe and validated at compile time, eliminating JSON p
 - **funderOwner**: Owner of the SimpleFunder contract
 - **settlerOwner**: Owner of the SimpleSettler contract
 - **l0SettlerOwner**: Owner of the LayerZeroSettler contract
+- **salt**: Salt value for CREATE2 deployments (use `bytes32(0)` or any value for deterministic addresses)
 - **stages**: Array of deployment stages to execute for this chain
 
 ## Available Stages
@@ -271,6 +275,7 @@ To add a new chain to the deployment system:
        l0SettlerOwner: 0x...,
        layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
        layerZeroEid: 30109,
+       salt: bytes32(0),  // Or use a custom salt for deterministic addresses
        stages: _getAllStages() // or custom stages array
    });
    ```
@@ -316,24 +321,69 @@ This is useful for chains that need:
 - SimpleSettler for fast, single-chain settlements
 - LayerZeroSettler for cross-chain interoperability
 
+## CREATE2 Deployment Support
+
+⚠️ **IMPORTANT**: The deployment system now uses CREATE2 for all deployments, providing deterministic contract addresses across chains.
+
+### How CREATE2 Works
+
+CREATE2 deployments use the Safe Singleton Factory (`0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`) to deploy contracts with deterministic addresses. The contract address is determined by:
+- The factory address (constant across all chains)
+- The salt value (configured per chain)
+- The contract bytecode
+
+This means:
+- **Same salt + same bytecode = same address** on every chain
+- You can predict contract addresses before deployment
+- You can deploy to the same addresses on new chains later
+
+### Salt Configuration
+
+The `salt` field in each chain configuration determines the deployment addresses:
+
+```solidity
+salt: bytes32(0),  // Default: uses zero salt
+salt: 0x00000000000000000000000000000000000000000000000000000000deadbeef,  // Custom salt
+```
+
+⚠️ **CRITICAL**: 
+- **Save your salt values!** Lost salts mean you cannot deploy to the same addresses on new chains
+- **Use the same salt** across chains for identical addresses
+- **Use different salts** if you need different addresses per chain
+
+
+### Registry Files with CREATE2
+
+When using CREATE2, registry files include the salt in the filename:
+- Format: `deployment_{chainId}_{salt}.json`
+- Example: `deployment_1_0x0000000000000000000000000000000000000000000000000000000000000000.json`
+
+This allows multiple deployments to the same chain with different salts.
+
 ## Deployment Registry
 
 The deployment system maintains deployed contract addresses in the `deploy/registry/` directory:
 
-- **Contract addresses**: `deployment_{chainId}.json`
-  - Contains deployed contract addresses for each chain
+- **Contract addresses**: `deployment_{chainId}_{salt}.json`
+  - Contains deployed contract addresses for each chain and salt combination
   - Automatically updated after each successful deployment
-  - **Deployments are skipped if file exists** (footgun prevention)
+  - **CREATE2 deployments are automatically skipped if contract already exists at predicted address**
 
-### Important: Fresh Deployments
+### Important: Redeployments and Fresh Deployments
 
-**To perform a fresh deployment, you must manually delete the `deployment_{chainId}.json` file from the `deploy/registry/` directory.**
+**For CREATE2 deployments**: The script automatically checks on-chain if contracts exist at their predicted addresses:
+- If a contract exists at the predicted address → deployment is skipped
+- If no contract exists → deployment proceeds
+- Registry files do NOT affect deployment decisions
 
-This safety mechanism prevents accidental redeployments to chains that already have contracts deployed. The deployment script will skip any chain that has an existing registry file.
+To perform a fresh deployment to new addresses:
+1. **Change the salt value** in `DefaultConfig.sol` for that chain
+2. Run the deployment script - it will deploy to the new addresses
 
 ```bash
-# To redeploy to chain 11155111 (Sepolia)
-rm deploy/registry/deployment_11155111.json
+# Example: Deploy with a different salt by modifying DefaultConfig.sol
+# Change from: salt: bytes32(0)
+# To:         salt: 0x0000000000000000000000000000000000000000000000000000000000000001
 
 # Then run the deployment
 forge script deploy/DeployMain.s.sol:DeployMain \
@@ -343,7 +393,7 @@ forge script deploy/DeployMain.s.sol:DeployMain \
   "[11155111]"
 ```
 
-Example registry file (`deployment_1.json`):
+Example registry file (`deployment_1_0x0000000000000000000000000000000000000000000000000000000000000000.json`):
 ```json
 {
   "Orchestrator": "0x...",
@@ -430,9 +480,10 @@ Requirements:
 
 ### Redeployments
 
-- **Deployments are automatically skipped** if the registry file exists (footgun prevention)
-- **To force redeployment**: You must manually delete the relevant `deployment_{chainId}.json` file from `deploy/registry/`
-- **Warning**: Only delete registry files if you intend to perform a fresh deployment. This safety mechanism prevents accidental double deployments.
+- **Deployments are automatically skipped** if contracts already exist at their CREATE2 addresses
+- **On-chain checks**: The script checks the blockchain directly, not registry files
+- **To redeploy to new addresses**: Change the salt value in the configuration
+- **Registry files**: Are created for reference but do NOT control deployment behavior
 
 ## Best Practices
 

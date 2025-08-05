@@ -28,6 +28,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
             layerZeroEid: 30101,
+            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -43,6 +44,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
             layerZeroEid: 30110,
+            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -58,6 +60,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
             layerZeroEid: 30184,
+            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -73,6 +76,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
             layerZeroEid: 40161,
+            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -88,7 +92,8 @@ contract DefaultConfig {
             l0SettlerOwner: 0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4,
             layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
             layerZeroEid: 40232,
-            stages: _getLayerZeroStages()
+            salt: bytes32(0),
+            stages: _getAllStages()
         });
 
         // Base Sepolia
@@ -103,7 +108,8 @@ contract DefaultConfig {
             l0SettlerOwner: 0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4,
             layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
             layerZeroEid: 40245,
-            stages: _getLayerZeroStages()
+            salt: 0x0000000000000000000000000000000000000000000000000000000000000001,
+            stages: _getAllStages()
         });
         // Porto Devnet
         configs[6] = BaseDeployment.ChainConfig({
@@ -117,6 +123,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
             layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
             layerZeroEid: 0,
+            salt: bytes32(0),
             stages: _getDevnetStages()
         });
         // Porto Interop Devnets
@@ -131,6 +138,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
             layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
             layerZeroEid: 0,
+            salt: bytes32(0),
             stages: _getDevnetStages()
         });
         configs[8] = BaseDeployment.ChainConfig({
@@ -144,6 +152,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
             layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
             layerZeroEid: 0,
+            salt: bytes32(0),
             stages: _getDevnetStages()
         });
         configs[9] = BaseDeployment.ChainConfig({
@@ -157,6 +166,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
             layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
             layerZeroEid: 0,
+            salt: bytes32(0),
             stages: _getDevnetStages()
         });
     }
