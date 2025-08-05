@@ -58,7 +58,7 @@ contract BaseTest is SoladyTest {
     bytes32 internal constant _ERC7579_DELEGATE_CALL_MODE =
         0xff00000000000000000000000000000000000000000000000000000000000000;
 
-    address internal constant _SIMULATION_ADDRESS = 0xAa239C49EC6D564597F2e2F99A357c63cb65090d; // keccak256("Ithaca.Orchestrator.SIMULATION")[12];
+    address internal constant _ORIGIN_ADDRESS = 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38;
 
     struct PassKey {
         IthacaAccount.Key k;
@@ -311,10 +311,10 @@ contract BaseTest is SoladyTest {
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
         uint256 snapshot = vm.snapshotState();
-        vm.deal(_SIMULATION_ADDRESS, type(uint256).max);
+        vm.deal(_ORIGIN_ADDRESS, uint256(type(uint192).max) + 1);
 
         (gUsed, gCombined) =
-            simulator.simulateV1Logs(address(oc), true, 0, 1, 11_000, 11_200, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), true, 0, 1, 11_000, 10_000, abi.encode(i));
 
         // gExecute > (100k + combinedGas) * 64/63
         gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
@@ -342,7 +342,7 @@ contract BaseTest is SoladyTest {
 
             // Set the simulator to have max balance, so that it can run in state override mode.
             // This is meant to mimic an offchain state override.
-            vm.deal(_SIMULATION_ADDRESS, type(uint256).max);
+            vm.deal(_ORIGIN_ADDRESS, uint256(type(uint192).max) + 1);
 
             (gUsed, gCombined) = simulator.simulateV1Logs(
                 address(oc),

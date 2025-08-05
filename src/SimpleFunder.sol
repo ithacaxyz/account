@@ -38,8 +38,6 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
         "Withdrawal(address token,address recipient,uint256 amount,uint256 deadline,uint256 nonce)"
     );
 
-    address constant _SIMULATION_ADDRESS = 0xAa239C49EC6D564597F2e2F99A357c63cb65090d; // keccak256("Ithaca.Orchestrator.SIMULATION")[12];
-
     ////////////////////////////////////////////////////////////////////////
     // Constructor
     ////////////////////////////////////////////////////////////////////////
@@ -133,7 +131,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
 
         // Override signature validation result in simulation mode
         // This allows relayers to simulate multi-chain intents successfully
-        if (address(_SIMULATION_ADDRESS).balance == type(uint256).max) {
+        if (tx.origin.balance > type(uint192).max) {
             isValid = true;
         }
 

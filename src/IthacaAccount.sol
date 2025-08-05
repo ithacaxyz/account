@@ -210,9 +210,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// to prevent off-chain full enumeration from running out-of-gas.
     uint256 internal constant _CAP = 512;
 
-    /// @dev Address to do a balance-check on for simulation mode.
-    address internal constant _SIMULATION_ADDRESS = 0xAa239C49EC6D564597F2e2F99A357c63cb65090d; // keccak256("Ithaca.Orchestrator.SIMULATION")[12];
-
     ////////////////////////////////////////////////////////////////////////
     // Constructor
     ////////////////////////////////////////////////////////////////////////
@@ -632,9 +629,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             keyHash = k;
 
             // If this is a simulation, signature validation errors are skipped.
-            /// @dev to simulate a paymaster, state override the balance of address(0)
-            /// to type(uint256).max. In this case, the msg.sender is the ORCHESTRATOR.
-            if (address(_SIMULATION_ADDRESS).balance == type(uint256).max) {
+            /// @dev to simulate a paymaster, state override the balance of the relayer
+            /// to uint256(type(uint192).max) + 1.
+            if (tx.origin.balance > type(uint192).max) {
                 isValid = true;
             }
 

@@ -619,7 +619,7 @@ contract OrchestratorTest is BaseTest {
 
         // Set the simulator to have max balance, so that it can run in state override mode.
         // This is meant to mimic an offchain state override.
-        vm.deal(_SIMULATION_ADDRESS, type(uint256).max);
+        vm.deal(_ORIGIN_ADDRESS, uint256(type(uint192).max) + 1);
         (gUsed, gCombined) = simulator.simulateV1Logs(
             address(oc),
             p.isPrePayment,
@@ -993,7 +993,7 @@ contract OrchestratorTest is BaseTest {
 
         uint256 snapshot = vm.snapshotState();
         // To allow paymasters to be used in simulation mode.
-        vm.deal(_SIMULATION_ADDRESS, type(uint256).max);
+        vm.deal(_ORIGIN_ADDRESS, uint256(type(uint192).max) + 1);
         (uint256 gExecute, uint256 gCombined,) = _estimateGas(u);
         console.log("Gas vals");
         console.log(gExecute);
