@@ -32,6 +32,7 @@ contract LayerZeroConfig is LayerZeroRegistry {
         uint32 maxMessageSize; // Max message size in bytes
     }
 
+    // TODO: Set the correct LayerZeroSettler address before running the script.
     address public constant LAYER_ZERO_SETTLER = 0x4225041FF3DB1C7d7a1029406bB80C7298767aca;
 
     /**
@@ -54,7 +55,7 @@ contract LayerZeroConfig is LayerZeroRegistry {
             destinationChainIds: _getDestinationChainIds(allChainIds, 84532),
             sendUln302: 0xC1868e054425D378095A003EcbA3823a5D0135C9, // SendUln302 on Base Sepolia
             receiveUln302: 0x12523de19dc41c91F7d2093E0CFbB76b17012C8d, // ReceiveUln302 on Base Sepolia
-            executor: 0x8A3D588D9f6AC041476b094f97FF94ec30169d3D, // Use default LayerZero executor
+            executor: LAYER_ZERO_SETTLER, // Always set Settler as the custom executor
             requiredDVNs: _getRequiredDVNs(),
             optionalDVNs: _getOptionalDVNs(),
             optionalDVNThreshold: 0,
@@ -68,7 +69,7 @@ contract LayerZeroConfig is LayerZeroRegistry {
             destinationChainIds: _getDestinationChainIds(allChainIds, 11155420),
             sendUln302: 0xB31D2cb502E25B30C651842C7C3293c51Fe6d16f, // SendUln302 on OP Sepolia
             receiveUln302: 0x9284fd59B95b9143AF0b9795CAC16eb3C723C9Ca, // ReceiveUln302 on OP Sepolia
-            executor: LAYER_ZERO_SETTLER,
+            executor: LAYER_ZERO_SETTLER, // Always set Settler as the custom executor
             requiredDVNs: _getRequiredDVNs(),
             optionalDVNs: _getOptionalDVNs(),
             optionalDVNThreshold: 0,
