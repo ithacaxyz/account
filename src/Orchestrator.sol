@@ -905,7 +905,7 @@ contract Orchestrator is
         returns (string memory name, string memory version)
     {
         name = "Orchestrator";
-        version = "0.4.6";
+        version = "0.4.7";
     }
 
     ////////////////////////////////////////////////////////////////////////
