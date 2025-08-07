@@ -306,7 +306,7 @@ abstract contract GuardedExecutor is ERC7821 {
             address token = t.approvedERC20s.getAddress(i);
             SafeTransferLib.safeApprove(token, t.approvalSpenders.getAddress(i), 0);
         }
-        
+
         // Increments the spent amounts.
         for (uint256 i; i < t.erc20s.length(); ++i) {
             address token = t.erc20s.getAddress(i);
