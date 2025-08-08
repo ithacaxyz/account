@@ -252,7 +252,7 @@ contract BaseTest is SoladyTest {
 
     function _estimateGasForEOAKey(Orchestrator.Intent memory i)
         internal
-        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+        returns (uint256 gCombined, uint256 accountExecuteGas)
     {
         (uint8 v, bytes32 r, bytes32 s) =
             vm.sign(uint128(_randomUniform()), bytes32(_randomUniform()));
@@ -262,7 +262,7 @@ contract BaseTest is SoladyTest {
 
     function _estimateGas(PassKey memory k, Orchestrator.Intent memory i)
         internal
-        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+        returns (uint256 gCombined, uint256 accountExecuteGas)
     {
         if (k.k.keyType == IthacaAccount.KeyType.P256) {
             return _estimateGasForSecp256r1Key(k.keyHash, i);
@@ -275,7 +275,7 @@ contract BaseTest is SoladyTest {
 
     function _estimateGasForSecp256k1Key(bytes32 keyHash, Orchestrator.Intent memory i)
         internal
-        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+        returns (uint256 gCombined, uint256 accountExecuteGas)
     {
         (uint8 v, bytes32 r, bytes32 s) =
             vm.sign(uint128(_randomUniform()), bytes32(_randomUniform()));
@@ -285,7 +285,7 @@ contract BaseTest is SoladyTest {
 
     function _estimateGasForSecp256r1Key(bytes32 keyHash, Orchestrator.Intent memory i)
         internal
-        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+        returns (uint256 gCombined, uint256 accountExecuteGas)
     {
         i.signature = abi.encodePacked(keccak256("a"), keccak256("b"), keyHash, uint8(0));
 
@@ -294,7 +294,7 @@ contract BaseTest is SoladyTest {
 
     function _estimateGasForMultiSigKey(MultiSigKey memory k, Orchestrator.Intent memory u)
         internal
-        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+        returns (uint256 gCombined, uint256 accountExecuteGas)
     {
         return _estimateGas(
             _EstimateGasParams({
@@ -311,6 +311,7 @@ contract BaseTest is SoladyTest {
     function _overrideSimCodes(address orchestrator, address ithacaAccount) internal {
         // Deploy simulation contracts with matching constructor args
         OrchestratorSim ocSim = new OrchestratorSim(address(this)); // pauseAuthority = address(this)
+
         IthacaAccountSim accountSim = new IthacaAccountSim(orchestrator);
 
         // Replace bytecode of existing contracts with simulation bytecode
@@ -320,23 +321,17 @@ contract BaseTest is SoladyTest {
 
     function _estimateGas(Orchestrator.Intent memory i)
         internal
-        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+        returns (uint256 gCombined, uint256 accountExecuteGas)
     {
         uint256 snapshot = vm.snapshotState();
 
         _overrideSimCodes(address(oc), address(account));
 
-        uint256 accountExecuteGas;
         (accountExecuteGas, gCombined) = simulator.simulateV1Logs(
             address(oc), true, 0, 1, 11_000, 10_000, 11_000, 10_000, abi.encode(i)
         );
 
         vm.revertToStateAndDelete(snapshot);
-
-        gUsed = gCombined; // For compatibility
-
-        // gExecute > (100k + accountExecuteGas) * 64/63
-        gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
     }
 
     struct _EstimateGasParams {
@@ -350,14 +345,13 @@ contract BaseTest is SoladyTest {
 
     function _estimateGas(_EstimateGasParams memory p)
         internal
-        returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
+        returns (uint256 gCombined, uint256 accountExecuteGas)
     {
         {
             uint256 snapshot = vm.snapshotState();
 
             _overrideSimCodes(address(oc), address(account));
 
-            uint256 accountExecuteGas;
             (accountExecuteGas, gCombined) = simulator.simulateV1Logs(
                 address(oc),
                 p.isPrePayment,
@@ -370,12 +364,7 @@ contract BaseTest is SoladyTest {
                 abi.encode(p.u)
             );
             vm.revertToStateAndDelete(snapshot);
-
-            gUsed = gCombined; // For compatibility with existing tests
         }
-
-        // gExecute > (100k + accountExecuteGas) * 64/63
-        gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
     }
 
     function _mint(address token, address to, uint256 amount) internal {

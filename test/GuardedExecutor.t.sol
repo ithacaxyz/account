@@ -37,8 +37,10 @@ contract GuardedExecutorTest is BaseTest {
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-        vm.expectRevert(bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")));
-        oc.execute(abi.encode(u));
+
+        bytes memory err = oc.execute(abi.encode(u));
+        assertEq(bytes4(err), bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")));
+
         // Set the call checker.
         bytes32 forKeyHash = _randomChance(2) ? k.keyHash : _ANY_KEYHASH;
         address forTarget = _randomChance(2) ? address(counter) : _ANY_TARGET;
@@ -54,8 +56,10 @@ contract GuardedExecutorTest is BaseTest {
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-        vm.expectRevert(bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")));
-        oc.execute(abi.encode(u));
+        {
+            bytes memory err = oc.execute(abi.encode(u));
+            assertEq(bytes4(err), bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")));
+        }
 
         // Try, now with the checker configured to authorize the call..
         checker.setAuthorized(
@@ -76,8 +80,10 @@ contract GuardedExecutorTest is BaseTest {
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-        vm.expectRevert(bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")));
-        oc.execute(abi.encode(u));
+        {
+            bytes memory err = oc.execute(abi.encode(u));
+            assertEq(bytes4(err), bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")));
+        }
     }
 
     function testApproveIncreaseSpent(bytes32) public {
@@ -109,8 +115,9 @@ contract GuardedExecutorTest is BaseTest {
         u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
-        vm.expectRevert(bytes4(keccak256("NoSpendPermissions()")));
-        oc.execute(abi.encode(u));
+
+        bytes memory err = oc.execute(abi.encode(u));
+        assertEq(bytes4(err), bytes4(keccak256("NoSpendPermissions()")));
 
         // Check that after the spend permission has been done, the token can be approved
         // and moved via `transferFrom`.
@@ -283,8 +290,8 @@ contract GuardedExecutorTest is BaseTest {
 
             u.nonce = d.d.getNonce(0);
             u.signature = _sig(kRegular, u);
-            vm.expectRevert(bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")));
-            oc.execute(abi.encode(u)); // 6
+            bytes memory err = oc.execute(abi.encode(u));
+            assertEq(bytes4(err), bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)")));
             assertEq(d.d.x(), 0, "7");
 
             d.d.resetX();
@@ -325,8 +332,8 @@ contract GuardedExecutorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.signature = _sig(d, u);
 
-            vm.expectRevert(bytes4(keccak256("SuperAdminCanSpendAnything()")));
-            oc.execute(abi.encode(u));
+            bytes memory err = oc.execute(abi.encode(u));
+            assertEq(bytes4(err), bytes4(keccak256("SuperAdminCanSpendAnything()")));
         }
         // Remove spend limits.
         {
@@ -337,8 +344,8 @@ contract GuardedExecutorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.signature = _sig(d, u);
 
-            vm.expectRevert(bytes4(keccak256("SuperAdminCanSpendAnything()")));
-            oc.execute(abi.encode(u));
+            bytes memory err = oc.execute(abi.encode(u));
+            assertEq(bytes4(err), bytes4(keccak256("SuperAdminCanSpendAnything()")));
         }
     }
 
@@ -500,8 +507,8 @@ contract GuardedExecutorTest is BaseTest {
             ) {
                 oc.execute(abi.encode(u));
             } else {
-                vm.expectRevert(bytes4(keccak256("NoSpendPermissions()")));
-                oc.execute(abi.encode(u));
+                bytes memory err = oc.execute(abi.encode(u));
+                assertEq(bytes4(err), bytes4(keccak256("NoSpendPermissions()")));
             }
         }
 
@@ -761,6 +768,7 @@ contract GuardedExecutorTest is BaseTest {
         u.prePaymentMaxAmount = type(uint192).max;
         u.totalPaymentAmount = u.prePaymentAmount;
         u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.accountExecuteGas = 1_000_000;
 
         // Mint some tokens.
         paymentToken.mint(u.eoa, type(uint192).max);
@@ -785,7 +793,7 @@ contract GuardedExecutorTest is BaseTest {
             u.executionData = abi.encode(calls);
             u.nonce = 0xc1d0 << 240;
 
-            (gExecute,,) = _estimateGasForEOAKey(u);
+            (gExecute,) = _estimateGasForEOAKey(u);
             u.signature = _eoaSig(d.privateKey, u);
 
             oc.execute{gas: gExecute}(abi.encode(u));
@@ -804,7 +812,7 @@ contract GuardedExecutorTest is BaseTest {
             calls[0] = _transferCall2(tokenToSpend, address(0xb0b), 0.6 ether);
             u.executionData = abi.encode(calls);
 
-            (gExecute,,) = _estimateGas(k, u);
+            (gExecute,) = _estimateGas(k, u);
             u.signature = _sig(k, u);
 
             // Intent should pass.
@@ -822,8 +830,8 @@ contract GuardedExecutorTest is BaseTest {
             u.signature = _sig(k, u);
 
             // Intent should fail.
-            vm.expectRevert(GuardedExecutor.ExceededSpendLimit.selector);
-            oc.execute(abi.encode(u));
+            bytes memory err = oc.execute(abi.encode(u));
+            assertEq(bytes4(err), GuardedExecutor.ExceededSpendLimit.selector);
         }
 
         // Prep Intent to try to exactly hit daily spend limit. This Intent should pass.
@@ -834,7 +842,7 @@ contract GuardedExecutorTest is BaseTest {
             calls[0] = _transferCall2(tokenToSpend, address(0xb0b), 0.4 ether);
             u.executionData = abi.encode(calls);
 
-            (gExecute,,) = _estimateGas(k, u);
+            (gExecute,) = _estimateGas(k, u);
             u.signature = _sig(k, u);
 
             oc.execute{gas: gExecute}(abi.encode(u));
@@ -873,7 +881,7 @@ contract GuardedExecutorTest is BaseTest {
             calls[0] = _transferCall2(tokenToSpend, address(0xb0b), 0.5 ether);
             u.executionData = abi.encode(calls);
 
-            (gExecute,,) = _estimateGas(k, u);
+            (gExecute,) = _estimateGas(k, u);
 
             u.signature = _sig(k, u);
 

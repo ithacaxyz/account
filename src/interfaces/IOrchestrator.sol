@@ -8,7 +8,7 @@ import {ICommon} from "../interfaces/ICommon.sol";
 interface IOrchestrator is ICommon {
     /// @dev Executes a single encoded intent.
     /// @param encodedIntent The encoded intent
-    function execute(bytes calldata encodedIntent) external payable;
+    function execute(bytes calldata encodedIntent) external payable returns (bytes memory err);
 
     /// @dev Allows the orchestrator owner to withdraw tokens.
     /// @param token The token address (0 for native token)

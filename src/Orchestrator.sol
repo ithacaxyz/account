@@ -73,6 +73,8 @@ contract Orchestrator is
     /// @dev Out of gas to perform the call operation.
     error InsufficientGas();
 
+    error InsufficientAccountExecuteGas();
+
     /// @dev The order has already been filled.
     error OrderAlreadyFilled();
 
@@ -105,7 +107,7 @@ contract Orchestrator is
     /// This event is emitted in the `execute` function.
     /// - `nonce` denotes the nonce that has been incremented to invalidate `nonce`.
     /// For PreCalls where the nonce is skipped, this event will NOT be emitted.
-    event IntentExecuted(address indexed eoa, uint256 indexed nonce);
+    event IntentExecuted(address indexed eoa, uint256 indexed nonce, bool success);
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
@@ -195,10 +197,16 @@ contract Orchestrator is
     }
 
     /// @dev Executes a single encoded intent.
-    // TODO: do we need something like the combinedGasOverride anymore?
-    function execute(bytes calldata encodedIntent) public payable virtual nonReentrant {
+    function execute(bytes calldata encodedIntent)
+        public
+        payable
+        virtual
+        nonReentrant
+        returns (bytes memory err)
+    {
         Intent calldata i = _extractIntent(encodedIntent);
 
+        _checkCallDepth(i.accountExecuteGas);
         if (
             LibBit.or(
                 i.prePaymentAmount > i.prePaymentMaxAmount,
@@ -290,7 +298,22 @@ contract Orchestrator is
         // off-chain simulation and on-chain execution.
         if (i.prePaymentAmount != 0) _pay(i.prePaymentAmount, keyHash, digest, i);
 
-        console.log("B EOA: ", i.eoa);
+        try this.selfCallTest(keyHash, digest, encodedIntent) {
+            emit IntentExecuted(i.eoa, i.nonce, true);
+            err = "";
+        } catch {
+            // console.log("Inside catch");
+            emit IntentExecuted(i.eoa, i.nonce, false);
+
+            assembly ("memory-safe") {
+                let size := returndatasize()
+                mstore(err, size)
+                returndatacopy(add(err, 0x20), 0x00, size)
+            }
+            // console.log("size", size);
+        }
+
+        // _selfCall(keyHash, digest, encodedIntent);
 
         // Equivalent Solidity code:
         // try this.selfCallExecutePay( keyHash, i) {}
@@ -302,6 +325,42 @@ contract Orchestrator is
         // }
         // Gas Savings:
         // ~2.5k gas for general cases, by using existing calldata from the previous self call + avoiding solidity external call overhead.
+        // assembly ("memory-safe") {
+        //     let m := mload(0x40) // Load the free memory pointer
+        //     mstore(0x00, 0) // Zeroize the return slot.
+        //     mstore(m, 0x00000001) // `selfCallExecutePay1395256087()`
+        //     mstore(add(m, 0x20), keyHash) // Add keyHash as second param
+        //     mstore(add(m, 0x40), digest) // Add digest as third param
+        //     mstore(add(m, 0x60), 0x80) // Add offset of encoded Intent as third param
+        //     let encodedIntentLength := sub(calldatasize(), 0x44)
+        //     mstore(add(m, 0x80), encodedIntentLength) // Add length of encoded Intent at offset.
+        //     calldatacopy(add(m, 0xa0), 0x44, encodedIntentLength) // Add actual intent data.
+
+        //     // We don't revert if the selfCallExecutePay reverts,
+        //     // Because we don't want to return the prePayment, since the relay has already paid for the gas.
+        //     if iszero(
+        //         call(gas(), address(), 0, add(m, 0x1c), add(0x84, encodedIntentLength), m, 0x20)
+        //     ) {
+        //         // TODO: Can we violate memory-safety here, to optimize memory usage?
+        //         returndatacopy(mload(0x40), 0x00, returndatasize())
+        //         return(mload(0x40), returndatasize())
+        //     }
+        // }
+    }
+
+    function _checkCallDepth(uint256 accountExecuteGas) internal virtual {
+        console.log("gasleft", gasleft());
+        console.log("accountExecuteGas", accountExecuteGas);
+        console.log("INNER_GAS_OVERHEAD", _INNER_GAS_OVERHEAD);
+        if (gasleft() < Math.saturatingAdd(accountExecuteGas, _INNER_GAS_OVERHEAD)) {
+            revert InsufficientGas();
+        }
+    }
+
+    function _selfCall(bytes32 keyHash, bytes32 digest, bytes calldata encodedIntent)
+        internal
+        virtual
+    {
         assembly ("memory-safe") {
             let m := mload(0x40) // Load the free memory pointer
             mstore(0x00, 0) // Zeroize the return slot.
@@ -323,14 +382,35 @@ contract Orchestrator is
                 // revert(mload(0x40), returndatasize())
             }
         }
-
-        emit IntentExecuted(i.eoa, i.nonce);
     }
 
     /// @dev Guards a function such that it can only be called by `address(this)`.
     modifier onlyThis() virtual {
         if (msg.sender != address(this)) revert Unauthorized();
         _;
+    }
+
+    function selfCallTest(bytes32 keyHash, bytes32 digest, bytes calldata encodedIntent)
+        public
+        payable
+    {
+        Intent calldata i = _extractIntent(encodedIntent);
+
+        // This re-encodes the ERC7579 `executionData` with the optional `opData`.
+        // We expect that the account supports ERC7821
+        // (an extension of ERC7579 tailored for 7702 accounts).
+        bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
+            hex"01000000000078210001", // ERC7821 batch execution mode.
+            i.executionData,
+            abi.encode(keyHash) // `opData`.
+        );
+
+        _accountExecute(i.eoa, data, i.accountExecuteGas);
+
+        uint256 remainingPaymentAmount = Math.rawSub(i.totalPaymentAmount, i.prePaymentAmount);
+        if (remainingPaymentAmount != 0) {
+            _pay(remainingPaymentAmount, keyHash, digest, i);
+        }
     }
 
     /// @dev This function is only intended for self-call. The name is mined to give a function selector of `0x00000001`
@@ -358,13 +438,6 @@ contract Orchestrator is
             // This also converts the data from a bytes array to a calldata struct.
             i := 0xa4
         }
-        console.log("Reached Here");
-        console.log("EOA: ", i.eoa);
-        console.log("length: ", i.executionData.length);
-        console.log("nonce: ", i.nonce);
-        console.log("accountExecuteGas: ", i.accountExecuteGas);
-        console.log("totalPaymentAmount: ", i.totalPaymentAmount);
-        console.log("prePaymentAmount: ", i.prePaymentAmount);
 
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
         // We expect that the account supports ERC7821
@@ -374,9 +447,6 @@ contract Orchestrator is
             i.executionData,
             abi.encode(keyHash) // `opData`.
         );
-
-        console.log("A EOA: ", i.eoa);
-        console.log("A Nonce: ", i.nonce);
 
         _accountExecute(i.eoa, data, i.accountExecuteGas);
 
@@ -390,14 +460,13 @@ contract Orchestrator is
         internal
         virtual
     {
-        // TODO: Is this check sufficient to prevent calldepth griefing?
-        if (((gasleft() * 63) >> 6) < Math.saturatingAdd(accountExecuteGas, _INNER_GAS_OVERHEAD)) {
-            revert InsufficientGas();
+        if (((gasleft() * 63) >> 6) < Math.saturatingAdd(accountExecuteGas, 1000)) {
+            revert InsufficientAccountExecuteGas();
         }
 
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
-            if iszero(call(accountExecuteGas, eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
+            if iszero(call(accountExecuteGas, eoa, 0, add(0x20, data), mload(data), 0x00, 0x00)) {
                 returndatacopy(mload(0x40), 0x00, returndatasize())
                 revert(mload(0x40), returndatasize())
             }
@@ -447,7 +516,7 @@ contract Orchestrator is
 
             // Event so that indexers can know that the nonce is used.
             // Reaching here means there's no error in the PreCall.
-            emit IntentExecuted(eoa, p.nonce);
+            emit IntentExecuted(eoa, p.nonce, true);
         }
     }
 
@@ -581,9 +650,12 @@ contract Orchestrator is
                     add(m, 0x1c), // input memory offset
                     add(0xc4, encodedSize), // input size
                     0x00, // output memory offset
-                    0x20 // output size
+                    0x00 // output size
                 )
-            ) { revert(0x00, 0x20) }
+            ) {
+                returndatacopy(mload(0x40), 0x00, returndatasize())
+                revert(mload(0x40), returndatasize())
+            }
         }
 
         if (TokenTransferLib.balanceOf(i.paymentToken, i.paymentRecipient) < requiredBalanceAfter) {

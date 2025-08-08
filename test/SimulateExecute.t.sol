@@ -18,7 +18,6 @@ contract SimulateExecuteTest is BaseTest {
         uint256 randomness;
         uint256 gExecute;
         uint256 gCombined;
-        uint256 gUsed;
         bytes executionData;
         bool success;
         bytes result;
@@ -73,28 +72,21 @@ contract SimulateExecuteTest is BaseTest {
             i.signature = abi.encodePacked(r, s, v);
         }
 
-        // simulateExecute is now in OrchestratorSim, not in the regular Orchestrator
-        // These simulation-specific tests are handled via the Simulator contract
         uint256 snapshot = vm.snapshotState();
         _overrideSimCodes(address(oc), address(account));
 
-        (t.gUsed, t.gCombined) = simulator.simulateV1Logs(
-            address(oc), false, 2, 1e11, 11_000, 0, 110_000, 0, abi.encode(i)
+        (i.accountExecuteGas, t.gCombined) = simulator.simulateV1Logs(
+            address(oc), false, 2, 1e11, 11_000, 0, 11_000, 0, abi.encode(i)
         );
 
         vm.revertToStateAndDelete(snapshot);
-        i.accountExecuteGas = t.gCombined;
-
-        t.gExecute = t.gCombined + 10_000;
 
         i.signature = _sig(d, i);
 
         vm.expectRevert(bytes4(keccak256("InsufficientGas()")));
-        oc.execute{gas: t.gExecute}(abi.encode(i));
+        oc.execute{gas: i.accountExecuteGas + 1000}(abi.encode(i));
 
-        t.gExecute = Math.mulDiv(t.gCombined + 110_000, 64, 63);
-
-        oc.execute{gas: t.gExecute}(abi.encode(i));
+        oc.execute{gas: t.gCombined}(abi.encode(i));
     }
 
     function testSimulateExecuteNoRevertUnderfundedReverts() public {
@@ -136,15 +128,16 @@ contract SimulateExecuteTest is BaseTest {
             i.signature = abi.encodePacked(r, s, v);
         }
 
+        _overrideSimCodes(address(oc), address(account));
         vm.expectRevert(bytes4(keccak256("PaymentError()")));
-        simulator.simulateV1Logs(address(oc), false, 0, 1, 11_000, 0, 110_000, 0, abi.encode(i));
+        simulator.simulateV1Logs(address(oc), false, 0, 1, 11_000, 0, 11_000, 0, abi.encode(i));
 
         deal(i.paymentToken, address(i.eoa), 0x112233112233112233112233);
         vm.expectRevert(bytes4(keccak256("PaymentError()")));
         simulator.simulateCombinedGas(address(oc), true, 0, 1, 11_000, i);
     }
 
-    function testSimulateExecuteNoRevert123() public {
+    function testSimulateExecuteNoRevert() public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         paymentToken.mint(d.eoa, type(uint128).max);
@@ -185,15 +178,15 @@ contract SimulateExecuteTest is BaseTest {
         }
 
         uint256 snapshot = vm.snapshotState();
-        // _overrideSimCodes(address(oc), address(account));
 
-        (t.gUsed, t.gCombined) = simulator.simulateV1Logs(
-            address(oc), false, 2, 1e11, 11_000, 0, 110_000, 0, abi.encode(i)
+        _overrideSimCodes(address(oc), address(account));
+
+        (i.accountExecuteGas, t.gCombined) = simulator.simulateV1Logs(
+            address(oc), false, 2, 1e11, 11_000, 0, 11_000, 0, abi.encode(i)
         );
 
         vm.revertToStateAndDelete(snapshot);
 
-        i.accountExecuteGas = t.gCombined;
         // gExecute > (100k + accountExecuteGas) * 64/63
         t.gExecute = Math.mulDiv(t.gCombined + 110_000, 64, 63);
 
@@ -242,21 +235,18 @@ contract SimulateExecuteTest is BaseTest {
                 vm.sign(uint128(_randomUniform()), bytes32(_randomUniform()));
             i.signature = abi.encodePacked(r, s, v);
         }
+
         uint256 snapshot = vm.snapshotState();
-        // _overrideSimCodes(address(oc), address(account));
-        (t.gUsed, t.gCombined) = simulator.simulateV1Logs(
-            address(oc), false, 2, 1e11, 10_800, 0, 110_000, 0, abi.encode(i)
+        _overrideSimCodes(address(oc), address(account));
+
+        (i.accountExecuteGas, t.gCombined) = simulator.simulateV1Logs(
+            address(oc), false, 2, 1e11, 11_000, 0, 11_000, 0, abi.encode(i)
         );
 
         vm.revertToStateAndDelete(snapshot);
-
-        i.accountExecuteGas = t.gCombined;
-        // gExecute > (100k + accountExecuteGas) * 64/63
-        t.gExecute = Math.mulDiv(t.gCombined + 110_000, 64, 63);
-
         i.signature = _sig(d, i);
 
-        oc.execute{gas: t.gExecute}(abi.encode(i));
+        oc.execute{gas: t.gCombined}(abi.encode(i));
         assertEq(gasBurner.randomness(), t.randomness);
     }
 
@@ -304,15 +294,14 @@ contract SimulateExecuteTest is BaseTest {
         // to hit all the gas for the GuardedExecutor stuff for the `keyHash`.
         i.signature = abi.encodePacked(keccak256("a"), keccak256("b"), k.keyHash, uint8(0));
         uint256 snapshot = vm.snapshotState();
-        // _overrideSimCodes(address(oc), address(account));
+        _overrideSimCodes(address(oc), address(account));
 
-        (t.gUsed, t.gCombined) = simulator.simulateV1Logs(
-            address(oc), false, 2, 1e11, 12_000, 10_000, 110_000, 0, abi.encode(i)
+        (i.accountExecuteGas, t.gCombined) = simulator.simulateV1Logs(
+            address(oc), false, 2, 1e11, 12_000, 10_000, 11_000, 0, abi.encode(i)
         );
 
         vm.revertToStateAndDelete(snapshot);
 
-        i.accountExecuteGas = t.gCombined;
         t.gExecute = Math.mulDiv(t.gCombined + 110_000, 64, 63);
 
         i.signature = _sig(k, i);

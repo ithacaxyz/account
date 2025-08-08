@@ -11,7 +11,11 @@ contract OrchestratorSim is Orchestrator {
     /// @dev The simulation has passed.
     error SimulationPassed(uint256 gAccountExecute);
 
-    uint256 internal transient _gAccountExecute;
+    bool transient _checkAccountExecuteGas;
+
+    uint256 transient _gAccountExecute;
+
+    address constant ORCHESTRATOR = 0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f;
 
     constructor(address pauseAuthority) Orchestrator(pauseAuthority) {}
 
@@ -25,11 +29,12 @@ contract OrchestratorSim is Orchestrator {
     /// @return gasUsed The amount of gas used by the execution. (Only returned if `isRevert` is true)
     /// gAccountExecute is the amount of gas used by the account.execute function.
     /// (Includes the gas cost, to make the call)
-    function simulateExecute(bool isRevert, bytes calldata encodedIntent)
-        external
-        payable
-        returns (uint256 /*gAccountExecute*/ )
-    {
+    function simulateExecute(
+        bool isRevert,
+        bool checkAccountExecuteGas,
+        bytes calldata encodedIntent
+    ) external payable returns (uint256 /*gAccountExecute*/ ) {
+        _checkAccountExecuteGas = checkAccountExecuteGas;
         // If Simulation fails, then it will revert here.
         execute(encodedIntent);
 
@@ -41,15 +46,21 @@ contract OrchestratorSim is Orchestrator {
         }
     }
 
+    function _checkCallDepth(uint256 accountExecuteGas) internal override {
+        if (_checkAccountExecuteGas) {
+            super._checkCallDepth(accountExecuteGas);
+        }
+    }
+
     function _accountExecute(address eoa, bytes memory data, uint256 executeGas)
         internal
         override
     {
-        // This check is skipped for simulation, as we pass in arbitrary gas numbers to get the right one.
-        // if (gasleft() < Math.mulDiv(executeGas, 63, 64) + 1000) {
-        //     revert InsufficientGas();
-        // }
-
+        if (_checkAccountExecuteGas) {
+            if (((gasleft() * 63) >> 6) < Math.saturatingAdd(executeGas, 1000)) {
+                revert InsufficientAccountExecuteGas();
+            }
+        }
         uint256 gStart = gasleft();
 
         assembly ("memory-safe") {
@@ -61,6 +72,34 @@ contract OrchestratorSim is Orchestrator {
         }
 
         _gAccountExecute = Math.rawSub(gStart, gasleft());
+    }
+
+    function _selfCall(bytes32 keyHash, bytes32 digest, bytes calldata encodedIntent)
+        internal
+        virtual
+        override
+    {
+        assembly ("memory-safe") {
+            let m := mload(0x40) // Load the free memory pointer
+            mstore(0x00, 0) // Zeroize the return slot.
+            mstore(m, 0x00000001) // `selfCallExecutePay1395256087()`
+            mstore(add(m, 0x20), keyHash) // Add keyHash as second param
+            mstore(add(m, 0x40), digest) // Add digest as third param
+            mstore(add(m, 0x60), 0x80) // Add offset of encoded Intent as third param
+            let encodedIntentLength := sub(calldatasize(), 0x44)
+            mstore(add(m, 0x80), encodedIntentLength) // Add length of encoded Intent at offset.
+            calldatacopy(add(m, 0xa0), 0x44, encodedIntentLength) // Add actual intent data.
+
+            // We don't revert if the selfCallExecutePay reverts,
+            // Because we don't want to return the prePayment, since the relay has already paid for the gas.
+            if iszero(
+                call(gas(), ORCHESTRATOR, 0, add(m, 0x1c), add(0x84, encodedIntentLength), m, 0x20)
+            ) {
+                // TODO: We should not revert here.
+                // returndatacopy(mload(0x40), 0x00, returndatasize())
+                // revert(mload(0x40), returndatasize())
+            }
+        }
     }
 
     /// @dev Guards a function such that it can only be called by `address(this)`.
