@@ -299,6 +299,20 @@ abstract contract GuardedExecutor is ERC7821 {
         // contain a `setSpendLimit`, it will affect the `_incrementSpent`.
         _incrementSpent(spends.spends[address(0)], address(0), totalNativeSpend);
 
+        // Revoke all non-zero approvals that have been made.
+        // As spend permissions are whitelist style, we need to make sure that
+        // approvals are revoked. This is to prevent sidestepping the guard.
+        for (uint256 i; i < t.approvedERC20s.length(); ++i) {
+            address token = t.approvedERC20s.getAddress(i);
+            SafeTransferLib.safeApprove(token, t.approvalSpenders.getAddress(i), 0);
+        }
+
+        // Revoke all non-zero Permit2 direct approvals that have been made.
+        for (uint256 i; i < t.permit2ERC20s.length(); ++i) {
+            address token = t.permit2ERC20s.getAddress(i);
+            SafeTransferLib.permit2Lockdown(token, t.permit2Spenders.getAddress(i));
+        }
+
         // Increments the spent amounts.
         for (uint256 i; i < t.erc20s.length(); ++i) {
             address token = t.erc20s.getAddress(i);
@@ -319,18 +333,6 @@ abstract contract GuardedExecutor is ERC7821 {
                     )
                 )
             );
-        }
-        // Revoke all non-zero approvals that have been made.
-        // As spend permissions are whitelist style, we need to make sure that
-        // approvals are revoked. This is to prevent sidestepping the guard.
-        for (uint256 i; i < t.approvedERC20s.length(); ++i) {
-            address token = t.approvedERC20s.getAddress(i);
-            SafeTransferLib.safeApprove(token, t.approvalSpenders.getAddress(i), 0);
-        }
-        // Revoke all non-zero Permit2 direct approvals that have been made.
-        for (uint256 i; i < t.permit2ERC20s.length(); ++i) {
-            address token = t.permit2ERC20s.getAddress(i);
-            SafeTransferLib.permit2Lockdown(token, t.permit2Spenders.getAddress(i));
         }
     }
 
