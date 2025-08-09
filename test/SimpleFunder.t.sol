@@ -82,11 +82,11 @@ contract SimpleFunderTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(funderPrivateKey, digest);
         bytes memory signature = abi.encodePacked(r, s, v);
 
-        uint256 balanceBefore = token.balanceOf(recipient);
+        uint256 allowanceBefore = token.allowance(address(simpleFunder), orchestrator);
 
-        simpleFunder.fund(recipient, digest, transfers, signature);
+        simpleFunder.fund(digest, transfers, signature);
 
-        assertEq(token.balanceOf(recipient), balanceBefore + 100 ether);
+        assertEq(token.allowance(address(simpleFunder), orchestrator), allowanceBefore + 100 ether);
     }
 
     function test_fund_withInvalidSignature_reverts() public {
@@ -97,7 +97,7 @@ contract SimpleFunderTest is Test {
         bytes memory invalidSignature = abi.encodePacked(bytes32(0), bytes32(0), uint8(0));
 
         vm.expectRevert(bytes4(keccak256("InvalidFunderSignature()")));
-        simpleFunder.fund(recipient, digest, transfers, invalidSignature);
+        simpleFunder.fund(digest, transfers, invalidSignature);
     }
 
     function test_fund_simulationMode_bypasses_signatureValidation() public {
@@ -111,12 +111,12 @@ contract SimpleFunderTest is Test {
         // Use invalid signature - should still work in simulation mode
         bytes memory invalidSignature = abi.encodePacked(bytes32(0), bytes32(0), uint8(0));
 
-        uint256 balanceBefore = token.balanceOf(recipient);
+        uint256 allowanceBefore = token.allowance(address(simpleFunder), orchestrator);
 
         // Should not revert despite invalid signature
-        simpleFunder.fund(recipient, digest, transfers, invalidSignature);
+        simpleFunder.fund(digest, transfers, invalidSignature);
 
-        assertEq(token.balanceOf(recipient), balanceBefore + 100 ether);
+        assertEq(token.allowance(address(simpleFunder), orchestrator), allowanceBefore + 100 ether);
     }
 
     function test_fund_notOrchestrator_reverts() public {
@@ -128,7 +128,7 @@ contract SimpleFunderTest is Test {
 
         vm.prank(makeAddr("notOrchestrator"));
         vm.expectRevert(bytes4(keccak256("OnlyOrchestrator()")));
-        simpleFunder.fund(recipient, digest, transfers, signature);
+        simpleFunder.fund(digest, transfers, signature);
     }
 
     function test_fund_multipleTransfers() public {
@@ -143,13 +143,13 @@ contract SimpleFunderTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(funderPrivateKey, digest);
         bytes memory signature = abi.encodePacked(r, s, v);
 
-        uint256 balance1Before = token.balanceOf(recipient);
-        uint256 balance2Before = token2.balanceOf(recipient);
+        uint256 allowance1Before = token.allowance(address(simpleFunder), orchestrator);
+        uint256 allowance2Before = token2.allowance(address(simpleFunder), orchestrator);
 
-        simpleFunder.fund(recipient, digest, transfers, signature);
+        simpleFunder.fund(digest, transfers, signature);
 
-        assertEq(token.balanceOf(recipient), balance1Before + 100 ether);
-        assertEq(token2.balanceOf(recipient), balance2Before + 50 ether);
+        assertEq(token.allowance(address(simpleFunder), orchestrator), allowance1Before + 100 ether);
+        assertEq(token2.allowance(address(simpleFunder), orchestrator), allowance2Before + 50 ether);
     }
 
     function test_fund_nativeToken() public {
@@ -163,11 +163,12 @@ contract SimpleFunderTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(funderPrivateKey, digest);
         bytes memory signature = abi.encodePacked(r, s, v);
 
-        uint256 balanceBefore = recipient.balance;
+        uint256 orchestratorBalanceBefore = orchestrator.balance;
 
-        simpleFunder.fund(recipient, digest, transfers, signature);
+        simpleFunder.fund(digest, transfers, signature);
 
-        assertEq(recipient.balance, balanceBefore + 1 ether);
+        // For native token, the orchestrator should receive ETH directly
+        assertEq(orchestrator.balance, orchestratorBalanceBefore + 1 ether);
     }
 
     function testFuzz_fund_simulationMode_anySignature(bytes memory randomSignature) public {
@@ -179,12 +180,12 @@ contract SimpleFunderTest is Test {
 
         bytes32 digest = keccak256("test digest");
 
-        uint256 balanceBefore = token.balanceOf(recipient);
+        uint256 allowanceBefore = token.allowance(address(simpleFunder), orchestrator);
 
         // Should not revert with any signature in simulation mode
-        simpleFunder.fund(recipient, digest, transfers, randomSignature);
+        simpleFunder.fund(digest, transfers, randomSignature);
 
-        assertEq(token.balanceOf(recipient), balanceBefore + 100 ether);
+        assertEq(token.allowance(address(simpleFunder), orchestrator), allowanceBefore + 100 ether);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -343,4 +344,6 @@ contract SimpleFunderTest is Test {
         assertEq(token.balanceOf(recipient), balanceBefore); // No change
         assertTrue(simpleFunder.nonces(nonce)); // Nonce still consumed
     }
+
+    receive() external payable {}
 }
