@@ -87,6 +87,26 @@ contract AccountTest is BaseTest {
 
         bytes32 digest = bytes32(_randomUniform());
         bytes memory sig = _sig(k, digest);
+
+        // test that the signature fails without the replay safe wrapper
+        assertTrue(d.d.isValidSignature(digest, sig) == 0xFFFFFFFF);
+
+        bytes32 replaySafeDigest = keccak256(abi.encode(d.d.SIGN_TYPEHASH(), digest));
+
+        (, string memory name, string memory version, uint256 chainId, address verifyingContract,,)
+        = d.d.eip712Domain();
+        bytes32 domain = keccak256(
+            abi.encode(
+                0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f, // DOMAIN_TYPEHASH,
+                keccak256(abi.encodePacked(name)),
+                keccak256(abi.encodePacked(version)),
+                chainId,
+                verifyingContract
+            )
+        );
+        replaySafeDigest = keccak256(abi.encodePacked("\x19\x01", domain, replaySafeDigest));
+        sig = _sig(k, replaySafeDigest);
+
         assertEq(
             d.d.isValidSignature(digest, sig) == IthacaAccount.isValidSignature.selector,
             k.k.isSuperAdmin
@@ -291,11 +311,11 @@ contract AccountTest is BaseTest {
         bytes32 digest = d.d.computeDigest(calls, nonce);
         bytes memory signature = _sig(d, digest);
 
-        // Check isValidSignature passes before pause.
-        assertEq(
-            d.d.isValidSignature(digest, signature),
-            bytes4(keccak256("isValidSignature(bytes32,bytes)"))
-        );
+        opData = abi.encodePacked(nonce, signature);
+        executionData = abi.encode(calls, opData);
+
+        // Check that execution can pass before pause.
+        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
 
         // The block timestamp needs to be realistic
         vm.warp(6 weeks + 1 days);
@@ -314,15 +334,14 @@ contract AccountTest is BaseTest {
         vm.stopPrank();
 
         // Check that execute fails
+        nonce = d.d.getNonce(0);
+        digest = d.d.computeDigest(calls, nonce);
+        signature = _sig(d, digest);
         opData = abi.encodePacked(nonce, signature);
         executionData = abi.encode(calls, opData);
 
         vm.expectRevert(bytes4(keccak256("Paused()")));
         d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
-
-        // Check that isValidSignature fails
-        vm.expectRevert(bytes4(keccak256("Paused()")));
-        d.d.isValidSignature(digest, signature);
 
         // Check that intent fails
         Orchestrator.Intent memory u;

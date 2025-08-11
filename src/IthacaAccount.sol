@@ -186,6 +186,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant CALL_TYPEHASH = keccak256("Call(address to,uint256 value,bytes data)");
 
+    /// @dev For ERC1271 replay-safe hashing.
+    bytes32 public constant SIGN_TYPEHASH = keccak256("Sign(bytes32 digest)");
+
     /// @dev For EIP712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
 
@@ -233,6 +236,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         virtual
         returns (bytes4)
     {
+        bytes32 replaySafeDigest = EfficientHashLib.hash(SIGN_TYPEHASH, digest);
+        digest = _hashTypedData(replaySafeDigest);
+
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
             isValid =
