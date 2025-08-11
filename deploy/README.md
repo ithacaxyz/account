@@ -36,13 +36,13 @@ configs[6] = BaseDeployment.ChainConfig({
 ```bash
 # Export your private key
 export PRIVATE_KEY=0x...
-export RPC_28404=https://porto-dev.rpc.ithaca.xyz/
+export RPC_<CHAIN_ID>=
 forge script deploy/DeployMain.s.sol:DeployMain \
   --multi \
   --slow \
   --sig "run(uint256[])" \
   --private-key $PRIVATE_KEY \
-  "[28404]"
+  "[<CHAIN_ID>]"
 ```
 
 > **Note**: Intentionally omit the `--broadcast` flag for this first run to verify configuration.
@@ -57,12 +57,12 @@ forge script deploy/DeployMain.s.sol:DeployMain \
   --slow \
   --sig "run(uint256[])" \
   --private-key $PRIVATE_KEY \
-  "[28404]"
+  "[<CHAIN_ID>]"
 ```
 
 After a successful deployment:
 
-- Commit the generated `deploy/registry/deployment_28404_{salt}.json` file so others (and CI) can reference the deployed addresses.
+- Commit the generated `deploy/registry/deployment_<CHAIN_ID>_{salt}.json` file so others (and CI) can reference the deployed addresses.
 - Note: The registry file is for reference only and does not affect future deployment decisions.
 
 ## Configuration Structure
