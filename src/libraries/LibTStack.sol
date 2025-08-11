@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
+error EmptyStack();
+
 /// @notice A minimal bytes32 stack implementation in transient storage.
 library LibTStack {
     /// @dev Helper struct to store the base slot of the stack.
