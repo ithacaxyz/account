@@ -66,13 +66,7 @@ contract MockPayerWithState is Ownable {
         ICommon.Intent memory u = abi.decode(encodedIntent, (ICommon.Intent));
 
         // We shall rely on arithmetic underflow error to revert if there's insufficient funds.
-        funds[u.paymentToken][u.eoa] -= paymentAmount;
-        if (u.paymentToken == address(0)) {
-            (bool success,) = msg.sender.call{value: paymentAmount}("");
-            (success);
-        } else {
-            SafeTransferLib.safeApprove(u.paymentToken, msg.sender, paymentAmount);
-        }
+        TokenTransferLib.safeTransfer(u.paymentToken, u.paymentRecipient, paymentAmount);
 
         // Emit the event for debugging.
         emit Compensated(u.paymentToken, u.paymentRecipient, paymentAmount, u.eoa, keyHash);

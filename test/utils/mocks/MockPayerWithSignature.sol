@@ -70,13 +70,8 @@ contract MockPayerWithSignature is Ownable {
             revert InvalidSignature();
         }
 
-        if (u.paymentToken == address(0)) {
-            (bool success,) = msg.sender.call{value: paymentAmount}("");
-            (success);
-        } else {
-            SafeTransferLib.safeApprove(u.paymentToken, msg.sender, paymentAmount);
-        }
-
+        TokenTransferLib.safeTransfer(u.paymentToken, u.paymentRecipient, paymentAmount);
+        
         emit Compensated(u.paymentToken, u.paymentRecipient, paymentAmount, u.eoa, keyHash);
     }
 
