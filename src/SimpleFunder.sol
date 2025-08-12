@@ -152,17 +152,17 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
             // We check if the token has already been approved to the orchestrator. If not, do a max approval.
             assembly ("memory-safe") {
                 let m := mload(0x40)
-                mstore(add(m, 0x40), orchestrator)
-                mstore(add(m, 0x20), address())
                 mstore(m, 0xdd62ed3e) // `allowance(address,address)`.
+                mstore(add(m, 0x20), address())
+                mstore(add(m, 0x40), orchestrator)
                 // Orchestrator checks for token transfer success, so we don't need to check it here.
                 pop(call(gas(), token, 0, add(m, 0x1c), 0x44, 0, 0x20))
 
                 let allowance := mload(0)
                 if gt(amount, allowance) {
-                    mstore(add(m, 0x40), 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF) // type(uint256).max
-                    mstore(add(m, 0x20), orchestrator)
                     mstore(m, 0x095ea7b3) // `approve(address,uint256)`.
+                    mstore(add(m, 0x20), orchestrator)
+                    mstore(add(m, 0x40), 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF) // type(uint256).max
                     // Orchestrator checks for token transfer success, so we don't need to check it here.
                     pop(call(gas(), token, 0, add(m, 0x1c), 0x44, 0, 0x20))
                 }
