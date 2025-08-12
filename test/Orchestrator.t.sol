@@ -14,7 +14,6 @@ import {ICommon} from "../src/interfaces/ICommon.sol";
 import {Merkle} from "murky/Merkle.sol";
 import {SimpleFunder} from "../src/SimpleFunder.sol";
 import {SimpleSettler} from "../src/SimpleSettler.sol";
-import {TokenTransferLib} from "../src/libraries/TokenTransferLib.sol";
 
 import {Escrow} from "../src/Escrow.sol";
 import {IEscrow} from "../src/interfaces/IEscrow.sol";
