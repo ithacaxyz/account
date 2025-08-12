@@ -105,12 +105,14 @@ contract Escrow is IEscrow {
             statuses[escrowId] = EscrowStatus.CREATED;
             escrows[escrowId] = _escrows[i];
 
-            if (_escrows[i].token == address(0)) {
-                totalNativeEscrowAmount += _escrows[i].escrowAmount;
-            } else {
-                SafeTransferLib.safeTransferFrom(
-                    _escrows[i].token, msg.sender, address(this), _escrows[i].escrowAmount
-                );
+            if (_escrows[i].escrowAmount > 0) {
+                if (_escrows[i].token == address(0)) {
+                    totalNativeEscrowAmount += _escrows[i].escrowAmount;
+                } else {
+                    SafeTransferLib.safeTransferFrom(
+                        _escrows[i].token, msg.sender, address(this), _escrows[i].escrowAmount
+                    );
+                }
             }
 
             emit EscrowCreated(escrowId);
@@ -164,7 +166,9 @@ contract Escrow is IEscrow {
             revert InvalidStatus();
         }
 
-        TokenTransferLib.safeTransfer(_escrow.token, _escrow.depositor, _escrow.refundAmount);
+        if (_escrow.refundAmount > 0) {
+            TokenTransferLib.safeTransfer(_escrow.token, _escrow.depositor, _escrow.refundAmount);
+        }
 
         emit EscrowRefundedDepositor(escrowId);
     }
@@ -198,9 +202,11 @@ contract Escrow is IEscrow {
             revert InvalidStatus();
         }
 
-        TokenTransferLib.safeTransfer(
-            _escrow.token, _escrow.recipient, _escrow.escrowAmount - _escrow.refundAmount
-        );
+        if (_escrow.escrowAmount - _escrow.refundAmount > 0) {
+            TokenTransferLib.safeTransfer(
+                _escrow.token, _escrow.recipient, _escrow.escrowAmount - _escrow.refundAmount
+            );
+        }
 
         emit EscrowRefundedRecipient(escrowId);
     }
@@ -236,7 +242,9 @@ contract Escrow is IEscrow {
             revert SettlementInvalid();
         }
 
-        TokenTransferLib.safeTransfer(_escrow.token, _escrow.recipient, _escrow.escrowAmount);
+        if (_escrow.escrowAmount > 0) {
+            TokenTransferLib.safeTransfer(_escrow.token, _escrow.recipient, _escrow.escrowAmount);
+        }
 
         emit EscrowSettled(escrowId);
     }
