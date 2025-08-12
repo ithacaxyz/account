@@ -145,8 +145,28 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
             i++;
         }
 
+        address orchestrator = ORCHESTRATOR;
         for (i; i < transfers.length; ++i) {
-            SafeTransferLib.safeApprove(transfers[i].token, ORCHESTRATOR, transfers[i].amount);
+            address token = transfers[i].token;
+            uint256 amount = transfers[i].amount;
+            // We check if the token has already been approved to the orchestrator. If not, do a max approval.
+            assembly ("memory-safe") {
+                let m := mload(0x40)
+                mstore(add(m, 0x34), orchestrator)
+                mstore(add(m, 0x14), address())
+                mstore(m, 0xdd62ed3e000000000000000000000000) // `allowance(address,address)`.
+                // Orchestrator checks for token transfer success, so we don't need to check it here.
+                pop(call(gas(), token, 0, add(m, 0x10), 0x44, 0, 0x20))
+
+                let allowance := mload(0x20)
+                if gt(amount, allowance) {
+                    mstore(add(m, 0x34), 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF) // type(uint256).max
+                    mstore(add(m, 0x14), orchestrator)
+                    mstore(m, 0x095ea7b3000000000000000000000000) // `approve(address,uint256)`.
+                    // Orchestrator checks for token transfer success, so we don't need to check it here.
+                    pop(call(gas(), token, 0, add(m, 0x10), 0x44, 0, 0x20))
+                }
+            }
         }
     }
 
