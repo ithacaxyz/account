@@ -96,9 +96,6 @@ contract Orchestrator is
     /// @dev The state override has not happened.
     error StateOverrideError();
 
-    /// @dev The funding has failed.
-    error FundingError();
-
     /// @dev The intent has expired.
     error IntentExpired();
 
