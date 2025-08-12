@@ -46,8 +46,8 @@ interface ICommon {
         /// the overall Intent will revert before validation, and execute will return a non-zero error.
         bytes[] encodedPreCalls;
         /// @dev Only relevant for multi chain intents.
-        /// All the fund transfers HAVE To be in ascending order of the token address.
-        /// There also cannot be any duplicate token addresses. Use address(0) for native token.
+        /// There should not be any duplicate token addresses. Use address(0) for native token.
+        /// If native token is used, the first transfer should be the native token transfer.
         /// If encodedFundTransfers is not empty, then the intent is considered the output intent.
         bytes[] encodedFundTransfers;
         /// @dev The settler address.
