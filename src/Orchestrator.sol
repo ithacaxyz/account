@@ -696,12 +696,7 @@ contract Orchestrator is
         uint256 j;
 
         if (transfers[0].token == address(0)) {
-            if (address(this).balance < transfers[0].amount) {
-                revert NativeTokensNotFunded();
-            }
-            // Send native asset to the EOA, ignore any reverts.
-            (bool success,) = eoa.call{value: transfers[0].amount}("");
-            (success);
+            SafeTransferLib.safeTransferETH(eoa, transfers[0].amount);
             j++;
         }
 
