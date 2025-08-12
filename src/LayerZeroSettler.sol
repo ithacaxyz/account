@@ -64,9 +64,12 @@ contract LayerZeroSettler is OApp, ISettler {
         external
         payable
     {
-        if (!validSend[keccak256(abi.encode(sender, settlementId, settlerContext))]) {
+        bytes32 key = keccak256(abi.encode(sender, settlementId, settlerContext));
+        if (!validSend[key]) {
             revert InvalidSettlementId();
         }
+        // Key gets invalidated to prevent replay.
+        validSend[key] = false;
 
         // Decode settlerContext as an array of LayerZero endpoint IDs
         uint32[] memory endpointIds = abi.decode(settlerContext, (uint32[]));
