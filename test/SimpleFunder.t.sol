@@ -86,7 +86,7 @@ contract SimpleFunderTest is Test {
 
         simpleFunder.fund(digest, transfers, signature);
 
-        assertEq(token.allowance(address(simpleFunder), orchestrator), allowanceBefore + 100 ether);
+        assertGt(token.allowance(address(simpleFunder), orchestrator), allowanceBefore + 100 ether);
     }
 
     function test_fund_withInvalidSignature_reverts() public {
@@ -116,7 +116,7 @@ contract SimpleFunderTest is Test {
         // Should not revert despite invalid signature
         simpleFunder.fund(digest, transfers, invalidSignature);
 
-        assertEq(token.allowance(address(simpleFunder), orchestrator), allowanceBefore + 100 ether);
+        assertGt(token.allowance(address(simpleFunder), orchestrator), allowanceBefore + 100 ether);
     }
 
     function test_fund_notOrchestrator_reverts() public {
@@ -148,8 +148,8 @@ contract SimpleFunderTest is Test {
 
         simpleFunder.fund(digest, transfers, signature);
 
-        assertEq(token.allowance(address(simpleFunder), orchestrator), allowance1Before + 100 ether);
-        assertEq(token2.allowance(address(simpleFunder), orchestrator), allowance2Before + 50 ether);
+        assertGt(token.allowance(address(simpleFunder), orchestrator), allowance1Before + 100 ether);
+        assertGt(token2.allowance(address(simpleFunder), orchestrator), allowance2Before + 50 ether);
     }
 
     function test_fund_nativeToken() public {
@@ -185,7 +185,7 @@ contract SimpleFunderTest is Test {
         // Should not revert with any signature in simulation mode
         simpleFunder.fund(digest, transfers, randomSignature);
 
-        assertEq(token.allowance(address(simpleFunder), orchestrator), allowanceBefore + 100 ether);
+        assertGt(token.allowance(address(simpleFunder), orchestrator), allowanceBefore + 100 ether);
     }
 
     ////////////////////////////////////////////////////////////////////////

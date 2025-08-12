@@ -158,7 +158,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
                 // Orchestrator checks for token transfer success, so we don't need to check it here.
                 pop(call(gas(), token, 0, add(m, 0x10), 0x44, 0, 0x20))
 
-                let allowance := mload(0x20)
+                let allowance := mload(0)
                 if gt(amount, allowance) {
                     mstore(add(m, 0x34), 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF) // type(uint256).max
                     mstore(add(m, 0x14), orchestrator)
