@@ -85,7 +85,7 @@ contract SimulateExecuteTest is BaseTest {
         oc.simulateExecute(false, type(uint256).max, abi.encode(i));
 
         uint256 snapshot = vm.snapshotState();
-        vm.deal(address(simulator), type(uint256).max);
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (t.gUsed, t.gCombined) =
             simulator.simulateV1Logs(address(oc), false, 2, 1e11, 11_000, 0, abi.encode(i));
@@ -193,7 +193,7 @@ contract SimulateExecuteTest is BaseTest {
         }
 
         uint256 snapshot = vm.snapshotState();
-        vm.deal(address(simulator), type(uint256).max);
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (t.gUsed, t.gCombined) =
             simulator.simulateV1Logs(address(oc), false, 2, 1e11, 11_000, 0, abi.encode(i));
@@ -251,7 +251,7 @@ contract SimulateExecuteTest is BaseTest {
         }
 
         uint256 snapshot = vm.snapshotState();
-        vm.deal(address(simulator), type(uint256).max);
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (t.gUsed, t.gCombined) =
             simulator.simulateV1Logs(address(oc), false, 2, 1e11, 10_800, 0, abi.encode(i));
@@ -313,7 +313,7 @@ contract SimulateExecuteTest is BaseTest {
         i.signature = abi.encodePacked(keccak256("a"), keccak256("b"), k.keyHash, uint8(0));
 
         uint256 snapshot = vm.snapshotState();
-        vm.deal(address(simulator), type(uint256).max);
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (t.gUsed, t.gCombined) =
             simulator.simulateV1Logs(address(oc), false, 2, 1e11, 12_000, 10_000, abi.encode(i));

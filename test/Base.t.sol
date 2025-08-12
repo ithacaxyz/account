@@ -22,6 +22,7 @@ import {GuardedExecutor} from "../src/IthacaAccount.sol";
 
 import {IOrchestrator} from "../src/interfaces/IOrchestrator.sol";
 import {Simulator} from "../src/Simulator.sol";
+import {ICommon} from "../src/interfaces/ICommon.sol";
 
 contract BaseTest is SoladyTest {
     using LibRLP for LibRLP.List;
@@ -56,6 +57,8 @@ contract BaseTest is SoladyTest {
 
     bytes32 internal constant _ERC7579_DELEGATE_CALL_MODE =
         0xff00000000000000000000000000000000000000000000000000000000000000;
+
+    address internal constant _ORIGIN_ADDRESS = 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38;
 
     struct PassKey {
         IthacaAccount.Key k;
@@ -308,7 +311,7 @@ contract BaseTest is SoladyTest {
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
         uint256 snapshot = vm.snapshotState();
-        vm.deal(address(simulator), type(uint256).max);
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (gUsed, gCombined) =
             simulator.simulateV1Logs(address(oc), true, 0, 1, 11_000, 10_000, abi.encode(i));
@@ -318,7 +321,7 @@ contract BaseTest is SoladyTest {
 
         vm.revertToStateAndDelete(snapshot);
 
-        gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
+        gExecute = Math.mulDiv(gCombined + 110_000, 64, 63) + 30_000;
     }
 
     struct _EstimateGasParams {
@@ -339,7 +342,7 @@ contract BaseTest is SoladyTest {
 
             // Set the simulator to have max balance, so that it can run in state override mode.
             // This is meant to mimic an offchain state override.
-            vm.deal(address(simulator), type(uint256).max);
+            vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
             (gUsed, gCombined) = simulator.simulateV1Logs(
                 address(oc),
@@ -354,7 +357,7 @@ contract BaseTest is SoladyTest {
         }
 
         // gExecute > (100k + combinedGas) * 64/63
-        gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
+        gExecute = Math.mulDiv(gCombined + 110_000, 64, 63) + 30_000;
     }
 
     function _mint(address token, address to, uint256 amount) internal {

@@ -22,6 +22,36 @@ contract LayerZeroSettler is OApp, ISettler {
 
     constructor(address _endpoint, address _owner) OApp(_endpoint, _owner) Ownable(_owner) {}
 
+    ////////////////////////////////////////////////////////////////////////
+    // EIP-5267 Support
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev See: https://eips.ethereum.org/EIPS/eip-5267
+    /// Returns the fields and values that describe the domain separator used for signing.
+    /// Note: This is just for labelling and offchain verification purposes.
+    /// This contract does not use EIP712 signatures anywhere else.
+    function eip712Domain()
+        public
+        view
+        returns (
+            bytes1 fields,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,
+            bytes32 salt,
+            uint256[] memory extensions
+        )
+    {
+        fields = hex"0f"; // `0b01111` - has name, version, chainId, verifyingContract
+        name = "LayerZeroSettler";
+        version = "0.0.1";
+        chainId = block.chainid;
+        verifyingContract = address(this);
+        salt = bytes32(0);
+        extensions = new uint256[](0);
+    }
+
     /// @notice Mark the settlement as valid to be sent
     function send(bytes32 settlementId, bytes calldata settlerContext) external payable override {
         validSend[keccak256(abi.encode(msg.sender, settlementId, settlerContext))] = true;
@@ -42,7 +72,9 @@ contract LayerZeroSettler is OApp, ISettler {
         uint32[] memory endpointIds = abi.decode(settlerContext, (uint32[]));
 
         bytes memory payload = abi.encode(settlementId, sender, block.chainid);
-        bytes memory options = ""; // No executor options for self-execution
+
+        // Type 3 options with minimal executor configuration for self-execution
+        bytes memory options = hex"0003";
 
         // If the fee sent as msg.value is incorrect, then one of these _lzSends will revert.
         for (uint256 i = 0; i < endpointIds.length; i++) {
@@ -57,8 +89,42 @@ contract LayerZeroSettler is OApp, ISettler {
         }
     }
 
+    function _getPeerOrRevert(uint32 _eid) internal view virtual override returns (bytes32) {
+        bytes32 peer = peers[_eid];
+        // If no peer is set, use default peer (address(this))
+        if (peer == bytes32(0)) {
+            // The peer address for all chains is automatically set to `address(this)`
+            return bytes32(uint256(uint160(address(this))));
+        }
+        return peer;
+    }
+
+    /// @notice Allow initialization path from configured peers
+    /// @dev Checks if the origin sender matches the configured peer for that endpoint
+    /// @param _origin The origin information containing the source endpoint and sender address
+    /// @return True if origin sender is the configured peer, false otherwise
+    function allowInitializePath(Origin calldata _origin)
+        public
+        view
+        virtual
+        override
+        returns (bool)
+    {
+        // Get the configured peer for this source endpoint
+        bytes32 peer = peers[_origin.srcEid];
+
+        // If no peer is set, use the default peer (address(this))
+        if (peer == bytes32(0)) {
+            peer = _getPeerOrRevert(_origin.srcEid);
+        }
+
+        // Allow initialization if the sender matches the configured peer
+        return _origin.sender == peer;
+    }
+
     /// @notice Receive settlement attestation from another chain
     /// @dev Called by LayerZero endpoint after message verification
+
     function _lzReceive(
         Origin calldata, /*_origin*/
         bytes32, /*_guid*/
@@ -101,4 +167,15 @@ contract LayerZeroSettler is OApp, ISettler {
 
     /// @notice Allow contract to receive ETH from refunds
     receive() external payable {}
+
+    // ========================================================
+    // ULN302 Executor Functions
+    // ========================================================
+    function assignJob(uint32, address, uint256, bytes calldata) external returns (uint256) {
+        return 0;
+    }
+
+    function getFee(uint32, address, uint256, bytes calldata) external view returns (uint256) {
+        return 0;
+    }
 }

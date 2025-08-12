@@ -28,6 +28,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
             layerZeroEid: 30101,
+            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -43,6 +44,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
             layerZeroEid: 30110,
+            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -58,6 +60,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
             layerZeroEid: 30184,
+            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -73,21 +76,23 @@ contract DefaultConfig {
             l0SettlerOwner: 0x0000000000000000000000000000000000000005,
             layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
             layerZeroEid: 40161,
+            salt: bytes32(0),
             stages: _getAllStages()
         });
 
-        // Arbitrum Sepolia
+        // Optimism Sepolia
         configs[4] = BaseDeployment.ChainConfig({
-            chainId: 421614,
-            name: "Arbitrum Sepolia",
+            chainId: 11155420,
+            name: "Optimism Sepolia",
             isTestnet: true,
             pauseAuthority: 0x0000000000000000000000000000000000000001,
             funderOwner: 0x0000000000000000000000000000000000000003,
             funderSigner: 0x0000000000000000000000000000000000000002,
             settlerOwner: 0x0000000000000000000000000000000000000004,
-            l0SettlerOwner: 0x0000000000000000000000000000000000000005,
+            l0SettlerOwner: 0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4,
             layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
-            layerZeroEid: 40231,
+            layerZeroEid: 40232,
+            salt: bytes32(0),
             stages: _getAllStages()
         });
 
@@ -100,9 +105,10 @@ contract DefaultConfig {
             funderOwner: 0x0000000000000000000000000000000000000003,
             funderSigner: 0x0000000000000000000000000000000000000002,
             settlerOwner: 0x0000000000000000000000000000000000000004,
-            l0SettlerOwner: 0x0000000000000000000000000000000000000005,
+            l0SettlerOwner: 0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4,
             layerZeroEndpoint: 0x6EDCE65403992e310A62460808c4b910D972f10f,
             layerZeroEid: 40245,
+            salt: 0x0000000000000000000000000000000000000000000000000000000000000001,
             stages: _getAllStages()
         });
         // Porto Devnet
@@ -117,6 +123,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
             layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
             layerZeroEid: 0,
+            salt: bytes32(0),
             stages: _getDevnetStages()
         });
         // Porto Interop Devnets
@@ -131,6 +138,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
             layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
             layerZeroEid: 0,
+            salt: bytes32(0),
             stages: _getDevnetStages()
         });
         configs[8] = BaseDeployment.ChainConfig({
@@ -144,6 +152,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
             layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
             layerZeroEid: 0,
+            salt: bytes32(0),
             stages: _getDevnetStages()
         });
         configs[9] = BaseDeployment.ChainConfig({
@@ -157,6 +166,7 @@ contract DefaultConfig {
             l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
             layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
             layerZeroEid: 0,
+            salt: bytes32(0),
             stages: _getDevnetStages()
         });
     }
@@ -181,6 +191,12 @@ contract DefaultConfig {
         stages[0] = BaseDeployment.Stage.Core;
         stages[1] = BaseDeployment.Stage.Interop;
         stages[2] = BaseDeployment.Stage.SimpleSettler;
+        return stages;
+    }
+
+    function _getLayerZeroStages() private pure returns (BaseDeployment.Stage[] memory) {
+        BaseDeployment.Stage[] memory stages = new BaseDeployment.Stage[](1);
+        stages[0] = BaseDeployment.Stage.LayerZeroSettler;
         return stages;
     }
 }

@@ -534,6 +534,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
                 mstore(add(m, 0x80), signature.length) // signature length
                 calldatacopy(add(m, 0xa0), signature.offset, signature.length) // copy data to memory offset
 
+                mstore(0x00, 0) // Zeroize return data memory.
                 let size := add(signature.length, 0x84)
                 let success := staticcall(gas(), signer, add(m, 0x1c), size, 0x00, 0x20)
 
@@ -628,9 +629,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             keyHash = k;
 
             // If this is a simulation, signature validation errors are skipped.
-            /// @dev to simulate a paymaster, state override the balance of the msg.sender
-            /// to type(uint256).max. In this case, the msg.sender is the ORCHESTRATOR.
-            if (address(ORCHESTRATOR).balance == type(uint256).max) {
+            /// @dev to simulate a paymaster, state override the balance of the relayer
+            /// to uint256(type(uint192).max).
+            if (tx.origin.balance >= type(uint192).max) {
                 isValid = true;
             }
 
@@ -732,6 +733,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         returns (string memory name, string memory version)
     {
         name = "IthacaAccount";
-        version = "0.4.9";
+        version = "0.4.12";
     }
 }

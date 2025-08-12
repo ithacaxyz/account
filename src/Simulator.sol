@@ -7,7 +7,37 @@ import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 /// @title Simulator
 /// @notice A separate contract for calling the Orchestrator contract solely for gas simulation.
 contract Simulator {
+    ////////////////////////////////////////////////////////////////////////
+    // EIP-5267 Support
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev See: https://eips.ethereum.org/EIPS/eip-5267
+    /// Returns the fields and values that describe the domain separator used for signing.
+    /// Note: This is just for labelling and offchain verification purposes.
+    /// This contract does not use EIP712 signatures anywhere else.
+    function eip712Domain()
+        public
+        view
+        returns (
+            bytes1 fields,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,
+            bytes32 salt,
+            uint256[] memory extensions
+        )
+    {
+        fields = hex"0f"; // `0b01111` - has name, version, chainId, verifyingContract
+        name = "Simulator";
+        version = "0.0.1";
+        chainId = block.chainid;
+        verifyingContract = address(this);
+        salt = bytes32(0);
+        extensions = new uint256[](0);
+    }
     /// @dev This modifier is used to free up memory after a function call.
+
     modifier freeTempMemory() {
         uint256 m;
         assembly ("memory-safe") {

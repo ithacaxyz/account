@@ -57,7 +57,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
         returns (string memory name, string memory version)
     {
         name = "SimpleFunder";
-        version = "0.4.3";
+        version = "0.1,2";
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -131,7 +131,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
 
         // Override signature validation result in simulation mode
         // This allows relayers to simulate multi-chain intents successfully
-        if (msg.sender.balance == type(uint256).max) {
+        if (tx.origin.balance >= type(uint192).max) {
             isValid = true;
         }
 

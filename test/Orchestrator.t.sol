@@ -619,7 +619,7 @@ contract OrchestratorTest is BaseTest {
 
         // Set the simulator to have max balance, so that it can run in state override mode.
         // This is meant to mimic an offchain state override.
-        vm.deal(address(simulator), type(uint256).max);
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
         (gUsed, gCombined) = simulator.simulateV1Logs(
             address(oc),
             p.isPrePayment,
@@ -991,21 +991,9 @@ contract OrchestratorTest is BaseTest {
 
         bytes32 digest = oc.computeDigest(u);
 
-        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        _simulateExecute(
-            _EstimateGasParams({
-                u: u,
-                isPrePayment: false,
-                paymentPerGasPrecision: 0,
-                paymentPerGas: 1,
-                combinedGasIncrement: 11_000,
-                combinedGasVerificationOffset: 0
-            })
-        );
-
         uint256 snapshot = vm.snapshotState();
         // To allow paymasters to be used in simulation mode.
-        vm.deal(address(oc), type(uint256).max);
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
         (uint256 gExecute, uint256 gCombined,) = _estimateGas(u);
         vm.revertToStateAndDelete(snapshot);
         u.combinedGas = gCombined;
@@ -1255,7 +1243,7 @@ contract OrchestratorTest is BaseTest {
         // Try to set config again
         vm.startPrank(t.d.eoa);
         vm.expectRevert(bytes4(keccak256("ConfigAlreadySet()")));
-        t.multiSigSigner.initConfig(_hash(t.multiSigKey.k), 5, ownerKeyHashes);
+        t.multiSigSigner.initConfig(_hash(t.multiSigKey.k), 1, ownerKeyHashes);
         vm.stopPrank();
 
         calls[0] = ERC7821.Call({

@@ -19,6 +19,12 @@ import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
  * @notice Main deployment script that executes all configured stages for specified chains
  * @dev This script directly deploys contracts without creating intermediate deployer contracts
  *
+ * ⚠️  IMPORTANT FOR CREATE2 DEPLOYMENTS:
+ * If you're using CREATE2 (salt != 0x0), you MUST save your salt values!
+ * The salt determines your contract addresses across chains.
+ * Lost salts = unable to deploy to same addresses on new chains.
+ * Store production salts securely with backups.
+ *
  * Usage:
  * # Export your private key
  * export PRIVATE_KEY=0x...
@@ -69,8 +75,19 @@ contract DeployMain is BaseDeployment {
     function deployToChain(uint256 chainId) internal override {
         console.log("Deploying all configured stages...");
 
+        // Verify Safe Singleton Factory if CREATE2 is needed
+        verifySafeSingletonFactory(chainId);
+
         ChainConfig memory config = getChainConfig(chainId);
         DeployedContracts memory deployed = getDeployedContracts(chainId);
+
+        // Warning for CREATE2 deployments
+        if (config.salt != bytes32(0)) {
+            console.log(unicode"\n⚠️  CREATE2 DEPLOYMENT - SAVE YOUR SALT!");
+            console.log("Salt:", vm.toString(config.salt));
+            console.log("This salt is REQUIRED to deploy to same addresses on new chains");
+            console.log(unicode"Store it securely with backups!\n");
+        }
 
         // Deploy each stage if configured
         if (shouldDeployStage(chainId, Stage.Core)) {
@@ -101,9 +118,11 @@ contract DeployMain is BaseDeployment {
 
         // Deploy Orchestrator
         if (deployed.orchestrator == address(0)) {
-            vm.broadcast();
-            address orchestrator = address(new Orchestrator(config.pauseAuthority));
-            console.log("Orchestrator deployed:", orchestrator);
+            // Use CREATE2
+            bytes memory creationCode = type(Orchestrator).creationCode;
+            bytes memory args = abi.encode(config.pauseAuthority);
+            address orchestrator = deployContract(chainId, creationCode, args, "Orchestrator");
+
             saveDeployedContract(chainId, "Orchestrator", orchestrator);
             deployed.orchestrator = orchestrator;
         } else {
@@ -112,9 +131,11 @@ contract DeployMain is BaseDeployment {
 
         // Deploy Account Implementation
         if (deployed.accountImpl == address(0)) {
-            vm.broadcast();
-            address accountImpl = address(new IthacaAccount(deployed.orchestrator));
-            console.log("IthacaAccount deployed:", accountImpl);
+            // Use CREATE2
+            bytes memory creationCode = type(IthacaAccount).creationCode;
+            bytes memory args = abi.encode(deployed.orchestrator);
+            address accountImpl = deployContract(chainId, creationCode, args, "IthacaAccount");
+
             saveDeployedContract(chainId, "AccountImpl", accountImpl);
             deployed.accountImpl = accountImpl;
         } else {
@@ -123,9 +144,10 @@ contract DeployMain is BaseDeployment {
 
         // Deploy Account Proxy
         if (deployed.accountProxy == address(0)) {
-            vm.broadcast();
-            address accountProxy = LibEIP7702.deployProxy(deployed.accountImpl, address(0));
-            console.log("AccountProxy deployed:", accountProxy);
+            // For CREATE2, we need to use the proxy init code
+            bytes memory proxyCode = LibEIP7702.proxyInitCode(deployed.accountImpl, address(0));
+            address accountProxy = deployContract(chainId, proxyCode, "", "AccountProxy");
+
             require(accountProxy != address(0), "Account proxy deployment failed");
             saveDeployedContract(chainId, "AccountProxy", accountProxy);
             deployed.accountProxy = accountProxy;
@@ -135,9 +157,10 @@ contract DeployMain is BaseDeployment {
 
         // Deploy Simulator
         if (deployed.simulator == address(0)) {
-            vm.broadcast();
-            address simulator = address(new Simulator());
-            console.log("Simulator deployed:", simulator);
+            // Use CREATE2
+            bytes memory creationCode = type(Simulator).creationCode;
+            address simulator = deployContract(chainId, creationCode, "", "Simulator");
+
             saveDeployedContract(chainId, "Simulator", simulator);
             deployed.simulator = simulator;
         } else {
@@ -161,11 +184,12 @@ contract DeployMain is BaseDeployment {
 
         // Deploy SimpleFunder
         if (deployed.simpleFunder == address(0)) {
-            vm.broadcast();
-            address funder = address(
-                new SimpleFunder(config.funderSigner, deployed.orchestrator, config.funderOwner)
-            );
-            console.log("SimpleFunder deployed:", funder);
+            // Use CREATE2
+            bytes memory creationCode = type(SimpleFunder).creationCode;
+            bytes memory args =
+                abi.encode(config.funderSigner, deployed.orchestrator, config.funderOwner);
+            address funder = deployContract(chainId, creationCode, args, "SimpleFunder");
+
             saveDeployedContract(chainId, "SimpleFunder", funder);
             deployed.simpleFunder = funder;
         } else {
@@ -174,9 +198,10 @@ contract DeployMain is BaseDeployment {
 
         // Deploy Escrow
         if (deployed.escrow == address(0)) {
-            vm.broadcast();
-            address escrow = address(new Escrow());
-            console.log("Escrow deployed:", escrow);
+            // Use CREATE2
+            bytes memory creationCode = type(Escrow).creationCode;
+            address escrow = deployContract(chainId, creationCode, "", "Escrow");
+
             saveDeployedContract(chainId, "Escrow", escrow);
             deployed.escrow = escrow;
         } else {
@@ -197,9 +222,11 @@ contract DeployMain is BaseDeployment {
         console.log("\n[Stage: Simple Settler]");
 
         if (deployed.simpleSettler == address(0)) {
-            vm.broadcast();
-            address settler = address(new SimpleSettler(config.settlerOwner));
-            console.log("SimpleSettler deployed:", settler);
+            // Use CREATE2
+            bytes memory creationCode = type(SimpleSettler).creationCode;
+            bytes memory args = abi.encode(config.settlerOwner);
+            address settler = deployContract(chainId, creationCode, args, "SimpleSettler");
+
             console.log("  Owner:", config.settlerOwner);
             saveDeployedContract(chainId, "SimpleSettler", settler);
         } else {
@@ -220,10 +247,11 @@ contract DeployMain is BaseDeployment {
         console.log("\n[Stage: LayerZero Settler]");
 
         if (deployed.layerZeroSettler == address(0)) {
-            vm.broadcast();
-            address settler =
-                address(new LayerZeroSettler(config.layerZeroEndpoint, config.l0SettlerOwner));
-            console.log("LayerZeroSettler deployed:", settler);
+            // Use CREATE2
+            bytes memory creationCode = type(LayerZeroSettler).creationCode;
+            bytes memory args = abi.encode(config.layerZeroEndpoint, config.l0SettlerOwner);
+            address settler = deployContract(chainId, creationCode, args, "LayerZeroSettler");
+
             console.log("  Endpoint:", config.layerZeroEndpoint);
             console.log("  Owner:", config.l0SettlerOwner);
             console.log("  EID:", config.layerZeroEid);

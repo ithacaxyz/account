@@ -27,8 +27,8 @@ runs = 10
 [etherscan]
 # Chain-specific API keys using standardized environment variables
 # Format: VERIFICATION_KEY_{chainId}
-mainnet = { key = "${VERIFICATION_KEY_1}" }
-arbitrum = { key = "${VERIFICATION_KEY_42161}" }
-base = { key = "${VERIFICATION_KEY_8453}" }
+# mainnet = { key = "${VERIFICATION_KEY_1}" }
+# arbitrum = { key = "${VERIFICATION_KEY_42161}" }
+# base = { key = "${VERIFICATION_KEY_8453}" }
 
 

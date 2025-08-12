@@ -75,8 +75,8 @@ contract MultiSigSigner is ISigner {
     function initConfig(bytes32 keyHash, uint256 threshold, bytes32[] memory ownerKeyHashes)
         public
     {
-        // Threshold can't be zero
-        if (threshold == 0) revert InvalidThreshold();
+        // Threshold can't be zero or greater than the number of owners
+        if (threshold == 0 || threshold > ownerKeyHashes.length) revert InvalidThreshold();
 
         Config storage config = _configs[msg.sender][keyHash];
 
@@ -134,6 +134,36 @@ contract MultiSigSigner is ISigner {
         if (threshold == 0 || threshold > config.ownerKeyHashes.length) revert InvalidThreshold();
 
         config.threshold = threshold;
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // EIP-5267 Support
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev See: https://eips.ethereum.org/EIPS/eip-5267
+    /// Returns the fields and values that describe the domain separator used for signing.
+    /// Note: This is just for labelling and offchain verification purposes.
+    /// This contract does not use EIP712 signatures anywhere else.
+    function eip712Domain()
+        public
+        view
+        returns (
+            bytes1 fields,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,
+            bytes32 salt,
+            uint256[] memory extensions
+        )
+    {
+        fields = hex"0f"; // `0b01111` - has name, version, chainId, verifyingContract
+        name = "MultiSigSigner";
+        version = "0.0.1";
+        chainId = block.chainid;
+        verifyingContract = address(this);
+        salt = bytes32(0);
+        extensions = new uint256[](0);
     }
 
     ////////////////////////////////////////////////////////////////////////

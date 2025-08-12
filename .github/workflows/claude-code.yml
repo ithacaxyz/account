@@ -69,9 +69,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Install dependencies
-        uses: ./.github/actions/install-dependencies
+          submodules: true
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
 
       - name: Run Claude Code Action
         uses: anthropics/claude-code-action@beta
@@ -82,7 +85,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           timeout_minutes: "60"
           disallowed_tools: "npm,yarn"
-          allowed_tools: "mcp__github__create_pull_request,Bash(pnpm check),Bash(pnpm check:*),Bash(pnpm test),Bash(pnpm test:*),Bash(pnpm install),Bash(pnpm build)"
+          allowed_tools: "mcp__github__create_pull_request,Bash(forge build),Bash(forge test),Bash(forge test *),Bash(forge fmt),Bash(forge snapshot)"
           custom_instructions: |
             You MUST follow the development workflow described in CLAUDE.md.
             You MUST open a draft pull request after creating a branch.
