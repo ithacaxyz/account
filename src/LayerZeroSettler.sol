@@ -15,12 +15,20 @@ contract LayerZeroSettler is OApp, ISettler {
     error InvalidEndpointId();
     error InsufficientFee(uint256 provided, uint256 required);
     error InvalidSettlementId();
+    error InvalidSender();
 
     // Mapping: settlementId => sender => chainId => isSettled
     mapping(bytes32 => mapping(address => mapping(uint256 => bool))) public settled;
     mapping(bytes32 => bool) public validSend;
 
-    constructor(address _endpoint, address _owner) OApp(_endpoint, _owner) Ownable(_owner) {}
+    address public immutable ORCHESTRATOR;
+
+    constructor(address _endpoint, address _owner, address _orchestrator)
+        OApp(_endpoint, _owner)
+        Ownable(_owner)
+    {
+        ORCHESTRATOR = _orchestrator;
+    }
 
     ////////////////////////////////////////////////////////////////////////
     // EIP-5267 Support
@@ -54,7 +62,11 @@ contract LayerZeroSettler is OApp, ISettler {
 
     /// @notice Mark the settlement as valid to be sent
     function send(bytes32 settlementId, bytes calldata settlerContext) external payable override {
-        validSend[keccak256(abi.encode(msg.sender, settlementId, settlerContext))] = true;
+        if (msg.sender != ORCHESTRATOR) {
+            revert InvalidSender();
+        }
+
+        validSend[keccak256(abi.encode(ORCHESTRATOR, settlementId, settlerContext))] = true;
     }
 
     /// @notice Execute the settlement send to multiple chains
