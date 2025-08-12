@@ -257,12 +257,12 @@ contract GuardedExecutorTest is BaseTest {
 
         emit LogBool("transferToSelf:", transferToSelf);
         if (transferToSelf) {
-            assertEq(oc.execute(false, abi.encode(u)), 0);
+            assertEq(oc.execute(abi.encode(u)), 0);
             assertEq(paymentToken.balanceOf(d.eoa), 0.1 ether);
             return;
         }
 
-        assertEq(oc.execute(false, abi.encode(u)), bytes4(keccak256("NoSpendPermissions()")));
+        assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("NoSpendPermissions()")));
 
         vm.startPrank(d.eoa);
         d.d.setSpendLimit(
@@ -272,7 +272,7 @@ contract GuardedExecutorTest is BaseTest {
 
         u.nonce = d.d.getNonce(0);
         u.signature = _sig(k, u);
-        assertEq(oc.execute(false, abi.encode(u)), 0);
+        assertEq(oc.execute(abi.encode(u)), 0);
         assertEq(paymentToken.balanceOf(address(0xdad)), 0.1 ether);
         assertEq(d.d.spendInfos(k.keyHash)[0].spent, 0.1 ether);
     }
