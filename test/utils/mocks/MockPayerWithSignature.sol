@@ -71,7 +71,7 @@ contract MockPayerWithSignature is Ownable {
         }
 
         TokenTransferLib.safeTransfer(u.paymentToken, u.paymentRecipient, paymentAmount);
-        
+
         emit Compensated(u.paymentToken, u.paymentRecipient, paymentAmount, u.eoa, keyHash);
     }
 

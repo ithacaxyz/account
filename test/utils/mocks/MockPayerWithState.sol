@@ -4,7 +4,6 @@ pragma solidity ^0.8.4;
 import {TokenTransferLib} from "../../../src/libraries/TokenTransferLib.sol";
 import {Ownable} from "solady/auth/Ownable.sol";
 import {ICommon} from "../../../src/interfaces/ICommon.sol";
-import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
 /// @dev WARNING! This mock is strictly intended for testing purposes only.
 /// Do NOT copy anything here into production code unless you really know what you are doing.
@@ -66,6 +65,7 @@ contract MockPayerWithState is Ownable {
         ICommon.Intent memory u = abi.decode(encodedIntent, (ICommon.Intent));
 
         // We shall rely on arithmetic underflow error to revert if there's insufficient funds.
+        funds[u.paymentToken][u.eoa] -= paymentAmount;
         TokenTransferLib.safeTransfer(u.paymentToken, u.paymentRecipient, paymentAmount);
 
         // Emit the event for debugging.
