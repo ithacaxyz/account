@@ -189,6 +189,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev For EIP712 signature digest calculation.
     bytes32 public constant DOMAIN_TYPEHASH = _DOMAIN_TYPEHASH;
 
+    /// @dev For ERC1271 replay-safe hashing.
+    bytes32 public constant SIGN_TYPEHASH = keccak256("ERC1271Sign(bytes32 digest)");
+
     /// @dev Nonce prefix to signal that the payload is to be signed with EIP-712 without the chain ID.
     /// This constant is a pun for "chain ID 0".
     uint16 public constant MULTICHAIN_NONCE_PREFIX = 0xc1d0;
@@ -233,6 +236,13 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         virtual
         returns (bytes4)
     {
+        // To sign an app digest (e.g. Permit2), you would need to perform a `hashTypedData` on the app's 712,
+        // along with the app's domain, then `signTypedData` with the account's 712 and account domain.
+        // The account domain is added as a layer to prevent replay attacks since some apps do not include the
+        // account address as a field in their 712 data.
+        bytes32 replaySafeDigest = EfficientHashLib.hash(SIGN_TYPEHASH, digest);
+        digest = _hashTypedData(replaySafeDigest);
+
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
             isValid =
@@ -733,6 +743,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         returns (string memory name, string memory version)
     {
         name = "IthacaAccount";
-        version = "0.4.12";
+        version = "0.4.13";
     }
 }
