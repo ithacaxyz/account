@@ -277,7 +277,7 @@ abstract contract GuardedExecutor is ERC7821 {
                 t.approvedERC20s.p(target);
                 t.approvalSpenders.p(LibBytes.loadCalldata(data, 0x04).lsbToAddress()); // `spender`.
                 t.erc20s.p(target); // `token`.
-                t.transferAmounts.p(LibBytes.loadCalldata(data, 0x44)); // `amount`.
+                t.transferAmounts.p(LibBytes.loadCalldata(data, 0x24)); // `amount`.
             }
             // The only Permit2 method that requires `msg.sender` to approve.
             // `approve(address,address,uint160,uint48)`.
@@ -288,7 +288,7 @@ abstract contract GuardedExecutor is ERC7821 {
                 if (LibBytes.loadCalldata(data, 0x44) == 0) continue; // `amount == 0`.
                 t.permit2ERC20s.p(LibBytes.loadCalldata(data, 0x04).lsbToAddress()); // `token`.
                 t.permit2Spenders.p(LibBytes.loadCalldata(data, 0x24).lsbToAddress()); // `spender`.
-                t.erc20s.p(LibBytes.loadCalldata(data, 0x04)); // `token`.
+                t.erc20s.p(LibBytes.loadCalldata(data, 0x04).lsbToAddress()); // `token`.
                 t.transferAmounts.p(LibBytes.loadCalldata(data, 0x44)); // `amount`.
             }
         }
