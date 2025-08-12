@@ -102,9 +102,6 @@ contract Orchestrator is
     /// @dev The intent has expired.
     error IntentExpired();
 
-    /// @dev Native tokens were not sent during a call to `fund`
-    error NativeTokensNotFunded();
-
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
