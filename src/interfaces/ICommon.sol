@@ -30,11 +30,8 @@ interface ICommon {
         address payer;
         /// @dev The ERC20 or native token used to pay for gas.
         address paymentToken;
-        /// @dev The amount of the token to pay, before the call batch is executed
-        /// This will be required to be less than `totalPaymentMaxAmount`.
-        uint256 prePaymentMaxAmount;
         /// @dev The maximum amount of the token to pay.
-        uint256 totalPaymentMaxAmount;
+        uint256 paymentMaxAmount;
         /// @dev The combined gas limit for payment, verification, and calling the EOA.
         uint256 combinedGas;
         /// @dev Optional array of encoded SignedCalls that will be verified and executed
@@ -67,10 +64,8 @@ interface ICommon {
         bytes funderSignature;
         /// @dev The settler context data to be passed to the settler.
         bytes settlerContext;
-        /// @dev The actual pre payment amount, requested by the filler. MUST be less than or equal to `prePaymentMaxAmount`
-        uint256 prePaymentAmount;
-        /// @dev The actual total payment amount, requested by the filler. MUST be less than or equal to `totalPaymentMaxAmount`
-        uint256 totalPaymentAmount;
+        /// @dev The actual payment amount, requested by the filler. MUST be less than or equal to `paymentMaxAmount`
+        uint256 paymentAmount;
         /// @dev The payment recipient for the ERC20 token.
         /// Excluded from signature. The filler can replace this with their own address.
         /// This enables multiple fillers, allowing for competitive filling, better uptime.

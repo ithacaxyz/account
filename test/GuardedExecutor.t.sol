@@ -817,10 +817,8 @@ contract GuardedExecutorTest is BaseTest {
         u.eoa = d.eoa;
         u.nonce = d.d.getNonce(0);
         u.paymentToken = address(paymentToken);
-        u.prePaymentAmount = 1 ether;
-        u.prePaymentMaxAmount = type(uint192).max;
-        u.totalPaymentAmount = u.prePaymentAmount;
-        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.paymentAmount = 1 ether;
+        u.paymentMaxAmount = type(uint192).max;
 
         // Mint some tokens.
         paymentToken.mint(u.eoa, type(uint192).max);

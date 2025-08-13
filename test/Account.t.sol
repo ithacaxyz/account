@@ -431,10 +431,8 @@ contract AccountTest is BaseTest {
         Orchestrator.Intent memory baseIntent;
         baseIntent.eoa = eoaAddress;
         baseIntent.paymentToken = address(paymentToken);
-        baseIntent.prePaymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
-        baseIntent.prePaymentMaxAmount = baseIntent.prePaymentAmount;
-        baseIntent.totalPaymentAmount = baseIntent.prePaymentAmount;
-        baseIntent.totalPaymentMaxAmount = baseIntent.prePaymentMaxAmount;
+        baseIntent.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
+        baseIntent.paymentMaxAmount = baseIntent.paymentAmount;
         baseIntent.combinedGas = 10000000;
 
         // Encode the pre-calls once (to be reused on both chains)
