@@ -297,7 +297,6 @@ contract BaseTest is SoladyTest {
         return _estimateGas(
             _EstimateGasParams({
                 u: u,
-                isPrePayment: true,
                 paymentPerGasPrecision: 0,
                 paymentPerGas: 1,
                 combinedGasIncrement: 110_000,
@@ -326,7 +325,6 @@ contract BaseTest is SoladyTest {
 
     struct _EstimateGasParams {
         Orchestrator.Intent u;
-        bool isPrePayment;
         uint8 paymentPerGasPrecision;
         uint256 paymentPerGas;
         uint256 combinedGasIncrement;

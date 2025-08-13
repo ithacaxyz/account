@@ -37,24 +37,17 @@ participant Payer
     Account-->>Orchestrator: Nonce OK & Incremented
     deactivate Account
 
-    note over Orchestrator,Payer: 3. Pre Payment
-    alt Intent includes prePaymentAmount > 0
-        Orchestrator->>Payer: Process Pre-Payment \n(using Intent.paymentToken, Intent.prePaymentAmount)
-        activate Payer
-        Payer-->>Orchestrator: Pre-Payment Processed
-        deactivate Payer
-    end
-
-    note over Orchestrator,Payer: 4. Execution & Post Payment
+    note over Orchestrator,Account: 3. Execution
     Orchestrator->>Account: execute(mode,executionData)
     activate Account
     Account-->>Orchestrator: Execution Successful
     deactivate Account
 
-    alt Intent totalPaymentAmount > prePaymentAmount
-        Orchestrator->>Payer: pay(totalPaymentAmount - prePaymentAmount)
+    note over Orchestrator,Payer: 4. Payment
+    alt Intent includes paymentAmount > 0
+        Orchestrator->>Payer: Process Payment \n(using Intent.paymentToken, Intent.paymentAmount)
         activate Payer
-        Payer-->>Orchestrator: Post-Payment Processed
+        Payer-->>Orchestrator: Payment Processed
         deactivate Payer
     end
 

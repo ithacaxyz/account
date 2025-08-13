@@ -462,7 +462,7 @@ contract Orchestrator is
 
         _checkAndIncrementNonce(eoa, nonce);
 
-        // PrePayment
+        // Payment
         // If `_pay` fails, just revert.
         // Off-chain simulation of `_pay` should suffice,
         // provided that the token balance does not decrease in the window between
@@ -657,9 +657,8 @@ contract Orchestrator is
             // Copy the intent data to memory
             calldatacopy(add(m, 0xe0), i, encodedSize)
 
-            // We revert here, so that if the post payment fails, the execution is also reverted.
-            // The revert for post payment is caught inside the selfCallExecutePay function.
-            // The revert for prePayment is caught inside the selfCallPayVerify function.
+            // We revert here, so that if the payment fails, the execution is also reverted.
+            // The revert for payment is caught inside the selfCallPayVerify function.
             if iszero(
                 call(
                     gas(), // gas

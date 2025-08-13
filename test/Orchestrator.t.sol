@@ -125,7 +125,6 @@ contract OrchestratorTest is BaseTest {
         _simulateExecute(
             _EstimateGasParams({
                 u: u,
-                isPrePayment: false,
                 paymentPerGasPrecision: 0,
                 paymentPerGas: 1,
                 combinedGasIncrement: 11_000,
@@ -170,7 +169,7 @@ contract OrchestratorTest is BaseTest {
         assertEq(result, abi.encodeWithSignature("ErrorWithData(bytes)", data));
     }
 
-    function testExecuteWithPayingERC20TokensWithPartialPrePayment(bytes32) public {
+    function testExecuteWithPayingERC20Tokens(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         paymentToken.mint(d.eoa, 500 ether);
@@ -189,7 +188,6 @@ contract OrchestratorTest is BaseTest {
         _simulateExecute(
             _EstimateGasParams({
                 u: u,
-                isPrePayment: false,
                 paymentPerGasPrecision: 0,
                 paymentPerGas: 1,
                 combinedGasIncrement: 11_000,
@@ -290,7 +288,6 @@ contract OrchestratorTest is BaseTest {
         _simulateExecute(
             _EstimateGasParams({
                 u: u,
-                isPrePayment: false,
                 paymentPerGasPrecision: 0,
                 paymentPerGas: 1,
                 combinedGasIncrement: 11_000,
