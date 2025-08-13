@@ -467,7 +467,7 @@ contract Orchestrator is
         // Off-chain simulation of `_pay` should suffice,
         // provided that the token balance does not decrease in the window between
         // off-chain simulation and on-chain execution.
-        if (i.paymentAmount != 0) _pay(i.paymentAmount, keyHash, digest, i);
+        if (i.paymentAmount != 0) _pay(keyHash, digest, i);
 
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
         // We expect that the account supports ERC7821
@@ -626,10 +626,8 @@ contract Orchestrator is
 
     /// @dev Makes the `eoa` perform a payment to the `paymentRecipient` directly.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
-    function _pay(uint256 paymentAmount, bytes32 keyHash, bytes32 digest, Intent calldata i)
-        internal
-        virtual
-    {
+    function _pay(bytes32 keyHash, bytes32 digest, Intent calldata i) internal virtual {
+        uint256 paymentAmount = i.paymentAmount;
         uint256 requiredBalanceAfter = Math.saturatingAdd(
             TokenTransferLib.balanceOf(i.paymentToken, i.paymentRecipient), paymentAmount
         );
