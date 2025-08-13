@@ -538,7 +538,6 @@ contract OrchestratorTest is BaseTest {
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
         (gUsed, gCombined) = simulator.simulateV1Logs(
             address(oc),
-            p.isPrePayment,
             p.paymentPerGasPrecision,
             p.paymentPerGas,
             p.combinedGasIncrement,
