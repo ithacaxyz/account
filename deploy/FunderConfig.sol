@@ -16,6 +16,9 @@ contract FunderConfig {
         uint256 targetBalance; // Target balance for each signer (in wei)
     }
 
+    // NOTE: Important to change this address with the actual SimpleFunder address
+    address public constant SIMPLE_FUNDER_ADDRESS = 0x2AD8F6a3bB1126a777606eaFa9da9b95530d9597;
+
     /**
      * @notice Get configuration for all supported chains
      * @return configs Array of funding configurations for each chain
@@ -24,14 +27,8 @@ contract FunderConfig {
         configs = new ChainFundingConfig[](10);
 
         // Ethereum Mainnet - Higher target balance
-        configs[0] = ChainFundingConfig({
-            chainId: 1,
-            // NOTE: Name is just for logging purposes, you can use any name you want.
-            name: "Ethereum Mainnet",
-            // NOTE: 0.1 ether means 0.1 * 10^18 wei
-            // You can also use exact values like 100000000000000000 instead of 0.1 ether
-            targetBalance: 0.1 ether
-        });
+        configs[0] =
+            ChainFundingConfig({chainId: 1, name: "Ethereum Mainnet", targetBalance: 0.1 ether});
 
         // Arbitrum One - L2, lower target
         configs[1] =
@@ -73,6 +70,14 @@ contract FunderConfig {
         // Porto Devnet Leros
         configs[9] =
             ChainFundingConfig({chainId: 28407, name: "Porto Devnet Leros", targetBalance: 1 ether});
+    }
+
+    /**
+     * @notice Get the SimpleFunder contract address (same across all chains)
+     * @return The SimpleFunder contract address
+     */
+    function getSimpleFunderAddress() public pure returns (address) {
+        return SIMPLE_FUNDER_ADDRESS;
     }
 
     /**

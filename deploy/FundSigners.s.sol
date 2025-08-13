@@ -4,10 +4,16 @@ pragma solidity ^0.8.23;
 import {Script, console} from "forge-std/Script.sol";
 import {FunderConfig} from "./FunderConfig.sol";
 
+// SimpleFunder interface for setting gas wallets
+interface ISimpleFunder {
+    function setGasWallet(address[] memory wallets, bool isGasWallet) external;
+    function gasWallets(address) external view returns (bool);
+}
+
 /**
  * @title FundSigners
- * @notice Script to fund multiple signers derived from a mnemonic across multiple chains
- * @dev Uses a mnemonic to derive signer addresses and tops them up to reach target balance
+ * @notice Script to fund multiple signers and set them as gas wallets in SimpleFunder
+ * @dev Uses a mnemonic to derive signer addresses, tops them up to target balance, and sets them as gas wallets
  *
  * Usage:
  * # Set environment variables
@@ -106,6 +112,7 @@ contract FundSigners is Script {
         // Load configuration
         FunderConfig configContract = new FunderConfig();
         FunderConfig.ChainFundingConfig[] memory allConfigs = configContract.getConfigs();
+        address simpleFunderAddress = configContract.getSimpleFunderAddress();
 
         // Get mnemonic from environment
         string memory mnemonic = vm.envString("GAS_SIGNER_MNEMONIC");
@@ -149,7 +156,7 @@ contract FundSigners is Script {
                 continue;
             }
 
-            processChain(chainId, config, signers);
+            processChain(chainId, config, signers, simpleFunderAddress);
         }
 
         // Print overall summary
@@ -162,7 +169,8 @@ contract FundSigners is Script {
     function processChain(
         uint256 chainId,
         FunderConfig.ChainFundingConfig memory config,
-        address[] memory signers
+        address[] memory signers,
+        address simpleFunderAddress
     ) internal {
         console.log(
             string.concat("\n=== Funding on ", config.name, " (", vm.toString(chainId), ") ===")
@@ -199,6 +207,12 @@ contract FundSigners is Script {
         // Fund signers
         vm.startBroadcast();
         SignerStatus[] memory statuses = fundSignersOnChain(chainId, config, signers);
+
+        // Set gas wallets in SimpleFunder if configured
+        if (simpleFunderAddress != address(0)) {
+            setGasWalletsInSimpleFunder(simpleFunderAddress, signers);
+        }
+
         vm.stopBroadcast();
 
         // Report results for this chain
@@ -280,6 +294,103 @@ contract FundSigners is Script {
         }
 
         return statuses;
+    }
+
+    /**
+     * @notice Set gas wallets in SimpleFunder contract
+     */
+    function setGasWalletsInSimpleFunder(address simpleFunder, address[] memory signers) internal {
+        ISimpleFunder funder = ISimpleFunder(simpleFunder);
+
+        console.log("\nChecking and setting gas wallets in SimpleFunder:");
+        console.log("  SimpleFunder address:", simpleFunder);
+
+        // First, check which signers need to be set
+        address[] memory signersToSet = new address[](signers.length);
+        uint256 toSetCount = 0;
+        uint256 alreadySet = 0;
+
+        for (uint256 i = 0; i < signers.length; i++) {
+            if (funder.gasWallets(signers[i])) {
+                alreadySet++;
+                console.log(
+                    string.concat(
+                        "  Signer ",
+                        vm.toString(i),
+                        " (",
+                        vm.toString(signers[i]),
+                        "): Already a gas wallet"
+                    )
+                );
+            } else {
+                signersToSet[toSetCount] = signers[i];
+                toSetCount++;
+                console.log(
+                    string.concat(
+                        "  Signer ",
+                        vm.toString(i),
+                        " (",
+                        vm.toString(signers[i]),
+                        "): Needs to be set"
+                    )
+                );
+            }
+        }
+
+        // If there are signers to set, do it in one transaction
+        if (toSetCount > 0) {
+            // Create array with exact size needed
+            address[] memory signersToSetFinal = new address[](toSetCount);
+            for (uint256 i = 0; i < toSetCount; i++) {
+                signersToSetFinal[i] = signersToSet[i];
+            }
+
+            // Set all gas wallets in one call
+            console.log(
+                string.concat(
+                    "\n  Setting ", vm.toString(toSetCount), " gas wallets in one transaction..."
+                )
+            );
+            funder.setGasWallet(signersToSetFinal, true);
+
+            // Verify they were all set
+            uint256 successfullySet = 0;
+            for (uint256 i = 0; i < toSetCount; i++) {
+                if (funder.gasWallets(signersToSetFinal[i])) {
+                    successfullySet++;
+                }
+            }
+
+            if (successfullySet == toSetCount) {
+                console.log(
+                    string.concat(
+                        "  Successfully set all ", vm.toString(toSetCount), " gas wallets"
+                    )
+                );
+            } else {
+                console.log(
+                    string.concat(
+                        "  Warning: Only ",
+                        vm.toString(successfullySet),
+                        " out of ",
+                        vm.toString(toSetCount),
+                        " gas wallets were set"
+                    )
+                );
+            }
+        } else {
+            console.log("  All signers are already gas wallets, no action needed");
+        }
+
+        console.log(
+            string.concat(
+                "\n  Gas wallet summary: ",
+                vm.toString(alreadySet),
+                " already set, ",
+                vm.toString(toSetCount),
+                " newly set"
+            )
+        );
     }
 
     /**
