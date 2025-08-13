@@ -1,5 +1,16 @@
 # porto-account
 
+## 0.5.0
+
+### Minor Changes
+
+- Remove pre/post payment mechanism from contracts
+  - Replaced `prePaymentAmount`, `prePaymentMaxAmount`, `totalPaymentAmount`, and `totalPaymentMaxAmount` with single `paymentAmount` and `paymentMaxAmount` fields
+  - Post payments can now be done at execution data level by injecting a transfer call at the end of the batch, by the relay.
+  - Simplified the Orchestrator's payment flow to a single payment step after execution
+  - Updated Simulator to remove `isPrePayment` parameter from all simulation functions
+  - This change reduces complexity and allows for more flexible payment handling
+
 ## 0.4.0
 
 ### Minor Changes
@@ -90,6 +101,8 @@
 ## 0.1.0
 
 ### Minor Changes
+
+**Note: The pre/post payment mechanism described below was removed in v0.5.0. This is kept for historical reference only.**
 
 - b38a5af: Refactor PreCalls to be a minimal call struct with extra nonce and EOA fields
 - - `compensate` function is replaced with the `pay` function in the account.
