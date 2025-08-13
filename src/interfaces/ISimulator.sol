@@ -21,7 +21,7 @@ interface ISimulator {
     /// @param isPrePayment Whether to add gas amount to prePayment or postPayment
     /// @param paymentPerGas The amount of `paymentToken` to be added per gas unit.
     /// Total payment is calculated as pre/postPaymentAmount += gasUsed * paymentPerGas.
-    /// @dev Set prePayment or totalPaymentAmount to include any static offset to the gas value.
+    /// @dev Set paymentAmount to include any static offset to the gas value.
     /// @param combinedGasIncrement Basis Points increment to be added for each iteration of searching for combined gas.
     /// @dev The closer this number is to 10_000, the more precise combined gas will be. But more iterations will be needed.
     /// @dev This number should always be > 10_000, to get correct results.

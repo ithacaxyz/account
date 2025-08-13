@@ -61,13 +61,8 @@ contract Simulator {
     ) internal pure {
         uint256 paymentAmount = Math.fullMulDiv(gas, paymentPerGas, 10 ** paymentPerGasPrecision);
 
-        if (isPrePayment) {
-            u.prePaymentAmount += paymentAmount;
-            u.prePaymentMaxAmount += paymentAmount;
-        }
-
-        u.totalPaymentAmount += paymentAmount;
-        u.totalPaymentMaxAmount += paymentAmount;
+        u.paymentAmount += paymentAmount;
+        u.paymentMaxAmount += paymentAmount;
     }
 
     /// @dev Performs a call to the Orchestrator, and returns the gas used by the Intent.
@@ -165,7 +160,7 @@ contract Simulator {
     /// paymentAmount = gas * paymentPerGas / (10 ** paymentPerGasPrecision)
     /// @param paymentPerGas The amount of `paymentToken` to be added per gas unit.
     /// Total payment is calculated as pre/postPaymentAmount += gasUsed * paymentPerGas.
-    /// @dev Set prePayment or totalPaymentAmount to include any static offset to the gas value.
+    /// @dev Set paymentAmount to include any static offset to the gas value.
     /// @param combinedGasIncrement Basis Points increment to be added for each iteration of searching for combined gas.
     /// @dev The closer this number is to 10_000, the more precise combined gas will be. But more iterations will be needed.
     /// @dev This number should always be > 10_000, to get correct results.

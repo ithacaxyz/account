@@ -60,10 +60,8 @@ contract SimulateExecuteTest is BaseTest {
         i.payer = address(0x00);
         i.paymentToken = address(paymentToken);
         i.paymentRecipient = address(0x00);
-        i.prePaymentAmount = 0x112233112233112233112233;
-        i.prePaymentMaxAmount = 0x445566445566445566445566;
-        i.totalPaymentAmount = i.prePaymentAmount;
-        i.totalPaymentMaxAmount = i.prePaymentMaxAmount;
+        i.paymentAmount = 0x112233112233112233112233;
+        i.paymentMaxAmount = 0x445566445566445566445566;
         i.combinedGas = 20_000;
 
         {
@@ -131,10 +129,8 @@ contract SimulateExecuteTest is BaseTest {
         i.payer = address(0x00);
         i.paymentToken = address(paymentToken);
         i.paymentRecipient = address(0x00);
-        i.prePaymentAmount = 0x112233112233112233112233;
-        i.prePaymentMaxAmount = 0x445566445566445566445566;
-        i.totalPaymentAmount = i.prePaymentAmount;
-        i.totalPaymentMaxAmount = i.prePaymentMaxAmount;
+        i.paymentAmount = 0x112233112233112233112233;
+        i.paymentMaxAmount = 0x445566445566445566445566;
         i.combinedGas = 20_000;
 
         {
@@ -179,10 +175,8 @@ contract SimulateExecuteTest is BaseTest {
         i.payer = address(0x00);
         i.paymentToken = address(paymentToken);
         i.paymentRecipient = address(0x00);
-        i.prePaymentAmount = 0x112233112233112233112233;
-        i.prePaymentMaxAmount = 0x445566445566445566445566;
-        i.totalPaymentAmount = i.prePaymentAmount;
-        i.totalPaymentMaxAmount = i.prePaymentMaxAmount;
+        i.paymentAmount = 0x112233112233112233112233;
+        i.paymentMaxAmount = 0x445566445566445566445566;
         i.combinedGas = 20_000;
 
         {
@@ -237,10 +231,8 @@ contract SimulateExecuteTest is BaseTest {
         i.payer = address(0x00);
         i.paymentToken = address(paymentToken);
         i.paymentRecipient = address(0x00);
-        i.prePaymentAmount = _randomChance(2) ? 0 : 0.1 ether;
-        i.prePaymentMaxAmount = _bound(_random(), i.prePaymentAmount, 0.5 ether);
-        i.totalPaymentAmount = i.prePaymentAmount;
-        i.totalPaymentMaxAmount = i.prePaymentMaxAmount;
+        i.paymentAmount = _randomChance(2) ? 0 : 0.1 ether;
+        i.paymentMaxAmount = _bound(_random(), i.paymentAmount, 0.5 ether);
         i.combinedGas = 20_000;
 
         {
@@ -299,10 +291,8 @@ contract SimulateExecuteTest is BaseTest {
         i.payer = address(0x00);
         i.paymentToken = address(paymentToken);
         i.paymentRecipient = address(0x00);
-        i.prePaymentAmount = _randomChance(2) ? 0 : 0.1 ether;
-        i.prePaymentMaxAmount = _bound(_random(), i.prePaymentAmount, 0.5 ether);
-        i.totalPaymentAmount = i.prePaymentAmount;
-        i.totalPaymentMaxAmount = i.prePaymentMaxAmount;
+        i.paymentAmount = _randomChance(2) ? 0 : 0.1 ether;
+        i.paymentMaxAmount = _bound(_random(), i.paymentAmount, 0.5 ether);
         i.combinedGas = 20_000;
 
         // Just fill with some non-zero junk P256 signature that contains the `keyHash`,
