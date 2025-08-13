@@ -297,7 +297,6 @@ contract BaseTest is SoladyTest {
         return _estimateGas(
             _EstimateGasParams({
                 u: u,
-                isPrePayment: true,
                 paymentPerGasPrecision: 0,
                 paymentPerGas: 1,
                 combinedGasIncrement: 110_000,
@@ -314,7 +313,7 @@ contract BaseTest is SoladyTest {
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (gUsed, gCombined) =
-            simulator.simulateV1Logs(address(oc), true, 0, 1, 11_000, 10_000, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), 0, 1, 11_000, 10_000, abi.encode(i));
 
         // gExecute > (100k + combinedGas) * 64/63
         gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
@@ -326,7 +325,6 @@ contract BaseTest is SoladyTest {
 
     struct _EstimateGasParams {
         Orchestrator.Intent u;
-        bool isPrePayment;
         uint8 paymentPerGasPrecision;
         uint256 paymentPerGas;
         uint256 combinedGasIncrement;
@@ -346,7 +344,6 @@ contract BaseTest is SoladyTest {
 
             (gUsed, gCombined) = simulator.simulateV1Logs(
                 address(oc),
-                p.isPrePayment,
                 p.paymentPerGasPrecision,
                 p.paymentPerGas,
                 p.combinedGasIncrement,

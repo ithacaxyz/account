@@ -49,10 +49,8 @@ contract OrchestratorTest is BaseTest {
             u.nonce = d.d.getNonce(0);
             paymentToken.mint(u.eoa, 2 ** 128 - 1);
             u.paymentToken = address(paymentToken);
-            u.prePaymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
-            u.prePaymentMaxAmount = u.prePaymentAmount;
-            u.totalPaymentAmount = u.prePaymentAmount;
-            u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+            u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
+            u.paymentMaxAmount = u.paymentAmount;
             u.combinedGas = 10000000;
             u.signature = _sig(d, u);
 
@@ -87,10 +85,8 @@ contract OrchestratorTest is BaseTest {
         u.payer = bob.eoa;
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(0x00);
-        u.prePaymentAmount = 0.1 ether;
-        u.prePaymentMaxAmount = 0.5 ether;
-        u.totalPaymentAmount = u.prePaymentAmount;
-        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.paymentAmount = 0.1 ether;
+        u.paymentMaxAmount = 0.5 ether;
         u.combinedGas = 10000000;
         u.signature = "";
 
@@ -118,10 +114,8 @@ contract OrchestratorTest is BaseTest {
         u.payer = address(0x00);
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(0x00);
-        u.prePaymentAmount = 0.1 ether;
-        u.prePaymentMaxAmount = 0.5 ether;
-        u.totalPaymentAmount = u.prePaymentAmount;
-        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.paymentAmount = 0.1 ether;
+        u.paymentMaxAmount = 0.5 ether;
         u.paymentRecipient = address(oc);
         u.combinedGas = 1000000;
         u.signature = _sig(k, u);
@@ -131,7 +125,6 @@ contract OrchestratorTest is BaseTest {
         _simulateExecute(
             _EstimateGasParams({
                 u: u,
-                isPrePayment: false,
                 paymentPerGasPrecision: 0,
                 paymentPerGas: 1,
                 combinedGasIncrement: 11_000,
@@ -176,7 +169,7 @@ contract OrchestratorTest is BaseTest {
         assertEq(result, abi.encodeWithSignature("ErrorWithData(bytes)", data));
     }
 
-    function testExecuteWithPayingERC20TokensWithPartialPrePayment(bytes32) public {
+    function testExecuteWithPayingERC20Tokens(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         paymentToken.mint(d.eoa, 500 ether);
@@ -187,17 +180,14 @@ contract OrchestratorTest is BaseTest {
         u.executionData = _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(this);
-        u.prePaymentAmount = 10 ether;
-        u.prePaymentMaxAmount = 15 ether;
-        u.totalPaymentAmount = u.prePaymentAmount;
-        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.paymentAmount = 10 ether;
+        u.paymentMaxAmount = 15 ether;
         u.combinedGas = 10000000;
         u.signature = _sig(d, u);
 
         _simulateExecute(
             _EstimateGasParams({
                 u: u,
-                isPrePayment: false,
                 paymentPerGasPrecision: 0,
                 paymentPerGas: 1,
                 combinedGasIncrement: 11_000,
@@ -230,10 +220,8 @@ contract OrchestratorTest is BaseTest {
 
             u.paymentToken = address(paymentToken);
             u.paymentRecipient = address(0xbcde);
-            u.prePaymentAmount = 0.5 ether;
-            u.prePaymentMaxAmount = 0.5 ether;
-            u.totalPaymentAmount = u.prePaymentAmount;
-            u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+            u.paymentAmount = 0.5 ether;
+            u.paymentMaxAmount = 0.5 ether;
             u.combinedGas = 10000000;
             u.signature = _sig(ds[i], u);
             encodedIntents[i] = abi.encode(u);
@@ -265,10 +253,8 @@ contract OrchestratorTest is BaseTest {
         u.executionData = abi.encode(calls);
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(0xbcde);
-        u.prePaymentAmount = 10 ether;
-        u.prePaymentMaxAmount = 10 ether;
-        u.totalPaymentAmount = 10 ether;
-        u.totalPaymentMaxAmount = 10 ether;
+        u.paymentAmount = 10 ether;
+        u.paymentMaxAmount = 10 ether;
         u.combinedGas = 10000000;
         u.signature = _sig(d, u);
 
@@ -276,7 +262,7 @@ contract OrchestratorTest is BaseTest {
 
         assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
         assertEq(paymentToken.balanceOf(address(0xabcd)), 0.5 ether * n);
-        assertEq(paymentToken.balanceOf(d.eoa), 100 ether - (u.prePaymentAmount + 0.5 ether * n));
+        assertEq(paymentToken.balanceOf(d.eoa), 100 ether - (u.paymentAmount + 0.5 ether * n));
         assertEq(d.d.getNonce(0), 1);
     }
 
@@ -292,10 +278,8 @@ contract OrchestratorTest is BaseTest {
         u.payer = d.eoa;
         u.paymentToken = address(paymentToken);
         u.paymentRecipient = address(0x00);
-        u.prePaymentAmount = 20 ether;
-        u.prePaymentMaxAmount = 15 ether;
-        u.totalPaymentAmount = u.prePaymentAmount;
-        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.paymentAmount = 20 ether;
+        u.paymentMaxAmount = 15 ether;
         u.combinedGas = 10000000;
         u.signature = _sig(d, u);
 
@@ -304,73 +288,12 @@ contract OrchestratorTest is BaseTest {
         _simulateExecute(
             _EstimateGasParams({
                 u: u,
-                isPrePayment: false,
                 paymentPerGasPrecision: 0,
                 paymentPerGas: 1,
                 combinedGasIncrement: 11_000,
                 combinedGasVerificationOffset: 0
             })
         );
-    }
-
-    function testPaymentValidationCombinations() public {
-        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        paymentToken.mint(d.eoa, 1000 ether);
-
-        // Test all important combinations of payment validation
-        _testPaymentCase(d, 5, 10, 15, 20, false, "Valid: ascending order");
-        _testPaymentCase(d, 5, 5, 10, 10, false, "Valid: equal at limits");
-        _testPaymentCase(d, 0, 0, 0, 0, false, "Valid: all zeros");
-        _testPaymentCase(d, 5, 10, 10, 10, false, "Valid: total == max");
-        _testPaymentCase(d, 10, 10, 10, 10, false, "Valid: all equal");
-        _testPaymentCase(d, 0, 10, 5, 20, false, "Valid: zero prepayment");
-        _testPaymentCase(d, 5, 10, 5, 20, false, "Valid: pre == total");
-        _testPaymentCase(d, 0, 0, 10, 10, false, "Valid: no prepayment");
-
-        // Invalid cases
-        _testPaymentCase(d, 15, 10, 20, 30, true, "Invalid: preAmt > preMax");
-        _testPaymentCase(d, 5, 10, 25, 20, true, "Invalid: totalAmt > totalMax");
-        _testPaymentCase(d, 5, 25, 15, 20, true, "Invalid: preMax > totalMax");
-        _testPaymentCase(d, 15, 20, 10, 30, true, "Invalid: preAmt > totalAmt (underflow)");
-        _testPaymentCase(d, 10, 10, 5, 20, true, "Invalid: preAmt > totalAmt case 2");
-        _testPaymentCase(d, 10, 15, 5, 20, true, "Invalid: preAmt > totalAmt case 3");
-        _testPaymentCase(d, 25, 20, 15, 10, true, "Invalid: multiple violations");
-        _testPaymentCase(d, 30, 10, 20, 15, true, "Invalid: multiple violations 2");
-    }
-
-    function _testPaymentCase(
-        DelegatedEOA memory d,
-        uint256 preAmt,
-        uint256 preMax,
-        uint256 totalAmt,
-        uint256 totalMax,
-        bool shouldFail,
-        string memory desc
-    ) internal {
-        uint256 nonce = d.d.getNonce(0);
-
-        Orchestrator.Intent memory u;
-        u.eoa = d.eoa;
-        u.nonce = nonce;
-        u.executionData = _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
-        u.paymentToken = address(paymentToken);
-        u.paymentRecipient = address(this);
-        u.prePaymentAmount = preAmt * 1 ether;
-        u.prePaymentMaxAmount = preMax * 1 ether;
-        u.totalPaymentAmount = totalAmt * 1 ether;
-        u.totalPaymentMaxAmount = totalMax * 1 ether;
-        u.combinedGas = 10000000;
-        u.signature = _sig(d, u);
-
-        bytes4 result = oc.execute(abi.encode(u));
-
-        if (shouldFail) {
-            assertEq(result, bytes4(keccak256("PaymentError()")), desc);
-            assertEq(d.d.getNonce(0), nonce, string.concat(desc, ": nonce unchanged"));
-        } else {
-            assertEq(result, 0, desc);
-            assertEq(d.d.getNonce(0), nonce + 1, string.concat(desc, ": nonce incremented"));
-        }
     }
 
     function testWithdrawTokens() public {
@@ -393,10 +316,8 @@ contract OrchestratorTest is BaseTest {
         Orchestrator.Intent memory baseIntent;
         baseIntent.eoa = d.eoa;
         baseIntent.paymentToken = address(paymentToken);
-        baseIntent.prePaymentAmount = 0.1 ether;
-        baseIntent.prePaymentMaxAmount = 0.1 ether;
-        baseIntent.totalPaymentAmount = 0.1 ether;
-        baseIntent.totalPaymentMaxAmount = 0.1 ether;
+        baseIntent.paymentAmount = 0.1 ether;
+        baseIntent.paymentMaxAmount = 0.1 ether;
         baseIntent.combinedGas = 10000000;
 
         // Test case 1: Intent with no expiry (expiry = 0) should always be valid
@@ -447,10 +368,8 @@ contract OrchestratorTest is BaseTest {
             Orchestrator.Intent memory batchBase;
             batchBase.eoa = d.eoa;
             batchBase.paymentToken = address(paymentToken);
-            batchBase.prePaymentAmount = 0.05 ether;
-            batchBase.prePaymentMaxAmount = 0.05 ether;
-            batchBase.totalPaymentAmount = 0.05 ether;
-            batchBase.totalPaymentMaxAmount = 0.05 ether;
+            batchBase.paymentAmount = 0.05 ether;
+            batchBase.paymentMaxAmount = 0.05 ether;
             batchBase.combinedGas = 10000000;
 
             // Valid intent with nonce 2
@@ -513,10 +432,8 @@ contract OrchestratorTest is BaseTest {
             u.payer = address(0x00);
             u.paymentToken = address(0x00);
             u.paymentRecipient = address(0xbcde);
-            u.prePaymentAmount = 0.5 ether;
-            u.prePaymentMaxAmount = 0.5 ether;
-            u.totalPaymentAmount = u.prePaymentAmount;
-            u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+            u.paymentAmount = 0.5 ether;
+            u.paymentMaxAmount = 0.5 ether;
             u.combinedGas = 10000000;
             u.signature = _sig(ds[i], u);
 
@@ -551,10 +468,8 @@ contract OrchestratorTest is BaseTest {
         u.executionData = _executionData(address(0), 0, bytes(""));
         u.nonce = 0x2;
         u.paymentToken = address(paymentToken);
-        u.prePaymentAmount = 0;
-        u.prePaymentMaxAmount = 0;
-        u.totalPaymentAmount = u.prePaymentAmount;
-        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.paymentAmount = 0;
+        u.paymentMaxAmount = 0;
         u.combinedGas = 20000000;
         u.signature = _sig(k, u);
 
@@ -597,10 +512,8 @@ contract OrchestratorTest is BaseTest {
         u.nonce = d.d.getNonce(seqKey);
         paymentToken.mint(u.eoa, 2 ** 128 - 1);
         u.paymentToken = address(paymentToken);
-        u.prePaymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
-        u.prePaymentMaxAmount = u.prePaymentAmount;
-        u.totalPaymentAmount = u.prePaymentAmount;
-        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
+        u.paymentMaxAmount = u.paymentAmount;
         u.combinedGas = 10000000;
         u.signature = _sig(d, u);
 
@@ -622,7 +535,6 @@ contract OrchestratorTest is BaseTest {
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
         (gUsed, gCombined) = simulator.simulateV1Logs(
             address(oc),
-            p.isPrePayment,
             p.paymentPerGasPrecision,
             p.paymentPerGas,
             p.combinedGasIncrement,
@@ -687,10 +599,8 @@ contract OrchestratorTest is BaseTest {
 
         paymentToken.mint(u.eoa, 2 ** 128 - 1);
         u.paymentToken = address(paymentToken);
-        u.prePaymentAmount = _bound(_random(), 0, 0.5 ether);
-        u.prePaymentMaxAmount = u.prePaymentAmount;
-        u.totalPaymentAmount = u.prePaymentAmount;
-        u.totalPaymentMaxAmount = u.prePaymentAmount;
+        u.paymentAmount = _bound(_random(), 0, 0.5 ether);
+        u.paymentMaxAmount = u.paymentAmount;
         u.paymentRecipient = address(oc);
 
         PassKey memory kSession = _randomSecp256r1PassKey();
@@ -794,10 +704,8 @@ contract OrchestratorTest is BaseTest {
 
         paymentToken.mint(u.eoa, 2 ** 128 - 1);
         u.paymentToken = address(paymentToken);
-        u.prePaymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
-        u.prePaymentMaxAmount = u.prePaymentAmount;
-        u.totalPaymentAmount = u.prePaymentAmount;
-        u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
+        u.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
+        u.paymentMaxAmount = u.paymentAmount;
         u.nonce = 0xc1d0 << 240;
 
         PassKey memory kSuperAdmin = _randomSecp256r1PassKey();
@@ -978,14 +886,9 @@ contract OrchestratorTest is BaseTest {
 
         u.nonce = d.d.getNonce(0);
         u.paymentToken = isNative ? address(0) : address(paymentToken);
-        u.prePaymentAmount = _bound(_random(), 0, 1 ether);
-        u.prePaymentMaxAmount = _bound(_random(), u.prePaymentAmount, 2 ether);
-        u.totalPaymentAmount = _bound(_random(), u.prePaymentAmount, 5 ether);
-        u.totalPaymentMaxAmount = _bound(_random(), u.totalPaymentAmount, 10 ether);
+        u.paymentAmount = _bound(_random(), 0, 5 ether);
+        u.paymentMaxAmount = _bound(_random(), u.paymentAmount, 10 ether);
 
-        if (u.prePaymentMaxAmount > u.totalPaymentMaxAmount) {
-            u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
-        }
         u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
         u.paymentRecipient = address(0x12345);
 
@@ -1005,10 +908,8 @@ contract OrchestratorTest is BaseTest {
         uint256 payerBalanceBefore = _balanceOf(u.paymentToken, address(payer.d));
         assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
         assertEq(d.d.getNonce(0), u.nonce + 1);
-        assertEq(_balanceOf(u.paymentToken, u.paymentRecipient), u.totalPaymentAmount);
-        assertEq(
-            _balanceOf(u.paymentToken, address(payer.d)), payerBalanceBefore - u.totalPaymentAmount
-        );
+        assertEq(_balanceOf(u.paymentToken, u.paymentRecipient), u.paymentAmount);
+        assertEq(_balanceOf(u.paymentToken, address(payer.d)), payerBalanceBefore - u.paymentAmount);
         assertEq(address(d.d).balance, 0);
         assertEq(address(0xabcd).balance, 1 ether);
     }
@@ -1053,16 +954,10 @@ contract OrchestratorTest is BaseTest {
         u.combinedGas = 1000000;
         u.payer = t.isWithState ? address(t.withState) : address(t.withSignature);
         u.paymentToken = t.token;
-        u.prePaymentAmount = _bound(_random(), 0, 1 ether);
-        u.prePaymentMaxAmount = _bound(_random(), u.prePaymentAmount, 2 ether);
-        u.totalPaymentAmount = _bound(_random(), u.prePaymentAmount, 5 ether);
-        u.totalPaymentMaxAmount = _bound(_random(), u.totalPaymentAmount, 10 ether);
+        u.paymentAmount = _bound(_random(), 0, 5 ether);
+        u.paymentMaxAmount = _bound(_random(), u.paymentAmount, 10 ether);
         u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
         u.paymentRecipient = address(oc);
-
-        if (u.prePaymentMaxAmount > u.totalPaymentMaxAmount) {
-            u.totalPaymentMaxAmount = u.prePaymentMaxAmount;
-        }
 
         t.funds = _bound(_random(), 0, 5 ether);
         if (t.isWithState) {
@@ -1085,25 +980,23 @@ contract OrchestratorTest is BaseTest {
             t.withState.setApprovedOrchestrator(address(oc), false);
             t.withSignature.setApprovedOrchestrator(address(oc), false);
         }
-        if ((t.unapprovedOrchestrator && u.totalPaymentAmount != 0)) {
+        if ((t.unapprovedOrchestrator && u.paymentAmount != 0)) {
             assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("Unauthorized()")));
 
-            if (u.prePaymentAmount != 0) {
+            if (u.paymentAmount != 0) {
                 assertEq(t.d.d.getNonce(0), u.nonce);
-            } else {
-                assertEq(t.d.d.getNonce(0), u.nonce + 1);
             }
 
             assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
             assertEq(_balanceOf(address(0), address(0xabcd)), 0);
-        } else if (t.isWithState && u.totalPaymentAmount > t.funds && u.totalPaymentAmount != 0) {
+        } else if (t.isWithState && u.paymentAmount > t.funds && u.paymentAmount != 0) {
             // Arithmetic underflow error
             assertEq(
                 oc.execute(abi.encode(u)),
                 0x4e487b7100000000000000000000000000000000000000000000000000000000
             );
 
-            if (u.prePaymentAmount > t.funds) {
+            if (u.paymentAmount > t.funds) {
                 // Pre payment will not happen
                 assertEq(t.d.d.getNonce(0), u.nonce);
                 assertEq(_balanceOf(t.token, u.payer), t.balanceBefore);
@@ -1111,15 +1004,15 @@ contract OrchestratorTest is BaseTest {
             } else {
                 // Pre payment will happen, post payment will fail
                 assertEq(t.d.d.getNonce(0), u.nonce + 1);
-                assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.prePaymentAmount);
+                assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.paymentAmount);
                 // Execution should have failed
                 assertEq(_balanceOf(address(0), address(0xabcd)), 0);
             }
-        } else if ((!t.isWithState && t.corruptSignature && u.totalPaymentAmount != 0)) {
+        } else if ((!t.isWithState && t.corruptSignature && u.paymentAmount != 0)) {
             // Pre payment will not happen
             assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("InvalidSignature()")));
             // If prePayment is 0, then nonce is incremented, because the prePayment doesn't fail.
-            if (u.prePaymentAmount == 0) {
+            if (u.paymentAmount == 0) {
                 assertEq(t.d.d.getNonce(0), u.nonce + 1);
             } else {
                 assertEq(t.d.d.getNonce(0), u.nonce);
@@ -1129,7 +1022,7 @@ contract OrchestratorTest is BaseTest {
         } else {
             assertEq(oc.execute(abi.encode(u)), 0);
             assertEq(t.d.d.getNonce(0), u.nonce + 1);
-            assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.totalPaymentAmount);
+            assertEq(_balanceOf(t.token, u.payer), t.balanceBefore - u.paymentAmount);
             assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);
         }
     }

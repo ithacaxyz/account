@@ -54,20 +54,14 @@ contract Simulator {
     /// @dev Updates the payment amounts for the Intent passed in.
     function _updatePaymentAmounts(
         ICommon.Intent memory u,
-        bool isPrePayment,
         uint256 gas,
         uint8 paymentPerGasPrecision,
         uint256 paymentPerGas
     ) internal pure {
         uint256 paymentAmount = Math.fullMulDiv(gas, paymentPerGas, 10 ** paymentPerGasPrecision);
 
-        if (isPrePayment) {
-            u.prePaymentAmount += paymentAmount;
-            u.prePaymentMaxAmount += paymentAmount;
-        }
-
-        u.totalPaymentAmount += paymentAmount;
-        u.totalPaymentMaxAmount += paymentAmount;
+        u.paymentAmount += paymentAmount;
+        u.paymentMaxAmount += paymentAmount;
     }
 
     /// @dev Performs a call to the Orchestrator, and returns the gas used by the Intent.
@@ -160,12 +154,11 @@ contract Simulator {
     /// The start value for combinedGas is gasUsed + original combinedGas.
     /// Set u.combinedGas to add some starting offset to the gasUsed value.
     /// @param oc The orchestrator address
-    /// @param isPrePayment Whether to add gas amount to prePayment or postPayment
     /// @param paymentPerGasPrecision The precision of the payment per gas value.
     /// paymentAmount = gas * paymentPerGas / (10 ** paymentPerGasPrecision)
     /// @param paymentPerGas The amount of `paymentToken` to be added per gas unit.
-    /// Total payment is calculated as pre/postPaymentAmount += gasUsed * paymentPerGas.
-    /// @dev Set prePayment or totalPaymentAmount to include any static offset to the gas value.
+    /// Total payment is calculated as paymentAmount += gasUsed * paymentPerGas.
+    /// @dev Set paymentAmount to include any static offset to the gas value.
     /// @param combinedGasIncrement Basis Points increment to be added for each iteration of searching for combined gas.
     /// @dev The closer this number is to 10_000, the more precise combined gas will be. But more iterations will be needed.
     /// @dev This number should always be > 10_000, to get correct results.
@@ -178,7 +171,6 @@ contract Simulator {
     /// All failing simulations during this run are ignored.
     function simulateCombinedGas(
         address oc,
-        bool isPrePayment,
         uint8 paymentPerGasPrecision,
         uint256 paymentPerGas,
         uint256 combinedGasIncrement,
@@ -201,7 +193,7 @@ contract Simulator {
 
         u.combinedGas += gasUsed;
 
-        _updatePaymentAmounts(u, isPrePayment, u.combinedGas, paymentPerGasPrecision, paymentPerGas);
+        _updatePaymentAmounts(u, u.combinedGas, paymentPerGasPrecision, paymentPerGas);
 
         while (true) {
             gasUsed = _callOrchestratorMemory(oc, false, 0, u);
@@ -224,9 +216,7 @@ contract Simulator {
 
             uint256 gasIncrement = Math.mulDiv(u.combinedGas, combinedGasIncrement, 10_000);
 
-            _updatePaymentAmounts(
-                u, isPrePayment, gasIncrement, paymentPerGasPrecision, paymentPerGas
-            );
+            _updatePaymentAmounts(u, gasIncrement, paymentPerGasPrecision, paymentPerGas);
 
             // Step up the combined gas, until we see a simulation passing
             u.combinedGas += gasIncrement;
@@ -242,7 +232,6 @@ contract Simulator {
     /// paymentAmount = gas * paymentPerGas / (10 ** paymentPerGasPrecision)
     function simulateV1Logs(
         address oc,
-        bool isPrePayment,
         uint8 paymentPerGasPrecision,
         uint256 paymentPerGas,
         uint256 combinedGasIncrement,
@@ -250,19 +239,14 @@ contract Simulator {
         bytes calldata encodedIntent
     ) public payable virtual returns (uint256 gasUsed, uint256 combinedGas) {
         (gasUsed, combinedGas) = simulateCombinedGas(
-            oc,
-            isPrePayment,
-            paymentPerGasPrecision,
-            paymentPerGas,
-            combinedGasIncrement,
-            encodedIntent
+            oc, paymentPerGasPrecision, paymentPerGas, combinedGasIncrement, encodedIntent
         );
 
         combinedGas += combinedGasVerificationOffset;
 
         ICommon.Intent memory u = abi.decode(encodedIntent, (ICommon.Intent));
 
-        _updatePaymentAmounts(u, isPrePayment, combinedGas, paymentPerGasPrecision, paymentPerGas);
+        _updatePaymentAmounts(u, combinedGas, paymentPerGasPrecision, paymentPerGas);
 
         u.combinedGas = combinedGas;
 

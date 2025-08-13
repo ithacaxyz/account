@@ -60,10 +60,8 @@ contract SimulateExecuteTest is BaseTest {
         i.payer = address(0x00);
         i.paymentToken = address(paymentToken);
         i.paymentRecipient = address(0x00);
-        i.prePaymentAmount = 0x112233112233112233112233;
-        i.prePaymentMaxAmount = 0x445566445566445566445566;
-        i.totalPaymentAmount = i.prePaymentAmount;
-        i.totalPaymentMaxAmount = i.prePaymentMaxAmount;
+        i.paymentAmount = 0x112233112233112233112233;
+        i.paymentMaxAmount = 0x445566445566445566445566;
         i.combinedGas = 20_000;
 
         {
@@ -76,7 +74,7 @@ contract SimulateExecuteTest is BaseTest {
         // If the caller does not have max balance, then the simulation should revert.
         vm.expectRevert(bytes4(keccak256("StateOverrideError()")));
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(oc), false, 0, 1, 11_000, 10_000, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), 0, 1, 11_000, 10_000, abi.encode(i));
 
         vm.expectRevert(bytes4(keccak256("StateOverrideError()")));
         oc.simulateExecute(true, type(uint256).max, abi.encode(i));
@@ -88,7 +86,7 @@ contract SimulateExecuteTest is BaseTest {
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(oc), false, 2, 1e11, 11_000, 0, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), 2, 1e11, 11_000, 0, abi.encode(i));
 
         vm.revertToStateAndDelete(snapshot);
         i.combinedGas = t.gCombined;
@@ -131,10 +129,8 @@ contract SimulateExecuteTest is BaseTest {
         i.payer = address(0x00);
         i.paymentToken = address(paymentToken);
         i.paymentRecipient = address(0x00);
-        i.prePaymentAmount = 0x112233112233112233112233;
-        i.prePaymentMaxAmount = 0x445566445566445566445566;
-        i.totalPaymentAmount = i.prePaymentAmount;
-        i.totalPaymentMaxAmount = i.prePaymentMaxAmount;
+        i.paymentAmount = 0x112233112233112233112233;
+        i.paymentMaxAmount = 0x445566445566445566445566;
         i.combinedGas = 20_000;
 
         {
@@ -145,11 +141,11 @@ contract SimulateExecuteTest is BaseTest {
         }
 
         vm.expectRevert(bytes4(keccak256("PaymentError()")));
-        simulator.simulateV1Logs(address(oc), false, 0, 1, 11_000, 0, abi.encode(i));
+        simulator.simulateV1Logs(address(oc), 0, 1, 11_000, 0, abi.encode(i));
 
         deal(i.paymentToken, address(i.eoa), 0x112233112233112233112233);
         vm.expectRevert(bytes4(keccak256("PaymentError()")));
-        simulator.simulateCombinedGas(address(oc), true, 0, 1, 11_000, abi.encode(i));
+        simulator.simulateCombinedGas(address(oc), 0, 1, 11_000, abi.encode(i));
     }
 
     function testSimulateExecuteNoRevert() public {
@@ -179,10 +175,8 @@ contract SimulateExecuteTest is BaseTest {
         i.payer = address(0x00);
         i.paymentToken = address(paymentToken);
         i.paymentRecipient = address(0x00);
-        i.prePaymentAmount = 0x112233112233112233112233;
-        i.prePaymentMaxAmount = 0x445566445566445566445566;
-        i.totalPaymentAmount = i.prePaymentAmount;
-        i.totalPaymentMaxAmount = i.prePaymentMaxAmount;
+        i.paymentAmount = 0x112233112233112233112233;
+        i.paymentMaxAmount = 0x445566445566445566445566;
         i.combinedGas = 20_000;
 
         {
@@ -196,7 +190,7 @@ contract SimulateExecuteTest is BaseTest {
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(oc), false, 2, 1e11, 11_000, 0, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), 2, 1e11, 11_000, 0, abi.encode(i));
 
         vm.revertToStateAndDelete(snapshot);
 
@@ -237,10 +231,8 @@ contract SimulateExecuteTest is BaseTest {
         i.payer = address(0x00);
         i.paymentToken = address(paymentToken);
         i.paymentRecipient = address(0x00);
-        i.prePaymentAmount = _randomChance(2) ? 0 : 0.1 ether;
-        i.prePaymentMaxAmount = _bound(_random(), i.prePaymentAmount, 0.5 ether);
-        i.totalPaymentAmount = i.prePaymentAmount;
-        i.totalPaymentMaxAmount = i.prePaymentMaxAmount;
+        i.paymentAmount = _randomChance(2) ? 0 : 0.1 ether;
+        i.paymentMaxAmount = _bound(_random(), i.paymentAmount, 0.5 ether);
         i.combinedGas = 20_000;
 
         {
@@ -254,7 +246,7 @@ contract SimulateExecuteTest is BaseTest {
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(oc), false, 2, 1e11, 10_800, 0, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), 2, 1e11, 10_800, 0, abi.encode(i));
 
         vm.revertToStateAndDelete(snapshot);
 
@@ -299,10 +291,8 @@ contract SimulateExecuteTest is BaseTest {
         i.payer = address(0x00);
         i.paymentToken = address(paymentToken);
         i.paymentRecipient = address(0x00);
-        i.prePaymentAmount = _randomChance(2) ? 0 : 0.1 ether;
-        i.prePaymentMaxAmount = _bound(_random(), i.prePaymentAmount, 0.5 ether);
-        i.totalPaymentAmount = i.prePaymentAmount;
-        i.totalPaymentMaxAmount = i.prePaymentMaxAmount;
+        i.paymentAmount = _randomChance(2) ? 0 : 0.1 ether;
+        i.paymentMaxAmount = _bound(_random(), i.paymentAmount, 0.5 ether);
         i.combinedGas = 20_000;
 
         // Just fill with some non-zero junk P256 signature that contains the `keyHash`,
@@ -316,7 +306,7 @@ contract SimulateExecuteTest is BaseTest {
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(oc), false, 2, 1e11, 12_000, 10_000, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), 2, 1e11, 12_000, 10_000, abi.encode(i));
 
         vm.revertToStateAndDelete(snapshot);
 

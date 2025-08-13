@@ -117,7 +117,7 @@ contract Orchestrator is
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 prePaymentMaxAmount,uint256 totalPaymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers,address settler,uint256 expiry)Call(address to,uint256 value,bytes data)"
+        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers,address settler,uint256 expiry)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for SignedCalls
@@ -287,14 +287,7 @@ contract Orchestrator is
         uint256 g = Math.coalesce(uint96(combinedGasOverride), i.combinedGas);
         uint256 gStart = gasleft();
 
-        if (
-            LibBit.or(
-                i.prePaymentAmount > i.prePaymentMaxAmount,
-                i.totalPaymentAmount > i.totalPaymentMaxAmount,
-                i.prePaymentMaxAmount > i.totalPaymentMaxAmount,
-                i.prePaymentAmount > i.totalPaymentAmount
-            )
-        ) {
+        if (i.paymentAmount > i.paymentMaxAmount) {
             err = PaymentError.selector;
 
             if (flags == _SIMULATION_MODE_FLAG) {
@@ -327,8 +320,8 @@ contract Orchestrator is
         // Early skip the entire pay-verify-call workflow if the payer lacks tokens,
         // so that less gas is wasted when the Intent fails.
         // For multi chain mode, we skip this check, as the funding happens inside the self call.
-        if (!i.isMultichain && LibBit.and(i.prePaymentAmount != 0, err == 0)) {
-            if (TokenTransferLib.balanceOf(i.paymentToken, payer) < i.prePaymentAmount) {
+        if (!i.isMultichain && LibBit.and(i.paymentAmount != 0, err == 0)) {
+            if (TokenTransferLib.balanceOf(i.paymentToken, payer) < i.paymentAmount) {
                 err = PaymentError.selector;
 
                 if (flags == _SIMULATION_MODE_FLAG) {
@@ -469,73 +462,12 @@ contract Orchestrator is
 
         _checkAndIncrementNonce(eoa, nonce);
 
-        // PrePayment
+        // Payment
         // If `_pay` fails, just revert.
         // Off-chain simulation of `_pay` should suffice,
         // provided that the token balance does not decrease in the window between
         // off-chain simulation and on-chain execution.
-        if (i.prePaymentAmount != 0) _pay(i.prePaymentAmount, keyHash, digest, i);
-
-        // Equivalent Solidity code:
-        // try this.selfCallExecutePay(flags, keyHash, i) {}
-        // catch {
-        //     assembly ("memory-safe") {
-        //         returndatacopy(0x00, 0x00, 0x20)
-        //         return(0x00, 0x20)
-        //     }
-        // }
-        // Gas Savings:
-        // ~2.5k gas for general cases, by using existing calldata from the previous self call + avoiding solidity external call overhead.
-        assembly ("memory-safe") {
-            let m := mload(0x40) // Load the free memory pointer
-            mstore(0x00, 0) // Zeroize the return slot.
-            mstore(m, 0x00000001) // `selfCallExecutePay1395256087()`
-            mstore(add(m, 0x20), flags) // Add flags as first param
-            mstore(add(m, 0x40), keyHash) // Add keyHash as second param
-            mstore(add(m, 0x60), digest) // Add digest as third param
-
-            let encodedIntentLength := sub(calldatasize(), 0x24)
-            // NOTE: The intent encoding here is non standard, because the data offset does not start from the beginning of the calldata.
-            // The data offset starts from the location of the intent offset itself. The decoding is done accordingly in the receiving function.
-            // TODO: Make the intent encoding standard.
-            calldatacopy(add(m, 0x80), 0x24, encodedIntentLength) // Add intent starting from the fourth param.
-
-            // We call the selfCallExecutePay function with all the remaining gas,
-            // because `selfCallPayVerifyCall537021665` is already gas-limited to the combined gas specified in the Intent.
-            // We don't revert if the selfCallExecutePay reverts,
-            // Because we don't want to return the prePayment, since the relay has already paid for the gas.
-            // TODO: Should we add some identifier here, either using a return flag, or an event, that informs the caller that execute/post-payment has failed.
-            if iszero(
-                call(gas(), address(), 0, add(m, 0x1c), add(0x64, encodedIntentLength), m, 0x20)
-            ) {
-                if eq(flags, _SIMULATION_MODE_FLAG) {
-                    returndatacopy(mload(0x40), 0x00, returndatasize())
-                    revert(mload(0x40), returndatasize())
-                }
-                return(m, 0x20)
-            }
-        }
-    }
-
-    /// @dev This function is only intended for self-call. The name is mined to give a function selector of `0x00000001`
-    /// We use this function to call the account.execute function, and then the account.pay function for post-payment.
-    /// Self-calling this function ensures, that if the post payment reverts, then the execute function will also revert.
-    function selfCallExecutePay1395256087() public payable {
-        require(msg.sender == address(this));
-
-        uint256 flags;
-        bytes32 keyHash;
-        bytes32 digest;
-        Intent calldata i;
-
-        assembly ("memory-safe") {
-            flags := calldataload(0x04)
-            keyHash := calldataload(0x24)
-            digest := calldataload(0x44)
-            // Non standard decoding of the intent.
-            i := add(0x64, calldataload(0x64))
-        }
-        address eoa = i.eoa;
+        if (i.paymentAmount != 0) _pay(keyHash, digest, i);
 
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
         // We expect that the account supports ERC7821
@@ -554,18 +486,8 @@ contract Orchestrator is
                     revert(mload(0x40), returndatasize())
                 }
                 if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x6c9d47e8)) } // `CallError()`.
-                revert(0x00, 0x20) // Revert with the `err`.
+                return(0x00, 0x20)
             }
-        }
-
-        uint256 remainingPaymentAmount = Math.rawSub(i.totalPaymentAmount, i.prePaymentAmount);
-        if (remainingPaymentAmount != 0) {
-            _pay(remainingPaymentAmount, keyHash, digest, i);
-        }
-
-        assembly ("memory-safe") {
-            mstore(0x00, 0) // Zeroize the return slot.
-            return(0x00, 0x20) // If all success, returns with zero `err`.
         }
     }
 
@@ -603,8 +525,7 @@ contract Orchestrator is
                 p.executionData,
                 abi.encode(keyHash) // `opData`.
             );
-            // This part is slightly different from `selfCallPayVerifyCall537021665`.
-            // It always reverts on failure.
+
             assembly ("memory-safe") {
                 mstore(0x00, 0) // Zeroize the return slot.
                 if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
@@ -705,10 +626,8 @@ contract Orchestrator is
 
     /// @dev Makes the `eoa` perform a payment to the `paymentRecipient` directly.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
-    function _pay(uint256 paymentAmount, bytes32 keyHash, bytes32 digest, Intent calldata i)
-        internal
-        virtual
-    {
+    function _pay(bytes32 keyHash, bytes32 digest, Intent calldata i) internal virtual {
+        uint256 paymentAmount = i.paymentAmount;
         uint256 requiredBalanceAfter = Math.saturatingAdd(
             TokenTransferLib.balanceOf(i.paymentToken, i.paymentRecipient), paymentAmount
         );
@@ -736,9 +655,8 @@ contract Orchestrator is
             // Copy the intent data to memory
             calldatacopy(add(m, 0xe0), i, encodedSize)
 
-            // We revert here, so that if the post payment fails, the execution is also reverted.
-            // The revert for post payment is caught inside the selfCallExecutePay function.
-            // The revert for prePayment is caught inside the selfCallPayVerify function.
+            // We revert here, so that if the payment fails, the execution is also reverted.
+            // The revert for payment is caught inside the selfCallPayVerify function.
             if iszero(
                 call(
                     gas(), // gas
@@ -816,7 +734,7 @@ contract Orchestrator is
         bool isMultichain = i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
 
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(14);
+        bytes32[] memory f = EfficientHashLib.malloc(13);
         f.set(0, INTENT_TYPEHASH);
         f.set(1, LibBit.toUint(isMultichain));
         f.set(2, uint160(i.eoa));
@@ -824,13 +742,12 @@ contract Orchestrator is
         f.set(4, i.nonce);
         f.set(5, uint160(i.payer));
         f.set(6, uint160(i.paymentToken));
-        f.set(7, i.prePaymentMaxAmount);
-        f.set(8, i.totalPaymentMaxAmount);
-        f.set(9, i.combinedGas);
-        f.set(10, _encodedArrHash(i.encodedPreCalls));
-        f.set(11, _encodedArrHash(i.encodedFundTransfers));
-        f.set(12, uint160(i.settler));
-        f.set(13, i.expiry);
+        f.set(7, i.paymentMaxAmount);
+        f.set(8, i.combinedGas);
+        f.set(9, _encodedArrHash(i.encodedPreCalls));
+        f.set(10, _encodedArrHash(i.encodedFundTransfers));
+        f.set(11, uint160(i.settler));
+        f.set(12, i.expiry);
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
@@ -885,7 +802,7 @@ contract Orchestrator is
         returns (string memory name, string memory version)
     {
         name = "Orchestrator";
-        version = "0.4.7";
+        version = "0.4.8";
     }
 
     ////////////////////////////////////////////////////////////////////////
