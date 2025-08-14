@@ -3,15 +3,20 @@ pragma solidity ^0.8.23;
 
 import {Script, console} from "forge-std/Script.sol";
 import {VmSafe} from "forge-std/Vm.sol";
+import {stdToml} from "forge-std/StdToml.sol";
 import {SafeSingletonDeployer} from "./SafeSingletonDeployer.sol";
-import {DefaultConfig} from "./DefaultConfig.sol";
 
 /**
  * @title BaseDeployment
- * @notice Base contract for all deployment scripts with Solidity configuration
- * @dev Uses type-safe Solidity configuration instead of JSON parsing
+ * @notice Base contract for all deployment scripts with TOML configuration support
+ * @dev Uses Foundry's new fork* cheatcodes from PR #11236
+ *      The workflow is:
+ *      1. Create a fork using RPC_{chainId} environment variable
+ *      2. Use vm.fork* functions to read variables from the active fork's config
  */
 abstract contract BaseDeployment is Script, SafeSingletonDeployer {
+    using stdToml for string;
+
     // Deployment stages enum
     enum Stage {
         Core,
@@ -52,8 +57,10 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     mapping(uint256 => DeployedContracts) internal deployedContracts;
     uint256[] internal targetChainIds;
 
-    // Paths
-    string internal registryPath = "deploy/registry/";
+    // Paths and config
+    string internal registryPath;
+    string internal configContent; // For unified config
+    string internal configPath = "/deploy/config.toml";
 
     // Events for tracking
     event DeploymentStarted(uint256 indexed chainId, string deploymentType);
@@ -63,102 +70,137 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     );
 
     /**
-     * @notice Initialize deployment with target chains
-     * @param chainIds Array of chain IDs to deploy to (empty array = all chains)
+     * @notice Initialize deployment with target chains using TOML config
+     * @param chainIds Array of chain IDs to deploy to
      */
     function initializeDeployment(uint256[] memory chainIds) internal {
-        // Load configuration from Solidity config
-        loadConfiguration(chainIds);
+        require(chainIds.length > 0, "Must specify at least one chain ID");
+
+        // Load unified configuration
+        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
+        configContent = vm.readFile(fullConfigPath);
+
+        // Load registry path from config.toml
+        registryPath = configContent.readString(".deployment.registry_path");
+
+        // Store target chain IDs
+        targetChainIds = chainIds;
+
+        // Load configuration for each chain
+        loadConfigurations();
 
         // Load existing deployed contracts from registry
         loadDeployedContracts();
     }
 
     /**
-     * @notice Initialize deployment with custom registry path
-     * @param chainIds Array of chain IDs to deploy to (empty array = all chains)
-     * @param _registryPath Path to the registry output directory
+     * @notice Initialize deployment with custom config path
+     * @param chainIds Array of chain IDs to deploy to
+     * @param _configPath Path to the config file
      */
-    function initializeDeployment(uint256[] memory chainIds, string memory _registryPath)
-        internal
-    {
-        // Set custom registry path
-        registryPath = _registryPath;
-
-        // Load configuration from Solidity config
-        loadConfiguration(chainIds);
-
-        // Load existing deployed contracts from registry
-        loadDeployedContracts();
+    function initializeDeployment(uint256[] memory chainIds, string memory _configPath) internal {
+        configPath = _configPath;
+        initializeDeployment(chainIds);
     }
 
     /**
-     * @notice Load configuration from Solidity config contract
+     * @notice Load configurations for all target chains
      */
-    function loadConfiguration(uint256[] memory chainIds) internal {
-        // Get configurations from DefaultConfig
-        DefaultConfig configContract = new DefaultConfig();
-        ChainConfig[] memory allConfigs = configContract.getConfigs();
+    function loadConfigurations() internal {
+        for (uint256 i = 0; i < targetChainIds.length; i++) {
+            uint256 chainId = targetChainIds[i];
 
-        // Filter chains based on input
-        if (chainIds.length == 0) {
-            // Deploy to all chains
-            targetChainIds = new uint256[](allConfigs.length);
+            // Use the RPC_{chainId} environment variable directly
+            // This matches the naming convention in config.toml
+            string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
 
-            // Load all configurations
-            for (uint256 i = 0; i < allConfigs.length; i++) {
-                uint256 chainId = allConfigs[i].chainId;
-                targetChainIds[i] = chainId;
-                chainConfigs[chainId] = allConfigs[i];
-            }
-        } else {
-            // Deploy to specified chains only
-            targetChainIds = chainIds;
+            // Create fork using the RPC URL
+            uint256 forkId = vm.createFork(rpcUrl);
+            vm.selectFork(forkId);
 
-            // Load configurations for specified chains
-            for (uint256 i = 0; i < chainIds.length; i++) {
-                uint256 chainId = chainIds[i];
-                bool found = false;
+            // Verify we're on the correct chain
+            require(block.chainid == chainId, "Chain ID mismatch");
 
-                // Find the configuration for this chain
-                for (uint256 j = 0; j < allConfigs.length; j++) {
-                    if (allConfigs[j].chainId == chainId) {
-                        chainConfigs[chainId] = allConfigs[j];
-                        found = true;
-                        break;
-                    }
-                }
-
-                require(
-                    found, string.concat("Chain ID not found in config: ", vm.toString(chainId))
-                );
-            }
+            // Load configuration from fork variables
+            ChainConfig memory config = loadChainConfigFromFork(chainId);
+            chainConfigs[chainId] = config;
         }
 
         // Log the loaded configuration for verification
-        for (uint256 i = 0; i < targetChainIds.length; i++) {
-            uint256 chainId = targetChainIds[i];
-            ChainConfig memory config = chainConfigs[chainId];
+        logLoadedConfigurations();
+    }
 
-            console.log("-------------------------------------");
-            console.log("Loaded configuration for chain:", chainId);
-            console.log("Name:", config.name);
-            console.log("Funder Owner:", config.funderOwner);
-            console.log("Funder Signer:", config.funderSigner);
-            console.log("L0 Settler Owner:", config.l0SettlerOwner);
-            console.log("Settler Owner:", config.settlerOwner);
-            console.log("Pause Authority:", config.pauseAuthority);
-            console.log("LayerZero Endpoint:", config.layerZeroEndpoint);
-            console.log("LayerZero EID:", config.layerZeroEid);
-            console.log("Is Testnet:", config.isTestnet);
-            console.log("Salt: ");
-            console.logBytes32(config.salt);
+    /**
+     * @notice Load chain configuration from the currently active fork
+     * @param chainId The chain ID we're loading config for
+     */
+    function loadChainConfigFromFork(uint256 chainId) internal view returns (ChainConfig memory) {
+        ChainConfig memory config;
+
+        config.chainId = chainId;
+
+        // Use vm.fork* functions to read variables from the active fork
+        config.name = vm.forkString("name");
+        config.isTestnet = vm.forkBool("is_testnet");
+
+        // Load addresses
+        config.pauseAuthority = vm.forkAddress("pause_authority");
+        config.funderOwner = vm.forkAddress("funder_owner");
+        config.funderSigner = vm.forkAddress("funder_signer");
+        config.settlerOwner = vm.forkAddress("settler_owner");
+        config.l0SettlerOwner = vm.forkAddress("l0_settler_owner");
+        config.layerZeroEndpoint = vm.forkAddress("layerzero_endpoint");
+
+        // Load other configuration
+        config.layerZeroEid = uint32(vm.forkUint("layerzero_eid"));
+        config.salt = vm.forkBytes32("salt");
+
+        // Load stages - since there's no forkStringArray, we need to determine stages based on chain
+        config.stages = getDefaultStages(config.isTestnet, chainId);
+
+        return config;
+    }
+
+    /**
+     * @notice Get default stages based on chain type
+     */
+    function getDefaultStages(bool isTestnet, uint256 chainId)
+        internal
+        pure
+        returns (Stage[] memory)
+    {
+        // All other chains have all stages
+        Stage[] memory stages = new Stage[](4);
+        stages[0] = Stage.Core;
+        stages[1] = Stage.Interop;
+        stages[2] = Stage.SimpleSettler;
+        stages[3] = Stage.LayerZeroSettler;
+        return stages;
+    }
+
+    /**
+     * @notice Parse stage strings from TOML to Stage enum array
+     */
+    function parseStages(string[] memory stageStrings) internal pure returns (Stage[] memory) {
+        Stage[] memory stages = new Stage[](stageStrings.length);
+
+        for (uint256 i = 0; i < stageStrings.length; i++) {
+            bytes32 stageHash = keccak256(bytes(stageStrings[i]));
+
+            if (stageHash == keccak256("core")) {
+                stages[i] = Stage.Core;
+            } else if (stageHash == keccak256("interop")) {
+                stages[i] = Stage.Interop;
+            } else if (stageHash == keccak256("simple_settler")) {
+                stages[i] = Stage.SimpleSettler;
+            } else if (stageHash == keccak256("layerzero_settler")) {
+                stages[i] = Stage.LayerZeroSettler;
+            } else {
+                revert(string.concat("Unknown stage: ", stageStrings[i]));
+            }
         }
 
-        // Warn the operator to verify configuration before proceeding
-        console.log(
-            unicode"\n[⚠️] Please review the above configuration values and ensure they are correct before proceeding with deployment.\n"
-        );
+        return stages;
     }
 
     /**
@@ -203,6 +245,34 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     }
 
     /**
+     * @notice Log loaded configurations
+     */
+    function logLoadedConfigurations() internal view {
+        for (uint256 i = 0; i < targetChainIds.length; i++) {
+            uint256 chainId = targetChainIds[i];
+            ChainConfig memory config = chainConfigs[chainId];
+
+            console.log("-------------------------------------");
+            console.log("Loaded configuration for chain:", chainId);
+            console.log("Name:", config.name);
+            console.log("Is Testnet:", config.isTestnet);
+            console.log("Funder Owner:", config.funderOwner);
+            console.log("Funder Signer:", config.funderSigner);
+            console.log("L0 Settler Owner:", config.l0SettlerOwner);
+            console.log("Settler Owner:", config.settlerOwner);
+            console.log("Pause Authority:", config.pauseAuthority);
+            console.log("LayerZero Endpoint:", config.layerZeroEndpoint);
+            console.log("LayerZero EID:", config.layerZeroEid);
+            console.log("Salt:");
+            console.logBytes32(config.salt);
+        }
+
+        console.log(
+            unicode"\n[⚠️] Please review the above configuration values from TOML before proceeding.\n"
+        );
+    }
+
+    /**
      * @notice Execute deployment
      */
     function executeDeployment() internal {
@@ -210,7 +280,6 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
 
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
-
             executeChainDeployment(chainId);
         }
 
@@ -230,9 +299,10 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
 
         emit DeploymentStarted(chainId, deploymentType());
 
-        // Switch to target chain for deployment
-        // For multi-chain deployments, we need the RPC URL for each chain
+        // Use the RPC_{chainId} environment variable directly
         string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
+
+        // Create and switch to fork for the chain
         vm.createSelectFork(rpcUrl);
 
         // Verify chain ID
@@ -245,12 +315,31 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     }
 
     /**
+     * @notice Get chain configuration
+     */
+    function getChainConfig(uint256 chainId) internal view returns (ChainConfig memory) {
+        return chainConfigs[chainId];
+    }
+
+    /**
+     * @notice Get deployed contracts for a chain
+     */
+    function getDeployedContracts(uint256 chainId)
+        internal
+        view
+        returns (DeployedContracts memory)
+    {
+        return deployedContracts[chainId];
+    }
+
+    /**
      * @notice Print deployment header
      */
     function printHeader() internal view {
         console.log("\n========================================");
         console.log(deploymentType(), "Deployment");
         console.log("========================================");
+        console.log("Config file:", configPath);
         console.log("Target chains:", targetChainIds.length);
         console.log("");
     }
@@ -301,14 +390,16 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
             deployedContracts[chainId].layerZeroSettler = contractAddress;
         }
 
-        // Save to registry file
-        saveChainRegistry(chainId);
+        // Write to registry file
+        writeToRegistry(chainId, contractName, contractAddress);
     }
 
     /**
-     * @notice Save chain registry to file
+     * @notice Write to registry file
      */
-    function saveChainRegistry(uint256 chainId) internal {
+    function writeToRegistry(uint256 chainId, string memory contractName, address contractAddress)
+        internal
+    {
         // Only save registry during actual broadcasts, not dry runs
         if (
             !vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
@@ -320,8 +411,6 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         DeployedContracts memory deployed = deployedContracts[chainId];
 
         string memory json = "{";
-
-        // Build JSON with deployed addresses
         bool first = true;
 
         if (deployed.orchestrator != address(0)) {
@@ -380,42 +469,8 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         vm.writeFile(registryFile, json);
     }
 
-    // Configuration getters for derived contracts
-    function getChainConfig(uint256 chainId) internal view returns (ChainConfig memory) {
-        return chainConfigs[chainId];
-    }
-
-    function getDeployedContracts(uint256 chainId)
-        internal
-        view
-        returns (DeployedContracts memory)
-    {
-        return deployedContracts[chainId];
-    }
-
-    // Helper functions for safe JSON parsing (still needed for registry files)
-    function tryReadAddress(string memory json, string memory key)
-        internal
-        pure
-        returns (address)
-    {
-        try vm.parseJson(json, key) returns (bytes memory data) {
-            if (data.length > 0) {
-                return abi.decode(data, (address));
-            }
-        } catch {}
-        return address(0);
-    }
-
-    // Abstract functions to be implemented by derived contracts
-    function deploymentType() internal pure virtual returns (string memory);
-    function deployToChain(uint256 chainId) internal virtual;
-
     /**
      * @notice Get registry filename based on chainId and salt
-     * @param chainId The chain ID
-     * @param salt The deployment salt
-     * @return The full path to the registry file
      */
     function getRegistryFilename(uint256 chainId, bytes32 salt)
         internal
@@ -435,14 +490,24 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         return filename;
     }
 
-    // ============================================
-    // CREATE2 DEPLOYMENT HELPERS
-    // ============================================
+    /**
+     * @notice Try to read an address from JSON
+     */
+    function tryReadAddress(string memory json, string memory key)
+        internal
+        pure
+        returns (address)
+    {
+        try vm.parseJson(json, key) returns (bytes memory data) {
+            if (data.length > 0) {
+                return abi.decode(data, (address));
+            }
+        } catch {}
+        return address(0);
+    }
 
     /**
      * @notice Verify Safe Singleton Factory is deployed
-     * @dev Reverts if factory is not deployed when CREATE2 is required
-     * @param chainId The chain ID to check
      */
     function verifySafeSingletonFactory(uint256 chainId) internal view {
         require(SAFE_SINGLETON_FACTORY.code.length > 0, "Safe Singleton Factory not deployed");
@@ -450,12 +515,7 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
     }
 
     /**
-     * @notice Deploy contract using CREATE or CREATE2 based on configuration
-     * @param chainId The chain ID for configuration
-     * @param creationCode The contract creation code
-     * @param args The constructor arguments (can be empty)
-     * @param contractName Name of the contract for logging
-     * @return deployed The deployed contract address
+     * @notice Deploy contract using CREATE or CREATE2
      */
     function deployContract(
         uint256 chainId,
@@ -464,10 +524,8 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         string memory contractName
     ) internal returns (address deployed) {
         bytes32 salt = chainConfigs[chainId].salt;
-        // Allow CREATE2 with salt = 0
 
         // Use CREATE2 via Safe Singleton Factory
-        // First compute the predicted address
         address predicted;
         if (args.length > 0) {
             predicted = computeAddress(creationCode, args, salt);
@@ -475,7 +533,7 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
             predicted = computeAddress(creationCode, salt);
         }
 
-        // Check if already deployed (CREATE2 collision)
+        // Check if already deployed
         if (predicted.code.length > 0) {
             console.log(unicode"[🔷] ", contractName, "already deployed at:", predicted);
             emit ContractAlreadyDeployed(chainId, contractName, predicted);
@@ -494,4 +552,10 @@ abstract contract BaseDeployment is Script, SafeSingletonDeployer {
         console.log("  Predicted:", predicted);
         require(deployed == predicted, "CREATE2 address mismatch");
     }
+
+    /**
+     * @notice Abstract functions to be implemented by child contracts
+     */
+    function deploymentType() internal pure virtual returns (string memory);
+    function deployToChain(uint256 chainId) internal virtual;
 }
