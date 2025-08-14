@@ -30,7 +30,8 @@ layerzero_endpoint = "0x6EDCE65403992e310A62460808c4b910D972f10f"
 layerzero_eid = 40161
 salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
 target_balance = 50000000000000000 # 0.05 ether
-stages = ["core", "interop", "simple_settler", "layerzero_settler"]
+# Specify contracts to deploy. Use ["ALL"] to deploy all available contracts
+contracts = ["Orchestrator", "IthacaAccount", "AccountProxy", "Simulator", "SimpleFunder", "Escrow", "SimpleSettler", "LayerZeroSettler"]
 # SimpleFunder configuration
 simple_funder_address = "0x2AD8F6a3bB1126a777606eaFa9da9b95530d9597"
 default_num_signers = 10
@@ -56,9 +57,10 @@ settler_owner = "0x0000000000000000000000000000000000000004"
 l0_settler_owner = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
 layerzero_endpoint = "0x6EDCE65403992e310A62460808c4b910D972f10f"
 layerzero_eid = 40245
-salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
+salt = "0x0000000000000000000000000000000000000000000000000000000000000001"
 target_balance = 1000000000000000 # 0.001 ether
-stages = ["core", "interop", "simple_settler", "layerzero_settler"]
+# Specify contracts to deploy. Use ["ALL"] to deploy all available contracts
+contracts = ["ALL"]  # Deploy all contracts
 # SimpleFunder configuration
 simple_funder_address = "0x2AD8F6a3bB1126a777606eaFa9da9b95530d9597"
 default_num_signers = 10
@@ -92,9 +94,10 @@ settler_owner = "0x0000000000000000000000000000000000000004"
 l0_settler_owner = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
 layerzero_endpoint = "0x6EDCE65403992e310A62460808c4b910D972f10f"
 layerzero_eid = 40232
-salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
+salt = "0x0000000000000000000000000000000000000000000000000000000000000001"
 target_balance = 10000000000000000 # 0.01 ether
-stages = ["core", "interop", "simple_settler", "layerzero_settler"]
+# Specify contracts to deploy. Use ["ALL"] to deploy all available contracts
+contracts = ["ALL"]  # Deploy all contracts
 # SimpleFunder configuration
 simple_funder_address = "0x2AD8F6a3bB1126a777606eaFa9da9b95530d9597"
 default_num_signers = 10

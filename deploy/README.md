@@ -4,128 +4,139 @@ This directory contains the unified deployment system for the Ithaca Account con
 
 ## Overview
 
-The deployment system uses a single configuration file (`DefaultConfig.sol`) that contains all chain-specific settings including contract addresses, deployment parameters, and stage configurations. This eliminates the previous separation between devnets, testnets, and mainnets, providing a simpler and more flexible deployment approach.
-## Quickstart
+The deployment system uses a TOML configuration file (`config.toml`) that contains all chain-specific settings and contract deployment specifications. It leverages Foundry's fork configuration features for a clean, maintainable deployment approach with CREATE2 for deterministic addresses across chains.
 
-Follow these steps for your first deployment using the provided scripts.
+## Quick Start
 
-1. **Review the default configuration in `deploy/DefaultConfig.sol`.**  
-   The configuration for all chains is defined in Solidity. For example, chain **28404** (Porto Devnet) is configured as:
+1. **Set up environment variables**:
+   ```bash
+   # Copy .env.example to .env and fill in your values
+   cp .env.example .env
+   
+   # Required: Set your private key
+   export PRIVATE_KEY=0x...
+   
+   # Required: Set RPC URLs for each chain
+   export RPC_84532=https://sepolia.base.org
+   export RPC_11155420=https://sepolia.optimism.io
+   export RPC_11155111=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
+   ```
 
-```solidity
-configs[6] = BaseDeployment.ChainConfig({
-    chainId: 28404,
-    name: "Porto Devnet",
-    isTestnet: true,
-    pauseAuthority: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
-    funderOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
-    funderSigner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
-    settlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
-    l0SettlerOwner: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8,
-    layerZeroEndpoint: 0x0000000000000000000000000000000000000000,
-    layerZeroEid: 0,
-    salt: bytes32(0),  // Use any value for deterministic addresses
-    stages: _getDevnetStages() // Returns [Core, Interop, SimpleSettler]
-});
-```
+2. **Source the environment**:
+   ```bash
+   source .env
+   ```
 
-2. **Dry-run the deployment script (no broadcast).**  
-   This prints the loaded configuration in the console.
-   IMPORTANT: Verify that the configuration values are correct before proceeding.
-
-```bash
-# Export your private key
-export PRIVATE_KEY=0x...
-export RPC_<CHAIN_ID>=
-forge script deploy/DeployMain.s.sol:DeployMain \
-  --multi \
-  --slow \
-  --sig "run(uint256[])" \
-  --private-key $PRIVATE_KEY \
-  "[<CHAIN_ID>]"
-```
-
-> **Note**: Intentionally omit the `--broadcast` flag for this first run to verify configuration.
-
-3. **Broadcast the deployment.**  
-   Once satisfied, repeat the command **with** `--broadcast` to actually deploy:
-
-```bash
-forge script deploy/DeployMain.s.sol:DeployMain \
-  --broadcast \
-  --multi \
-  --slow \
-  --sig "run(uint256[])" \
-  --private-key $PRIVATE_KEY \
-  "[<CHAIN_ID>]"
-```
-
-After a successful deployment:
-
-- Commit the generated `deploy/registry/deployment_<CHAIN_ID>_{salt}.json` file so others (and CI) can reference the deployed addresses.
-- Note: The registry file is for reference only and does not affect future deployment decisions.
+3. **Deploy contracts**:
+   ```bash
+   # Deploy to all configured chains
+   forge script deploy/DeployMain.s.sol:DeployMain \
+     --broadcast \
+     --multi \
+     --slow \
+     --sig "run(uint256[])" \
+     --private-key $PRIVATE_KEY \
+     "[]"
+   
+   # Deploy to specific chains
+   forge script deploy/DeployMain.s.sol:DeployMain \
+     --broadcast \
+     --multi \
+     --slow \
+     --sig "run(uint256[])" \
+     --private-key $PRIVATE_KEY \
+     "[84532,11155420]"
+   
+   # Deploy to single chain
+   forge script deploy/DeployMain.s.sol:DeployMain \
+     --broadcast \
+     --sig "run(uint256[])" \
+     --private-key $PRIVATE_KEY \
+     "[84532]"
+   ```
 
 ## Configuration Structure
 
-All deployment configuration is defined in `deploy/DefaultConfig.sol` using Solidity structs:
+All deployment configuration is in `deploy/config.toml`:
 
-```solidity
-struct ChainConfig {
-    uint256 chainId;
-    string name;
-    bool isTestnet;
-    address pauseAuthority;
-    address funderOwner;
-    address funderSigner;
-    address settlerOwner;
-    address l0SettlerOwner;
-    address layerZeroEndpoint;
-    uint32 layerZeroEid;
-    bytes32 salt;  // Salt for CREATE2 deployments
-    Stage[] stages;
-}
+```toml
+[deployment]
+registry_path = "deploy/registry/"
+
+[forks.chain-name]
+rpc_url = "${RPC_CHAINID}"  # Environment variable reference
+
+[forks.chain-name.vars]
+chain_id = CHAINID
+name = "Chain Name"
+is_testnet = true/false
+pause_authority = "0x..."
+funder_owner = "0x..."
+funder_signer = "0x..."
+settler_owner = "0x..."
+l0_settler_owner = "0x..."
+layerzero_endpoint = "0x..."
+layerzero_eid = EID
+salt = "0x..."  # Salt for CREATE2 deployments
+contracts = ["Orchestrator", "IthacaAccount", ...]  # Or ["ALL"] for all contracts
 ```
-
-The configuration is type-safe and validated at compile time, eliminating JSON parsing errors.
 
 ### Configuration Fields
 
+- **chain_id**: The network chain ID
 - **name**: Human-readable chain name
-- **layerZeroEndpoint**: LayerZero endpoint address for cross-chain messaging
-- **layerZeroEid**: LayerZero endpoint ID for this chain
-- **isTestnet**: Boolean indicating if this is a testnet
-- **pauseAuthority**: Address that can pause contract operations
-- **funderSigner**: Address authorized to sign funding operations
-- **funderOwner**: Owner of the SimpleFunder contract
-- **settlerOwner**: Owner of the SimpleSettler contract
-- **l0SettlerOwner**: Owner of the LayerZeroSettler contract
-- **salt**: Salt value for CREATE2 deployments (use `bytes32(0)` or any value for deterministic addresses)
-- **stages**: Array of deployment stages to execute for this chain
+- **is_testnet**: Boolean indicating if this is a testnet
+- **pause_authority**: Address that can pause contract operations
+- **funder_owner**: Owner of the SimpleFunder contract
+- **funder_signer**: Address authorized to sign funding operations
+- **settler_owner**: Owner of the SimpleSettler contract
+- **l0_settler_owner**: Owner of the LayerZeroSettler contract
+- **layerzero_endpoint**: LayerZero endpoint address for cross-chain messaging
+- **layerzero_eid**: LayerZero endpoint ID for this chain
+- **salt**: Salt value for CREATE2 deployments (determines contract addresses)
+- **contracts**: Array of contract names to deploy
 
-## Available Stages
+## Contract Deployment
 
-The deployment system is modular with the following stages:
+### Specifying Contracts to Deploy
 
-- **core**: Core contracts (Orchestrator, IthacaAccount, Proxy, Simulator)
-- **interop**: Interoperability contracts (SimpleFunder, Escrow)
-- **simpleSettler**: Single-chain settlement contract
-- **layerzeroSettler**: Cross-chain settlement contract
+The `contracts` array in the configuration determines which contracts to deploy:
 
-### Stage Dependencies
+```toml
+# Deploy all available contracts
+contracts = ["ALL"]
 
-- **interop** requires **core** to be deployed first
+# Deploy specific contracts
+contracts = ["Orchestrator", "IthacaAccount", "AccountProxy"]
 
-## Deployment Scripts
+# Deploy the full set explicitly
+contracts = ["Orchestrator", "IthacaAccount", "AccountProxy", "Simulator", "SimpleFunder", "Escrow", "SimpleSettler", "LayerZeroSettler"]
+```
 
-### Main Deployment Script
+### Available Contracts
 
-The primary way to deploy is using the main deployment script, which executes all configured stages for the specified chains:
+- **Orchestrator**: Core orchestration contract
+- **IthacaAccount**: Account implementation contract
+- **AccountProxy**: EIP-7702 proxy for accounts
+- **Simulator**: Simulation contract for testing
+- **SimpleFunder**: Basic funding mechanism
+- **Escrow**: Escrow contract for secure transfers
+- **SimpleSettler**: Single-chain settlement contract
+- **LayerZeroSettler**: Cross-chain settlement via LayerZero
+
+### Contract Dependencies
+
+The deployment script automatically handles dependencies:
+- **IthacaAccount** requires **Orchestrator** to be deployed first
+- **AccountProxy** requires **IthacaAccount** to be deployed first
+- **SimpleFunder** requires **Orchestrator** to be deployed first
+
+## Deployment Commands
+
+### Deploy to All Chains
 
 ```bash
-# Export your private key
-export PRIVATE_KEY=0x...
-
-# Deploy to all chains in config
+# Using empty array
 forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
   --multi \
@@ -134,365 +145,210 @@ forge script deploy/DeployMain.s.sol:DeployMain \
   --private-key $PRIVATE_KEY \
   "[]"
 
-# Deploy to specific chains
+# Using run() without parameters
 forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast \
   --multi \
   --slow \
-  --sig "run(uint256[])" \
-  --private-key $PRIVATE_KEY \
-  "[1,42161,8453]"
-
-# Single chain deployment (no --multi needed)
-forge script deploy/DeployMain.s.sol:DeployMain \
-  --broadcast \
-  --sig "run(uint256[])" \
-  --private-key $PRIVATE_KEY \
-  "[11155111]"
-
-# With verification (multi-chain)
-forge script deploy/DeployMain.s.sol:DeployMain \
-  --broadcast \
-  --multi \
-  --slow \
-  --verify \
-  --sig "run(uint256[])" \
-  --private-key $PRIVATE_KEY \
-  "[1,42161,8453]"
+  --sig "run()" \
+  --private-key $PRIVATE_KEY
 ```
 
-**Important flags for multi-chain deployments:**
-- `--multi`: Enables multi-chain deployment sequences
+### Deploy to Specific Chains
+
+```bash
+# Multiple chains
+forge script deploy/DeployMain.s.sol:DeployMain \
+  --broadcast \
+  --multi \
+  --slow \
+  --sig "run(uint256[])" \
+  --private-key $PRIVATE_KEY \
+  "[84532,11155420]"
+
+# Single chain (no --multi needed)
+forge script deploy/DeployMain.s.sol:DeployMain \
+  --broadcast \
+  --sig "run(uint256[])" \
+  --private-key $PRIVATE_KEY \
+  "[84532]"
+```
+
+### Important Flags
+
+- `--multi`: Required for multi-chain deployments
 - `--slow`: Ensures transactions are sent only after previous ones are confirmed
+- `--broadcast`: Actually sends transactions (omit for dry run)
+- `--verify`: Verify contracts on block explorers (requires API keys)
 
-The script automatically deploys stages in the correct order:
-1. `core` - Core contracts (Orchestrator, IthacaAccount, Proxy, Simulator)
-2. `interop` - Interoperability contracts (SimpleFunder, Escrow)
-3. `simpleSettler` and/or `layerzeroSettler` - Settlement contracts
+## CREATE2 Deployment
 
-The DeployMain script handles all deployment stages automatically based on the configuration in `DefaultConfig.sol`. Each chain will only deploy the stages specified in its configuration.
+All contracts are deployed using CREATE2 via the Safe Singleton Factory (`0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`), providing deterministic addresses across chains.
 
-### Complete Deployment Example
+### How It Works
 
-To deploy all configured stages for a chain:
-
-```bash
-# Set environment variables
-export RPC_11155111=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
-export PRIVATE_KEY=0x...
-
-# Deploy all stages configured in DefaultConfig.sol
-forge script deploy/DeployMain.s.sol:DeployMain \
-  --broadcast \
-  --sig "run(uint256[])" \
-  --private-key $PRIVATE_KEY \
-  "[11155111]"
-```
-
-The script will:
-- Check which stages are configured for the chain
-- Deploy contracts in the correct order
-- Skip already deployed contracts
-- Save deployment addresses to the registry
-
-**Note about multi-chain deployments**: When deploying to multiple chains, always use the `--multi` and `--slow` flags:
-```bash
-export PRIVATE_KEY=0x...
-forge script deploy/DeployMain.s.sol:DeployMain \
-  --broadcast \
-  --multi \
-  --slow \
-  --sig "run(uint256[])" \
-  --private-key $PRIVATE_KEY \
-  "[1,42161,8453]"
-```
-
-These flags ensure:
-- `--multi`: Proper handling of multi-chain deployment sequences
-- `--slow`: Transactions are sent only after previous ones are confirmed
-
-**Note**: LayerZero peer configuration across multiple chains will be added in a future update.
-
-## Environment Variables
-
-### Required Environment Variables
-
-#### RPC URLs
-Format: `RPC_{chainId}`
-
-```bash
-# Mainnet
-RPC_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
-RPC_42161=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
-RPC_8453=https://base-mainnet.g.alchemy.com/v2/YOUR_KEY
-
-# Testnet
-RPC_11155111=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
-RPC_421614=https://arb-sepolia.g.alchemy.com/v2/YOUR_KEY
-RPC_84532=https://base-sepolia.g.alchemy.com/v2/YOUR_KEY
-
-# Local
-RPC_28404=http://localhost:8545
-```
-
-#### Private Key
-```bash
-PRIVATE_KEY=0x... # Your deployment private key
-```
-
-### Optional Environment Variables
-
-#### Verification API Keys
-Format: `VERIFICATION_KEY_{chainId}`
-
-```bash
-VERIFICATION_KEY_1=YOUR_ETHERSCAN_API_KEY
-VERIFICATION_KEY_42161=YOUR_ARBISCAN_API_KEY
-VERIFICATION_KEY_8453=YOUR_BASESCAN_API_KEY
-VERIFICATION_KEY_11155111=YOUR_SEPOLIA_ETHERSCAN_API_KEY
-VERIFICATION_KEY_421614=YOUR_ARBITRUM_SEPOLIA_API_KEY
-VERIFICATION_KEY_84532=YOUR_BASE_SEPOLIA_API_KEY
-```
-
-## Adding New Chains
-
-To add a new chain to the deployment system:
-
-1. **Modify `deploy/DefaultConfig.sol`** to add the new chain configuration:
-   ```solidity
-   // In getConfigs() function, increase the array size
-   configs = new BaseDeployment.ChainConfig[](8); // was 7
-   
-   // Add new chain configuration
-   configs[7] = BaseDeployment.ChainConfig({
-       chainId: 137,
-       name: "Polygon",
-       isTestnet: false,
-       pauseAuthority: 0x...,
-       funderOwner: 0x...,
-       funderSigner: 0x...,
-       settlerOwner: 0x...,
-       l0SettlerOwner: 0x...,
-       layerZeroEndpoint: 0x1a44076050125825900e736c501f859c50fE728c,
-       layerZeroEid: 30109,
-       salt: bytes32(0),  // Or use a custom salt for deterministic addresses
-       stages: _getAllStages() // or custom stages array
-   });
-   ```
-
-2. **Set environment variables**:
-   ```bash
-   export RPC_137=https://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY
-   export VERIFICATION_KEY_137=YOUR_POLYGONSCAN_API_KEY
-   ```
-
-3. **Run deployment**:
-   ```bash
-   export PRIVATE_KEY=0x...
-   
-   # For single chain
-   forge script deploy/DeployMain.s.sol:DeployMain \
-     --broadcast \
-     --verify \
-     --sig "run(uint256[])" \
-     --private-key $PRIVATE_KEY \
-     "[137]"
-   
-   # For multiple chains including this one
-   forge script deploy/DeployMain.s.sol:DeployMain \
-     --broadcast \
-     --multi \
-     --slow \
-     --verify \
-     --sig "run(uint256[])" \
-     --private-key $PRIVATE_KEY \
-     "[137,42161,8453]"
-   ```
-
-## Multi-Settler Support
-
-Chains can deploy both SimpleSettler and LayerZeroSettler by including both stages in the configuration:
-
-```json
-"stages": ["core", "interop", "simpleSettler", "layerzeroSettler"]
-```
-
-This is useful for chains that need:
-- SimpleSettler for fast, single-chain settlements
-- LayerZeroSettler for cross-chain interoperability
-
-## CREATE2 Deployment Support
-
-⚠️ **IMPORTANT**: The deployment system now uses CREATE2 for all deployments, providing deterministic contract addresses across chains.
-
-### How CREATE2 Works
-
-CREATE2 deployments use the Safe Singleton Factory (`0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`) to deploy contracts with deterministic addresses. The contract address is determined by:
+Contract addresses are determined by:
 - The factory address (constant across all chains)
 - The salt value (configured per chain)
 - The contract bytecode
 
 This means:
 - **Same salt + same bytecode = same address** on every chain
-- You can predict contract addresses before deployment
+- Contract addresses can be predicted before deployment
 - You can deploy to the same addresses on new chains later
 
 ### Salt Configuration
 
-The `salt` field in each chain configuration determines the deployment addresses:
+The `salt` field in each chain configuration determines deployment addresses:
 
-```solidity
-salt: bytes32(0),  // Default: uses zero salt
-salt: 0x00000000000000000000000000000000000000000000000000000000deadbeef,  // Custom salt
+```toml
+# Default salt (all zeros)
+salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
+
+# Custom salt for different addresses
+salt = "0x0000000000000000000000000000000000000000000000000000000000000001"
 ```
 
-⚠️ **CRITICAL**: 
+⚠️ **IMPORTANT**: 
 - **Save your salt values!** Lost salts mean you cannot deploy to the same addresses on new chains
 - **Use the same salt** across chains for identical addresses
 - **Use different salts** if you need different addresses per chain
 
+## Registry Files
 
-### Registry Files with CREATE2
+The deployment system maintains contract addresses in `deploy/registry/`:
 
-When using CREATE2, registry files include the salt in the filename:
-- Format: `deployment_{chainId}_{salt}.json`
-- Example: `deployment_1_0x0000000000000000000000000000000000000000000000000000000000000000.json`
+- **Format**: `deployment_{chainId}_{salt}.json`
+- **Example**: `deployment_84532_0x0000000000000000000000000000000000000000000000000000000000000001.json`
 
-This allows multiple deployments to the same chain with different salts.
-
-## Deployment Registry
-
-The deployment system maintains deployed contract addresses in the `deploy/registry/` directory:
-
-- **Contract addresses**: `deployment_{chainId}_{salt}.json`
-  - Contains deployed contract addresses for each chain and salt combination
-  - Automatically updated after each successful deployment
-  - **CREATE2 deployments are automatically skipped if contract already exists at predicted address**
-
-### Important: Redeployments and Fresh Deployments
-
-**For CREATE2 deployments**: The script automatically checks on-chain if contracts exist at their predicted addresses:
-- If a contract exists at the predicted address → deployment is skipped
-- If no contract exists → deployment proceeds
-- Registry files do NOT affect deployment decisions
-
-To perform a fresh deployment to new addresses:
-1. **Change the salt value** in `DefaultConfig.sol` for that chain
-2. Run the deployment script - it will deploy to the new addresses
-
-```bash
-# Example: Deploy with a different salt by modifying DefaultConfig.sol
-# Change from: salt: bytes32(0)
-# To:         salt: 0x0000000000000000000000000000000000000000000000000000000000000001
-
-# Then run the deployment
-forge script deploy/DeployMain.s.sol:DeployMain \
-  --broadcast \
-  --sig "run(uint256[])" \
-  --private-key $PRIVATE_KEY \
-  "[11155111]"
-```
-
-Example registry file (`deployment_1_0x0000000000000000000000000000000000000000000000000000000000000000.json`):
+Example registry file:
 ```json
 {
-  "Orchestrator": "0x...",
-  "AccountImpl": "0x...",
-  "AccountProxy": "0x...",
-  "Simulator": "0x...",
-  "SimpleFunder": "0x...",
-  "Escrow": "0x...",
-  "SimpleSettler": "0x...",
-  "LayerZeroSettler": "0x..."
+  "Orchestrator": "0xb33adF2c2257a94314d408255aC843fd53B1a7e1",
+  "IthacaAccount": "0x5a87ef243CDA70a855828d4989Fad61B56A467d3",
+  "AccountProxy": "0x4ACD713815fbb363a89D9Ff046C56cEdC7EF3ad7",
+  "Simulator": "0x65Ae218EB1987b8bd0F9eeb38D1B344726D41dA5",
+  "SimpleFunder": "0xA47C5C472449979a2F37dF2971627cD6587bADb8",
+  "Escrow": "0x24F50280cE3B51Ab1967F048746FB7ba3C7B4067",
+  "SimpleSettler": "0xb934afBB50b8aBBe24959f9398fE024BEe9Bf716",
+  "LayerZeroSettler": "0xB89f4A85d38C3A2407854269527fabD3b61fd56a"
 }
+```
+
+### Important Notes
+
+- Registry files are created automatically after successful deployments
+- CREATE2 deployments automatically skip if contract already exists at predicted address
+- Registry files do NOT control deployment decisions - on-chain state does
+- Commit registry files to version control for reference
+
+## Adding New Chains
+
+To add a new chain:
+
+1. **Add configuration to `deploy/config.toml`**:
+   ```toml
+   [forks.polygon]
+   rpc_url = "${RPC_137}"
+   
+   [forks.polygon.vars]
+   chain_id = 137
+   name = "Polygon"
+   is_testnet = false
+   pause_authority = "0x..."
+   funder_owner = "0x..."
+   funder_signer = "0x..."
+   settler_owner = "0x..."
+   l0_settler_owner = "0x..."
+   layerzero_endpoint = "0x1a44076050125825900e736c501f859c50fE728c"
+   layerzero_eid = 30109
+   salt = "0x0000000000000000000000000000000000000000000000000000000000000001"
+   contracts = ["ALL"]  # Or specify individual contracts
+   ```
+
+2. **Set environment variable**:
+   ```bash
+   export RPC_137=https://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY
+   ```
+
+3. **Deploy**:
+   ```bash
+   forge script deploy/DeployMain.s.sol:DeployMain \
+     --broadcast \
+     --sig "run(uint256[])" \
+     --private-key $PRIVATE_KEY \
+     "[137]"
+   ```
+
+## Environment Variables
+
+### Required
+
+```bash
+# Deployment private key
+PRIVATE_KEY=0x...
+
+# RPC URLs (format: RPC_{chainId})
+RPC_1=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
+RPC_84532=https://sepolia.base.org
+RPC_11155420=https://sepolia.optimism.io
+```
+
+### Optional
+
+```bash
+# Verification API keys (format: VERIFICATION_KEY_{chainId})
+VERIFICATION_KEY_1=YOUR_ETHERSCAN_API_KEY
+VERIFICATION_KEY_84532=YOUR_BASESCAN_API_KEY
+VERIFICATION_KEY_11155420=YOUR_OPTIMISM_API_KEY
 ```
 
 ## Dry Run Mode
 
-To test deployments without broadcasting transactions, simply omit the `--broadcast` flag when running forge scripts:
+Test deployments without broadcasting transactions:
 
 ```bash
-# Dry run (simulation only)
-forge script deploy/DeployMain.s.sol:DeployMain --sig "run(uint256[])" "[1,42161]"
-
-# Actual deployment (multi-chain)
-export PRIVATE_KEY=0x...
+# Dry run (no --broadcast flag)
 forge script deploy/DeployMain.s.sol:DeployMain \
-  --broadcast \
-  --multi \
-  --slow \
   --sig "run(uint256[])" \
-  --private-key $PRIVATE_KEY \
-  "[1,42161]"
+  "[84532]"
 ```
 
-Dry run mode (without `--broadcast`) will:
+This will:
 - Simulate all deployment transactions
 - Show gas estimates
-- Verify the deployment logic
-- Not send any actual transactions
-
-## Custom Configuration
-
-To use a custom configuration:
-
-1. **Copy `DefaultConfig.sol`** to a new file (e.g., `MyConfig.sol`)
-2. **Modify the configuration** as needed
-3. **Update the import** in `BaseDeployment.sol` to use your config:
-   ```solidity
-   import {MyConfig as DefaultConfig} from "./MyConfig.sol";
-   ```
-4. **Deploy** using the standard commands
-
-## LayerZero Configuration
-
-For cross-chain functionality, the LayerZero configuration stage:
-
-1. Collects all deployed LayerZeroSettler contracts
-2. Sets up peer relationships between chains
-3. Configures trusted remote addresses
-
-Requirements:
-- LayerZeroSettler must be deployed on at least 2 chains
-- Valid LayerZero endpoints must be configured
-- LayerZero peer configuration will be added in a future update
+- Verify deployment logic
+- Not send actual transactions
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **"Chain ID mismatch"**
-   - Ensure RPC URL matches the chain ID in config
-   - Verify the RPC endpoint is correct
+1. **"No chains found in configuration"**
+   - Ensure config.toml has properly configured chains
+   - Check that RPC URLs are set for all target chains
 
-2. **"Orchestrator not found"**
-   - Ensure `core` stage is included in the chain's stages configuration
-   - The DeployMain script automatically handles stage ordering
+2. **"Safe Singleton Factory not deployed"**
+   - The factory must exist at `0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`
+   - Most major chains have this deployed
 
-3. **"Less than 2 LayerZero settlers found"**
-   - Deploy LayerZeroSettler on multiple chains before configuring
-   - Ensure `layerzeroSettler` stage is included in chain configs
+3. **Contract already deployed**
+   - This is normal for CREATE2 - contracts at predicted addresses are skipped
+   - To deploy to new addresses, change the salt value
 
-4. **Verification failures**
-   - Check VERIFICATION_KEY environment variables
-   - Ensure the chain is supported by the block explorer
-   - Verify API key has correct permissions
-
-### Redeployments
-
-- **Deployments are automatically skipped** if contracts already exist at their CREATE2 addresses
-- **On-chain checks**: The script checks the blockchain directly, not registry files
-- **To redeploy to new addresses**: Change the salt value in the configuration
-- **Registry files**: Are created for reference but do NOT control deployment behavior
+4. **RPC errors**
+   - Verify RPC URLs are correct and accessible
+   - Check rate limits on public RPCs
+   - Consider using paid RPC services for production
 
 ## Best Practices
 
-1. **Test on testnets first** - Use Sepolia, Arbitrum Sepolia, etc.
-2. **Use dry run mode** - Test configuration before mainnet deployment
-3. **Verify addresses** - Double-check all configured addresses
-4. **Monitor gas prices** - Ensure sufficient ETH for deployment
-5. **Keep registry files** - Back up the `deploy/registry/` directory
-6. **Use appropriate stages** - Only include necessary stages per chain
+1. **Always run a dry run first** - Test configuration before mainnet deployment
+2. **Save your salt values** - Required for deploying to same addresses on new chains
+3. **Use `["ALL"]` for complete deployments** - Ensures all contracts are deployed
+4. **Commit registry files** - Provides deployment history and reference
+5. **Use `--multi --slow` for multi-chain** - Ensures proper transaction ordering
+6. **Verify contracts after deployment** - Use block explorer verification
 
 ## Security Considerations
 
@@ -510,4 +366,3 @@ Requirements:
    - Verify all contracts on block explorers
    - Test contract functionality after deployment
    - Transfer ownership to final addresses if needed
-
