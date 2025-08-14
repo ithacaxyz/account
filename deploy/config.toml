@@ -35,8 +35,17 @@ contracts = ["Orchestrator", "IthacaAccount", "AccountProxy", "Simulator", "Simp
 # SimpleFunder configuration
 simple_funder_address = "0x2AD8F6a3bB1126a777606eaFa9da9b95530d9597"
 default_num_signers = 10
-# LayerZero configuration
+# LayerZero configuration (copied from Base Sepolia for testing)
+# TODO: Set correct addresses here.
 layerzero_settler_address = "0x4225041FF3DB1C7d7a1029406bB80C7298767aca"
+layerzero_send_uln302 = "0xC1868e054425D378095A003EcbA3823a5D0135C9"
+layerzero_receive_uln302 = "0x12523de19dc41c91F7d2093E0CFbB76b17012C8d"
+layerzero_destination_chain_ids = [84532, 11155420]
+layerzero_required_dvns = ["dvn_layerzero_labs"]
+layerzero_optional_dvns = []
+layerzero_optional_dvn_threshold = 0
+layerzero_confirmations = 1
+layerzero_max_message_size = 10000
 # DVN addresses
 dvn_layerzero_labs = "0x8eebf8b423B73bFCa51a1Db4B7354AA0bFCA9193"
 dvn_google_cloud = "0x8e5a7b5959C5A7C732b87dCE401E07F5819eEC2d"

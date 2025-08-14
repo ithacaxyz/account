@@ -225,6 +225,7 @@ contract DeployMain is Script, SafeSingletonDeployer {
 
         // Load contracts list - hardcode default contracts for now since forkStringArray doesn't exist
         // Note: In actual TOML config, users can specify ["ALL"] to deploy all contracts
+        // TODO: Fix this after forkStringArray is implemented.
         config.contracts = getAllContracts();
 
         return config;
