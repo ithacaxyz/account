@@ -172,6 +172,21 @@ struct PackedUserOperation {
     bytes signature;
 }
 
+// 4337 v0.6 struct
+struct UserOperation {
+    address sender;
+    uint256 nonce;
+    bytes initCode;
+    bytes callData;
+    uint256 callGasLimit;
+    uint256 verificationGasLimit;
+    uint256 preVerificationGas;
+    uint256 maxFeePerGas;
+    uint256 maxPriorityFeePerGas;
+    bytes paymasterAndData;
+    bytes signature;
+}
+
 // lib/account-abstraction/contracts/interfaces/IAggregator.sol
 
 /**
@@ -414,4 +429,9 @@ interface IERC4337EntryPoint is IStakeManager, INonceManager {
      * @notice Retrieves the immutable SenderCreator contract which is responsible for deployment of sender contracts.
      */
     function senderCreator() external view returns (ISenderCreator);
+}
+
+interface IERC4337EntryPointV6 {
+    function getUserOpHash(UserOperation calldata userOp) external view returns (bytes32);
+    function handleOps(UserOperation[] calldata ops, address payable beneficiary) external;
 }
