@@ -10,7 +10,7 @@
 registry_path = "deploy/registry/"
 
 # ============================================
-# FORK CONFIGURATIONS (for vm.forkChain* cheatcodes)
+# FORK CONFIGURATIONS (for vm.readFork* cheatcodes)
 # ============================================
 
 # Sepolia

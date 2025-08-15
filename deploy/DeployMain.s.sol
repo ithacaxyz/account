@@ -105,7 +105,7 @@ contract DeployMain is Script, SafeSingletonDeployer {
      */
     function run() external {
         // Get all available chain IDs from fork configuration
-        uint256[] memory chainIds = vm.forkChainIds();
+        uint256[] memory chainIds = vm.readForkChainIds();
         initializeDeployment(chainIds);
         executeDeployment();
     }
@@ -117,7 +117,7 @@ contract DeployMain is Script, SafeSingletonDeployer {
     function run(uint256[] memory chainIds) external {
         // If empty array, get all available chains
         if (chainIds.length == 0) {
-            chainIds = vm.forkChainIds();
+            chainIds = vm.readForkChainIds();
         }
         initializeDeployment(chainIds);
         executeDeployment();
@@ -131,7 +131,7 @@ contract DeployMain is Script, SafeSingletonDeployer {
     function run(uint256[] memory chainIds, string memory _configPath) external {
         // If empty array, get all available chains
         if (chainIds.length == 0) {
-            chainIds = vm.forkChainIds();
+            chainIds = vm.readForkChainIds();
         }
         initializeDeployment(chainIds, _configPath);
         executeDeployment();
@@ -207,26 +207,34 @@ contract DeployMain is Script, SafeSingletonDeployer {
 
         config.chainId = chainId;
 
-        // Use vm.fork* functions to read variables from the active fork
-        config.name = vm.forkString("name");
-        config.isTestnet = vm.forkBool("is_testnet");
+        // Use vm.readFork* functions to read variables from the active fork
+        config.name = vm.readForkString("name");
+        config.isTestnet = vm.readForkBool("is_testnet");
 
         // Load addresses
-        config.pauseAuthority = vm.forkAddress("pause_authority");
-        config.funderOwner = vm.forkAddress("funder_owner");
-        config.funderSigner = vm.forkAddress("funder_signer");
-        config.settlerOwner = vm.forkAddress("settler_owner");
-        config.l0SettlerOwner = vm.forkAddress("l0_settler_owner");
-        config.layerZeroEndpoint = vm.forkAddress("layerzero_endpoint");
+        config.pauseAuthority = vm.readForkAddress("pause_authority");
+        config.funderOwner = vm.readForkAddress("funder_owner");
+        config.funderSigner = vm.readForkAddress("funder_signer");
+        config.settlerOwner = vm.readForkAddress("settler_owner");
+        config.l0SettlerOwner = vm.readForkAddress("l0_settler_owner");
+        config.layerZeroEndpoint = vm.readForkAddress("layerzero_endpoint");
 
         // Load other configuration
-        config.layerZeroEid = uint32(vm.forkUint("layerzero_eid"));
-        config.salt = vm.forkBytes32("salt");
+        config.layerZeroEid = uint32(vm.readForkUint("layerzero_eid"));
+        config.salt = vm.readForkBytes32("salt");
 
-        // Load contracts list - hardcode default contracts for now since forkStringArray doesn't exist
-        // Note: In actual TOML config, users can specify ["ALL"] to deploy all contracts
-        // TODO: Fix this after forkStringArray is implemented.
-        config.contracts = getAllContracts();
+        // Load contracts list - required field, will revert if not present
+        string[] memory contractsList = vm.readForkStringArray("contracts");
+
+        // Check if user specified "ALL" to deploy all contracts
+        if (
+            contractsList.length == 1
+                && keccak256(bytes(contractsList[0])) == keccak256(bytes("ALL"))
+        ) {
+            config.contracts = getAllContracts();
+        } else {
+            config.contracts = contractsList;
+        }
 
         return config;
     }
@@ -622,19 +630,9 @@ contract DeployMain is Script, SafeSingletonDeployer {
             console.log(unicode"Store it securely with backups!\n");
         }
 
-        // Check if user specified "ALL" to deploy all contracts
-        string[] memory contractsToDeploy = config.contracts;
-        if (
-            config.contracts.length == 1
-                && keccak256(bytes(config.contracts[0])) == keccak256(bytes("ALL"))
-        ) {
-            console.log("Deploying ALL contracts...");
-            contractsToDeploy = getAllContracts();
-        }
-
-        // Deploy each contract
-        for (uint256 i = 0; i < contractsToDeploy.length; i++) {
-            string memory contractName = contractsToDeploy[i];
+        // Deploy each contract from the config
+        for (uint256 i = 0; i < config.contracts.length; i++) {
+            string memory contractName = config.contracts[i];
             deployContract(chainId, config, deployed, contractName);
         }
 

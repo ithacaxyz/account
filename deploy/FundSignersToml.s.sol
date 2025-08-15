@@ -190,11 +190,11 @@ contract FundSignersToml is Script {
 
         ChainFundingConfig memory config;
         config.chainId = chainId;
-        config.name = vm.forkString("name");
-        config.isTestnet = vm.forkBool("is_testnet");
-        config.targetBalance = vm.forkUint("target_balance");
+        config.name = vm.readForkString("name");
+        config.isTestnet = vm.readForkBool("is_testnet");
+        config.targetBalance = vm.readForkUint("target_balance");
         config.rpcUrl = rpcUrl;
-        config.simpleFunderAddress = vm.forkAddress("simple_funder_address");
+        config.simpleFunderAddress = vm.readForkAddress("simple_funder_address");
 
         return config;
     }

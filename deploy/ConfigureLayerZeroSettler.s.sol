@@ -67,7 +67,7 @@ contract ConfigureLayerZeroSettler is Script {
      */
     function run() external {
         // Get all chain IDs from fork configuration
-        uint256[] memory chainIds = vm.forkChainIds();
+        uint256[] memory chainIds = vm.readForkChainIds();
         run(chainIds);
     }
 
@@ -140,141 +140,48 @@ contract ConfigureLayerZeroSettler is Script {
         config.chainId = chainId;
 
         // Load basic chain info - required
-        config.name = vm.forkString("name");
+        config.name = vm.readForkString("name");
 
-        // Load LayerZero addresses - these are optional, return empty config if not set
-        try vm.forkAddress("layerzero_settler_address") returns (address addr) {
+        // Try to load LayerZero settler address - if not present, this chain doesn't have LayerZero config
+        try vm.readForkAddress("layerzero_settler_address") returns (address addr) {
             config.layerZeroSettlerAddress = addr;
         } catch {
-            // No LayerZero settler configured for this chain
+            // No LayerZero settler configured for this chain - this is ok, return empty config
             return config;
         }
 
-        // If we have a LayerZero settler, we need the endpoint
-        config.layerZeroEndpoint = vm.forkAddress("layerzero_endpoint");
-        config.eid = uint32(vm.forkUint("layerzero_eid"));
+        // If we have a LayerZero settler, all other LayerZero fields are required
+        config.layerZeroEndpoint = vm.readForkAddress("layerzero_endpoint");
+        config.eid = uint32(vm.readForkUint("layerzero_eid"));
+        config.sendUln302 = vm.readForkAddress("layerzero_send_uln302");
+        config.receiveUln302 = vm.readForkAddress("layerzero_receive_uln302");
 
-        // Load ULN302 libraries - these determine if chain has LayerZero config
-        try vm.forkAddress("layerzero_send_uln302") returns (address sendUln) {
-            config.sendUln302 = sendUln;
-        } catch {
-            // No LayerZero ULN config for this chain
-            return config;
-        }
+        // Load destination chain IDs - required for LayerZero configuration
+        config.destinationChainIds = vm.readForkUintArray("layerzero_destination_chain_ids");
 
-        config.receiveUln302 = vm.forkAddress("layerzero_receive_uln302");
+        // Load DVN configuration - required and optional DVN arrays
+        string[] memory requiredDVNNames = vm.readForkStringArray("layerzero_required_dvns");
+        string[] memory optionalDVNNames = vm.readForkStringArray("layerzero_optional_dvns");
 
-        // Load destination chain IDs - hardcoded for now since we can't read arrays from fork vars
-        // In config.toml: layerzero_destination_chain_ids = [84532, 11155420]
-        config.destinationChainIds = getDestinationChainIds(chainId);
-
-        // Load DVN configuration
-        // Get the DVN variable names from config and resolve to addresses
-        string[] memory requiredDVNNames = getRequiredDVNNames(chainId);
-        string[] memory optionalDVNNames = getOptionalDVNNames(chainId);
-
+        // Resolve DVN names to addresses
         config.requiredDVNs = resolveDVNAddresses(requiredDVNNames);
         config.optionalDVNs = resolveDVNAddresses(optionalDVNNames);
 
-        // Optional DVN threshold
-        try vm.forkUint("layerzero_optional_dvn_threshold") returns (uint256 threshold) {
-            config.optionalDVNThreshold = uint8(threshold);
-        } catch {
-            config.optionalDVNThreshold = 0;
-        }
+        // Load optional DVN threshold - required field
+        config.optionalDVNThreshold = uint8(vm.readForkUint("layerzero_optional_dvn_threshold"));
 
-        // Confirmations with default
-        try vm.forkUint("layerzero_confirmations") returns (uint256 confirmations) {
-            config.confirmations = uint64(confirmations);
-        } catch {
-            config.confirmations = 1; // Default
-        }
+        // Load confirmations - required field
+        config.confirmations = uint64(vm.readForkUint("layerzero_confirmations"));
 
-        // Max message size with default
-        try vm.forkUint("layerzero_max_message_size") returns (uint256 maxSize) {
-            config.maxMessageSize = uint32(maxSize);
-        } catch {
-            config.maxMessageSize = 10000; // Default
-        }
+        // Load max message size - required field
+        config.maxMessageSize = uint32(vm.readForkUint("layerzero_max_message_size"));
 
         return config;
     }
 
     /**
-     * @notice Get destination chain IDs based on configuration
-     * @dev Hardcoded mapping of what's in config.toml since we can't read arrays from fork vars
-     *      Must match layerzero_destination_chain_ids in config.toml
-     */
-    function getDestinationChainIds(uint256 chainId) internal pure returns (uint256[] memory) {
-        // Sepolia -> Base Sepolia and Optimism Sepolia
-        // config.toml: layerzero_destination_chain_ids = [84532, 11155420]
-        if (chainId == 11155111) {
-            uint256[] memory destChains = new uint256[](2);
-            destChains[0] = 84532;
-            destChains[1] = 11155420;
-            return destChains;
-        }
-        // Base Sepolia -> Optimism Sepolia
-        // config.toml: layerzero_destination_chain_ids = [11155420]
-        if (chainId == 84532) {
-            uint256[] memory destChains = new uint256[](1);
-            destChains[0] = 11155420;
-            return destChains;
-        }
-        // Optimism Sepolia -> Base Sepolia
-        // config.toml: layerzero_destination_chain_ids = [84532]
-        if (chainId == 11155420) {
-            uint256[] memory destChains = new uint256[](1);
-            destChains[0] = 84532;
-            return destChains;
-        }
-        // Return empty for unknown chains
-        return new uint256[](0);
-    }
-
-    /**
-     * @notice Get required DVN names from configuration
-     * @dev Returns the DVN variable names specified in layerzero_required_dvns
-     *      Since we can't read string arrays from fork vars, this is hardcoded
-     *      but matches what's in config.toml
-     */
-    function getRequiredDVNNames(uint256 chainId) internal pure returns (string[] memory) {
-        // All chains in config.toml have: layerzero_required_dvns = ["dvn_layerzero_labs"]
-        string[] memory dvnNames = new string[](1);
-        dvnNames[0] = "dvn_layerzero_labs";
-
-        // If different chains had different required DVNs, we'd check chainId here
-        // For example:
-        // if (chainId == 84532) {
-        //     dvnNames = new string[](2);
-        //     dvnNames[0] = "dvn_layerzero_labs";
-        //     dvnNames[1] = "dvn_google_cloud";
-        // }
-
-        return dvnNames;
-    }
-
-    /**
-     * @notice Get optional DVN names from configuration
-     * @dev Returns the DVN variable names specified in layerzero_optional_dvns
-     *      Since we can't read string arrays from fork vars, this is hardcoded
-     *      but matches what's in config.toml
-     */
-    function getOptionalDVNNames(uint256 chainId) internal pure returns (string[] memory) {
-        // All chains in config.toml have: layerzero_optional_dvns = []
-        // Return empty array
-        return new string[](0);
-
-        // If config had optional DVNs, we'd do:
-        // string[] memory dvnNames = new string[](2);
-        // dvnNames[0] = "dvn_google_cloud";
-        // dvnNames[1] = "dvn_polyhedra";
-        // return dvnNames;
-    }
-
-    /**
      * @notice Resolve DVN names to addresses by reading from fork variables
-     * @dev Takes DVN variable names and looks up their addresses using vm.forkAddress
+     * @dev Takes DVN variable names and looks up their addresses using vm.readForkAddress
      * @param dvnNames Array of DVN variable names from config (e.g., "dvn_layerzero_labs")
      * @return addresses Array of resolved DVN addresses
      */
@@ -286,7 +193,7 @@ contract ConfigureLayerZeroSettler is Script {
         address[] memory addresses = new address[](dvnNames.length);
 
         for (uint256 i = 0; i < dvnNames.length; i++) {
-            addresses[i] = vm.forkAddress(dvnNames[i]);
+            addresses[i] = vm.readForkAddress(dvnNames[i]);
             require(
                 addresses[i] != address(0),
                 string.concat("DVN address not configured for: ", dvnNames[i])
@@ -430,7 +337,7 @@ contract ConfigureLayerZeroSettler is Script {
         });
 
         // Get the L0 settler owner who should be the delegate
-        address l0SettlerOwner = vm.forkAddress("l0_settler_owner");
+        address l0SettlerOwner = vm.readForkAddress("l0_settler_owner");
         console.log("      L0 Settler Owner (delegate):", l0SettlerOwner);
 
         vm.broadcast();
