@@ -327,6 +327,68 @@ contract BenchmarkTest is BaseTest {
         erc4337EntryPointV6.handleOps(u, payable(address(0x69)));
     }
 
+    function testERC20Transfer_ZerodevKernel() public {
+        _testERC20Transfer_ZerodevKernel("");
+    }
+
+    function testERC20Transfer_ZerodevKernelWithExtendedCalldata() public {
+        _testERC20Transfer_ZerodevKernel(new bytes(2048));
+    }
+
+    function _testERC20Transfer_ZerodevKernel(bytes memory junk) internal {
+        vm.pauseGasMetering();
+        // this is still going to fallback for some reason
+        bytes memory payload = abi.encodeWithSignature(
+            "execute(bytes32,bytes)",
+            bytes32(uint256(0x01) << 240),
+            abi.encodePacked(
+                paymentToken,
+                uint256(0),
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+            )
+        );
+
+        vm.resumeGasMetering();
+
+        _testPayload_ZerodevKernel(payload, junk);
+
+        vm.pauseGasMetering();
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
+        vm.resumeGasMetering();
+    }
+
+    function testNativeTransfer_ZerodevKernel() public {
+        vm.pauseGasMetering();
+        // this is still going to fallback for some reason
+        bytes memory payload = abi.encodeWithSignature(
+            "execute(bytes32,bytes)",
+            bytes32(uint256(0x01) << 240),
+            abi.encodePacked(address(0xbabe), uint256(1 ether), "")
+        );
+
+        vm.resumeGasMetering();
+
+        _testPayload_ZerodevKernel(payload, "");
+
+        vm.pauseGasMetering();
+        assertEq(address(0xbabe).balance, 1 ether);
+        vm.resumeGasMetering();
+    }
+
+    function testUniswapV2Swap_ZerodevKernel() public {
+        vm.pauseGasMetering();
+        // this is still going to fallback for some reason
+        bytes memory payload = abi.encodeWithSignature(
+            "execute(bytes32,bytes)",
+            bytes32(uint256(0x01) << 240),
+            abi.encodePacked(_UNISWAP_V2_ROUTER_ADDRESS, uint256(0), _uniswapV2SwapPayload())
+        );
+
+        vm.resumeGasMetering();
+
+        _testPayload_ZerodevKernel(payload, "");
+    }
+
     // WIP
     function _testPayload_ZerodevKernel(bytes memory payload, bytes memory junk) internal {
         vm.pauseGasMetering();
@@ -340,16 +402,13 @@ contract BenchmarkTest is BaseTest {
 
         PackedUserOperation memory u;
         u.sender = address(kernel);
-        u.nonce = 0;
+        u.nonce = uint256(uint160(_ZERODEV_KERNEL_ECDSA_VALIDATION)) << 80; // vMode should be NORMAL or 0x0. vType should be VALIDATION_TYPE_ROOT or 0x0
         u.accountGasLimits = bytes32(uint256(1000000 | (1000000 << 128)));
         u.preVerificationGas = 1000000;
         u.gasFees = bytes32(uint256(1000000 | (1000000 << 128)));
         u.callData = abi.encodePacked(payload, junk);
 
-        // u.signature = _eoaSig(
-        //     privateKey,
-        //     SignatureCheckerLib.toEthSignedMessageHash(erc4337EntryPoint.getUserOpHash(u))
-        // );
+        u.signature = _eoaSig(privateKey, erc4337EntryPoint.getUserOpHash(u));
 
         PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
         userOps[0] = u;
