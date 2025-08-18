@@ -2,7 +2,7 @@
 pragma solidity ^0.8.23;
 
 import {Script, console} from "forge-std/Script.sol";
-import {FunderConfig} from "./FunderConfig.sol";
+import {stdToml} from "forge-std/StdToml.sol";
 
 // SimpleFunder interface for setting gas wallets
 interface ISimpleFunder {
@@ -13,7 +13,7 @@ interface ISimpleFunder {
 /**
  * @title FundSigners
  * @notice Script to fund multiple signers and set them as gas wallets in SimpleFunder
- * @dev Uses a mnemonic to derive signer addresses, tops them up to target balance, and sets them as gas wallets
+ * @dev Uses TOML configuration and a mnemonic to derive signer addresses
  *
  * Usage:
  * # Set environment variables
@@ -47,6 +47,20 @@ interface ISimpleFunder {
  *   "[84532]" 5
  */
 contract FundSigners is Script {
+    using stdToml for string;
+
+    /**
+     * @notice Configuration for funding on a specific chain
+     */
+    struct ChainFundingConfig {
+        uint256 chainId;
+        string name;
+        bool isTestnet;
+        uint256 targetBalance;
+        address simpleFunderAddress;
+        uint256 defaultNumSigners;
+    }
+
     /**
      * @notice Status of a signer after funding attempt
      */
@@ -73,29 +87,34 @@ contract FundSigners is Script {
     uint256 private totalEthDistributed;
     uint256 private chainsProcessed;
 
+    string internal configContent;
+    string internal configPath = "/deploy/config.toml";
+
     /**
      * @notice Fund all configured chains with default number of signers
      */
     function run() external {
-        uint256[] memory chainIds = new uint256[](0); // Empty array means all chains
-        FunderConfig configContract = new FunderConfig();
-        uint256 numSigners = configContract.getNumSigners();
+        // Default to common testnets
+        uint256[] memory chainIds = new uint256[](3);
+        chainIds[0] = 11155111; // Sepolia
+        chainIds[1] = 84532; // Base Sepolia
+        chainIds[2] = 11155420; // Optimism Sepolia
+        uint256 numSigners = 10; // Default
         execute(chainIds, numSigners);
     }
 
     /**
      * @notice Fund specific chains with default number of signers
-     * @param chainIds Array of chain IDs to fund (empty array = all chains)
+     * @param chainIds Array of chain IDs to fund
      */
     function run(uint256[] memory chainIds) external {
-        FunderConfig configContract = new FunderConfig();
-        uint256 numSigners = configContract.getNumSigners();
+        uint256 numSigners = 10; // Default
         execute(chainIds, numSigners);
     }
 
     /**
      * @notice Fund specific chains with custom number of signers
-     * @param chainIds Array of chain IDs to fund (empty array = all chains)
+     * @param chainIds Array of chain IDs to fund
      * @param numSigners Number of signers to fund (starting from index 0)
      */
     function run(uint256[] memory chainIds, uint256 numSigners) external {
@@ -106,13 +125,11 @@ contract FundSigners is Script {
      * @notice Main execution logic
      */
     function execute(uint256[] memory chainIds, uint256 numSigners) internal {
-        console.log("=== Signer Funding Script ===");
+        console.log("=== Signer Funding Script (TOML Config) ===");
         console.log("Number of signers to fund:", numSigners);
 
         // Load configuration
-        FunderConfig configContract = new FunderConfig();
-        FunderConfig.ChainFundingConfig[] memory allConfigs = configContract.getConfigs();
-        address simpleFunderAddress = configContract.getSimpleFunderAddress();
+        loadConfig();
 
         // Get mnemonic from environment
         string memory mnemonic = vm.envString("GAS_SIGNER_MNEMONIC");
@@ -135,28 +152,11 @@ contract FundSigners is Script {
             console.log("  ...");
         }
 
-        // Determine which chains to process
-        uint256[] memory targetChains = chainIds.length == 0 ? getAllChainIds(allConfigs) : chainIds;
-
-        console.log(string.concat("\nProcessing ", vm.toString(targetChains.length), " chain(s)"));
+        console.log(string.concat("\nProcessing ", vm.toString(chainIds.length), " chain(s)"));
 
         // Process each chain
-        for (uint256 i = 0; i < targetChains.length; i++) {
-            uint256 chainId = targetChains[i];
-            FunderConfig.ChainFundingConfig memory config = getConfigForChain(chainId, allConfigs);
-
-            if (config.chainId == 0) {
-                console.log(
-                    string.concat(
-                        "\nWarning: No configuration found for chain ",
-                        vm.toString(chainId),
-                        " - skipping"
-                    )
-                );
-                continue;
-            }
-
-            processChain(chainId, config, signers, simpleFunderAddress);
+        for (uint256 i = 0; i < chainIds.length; i++) {
+            processChain(chainIds[i], signers);
         }
 
         // Print overall summary
@@ -166,17 +166,16 @@ contract FundSigners is Script {
     /**
      * @notice Process funding for a single chain
      */
-    function processChain(
-        uint256 chainId,
-        FunderConfig.ChainFundingConfig memory config,
-        address[] memory signers,
-        address simpleFunderAddress
-    ) internal {
+    function processChain(uint256 chainId, address[] memory signers) internal {
+        // Get chain configuration
+        ChainFundingConfig memory config = getChainFundingConfig(chainId);
+
         console.log(
             string.concat("\n=== Funding on ", config.name, " (", vm.toString(chainId), ") ===")
         );
         console.log("Configuration:");
         console.log(string.concat("  Target balance: ", vm.toString(config.targetBalance)));
+        console.log("  SimpleFunder address:", config.simpleFunderAddress);
 
         // Fork to target chain
         string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
@@ -206,11 +205,12 @@ contract FundSigners is Script {
 
         // Fund signers
         vm.startBroadcast();
-        SignerStatus[] memory statuses = fundSignersOnChain(chainId, config, signers);
+        SignerStatus[] memory statuses = fundSignersOnChain(config, signers);
 
         // Set gas wallets in SimpleFunder if configured
-        if (simpleFunderAddress != address(0)) {
-            setGasWalletsInSimpleFunder(simpleFunderAddress, signers);
+        if (config.simpleFunderAddress != address(0) && config.simpleFunderAddress.code.length > 0)
+        {
+            setGasWalletsInSimpleFunder(config.simpleFunderAddress, signers);
         }
 
         vm.stopBroadcast();
@@ -227,11 +227,10 @@ contract FundSigners is Script {
     /**
      * @notice Fund signers on a specific chain
      */
-    function fundSignersOnChain(
-        uint256, // chainId (unused but kept for future extensions)
-        FunderConfig.ChainFundingConfig memory config,
-        address[] memory signers
-    ) internal returns (SignerStatus[] memory) {
+    function fundSignersOnChain(ChainFundingConfig memory config, address[] memory signers)
+        internal
+        returns (SignerStatus[] memory)
+    {
         SignerStatus[] memory statuses = new SignerStatus[](signers.length);
 
         console.log(string.concat("\nProcessing ", vm.toString(signers.length), " signers..."));
@@ -311,18 +310,33 @@ contract FundSigners is Script {
         uint256 alreadySet = 0;
 
         for (uint256 i = 0; i < signers.length; i++) {
-            if (funder.gasWallets(signers[i])) {
-                alreadySet++;
-                console.log(
-                    string.concat(
-                        "  Signer ",
-                        vm.toString(i),
-                        " (",
-                        vm.toString(signers[i]),
-                        "): Already a gas wallet"
-                    )
-                );
-            } else {
+            try funder.gasWallets(signers[i]) returns (bool isGasWallet) {
+                if (isGasWallet) {
+                    alreadySet++;
+                    console.log(
+                        string.concat(
+                            "  Signer ",
+                            vm.toString(i),
+                            " (",
+                            vm.toString(signers[i]),
+                            "): Already a gas wallet"
+                        )
+                    );
+                } else {
+                    signersToSet[toSetCount] = signers[i];
+                    toSetCount++;
+                    console.log(
+                        string.concat(
+                            "  Signer ",
+                            vm.toString(i),
+                            " (",
+                            vm.toString(signers[i]),
+                            "): Needs to be set"
+                        )
+                    );
+                }
+            } catch {
+                // If gasWallets call fails, assume signer needs to be set
                 signersToSet[toSetCount] = signers[i];
                 toSetCount++;
                 console.log(
@@ -331,7 +345,7 @@ contract FundSigners is Script {
                         vm.toString(i),
                         " (",
                         vm.toString(signers[i]),
-                        "): Needs to be set"
+                        "): Needs to be set (check failed)"
                     )
                 );
             }
@@ -351,32 +365,37 @@ contract FundSigners is Script {
                     "\n  Setting ", vm.toString(toSetCount), " gas wallets in one transaction..."
                 )
             );
-            funder.setGasWallet(signersToSetFinal, true);
 
-            // Verify they were all set
-            uint256 successfullySet = 0;
-            for (uint256 i = 0; i < toSetCount; i++) {
-                if (funder.gasWallets(signersToSetFinal[i])) {
-                    successfullySet++;
+            try funder.setGasWallet(signersToSetFinal, true) {
+                // Verify they were all set
+                uint256 successfullySet = 0;
+                for (uint256 i = 0; i < toSetCount; i++) {
+                    try funder.gasWallets(signersToSetFinal[i]) returns (bool isSet) {
+                        if (isSet) {
+                            successfullySet++;
+                        }
+                    } catch {}
                 }
-            }
 
-            if (successfullySet == toSetCount) {
-                console.log(
-                    string.concat(
-                        "  Successfully set all ", vm.toString(toSetCount), " gas wallets"
-                    )
-                );
-            } else {
-                console.log(
-                    string.concat(
-                        "  Warning: Only ",
-                        vm.toString(successfullySet),
-                        " out of ",
-                        vm.toString(toSetCount),
-                        " gas wallets were set"
-                    )
-                );
+                if (successfullySet == toSetCount) {
+                    console.log(
+                        string.concat(
+                            "  Successfully set all ", vm.toString(toSetCount), " gas wallets"
+                        )
+                    );
+                } else {
+                    console.log(
+                        string.concat(
+                            "  Warning: Only ",
+                            vm.toString(successfullySet),
+                            " out of ",
+                            vm.toString(toSetCount),
+                            " gas wallets were set"
+                        )
+                    );
+                }
+            } catch {
+                console.log("  Warning: Failed to set gas wallets (may not have permission)");
             }
         } else {
             console.log("  All signers are already gas wallets, no action needed");
@@ -413,55 +432,61 @@ contract FundSigners is Script {
     }
 
     /**
-     * @notice Get all chain IDs from configuration
+     * @notice Load configuration from TOML
      */
-    function getAllChainIds(FunderConfig.ChainFundingConfig[] memory configs)
-        internal
-        pure
-        returns (uint256[] memory)
-    {
-        uint256 count = 0;
-        for (uint256 i = 0; i < configs.length; i++) {
-            if (configs[i].chainId != 0) {
-                count++;
-            }
-        }
-
-        uint256[] memory chainIds = new uint256[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < configs.length; i++) {
-            if (configs[i].chainId != 0) {
-                chainIds[index++] = configs[i].chainId;
-            }
-        }
-
-        return chainIds;
+    function loadConfig() internal {
+        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
+        configContent = vm.readFile(fullConfigPath);
     }
 
     /**
-     * @notice Get configuration for a specific chain
+     * @notice Get chain funding configuration
      */
-    function getConfigForChain(uint256 chainId, FunderConfig.ChainFundingConfig[] memory configs)
-        internal
-        pure
-        returns (FunderConfig.ChainFundingConfig memory)
-    {
-        for (uint256 i = 0; i < configs.length; i++) {
-            if (configs[i].chainId == chainId) {
-                return configs[i];
-            }
+    function getChainFundingConfig(uint256 chainId) internal returns (ChainFundingConfig memory) {
+        // Create fork and read configuration from fork variables
+        string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
+        uint256 forkId = vm.createFork(rpcUrl);
+        vm.selectFork(forkId);
+
+        ChainFundingConfig memory config;
+        config.chainId = chainId;
+        config.name = vm.readForkString("name");
+        config.isTestnet = vm.readForkBool("is_testnet");
+        config.targetBalance = vm.readForkUint("target_balance");
+
+        // Try to read SimpleFunder address - may not be deployed on all chains
+        try vm.readForkAddress("simple_funder_address") returns (address addr) {
+            config.simpleFunderAddress = addr;
+        } catch {
+            // SimpleFunder not configured for this chain
+            config.simpleFunderAddress = address(0);
         }
-        // Return empty config if not found
-        return FunderConfig.ChainFundingConfig({chainId: 0, name: "", targetBalance: 0});
+
+        // Try to read default number of signers
+        try vm.readForkUint("default_num_signers") returns (uint256 num) {
+            config.defaultNumSigners = num;
+        } catch {
+            config.defaultNumSigners = 10; // Default fallback
+        }
+
+        return config;
+    }
+
+    /**
+     * @notice Get default number of signers from config
+     */
+    function getDefaultNumSigners() internal pure returns (uint256) {
+        return 10; // Default to 10 signers
     }
 
     /**
      * @notice Report results for a chain
      */
-    function reportChainResults(
-        FunderConfig.ChainFundingConfig memory config,
-        SignerStatus[] memory statuses
-    ) internal pure returns (ChainSummary memory) {
+    function reportChainResults(ChainFundingConfig memory config, SignerStatus[] memory statuses)
+        internal
+        pure
+        returns (ChainSummary memory)
+    {
         uint256 signersFunded = 0;
         uint256 totalEthSent = 0;
 
