@@ -739,8 +739,15 @@ contract BenchmarkTest is BaseTest {
         }
 
         vm.resumeGasMetering();
-        oc.execute(encodedIntents);
-        vm.pauseGasMetering();
+        if (delegatedEOAs.length == 1) {
+            vm.resumeGasMetering();
+            oc.execute(encodedIntents[0]);
+            vm.pauseGasMetering();
+        } else {
+            vm.resumeGasMetering();
+            oc.execute(encodedIntents);
+            vm.pauseGasMetering();
+        }
     }
 
     function testERC20Transfer_PortoAccountWithSpendLimits() public {
