@@ -252,10 +252,28 @@ contract Orchestrator is
         assembly ("memory-safe") {
             let t := calldataload(encodedIntent.offset)
             i := add(t, encodedIntent.offset)
+
+            // We want to check the absolute offset of all fields in the Intent struct. The cheap way of doing this is to sum all
+            // offsets and check against the 2**64 bound.
+            let summedOffsets :=
+                add(
+                    add(
+                        add(
+                            add(
+                                add(add(add(t, add(i, 0x20)), add(i, 0x100)), add(i, 0x120)),
+                                add(i, 0x1a0)
+                            ),
+                            add(i, 0x1c0)
+                        ),
+                        add(i, 0x240)
+                    ),
+                    add(i, 0x260)
+                )
+
             // Bounds check. We don't need to explicitly check the fields here.
             // In the self call functions, we will use regular Solidity to access the
             // dynamic fields like `signature`, which generate the implicit bounds checks.
-            if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
+            if or(shr(64, summedOffsets), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
         }
     }
     /// @dev Extracts the PreCall from the calldata bytes, with minimal checks.
