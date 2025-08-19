@@ -55,7 +55,7 @@ contract BenchmarkTest is BaseTest {
     address constant _ALCHEMY_MODULAR_ACCOUNT_FACTORY_ADDR =
         0x00000000000017c61b5bEe81050EC8eFc9c6fecd;
 
-    address constant relayer = address(0x69);
+    address payable constant relayer = payable(address(0x69));
 
     IERC4337EntryPointV6 public erc4337EntryPointV6 =
         IERC4337EntryPointV6(_ERC4337_ENTRYPOINT_V06_ADDR);
@@ -71,7 +71,6 @@ contract BenchmarkTest is BaseTest {
     IUniswapV2Router uniswapV2Router;
 
     function setUp() public override {
-        vm.pauseGasMetering();
         super.setUp();
 
         _etchContracts();
@@ -162,8 +161,10 @@ contract BenchmarkTest is BaseTest {
     }
 
     function _giveAccountSomeTokens(address account) internal {
-        SafeTransferLib.safeTransfer(token0, account, 1 ether);
-        SafeTransferLib.safeTransfer(token1, account, 1 ether);
+        _mint(address(token0), account, type(uint128).max);
+        _mint(address(token1), account, type(uint128).max);
+        _mint(address(paymentToken), account, type(uint128).max);
+        vm.deal(account, 10 ether);
 
         vm.startPrank(account);
         SafeTransferLib.safeApprove(token0, _UNISWAP_V2_ROUTER_ADDRESS, 1 ether);
@@ -187,31 +188,60 @@ contract BenchmarkTest is BaseTest {
             accounts[i] = ERC4337(payable(LibClone.clone(address(new MockERC4337Account()))));
             (eoas[i], privateKeys[i]) = _randomUniqueSigner();
             accounts[i].initialize(eoas[i]);
+            _giveAccountSomeTokens(address(accounts[i]));
         }
     }
 
     function testERC20Transfer_ERC4337MinimalAccount() public {
         (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createERC4337MinimalAccount(1);
-        _testERC20Transfer_ERC4337MinimalAccount("", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory u =
+            _testERC20Transfer_ERC4337MinimalAccount("", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(u, relayer);
+        vm.snapshotGasLastCall("testERC20Transfer_ERC4337MinimalAccount");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
     function testERC20Transfer_batch10_ERC4337MinimalAccount() public {
         (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createERC4337MinimalAccount(10);
-        _testERC20Transfer_ERC4337MinimalAccount("", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory u =
+            _testERC20Transfer_ERC4337MinimalAccount("", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(u, relayer);
+        vm.snapshotGasLastCall("testERC20Transfer_batch10_ERC4337MinimalAccount");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 10 ether);
     }
 
     function testERC20Transfer_batch100_ERC4337MinimalAccount() public {
         (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createERC4337MinimalAccount(100);
-        _testERC20Transfer_ERC4337MinimalAccount("", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory u =
+            _testERC20Transfer_ERC4337MinimalAccount("", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(u, relayer);
+        vm.snapshotGasLastCall("testERC20Transfer_batch100_ERC4337MinimalAccount");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
     }
 
     function testERC20Transfer_ERC4337MinimalAccountWithExtendedCalldata() public {
         (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createERC4337MinimalAccount(1);
-        _testERC20Transfer_ERC4337MinimalAccount(new bytes(2048), accounts, eoas, privateKeys);
+        PackedUserOperation[] memory u =
+            _testERC20Transfer_ERC4337MinimalAccount(new bytes(2048), accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(u, relayer);
+        vm.snapshotGasLastCall("testERC20Transfer_ERC4337MinimalAccountWithExtendedCalldata");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
     function _testERC20Transfer_ERC4337MinimalAccount(
@@ -219,7 +249,7 @@ contract BenchmarkTest is BaseTest {
         ERC4337[] memory accounts,
         address[] memory eoas,
         uint256[] memory privateKeys
-    ) internal {
+    ) internal returns (PackedUserOperation[] memory) {
         ERC4337.Call[] memory calls = new ERC4337.Call[](1);
         calls[0].target = address(paymentToken);
         calls[0].data =
@@ -227,9 +257,7 @@ contract BenchmarkTest is BaseTest {
         bytes memory payload =
             abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
 
-        _testPayload_ERC4337MinimalAccount(payload, junk, accounts, eoas, privateKeys);
-
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether * accounts.length);
+        return _getPayload_ERC4337MinimalAccount(payload, junk, accounts, eoas, privateKeys);
     }
 
     function testUniswapV2Swap_ERC4337MinimalAccount() public {
@@ -242,22 +270,23 @@ contract BenchmarkTest is BaseTest {
         (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createERC4337MinimalAccount(1);
 
-        _testPayload_ERC4337MinimalAccount(payload, "", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory u =
+            _getPayload_ERC4337MinimalAccount(payload, "", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(u, relayer);
+        vm.snapshotGasLastCall("testUniswapV2Swap_ERC4337MinimalAccount");
     }
 
-    function _testPayload_ERC4337MinimalAccount(
+    function _getPayload_ERC4337MinimalAccount(
         bytes memory payload,
         bytes memory junk,
         ERC4337[] memory accounts,
         address[] memory,
         uint256[] memory privateKeys
-    ) internal {
+    ) internal view returns (PackedUserOperation[] memory) {
         PackedUserOperation[] memory u = new PackedUserOperation[](accounts.length);
         for (uint256 i = 0; i < accounts.length; i++) {
-            _giveAccountSomeTokens(address(accounts[i]));
-            vm.deal(address(accounts[i]), type(uint128).max);
-            _mint(address(paymentToken), address(accounts[i]), type(uint128).max);
-
             u[i].sender = address(accounts[i]);
             u[i].nonce = 0;
             u[i].accountGasLimits = bytes32(uint256(1000000 | (1000000 << 128)));
@@ -270,9 +299,7 @@ contract BenchmarkTest is BaseTest {
             );
         }
 
-        vm.resumeGasMetering();
-        erc4337EntryPoint.handleOps(u, payable(address(0x69)));
-        vm.pauseGasMetering();
+        return u;
     }
 
     /**
@@ -292,31 +319,60 @@ contract BenchmarkTest is BaseTest {
             owners[0] = abi.encode(address(eoas[i]));
             accounts[i] = ICoinbaseSmartWalletFactory(_COINBASE_SMART_WALLET_FACTORY_ADDR)
                 .createAccount(owners, i);
+            _giveAccountSomeTokens(accounts[i]);
         }
     }
 
     function testERC20Transfer_CoinbaseSmartWallet() public {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(1);
-        _testERC20Transfer_CoinbaseSmartWallet("", accounts, eoas, privateKeys);
+        UserOperation[] memory u =
+            _testERC20Transfer_CoinbaseSmartWallet("", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_CoinbaseSmartWallet");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
     function testERC20Transfer_batch10_CoinbaseSmartWallet() public {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(10);
-        _testERC20Transfer_CoinbaseSmartWallet("", accounts, eoas, privateKeys);
+        UserOperation[] memory u =
+            _testERC20Transfer_CoinbaseSmartWallet("", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_batch10_CoinbaseSmartWallet");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 10 ether);
     }
 
     function testERC20Transfer_batch100_CoinbaseSmartWallet() public {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(100);
-        _testERC20Transfer_CoinbaseSmartWallet("", accounts, eoas, privateKeys);
+        UserOperation[] memory u =
+            _testERC20Transfer_CoinbaseSmartWallet("", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_batch100_CoinbaseSmartWallet");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
     }
 
     function testERC20Transfer_CoinbaseSmartWalletWithExtendedCalldata() public {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(1);
-        _testERC20Transfer_CoinbaseSmartWallet(new bytes(2048), accounts, eoas, privateKeys);
+        UserOperation[] memory u =
+            _testERC20Transfer_CoinbaseSmartWallet(new bytes(2048), accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_CoinbaseSmartWalletWithExtendedCalldata");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
     function _testERC20Transfer_CoinbaseSmartWallet(
@@ -324,7 +380,7 @@ contract BenchmarkTest is BaseTest {
         address[] memory accounts,
         address[] memory eoas,
         uint256[] memory privateKeys
-    ) internal {
+    ) internal returns (UserOperation[] memory) {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -332,9 +388,7 @@ contract BenchmarkTest is BaseTest {
             abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
         );
 
-        _testPayload_CoinbaseSmartWallet(payload, junk, accounts, eoas, privateKeys);
-
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether * accounts.length);
+        return _getPayload_CoinbaseSmartWallet(payload, junk, accounts, eoas, privateKeys);
     }
 
     function testNativeTransfer_CoinbaseSmartWallet() public {
@@ -343,7 +397,12 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(1);
 
-        _testPayload_CoinbaseSmartWallet(payload, "", accounts, eoas, privateKeys);
+        UserOperation[] memory u =
+            _getPayload_CoinbaseSmartWallet(payload, "", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_CoinbaseSmartWallet");
 
         assertEq(address(0xbabe).balance, 1 ether);
     }
@@ -355,24 +414,25 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(1);
 
-        _testPayload_CoinbaseSmartWallet(payload, "", accounts, eoas, privateKeys);
+        UserOperation[] memory u =
+            _getPayload_CoinbaseSmartWallet(payload, "", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_CoinbaseSmartWallet");
     }
 
-    function _testPayload_CoinbaseSmartWallet(
+    function _getPayload_CoinbaseSmartWallet(
         bytes memory payload,
         bytes memory junk,
         address[] memory accounts,
         address[] memory,
         uint256[] memory privateKeys
-    ) internal {
+    ) internal view returns (UserOperation[] memory) {
         // This uses V0.6 EP
 
         UserOperation[] memory u = new UserOperation[](accounts.length);
         for (uint256 i = 0; i < accounts.length; i++) {
-            _giveAccountSomeTokens(address(accounts[i]));
-            vm.deal(address(accounts[i]), type(uint128).max);
-            _mint(address(paymentToken), address(accounts[i]), type(uint128).max);
-
             u[i].sender = address(accounts[i]);
             u[i].nonce = 0;
             u[i].callData = abi.encodePacked(payload, junk);
@@ -389,9 +449,7 @@ contract BenchmarkTest is BaseTest {
             );
         }
 
-        vm.resumeGasMetering();
-        erc4337EntryPointV6.handleOps(u, payable(address(0x69)));
-        vm.pauseGasMetering();
+        return u;
     }
 
     /**
@@ -409,31 +467,60 @@ contract BenchmarkTest is BaseTest {
             (eoas[i], privateKeys[i]) = _randomUniqueSigner();
             accounts[i] = IAlchemyModularAccountFactory(_ALCHEMY_MODULAR_ACCOUNT_FACTORY_ADDR)
                 .createSemiModularAccount(eoas[i], 0);
+            _giveAccountSomeTokens(accounts[i]);
         }
     }
 
     function testERC20Transfer_AlchemyModularAccount() public {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(1);
-        _testERC20Transfer_AlchemyModularAccount("", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory userOps =
+            _testERC20Transfer_AlchemyModularAccount("", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_AlchemyModularAccount");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
     function testERC20Transfer_batch10_AlchemyModularAccount() public {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(10);
-        _testERC20Transfer_AlchemyModularAccount("", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory userOps =
+            _testERC20Transfer_AlchemyModularAccount("", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_batch10_AlchemyModularAccount");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 10 ether);
     }
 
     function testERC20Transfer_batch100_AlchemyModularAccount() public {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(100);
-        _testERC20Transfer_AlchemyModularAccount("", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory userOps =
+            _testERC20Transfer_AlchemyModularAccount("", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_batch100_AlchemyModularAccount");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
     }
 
     function testERC20Transfer_AlchemyModularAccountWithExtendedCalldata() public {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(1);
-        _testERC20Transfer_AlchemyModularAccount(new bytes(2048), accounts, eoas, privateKeys);
+        PackedUserOperation[] memory userOps =
+            _testERC20Transfer_AlchemyModularAccount(new bytes(2048), accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_AlchemyModularAccountWithExtendedCalldata");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
     function _testERC20Transfer_AlchemyModularAccount(
@@ -441,7 +528,7 @@ contract BenchmarkTest is BaseTest {
         address[] memory accounts,
         address[] memory eoas,
         uint256[] memory privateKeys
-    ) internal {
+    ) internal returns (PackedUserOperation[] memory) {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -449,9 +536,7 @@ contract BenchmarkTest is BaseTest {
             abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
         );
 
-        _testPayload_AlchemyModularAccount(payload, junk, accounts, eoas, privateKeys);
-
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether * accounts.length);
+        return _getPayload_AlchemyModularAccount(payload, junk, accounts, eoas, privateKeys);
     }
 
     function testNativeTransfer_AlchemyModularAccount() external {
@@ -460,7 +545,12 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(1);
 
-        _testPayload_AlchemyModularAccount(payload, "", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory userOps =
+            _getPayload_AlchemyModularAccount(payload, "", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AlchemyModularAccount");
 
         assertEq(address(0xbabe).balance, 1 ether);
     }
@@ -472,24 +562,23 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(1);
 
-        _testPayload_AlchemyModularAccount(payload, "", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory userOps =
+            _getPayload_AlchemyModularAccount(payload, "", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AlchemyModularAccount");
     }
 
-    function _testPayload_AlchemyModularAccount(
+    function _getPayload_AlchemyModularAccount(
         bytes memory payload,
         bytes memory junk,
         address[] memory accounts,
         address[] memory,
         uint256[] memory privateKeys
-    ) internal {
+    ) internal view returns (PackedUserOperation[] memory) {
         PackedUserOperation[] memory userOps = new PackedUserOperation[](accounts.length);
         for (uint256 i = 0; i < accounts.length; i++) {
-            _giveAccountSomeTokens(address(accounts[i]));
-            // This benchmark includes paying for the prefund.
-            // If this next line is removed, the test reverts.
-            vm.deal(address(accounts[i]), type(uint128).max);
-            _mint(address(paymentToken), address(accounts[i]), type(uint128).max);
-
             userOps[i].sender = address(accounts[i]);
             userOps[i].nonce = 1 << 64; // global validation
             userOps[i].accountGasLimits = bytes32(uint256(1000000 | (1000000 << 128)));
@@ -508,9 +597,7 @@ contract BenchmarkTest is BaseTest {
             );
         }
 
-        vm.resumeGasMetering();
-        erc4337EntryPoint.handleOps(userOps, payable(address(0x69)));
-        vm.pauseGasMetering();
+        return userOps;
     }
 
     /**
@@ -537,6 +624,7 @@ contract BenchmarkTest is BaseTest {
                 ),
                 bytes32(uint256(i))
             );
+            _giveAccountSomeTokens(accounts[i]);
         }
     }
 
@@ -620,12 +708,6 @@ contract BenchmarkTest is BaseTest {
     ) internal {
         PackedUserOperation[] memory userOps = new PackedUserOperation[](accounts.length);
         for (uint256 i = 0; i < accounts.length; i++) {
-            _giveAccountSomeTokens(address(accounts[i]));
-            // This benchmark includes paying for the prefund.
-            // If this next line is removed, the test reverts.
-            vm.deal(address(accounts[i]), type(uint128).max);
-            _mint(address(paymentToken), address(accounts[i]), type(uint128).max);
-
             userOps[i].sender = address(accounts[i]);
             userOps[i].nonce = uint256(uint160(_ZERODEV_KERNEL_ECDSA_VALIDATION)) << 80; // vMode should be NORMAL or 0x0. vType should be VALIDATION_TYPE_ROOT or 0x0
             userOps[i].accountGasLimits = bytes32(uint256(1000000 | (1000000 << 128)));
@@ -636,9 +718,7 @@ contract BenchmarkTest is BaseTest {
                 _eoaSig(privateKeys[i], erc4337EntryPoint.getUserOpHash(userOps[i]));
         }
 
-        vm.resumeGasMetering();
         erc4337EntryPoint.handleOps(userOps, payable(address(0x69)));
-        vm.pauseGasMetering();
     }
 
     /**
@@ -652,57 +732,78 @@ contract BenchmarkTest is BaseTest {
 
         for (uint256 i = 0; i < numAccounts; i++) {
             delegatedEOAs[i] = _randomEIP7702DelegatedEOA();
-            vm.deal(delegatedEOAs[i].eoa, type(uint128).max);
-            _mint(address(paymentToken), delegatedEOAs[i].eoa, type(uint128).max);
             _giveAccountSomeTokens(delegatedEOAs[i].eoa);
         }
     }
 
     function testERC20Transfer_PortoAccount() public {
         DelegatedEOA[] memory delegatedEOAs = _createPortoAccount(1);
-        _testERC20Transfer_PortoAccount("", delegatedEOAs);
+        bytes[] memory encodedIntents = _testERC20Transfer_PortoAccount("", delegatedEOAs);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testERC20Transfer_PortoAccount");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
     function testERC20Transfer_batch10_PortoAccount() public {
         DelegatedEOA[] memory delegatedEOAs = _createPortoAccount(10);
-        _testERC20Transfer_PortoAccount("", delegatedEOAs);
+        bytes[] memory encodedIntents = _testERC20Transfer_PortoAccount("", delegatedEOAs);
+
+        oc.execute(encodedIntents);
+        vm.snapshotGasLastCall("testERC20Transfer_batch10_PortoAccount");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 10 ether);
     }
 
     function testERC20Transfer_batch100_PortoAccount() public {
         DelegatedEOA[] memory delegatedEOAs = _createPortoAccount(100);
-        _testERC20Transfer_PortoAccount("", delegatedEOAs);
+        bytes[] memory encodedIntents = _testERC20Transfer_PortoAccount("", delegatedEOAs);
+
+        oc.execute(encodedIntents);
+        vm.snapshotGasLastCall("testERC20Transfer_batch100_PortoAccount");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
     }
 
     function testERC20Transfer_PortoAccountWithExtendedCalldata() public {
         DelegatedEOA[] memory delegatedEOAs = _createPortoAccount(1);
-        _testERC20Transfer_PortoAccount(new bytes(2048), delegatedEOAs);
+        bytes[] memory encodedIntents =
+            _testERC20Transfer_PortoAccount(new bytes(2048), delegatedEOAs);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testERC20Transfer_PortoAccountWithExtendedCalldata");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
     function _testERC20Transfer_PortoAccount(bytes memory junk, DelegatedEOA[] memory delegatedEOAs)
         internal
+        returns (bytes[] memory)
     {
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
 
-        _test_PortoAccount(payload, junk, delegatedEOAs);
-
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether * delegatedEOAs.length);
+        return _test_PortoAccount(payload, junk, delegatedEOAs);
     }
 
     function testNativeTransfer_PortoAccount() public {
         DelegatedEOA[] memory delegatedEOAs = _createPortoAccount(1);
-        _testNativeTransfer_PortoAccount("", delegatedEOAs);
+        bytes[] memory encodedIntents = _testNativeTransfer_PortoAccount("", delegatedEOAs);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testNativeTransfer_PortoAccount");
+
+        assertEq(address(0xbabe).balance, 1 ether);
     }
 
     function _testNativeTransfer_PortoAccount(
         bytes memory junk,
         DelegatedEOA[] memory delegatedEOAs
-    ) internal {
+    ) internal returns (bytes[] memory) {
         bytes memory payload = _transferExecutionData(address(0), address(0xbabe), 1 ether);
 
-        _test_PortoAccount(payload, junk, delegatedEOAs);
-
-        assertEq(address(0xbabe).balance, 1 ether);
+        return _test_PortoAccount(payload, junk, delegatedEOAs);
     }
 
     function testUniswapV2Swap_PortoAccount() public {
@@ -712,14 +813,17 @@ contract BenchmarkTest is BaseTest {
         bytes memory payload = abi.encode(calls);
         DelegatedEOA[] memory delegatedEOAs = _createPortoAccount(1);
 
-        _test_PortoAccount(payload, "", delegatedEOAs);
+        bytes[] memory encodedIntents = _test_PortoAccount(payload, "", delegatedEOAs);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testUniswapV2Swap_PortoAccount");
     }
 
     function _test_PortoAccount(
         bytes memory executionData,
         bytes memory junk,
         DelegatedEOA[] memory delegatedEOAs
-    ) internal {
+    ) internal view returns (bytes[] memory) {
         bytes[] memory encodedIntents = new bytes[](delegatedEOAs.length);
         for (uint256 i = 0; i < delegatedEOAs.length; i++) {
             Orchestrator.Intent memory u;
@@ -738,26 +842,14 @@ contract BenchmarkTest is BaseTest {
             encodedIntents[i] = abi.encodePacked(abi.encode(u), junk);
         }
 
-        vm.resumeGasMetering();
-        if (delegatedEOAs.length == 1) {
-            vm.resumeGasMetering();
-            oc.execute(encodedIntents[0]);
-            vm.pauseGasMetering();
-        } else {
-            vm.resumeGasMetering();
-            oc.execute(encodedIntents);
-            vm.pauseGasMetering();
-        }
+        return encodedIntents;
     }
 
     function testERC20Transfer_PortoAccountWithSpendLimits() public {
-        vm.pauseGasMetering();
-
         PassKey memory k = _randomSecp256k1PassKey();
 
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        vm.deal(d.eoa, type(uint128).max);
-        _mint(address(paymentToken), d.eoa, type(uint128).max);
+        _giveAccountSomeTokens(d.eoa);
 
         vm.startPrank(d.eoa);
         d.d.authorize(k.k);
@@ -784,38 +876,26 @@ contract BenchmarkTest is BaseTest {
         bytes[] memory encodedIntents = new bytes[](1);
         encodedIntents[0] = abi.encode(u);
 
-        vm.resumeGasMetering();
-
         oc.execute(encodedIntents);
+        vm.snapshotGasLastCall("testERC20Transfer_PortoAccountWithSpendLimits");
 
-        vm.pauseGasMetering();
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
-        vm.resumeGasMetering();
     }
 
     function testERC20TransferDirect() public {
-        vm.pauseGasMetering();
-
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        vm.deal(d.eoa, type(uint128).max);
-        _mint(address(paymentToken), d.eoa, type(uint128).max);
+        _giveAccountSomeTokens(d.eoa);
 
         vm.startPrank(d.eoa);
-
-        vm.resumeGasMetering();
 
         paymentToken.transfer(address(0xbabe), 1 ether);
 
         vm.stopPrank();
 
-        vm.pauseGasMetering();
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
-        vm.resumeGasMetering();
     }
 
     function testERC20TransferViaMinimals() public {
-        vm.pauseGasMetering();
-
         eip7702Proxy = EIP7702Proxy(
             payable(LibEIP7702.deployProxy(address(new MockMinimalAccount()), address(0)))
         );
@@ -824,23 +904,18 @@ contract BenchmarkTest is BaseTest {
         MockMinimalOrchestrator ocMinimal = new MockMinimalOrchestrator();
 
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        vm.deal(d.eoa, type(uint128).max);
-        _mint(address(paymentToken), d.eoa, type(uint128).max);
+        _giveAccountSomeTokens(d.eoa);
 
         bytes memory data =
             abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether);
         bytes32 hash = keccak256(data);
         bytes memory signature = _eoaSig(d.privateKey, hash);
 
-        vm.resumeGasMetering();
-
         MockMinimalAccount(payable(d.eoa)).execute(address(paymentToken), 0, data);
         MockMinimalAccount(payable(d.eoa)).sendETH(address(ocMinimal), 0.01 ether);
         ocMinimal.setNonce(1);
         require(MockMinimalAccount(payable(d.eoa)).isValidSignature(hash, signature) != 0);
 
-        vm.pauseGasMetering();
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
-        vm.resumeGasMetering();
     }
 }
