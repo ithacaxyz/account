@@ -253,7 +253,7 @@ contract Orchestrator is
             let t := calldataload(encodedIntent.offset)
             i := add(t, encodedIntent.offset)
 
-            // We want to check the absolute offset of all fields in the Intent struct. The cheap way of doing this is to sum all
+            // We want to check all relative offsets in the Intent struct. The cheap way of doing this is to sum all
             // offsets and check against the 2**64 bound.
             let summedOffsets :=
                 add(
