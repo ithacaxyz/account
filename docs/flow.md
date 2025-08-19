@@ -8,11 +8,11 @@ participant Payer
     Relayer->>Orchestrator: submit(Intent)
     activate Orchestrator
 
-    alt Intent includes initData
-        note over Orchestrator,Account: 0. Initialize PREP (if initData present)
-        Orchestrator->>Account: Initialize PREP (using Intent.initData)
+    alt Account needs delegation
+        note over Orchestrator,Account: 0. EIP-7702 Delegation (if not already delegated)
+        Orchestrator->>Account: Delegate to Porto Account Proxy (via 7702)
         activate Account
-        Account-->>Orchestrator: PREP Initialized
+        Account-->>Orchestrator: Delegation Complete
         deactivate Account
     end
 
@@ -45,18 +45,11 @@ participant Payer
         deactivate Payer
     end
 
-    note over Orchestrator,Payer: 4. Execution & Post Payment
+    note over Orchestrator,Account: 4. Execution
     Orchestrator->>Account: execute(mode,executionData)
     activate Account
     Account-->>Orchestrator: Execution Successful
     deactivate Account
-
-    alt Intent totalPaymentAmount > prePaymentAmount
-        Orchestrator->>Payer: pay(totalPaymentAmount - prePaymentAmount)
-        activate Payer
-        Payer-->>Orchestrator: Post-Payment Processed
-        deactivate Payer
-    end
 
     Orchestrator-->>Relayer: Execution Succeeded
     deactivate Orchestrator
