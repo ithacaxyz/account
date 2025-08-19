@@ -631,25 +631,53 @@ contract BenchmarkTest is BaseTest {
     function testERC20Transfer_ZerodevKernel() public {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(1);
-        _testERC20Transfer_ZerodevKernel("", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory userOps =
+            _testERC20Transfer_ZerodevKernel("", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_ZerodevKernel");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
     function testERC20Transfer_batch10_ZerodevKernel() public {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(10);
-        _testERC20Transfer_ZerodevKernel("", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory userOps =
+            _testERC20Transfer_ZerodevKernel("", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_batch10_ZerodevKernel");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 10 ether);
     }
 
     function testERC20Transfer_batch100_ZerodevKernel() public {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(100);
-        _testERC20Transfer_ZerodevKernel("", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory userOps =
+            _testERC20Transfer_ZerodevKernel("", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_batch100_ZerodevKernel");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
     }
 
     function testERC20Transfer_ZerodevKernelWithExtendedCalldata() public {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(1);
-        _testERC20Transfer_ZerodevKernel(new bytes(2048), accounts, eoas, privateKeys);
+        PackedUserOperation[] memory userOps =
+            _testERC20Transfer_ZerodevKernel(new bytes(2048), accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_ZerodevKernelWithExtendedCalldata");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
     function _testERC20Transfer_ZerodevKernel(
@@ -657,7 +685,7 @@ contract BenchmarkTest is BaseTest {
         address[] memory accounts,
         address[] memory eoas,
         uint256[] memory privateKeys
-    ) internal {
+    ) internal returns (PackedUserOperation[] memory) {
         bytes memory payload = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
@@ -668,9 +696,7 @@ contract BenchmarkTest is BaseTest {
             )
         );
 
-        _testPayload_ZerodevKernel(payload, junk, accounts, eoas, privateKeys);
-
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether * accounts.length);
+        return _testPayload_ZerodevKernel(payload, junk, accounts, eoas, privateKeys);
     }
 
     function testNativeTransfer_ZerodevKernel() public {
@@ -682,7 +708,12 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(1);
 
-        _testPayload_ZerodevKernel(payload, "", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory userOps =
+            _testPayload_ZerodevKernel(payload, "", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_ZerodevKernel");
 
         assertEq(address(0xbabe).balance, 1 ether);
     }
@@ -696,7 +727,12 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(1);
 
-        _testPayload_ZerodevKernel(payload, "", accounts, eoas, privateKeys);
+        PackedUserOperation[] memory userOps =
+            _testPayload_ZerodevKernel(payload, "", accounts, eoas, privateKeys);
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_ZerodevKernel");
     }
 
     function _testPayload_ZerodevKernel(
@@ -705,7 +741,7 @@ contract BenchmarkTest is BaseTest {
         address[] memory accounts,
         address[] memory,
         uint256[] memory privateKeys
-    ) internal {
+    ) internal returns (PackedUserOperation[] memory) {
         PackedUserOperation[] memory userOps = new PackedUserOperation[](accounts.length);
         for (uint256 i = 0; i < accounts.length; i++) {
             userOps[i].sender = address(accounts[i]);
@@ -718,7 +754,7 @@ contract BenchmarkTest is BaseTest {
                 _eoaSig(privateKeys[i], erc4337EntryPoint.getUserOpHash(userOps[i]));
         }
 
-        erc4337EntryPoint.handleOps(userOps, payable(address(0x69)));
+        return userOps;
     }
 
     /**
