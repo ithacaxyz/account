@@ -11,23 +11,32 @@ import {IOAppCore, ILayerZeroEndpointV2} from "../interfaces/IOAppCore.sol";
  */
 abstract contract OAppCore is IOAppCore, Ownable {
     // The LayerZero endpoint associated with the given OApp
-    ILayerZeroEndpointV2 public immutable endpoint;
+    ILayerZeroEndpointV2 public endpoint;
 
     // Mapping to store peers associated with corresponding endpoints
     mapping(uint32 eid => bytes32 peer) internal _peers;
 
     /**
-     * @dev Constructor to initialize the OAppCore with the provided endpoint and delegate.
-     * @param _endpoint The address of the LOCAL Layer Zero endpoint.
+     * @dev Constructor to initialize the OAppCore with the provided delegate.
      * @param _delegate The delegate capable of making OApp configurations inside of the endpoint.
      *
      * @dev The delegate typically should be set as the owner of the contract.
      */
-    constructor(address _endpoint, address _delegate) {
-        endpoint = ILayerZeroEndpointV2(_endpoint);
-
+    constructor(address _delegate) {
         if (_delegate == address(0)) revert InvalidDelegate();
-        endpoint.setDelegate(_delegate);
+        _transferOwnership(_delegate);
+    }
+
+    /**
+     * @notice Sets the LayerZero endpoint for this OApp.
+     * @param _endpoint The address of the LayerZero endpoint.
+     * @dev Can only be called by the owner.
+     * @dev Should be called immediately after deployment.
+     */
+    function setEndpoint(address _endpoint) external onlyOwner {
+        if (_endpoint == address(0)) revert InvalidDelegate();
+        endpoint = ILayerZeroEndpointV2(_endpoint);
+        endpoint.setDelegate(msg.sender);
     }
 
     /**
@@ -88,6 +97,7 @@ abstract contract OAppCore is IOAppCore, Ownable {
      * @dev Provides the ability for a delegate to set configs, on behalf of the OApp, directly on the Endpoint contract.
      */
     function setDelegate(address _delegate) public onlyOwner {
+        if (address(endpoint) == address(0)) revert InvalidDelegate();
         endpoint.setDelegate(_delegate);
     }
 }

@@ -79,9 +79,17 @@ contract LayerZeroSettlerTest is Test {
 
         // Deploy settlers with the same address on all chains (self-execution model)
         // In production, these would be the same address deployed on different chains
-        settlerA = new LayerZeroSettler(address(endpointA), owner);
-        settlerB = new LayerZeroSettler(address(endpointB), owner);
-        settlerC = new LayerZeroSettler(address(endpointC), owner);
+        settlerA = new LayerZeroSettler(owner);
+        settlerB = new LayerZeroSettler(owner);
+        settlerC = new LayerZeroSettler(owner);
+
+        // Set endpoints after deployment
+        vm.prank(owner);
+        settlerA.setEndpoint(address(endpointA));
+        vm.prank(owner);
+        settlerB.setEndpoint(address(endpointB));
+        vm.prank(owner);
+        settlerC.setEndpoint(address(endpointC));
 
         // No need to set peers - the override makes peers() always return address(this)
         // This implements a self-execution model where the same contract address

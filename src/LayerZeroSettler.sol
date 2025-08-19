@@ -20,7 +20,7 @@ contract LayerZeroSettler is OApp, ISettler {
     mapping(bytes32 => mapping(address => mapping(uint256 => bool))) public settled;
     mapping(bytes32 => bool) public validSend;
 
-    constructor(address _endpoint, address _owner) OApp(_endpoint, _owner) Ownable(_owner) {}
+    constructor(address _owner) OApp(_owner) Ownable(_owner) {}
 
     ////////////////////////////////////////////////////////////////////////
     // EIP-5267 Support
