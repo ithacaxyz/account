@@ -434,4 +434,5 @@ interface IERC4337EntryPoint is IStakeManager, INonceManager {
 interface IERC4337EntryPointV6 {
     function getUserOpHash(UserOperation calldata userOp) external view returns (bytes32);
     function handleOps(UserOperation[] calldata ops, address payable beneficiary) external;
+    function getNonce(address sender, uint192 key) external view returns (uint256 nonce);
 }

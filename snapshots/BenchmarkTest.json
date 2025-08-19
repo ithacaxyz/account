@@ -1,0 +1,20 @@
+{
+  "testERC20Transfer_AlchemyModularAccount": "179448",
+  "testERC20Transfer_Batch100_CoinbaseSmartWallet": "9947579",
+  "testERC20Transfer_CoinbaseSmartWallet": "177797",
+  "testERC20Transfer_ERC4337MinimalAccount": "171906",
+  "testERC20Transfer_PortoAccount": "131247",
+  "testERC20Transfer_ZerodevKernel": "207059",
+  "testERC20Transfer_batch100_AlchemyModularAccount": "10104586",
+  "testERC20Transfer_batch100_PortoAccount": "7623299",
+  "testERC20Transfer_batch100_ZerodevKernel": "12626586",
+  "testNativeTransfer_AlchemyModularAccount": "180841",
+  "testNativeTransfer_CoinbaseSmartWallet": "178928",
+  "testNativeTransfer_PortoAccount": "132610",
+  "testNativeTransfer_ZerodevKernel": "208635",
+  "testUniswapV2Swap_AlchemyModularAccount": "238779",
+  "testUniswapV2Swap_CoinbaseSmartWallet": "237571",
+  "testUniswapV2Swap_ERC4337MinimalAccount": "231254",
+  "testUniswapV2Swap_PortoAccount": "190602",
+  "testUniswapV2Swap_ZerodevKernel": "266487"
+}
