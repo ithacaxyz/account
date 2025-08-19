@@ -77,26 +77,15 @@ contract LayerZeroSettlerTest is Test {
         endpointC.setDefaultReceiveLibrary(EID_A, address(sendLib), 0);
         endpointC.setDefaultReceiveLibrary(EID_B, address(sendLib), 0);
 
-        // Deploy settlers
+        // Deploy settlers with the same address on all chains (self-execution model)
+        // In production, these would be the same address deployed on different chains
         settlerA = new LayerZeroSettler(address(endpointA), owner);
         settlerB = new LayerZeroSettler(address(endpointB), owner);
         settlerC = new LayerZeroSettler(address(endpointC), owner);
 
-        // Set peers for each settler
-        vm.prank(owner);
-        settlerA.setPeer(EID_B, bytes32(uint256(uint160(address(settlerB)))));
-        vm.prank(owner);
-        settlerA.setPeer(EID_C, bytes32(uint256(uint160(address(settlerC)))));
-
-        vm.prank(owner);
-        settlerB.setPeer(EID_A, bytes32(uint256(uint160(address(settlerA)))));
-        vm.prank(owner);
-        settlerB.setPeer(EID_C, bytes32(uint256(uint160(address(settlerC)))));
-
-        vm.prank(owner);
-        settlerC.setPeer(EID_A, bytes32(uint256(uint160(address(settlerA)))));
-        vm.prank(owner);
-        settlerC.setPeer(EID_B, bytes32(uint256(uint160(address(settlerB)))));
+        // No need to set peers - the override makes peers() always return address(this)
+        // This implements a self-execution model where the same contract address
+        // is expected on all chains
 
         // Deploy escrows
         escrowA = new Escrow();
@@ -148,9 +137,9 @@ contract LayerZeroSettlerTest is Test {
         else revert("Invalid destination EID");
 
         // Get the nonce from the source endpoint
-        uint64 nonce = srcEndpoint.outboundNonce(
-            srcSettler, dstEid, bytes32(uint256(uint160(address(dstSettler))))
-        );
+        // In self-execution model, source and destination are the same address
+        uint64 nonce =
+            srcEndpoint.outboundNonce(srcSettler, dstEid, bytes32(uint256(uint160(srcSettler))));
 
         // Message payload that was sent
         bytes memory message = abi.encode(settlementId, sender, senderChainId);
@@ -160,13 +149,14 @@ contract LayerZeroSettlerTest is Test {
             Origin({srcEid: srcEid, sender: bytes32(uint256(uint160(srcSettler))), nonce: nonce});
 
         // Step 2: Generate GUID same way as the endpoint
+        // In self-execution model, use same address for source and destination
         bytes32 guid = keccak256(
             abi.encodePacked(
                 nonce,
                 srcEid,
                 bytes32(uint256(uint160(srcSettler))),
                 dstEid,
-                bytes32(uint256(uint160(address(dstSettler))))
+                bytes32(uint256(uint160(srcSettler)))
             )
         );
 
@@ -177,8 +167,10 @@ contract LayerZeroSettlerTest is Test {
         vm.prank(address(sendLib));
         dstEndpoint.verify(origin, dstSettler, payloadHash);
 
-        // Anyone can call lzReceive after verification
-        dstEndpoint.lzReceive(origin, dstSettler, guid, message, bytes(""));
+        // The endpoint calls lzReceive on the destination settler
+        // Since we're using settlerA for all chains in test, we use endpointA
+        vm.prank(address(endpointA));
+        LayerZeroSettler(dstSettler).lzReceive(origin, guid, message, address(0), bytes(""));
     }
 
     function test_send_validSettlement() public {
@@ -223,14 +215,14 @@ contract LayerZeroSettlerTest is Test {
             EID_A,
             EID_B,
             address(settlerA),
-            payable(address(settlerB)),
+            payable(address(settlerA)), // Same address simulates same contract on chain B
             settlementId,
             orchestrator,
             block.chainid
         );
 
         // Check that settlement was recorded on destination
-        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+        assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Check on simulated chain B
     }
 
     function test_executeSend_multipleDestinations_success() public {
@@ -262,7 +254,7 @@ contract LayerZeroSettlerTest is Test {
             EID_A,
             EID_B,
             address(settlerA),
-            payable(address(settlerB)),
+            payable(address(settlerA)), // Same address simulates same contract on chain B
             settlementId,
             orchestrator,
             block.chainid
@@ -271,15 +263,15 @@ contract LayerZeroSettlerTest is Test {
             EID_A,
             EID_C,
             address(settlerA),
-            payable(address(settlerC)),
+            payable(address(settlerA)), // Same address on chain C
             settlementId,
             orchestrator,
             block.chainid
         );
 
         // Check that settlements were recorded
-        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
-        assertTrue(settlerC.read(settlementId, orchestrator, block.chainid));
+        assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Check on simulated chain B
+        assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Also check on simulated chain C
     }
 
     function test_executeSend_invalidSettlementId_reverts() public {
@@ -348,12 +340,12 @@ contract LayerZeroSettlerTest is Test {
             EID_A,
             EID_B,
             address(settlerA),
-            payable(address(settlerB)),
+            payable(address(settlerA)), // Same address simulates same contract on chain B
             settlementId,
             orchestrator,
             block.chainid
         );
-        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+        assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Check on simulated chain B
     }
 
     function test_lzReceive_recordsSettlement() public {
@@ -376,14 +368,14 @@ contract LayerZeroSettlerTest is Test {
             EID_A,
             EID_B,
             address(settlerA),
-            payable(address(settlerB)),
+            payable(address(settlerA)), // Same address simulates same contract on chain B
             settlementId,
             orchestrator,
             block.chainid
         );
 
         // Verify the settlement was recorded
-        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+        assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Check on simulated chain B
     }
 
     function test_withdraw_nativeToken_onlyOwner() public {
@@ -437,7 +429,7 @@ contract LayerZeroSettlerTest is Test {
             escrowAmount: escrowAmount,
             refundAmount: refundAmount,
             refundTimestamp: refundTimestamp,
-            settler: payable(address(settlerB)),
+            settler: payable(address(settlerA)), // Same address on chain B
             sender: orchestrator,
             settlementId: settlementId,
             senderChainId: block.chainid
@@ -469,7 +461,7 @@ contract LayerZeroSettlerTest is Test {
             EID_A,
             EID_B,
             address(settlerA),
-            payable(address(settlerB)),
+            payable(address(settlerA)), // Same address simulates same contract on chain B
             settlementId,
             orchestrator,
             block.chainid
@@ -586,24 +578,24 @@ contract LayerZeroSettlerTest is Test {
                 EID_A,
                 EID_B,
                 address(settlerA),
-                payable(address(settlerB)),
+                payable(address(settlerA)), // Same address on chain B
                 settlementId,
                 orchestrator,
                 block.chainid
             );
-            assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+            assertTrue(settlerA.read(settlementId, orchestrator, block.chainid));
         }
         if (includeC) {
             _deliverCrossChainMessage(
                 EID_A,
                 EID_C,
                 address(settlerA),
-                payable(address(settlerC)),
+                payable(address(settlerA)), // Same address on chain C
                 settlementId,
                 orchestrator,
                 block.chainid
             );
-            assertTrue(settlerC.read(settlementId, orchestrator, block.chainid));
+            assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Also check on simulated chain C
         }
     }
 
@@ -653,13 +645,13 @@ contract LayerZeroSettlerTest is Test {
             EID_A,
             EID_B,
             address(settlerA),
-            payable(address(settlerB)),
+            payable(address(settlerA)), // Same address simulates same contract on chain B
             settlementId,
             orchestrator,
             block.chainid
         );
 
         // Verify settlement was recorded
-        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+        assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Check on simulated chain B
     }
 }

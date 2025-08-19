@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {OApp, MessagingFee, Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+import {OApp, MessagingFee, Origin} from "./vendor/layerzero/oapp/OApp.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
@@ -89,14 +89,15 @@ contract LayerZeroSettler is OApp, ISettler {
         }
     }
 
-    function _getPeerOrRevert(uint32 _eid) internal view virtual override returns (bytes32) {
-        bytes32 peer = peers[_eid];
-        // If no peer is set, use default peer (address(this))
-        if (peer == bytes32(0)) {
-            // The peer address for all chains is automatically set to `address(this)`
-            return bytes32(uint256(uint160(address(this))));
-        }
-        return peer;
+    function _getPeerOrRevert(uint32 /* _eid */ )
+        internal
+        view
+        virtual
+        override
+        returns (bytes32)
+    {
+        // The peer address for all chains is automatically set to `address(this)`
+        return bytes32(uint256(uint160(address(this))));
     }
 
     /// @notice Allow initialization path from configured peers
@@ -110,13 +111,7 @@ contract LayerZeroSettler is OApp, ISettler {
         override
         returns (bool)
     {
-        // Get the configured peer for this source endpoint
-        bytes32 peer = peers[_origin.srcEid];
-
-        // If no peer is set, use the default peer (address(this))
-        if (peer == bytes32(0)) {
-            peer = _getPeerOrRevert(_origin.srcEid);
-        }
+        bytes32 peer = _getPeerOrRevert(_origin.srcEid);
 
         // Allow initialization if the sender matches the configured peer
         return _origin.sender == peer;
@@ -177,5 +172,16 @@ contract LayerZeroSettler is OApp, ISettler {
 
     function getFee(uint32, address, uint256, bytes calldata) external view returns (uint256) {
         return 0;
+    }
+
+    /// @notice Override the peers getter to always return this contract's address
+    /// @dev This ensures all cross-chain messages are self-executed
+    /// @param _eid The endpoint ID (unused as we always return the same value)
+    /// @return peer The address of this contract as bytes32
+    function peers(uint32 _eid) public view virtual override returns (bytes32 peer) {
+        // Always return this contract's address for all endpoints
+        // This enables self-execution model where the same contract address is used across all chains
+        _eid; // Silence unused parameter warning
+        return bytes32(uint256(uint160(address(this))));
     }
 }
