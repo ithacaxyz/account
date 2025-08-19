@@ -149,7 +149,7 @@ contract DeployMain is Script, SafeSingletonDeployer {
         configContent = vm.readFile(fullConfigPath);
 
         // Load registry path from config.toml
-        registryPath = configContent.readString(".deployment.registry_path");
+        registryPath = configContent.readString(".profile.deployment.registry_path");
 
         // Store target chain IDs
         targetChainIds = chainIds;

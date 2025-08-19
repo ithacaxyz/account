@@ -6,7 +6,7 @@
 # GLOBAL DEPLOYMENT CONFIGURATION
 # ============================================
 
-[deployment]
+[profile.deployment]
 registry_path = "deploy/registry/"
 
 # ============================================
