@@ -570,9 +570,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev Removes the key corresponding to the `keyHash`. Reverts if the key does not exist.
     function _removeKey(bytes32 keyHash) internal virtual {
         AccountStorage storage $ = _getAccountStorage();
+        if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
         $.keyStorage[keyHash].clear();
         $.keyExtraStorage[keyHash].invalidate();
-        if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
     }
 
     ////////////////////////////////////////////////////////////////////////
