@@ -44,7 +44,7 @@ jobs:
       
       - name: Build contracts on PR branch
         run: |
-          git checkout ${{ github.event.pull_request.head.sha }}
+          git checkout -f ${{ github.event.pull_request.head.sha }}
           forge clean
           forge install
           forge build --force

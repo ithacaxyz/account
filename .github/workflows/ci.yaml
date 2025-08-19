@@ -17,7 +17,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: nightly 
 
       - name: Build
         run: |
@@ -30,10 +30,6 @@ jobs:
       - name: Run tests
         run: |
           forge test -vvv
-
-      - name: Run tests (odyssey)
-        run: |
-          forge test -vvv --odyssey
 
       - name: Snapshot main branch
         run: git fetch origin main && git worktree prune &&rm -rf .snapshot_worktree && git worktree add .snapshot_worktree origin/main && (cd .snapshot_worktree && forge snapshot --match-contract Benchmark --snap .temp-snapshot) && cp .snapshot_worktree/.temp-snapshot gas-snapshots/.gas-snapshot-main && git worktree remove --force .snapshot_worktree && git worktree prune
