@@ -32,6 +32,7 @@ abstract contract OAppCore is IOAppCore, Ownable {
      * @param _endpoint The address of the LayerZero endpoint.
      * @dev Can only be called by the owner.
      * @dev Should be called immediately after deployment.
+     * Delegate is set to the owner of the OAppCore contract.
      */
     function setEndpoint(address _endpoint) external onlyOwner {
         if (_endpoint == address(0)) revert InvalidDelegate();

@@ -233,6 +233,23 @@ contract ConfigureLayerZeroSettler is Script {
         vm.selectFork(forkIds[chainId]);
 
         LayerZeroSettler settler = LayerZeroSettler(payable(config.layerZeroSettlerAddress));
+
+        // Set or update the endpoint on the settler
+        address currentEndpoint = address(settler.endpoint());
+        if (currentEndpoint != config.layerZeroEndpoint) {
+            if (currentEndpoint == address(0)) {
+                console.log("  Setting endpoint to:", config.layerZeroEndpoint);
+            } else {
+                console.log("  Updating endpoint from:", currentEndpoint);
+                console.log("  To:", config.layerZeroEndpoint);
+            }
+            vm.broadcast();
+            settler.setEndpoint(config.layerZeroEndpoint);
+            console.log("  Endpoint configured successfully");
+        } else {
+            console.log("  Endpoint already set to:", config.layerZeroEndpoint);
+        }
+
         ILayerZeroEndpointV2 endpoint = ILayerZeroEndpointV2(config.layerZeroEndpoint);
 
         // Configure pathways to all destinations

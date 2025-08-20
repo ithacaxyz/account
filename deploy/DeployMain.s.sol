@@ -815,13 +815,17 @@ contract DeployMain is Script, SafeSingletonDeployer {
     ) internal {
         if (deployed.layerZeroSettler == address(0)) {
             bytes memory creationCode = type(LayerZeroSettler).creationCode;
-            bytes memory args = abi.encode(config.layerZeroEndpoint, config.l0SettlerOwner);
+            bytes memory args = abi.encode(config.l0SettlerOwner);
             address settler =
                 deployContractWithCreate2(chainId, creationCode, args, "LayerZeroSettler");
 
-            console.log("  Endpoint:", config.layerZeroEndpoint);
             console.log("  Owner:", config.l0SettlerOwner);
+            console.log("  Endpoint to be configured:", config.layerZeroEndpoint);
             console.log("  EID:", config.layerZeroEid);
+            console.log(
+                "  Note: Endpoint must be set by owner via ConfigureLayerZeroSettler script"
+            );
+
             saveDeployedContract(chainId, "LayerZeroSettler", settler);
             deployed.layerZeroSettler = settler;
         } else {
