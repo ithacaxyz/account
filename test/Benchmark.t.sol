@@ -444,6 +444,29 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
+    function testERC20Transfer_Batch100_CoinbaseSmartWallet_ERC20SelfPay() public {
+        bytes memory payload = abi.encodeWithSignature(
+            "execute(address,uint256,bytes)",
+            paymentToken,
+            0,
+            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+        );
+
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createCoinbaseSmartWallet(100);
+
+        UserOperation[] memory u = _getPayload_CoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_Batch100_CoinbaseSmartWallet_ERC20SelfPay");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
+    }
+
+
     function testERC20Transfer_CoinbaseSmartWallet_ETHPaymaster() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
@@ -644,6 +667,28 @@ contract BenchmarkTest is BaseTest {
         vm.snapshotGasLastCall("testERC20Transfer_AlchemyModularAccount_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
+    }
+
+    function testERC20Transfer_batch100_AlchemyModularAccount_ERC20SelfPay() public {
+        bytes memory payload = abi.encodeWithSignature(
+            "execute(address,uint256,bytes)",
+            paymentToken,
+            0,
+            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+        );
+
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createAlchemyModularAccount(100);
+
+        PackedUserOperation[] memory userOps = _getPayload_AlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_batch100_AlchemyModularAccount_ERC20SelfPay");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
     }
 
     function testERC20Transfer_AlchemyModularAccount_ETHPaymaster() public {
@@ -861,6 +906,31 @@ contract BenchmarkTest is BaseTest {
         vm.snapshotGasLastCall("testERC20Transfer_ZerodevKernel_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
+    }
+
+    function testERC20Transfer_batch100_ZerodevKernel_ERC20SelfPay() public {
+        bytes memory payload = abi.encodeWithSignature(
+            "execute(bytes32,bytes)",
+            bytes32(uint256(0x01) << 240),
+            abi.encodePacked(
+                paymentToken,
+                uint256(0),
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+            )
+        );
+
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createZerodevKernel(100);
+
+        PackedUserOperation[] memory userOps = _getPayload_ZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testERC20Transfer_batch100_ZerodevKernel_ERC20SelfPay");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
     }
 
     function testERC20Transfer_ZerodevKernel_ETHPaymaster() public {
