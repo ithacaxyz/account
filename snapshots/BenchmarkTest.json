@@ -4,7 +4,7 @@
   "testERC20Transfer_AlchemyModularAccount_ETHPaymaster": "179448",
   "testERC20Transfer_Batch100_CoinbaseSmartWallet": "9947807",
   "testERC20Transfer_CoinbaseSmartWallet": "177809",
-  "testERC20Transfer_CoinbaseSmartWallet_ERC20SelfPay": "177809",
+  "testERC20Transfer_CoinbaseSmartWallet_ERC20SelfPay": "222125",
   "testERC20Transfer_CoinbaseSmartWallet_ETHPaymaster": "177809",
   "testERC20Transfer_ERC4337MinimalAccount": "171906",
   "testERC20Transfer_ERC4337MinimalAccount_ERC20SelfPay": "217488",
