@@ -15,6 +15,7 @@ import "./utils/interfaces/ICoinbaseSmartWallet.sol";
 import "./utils/interfaces/IZerodevKernel.sol";
 import "./utils/interfaces/IAlchemyModularAccount.sol";
 import "./utils/interfaces/IPimlicoPaymaster.sol";
+import "./utils/mocks/MockPayerWithSignature.sol";
 
 interface IUniswapV2Router {
     function addLiquidity(
@@ -78,6 +79,8 @@ contract BenchmarkTest is BaseTest {
     address token1;
 
     IUniswapV2Router uniswapV2Router;
+    MockPayerWithSignature appSponsor;
+    DelegatedEOA appSponsorSigner;
 
     enum PaymentType {
         SELF_ETH,
@@ -127,6 +130,13 @@ contract BenchmarkTest is BaseTest {
         ).checked_write(true);
 
         vm.deal(relayer, type(uint128).max);
+
+        // Set up app sponsor for APP_SPONSOR payment type
+        appSponsor = new MockPayerWithSignature();
+        appSponsorSigner = _randomEIP7702DelegatedEOA();
+        appSponsor.setSigner(appSponsorSigner.eoa);
+        appSponsor.setApprovedOrchestrator(address(oc), true);
+        vm.deal(address(appSponsor), type(uint128).max);
     }
 
     function _etchContracts() internal {
@@ -1327,6 +1337,60 @@ contract BenchmarkTest is BaseTest {
         vm.snapshotGasLastCall("testUniswapV2Swap_IthacaAccount_ERC20SelfPay");
     }
 
+    // App Sponsor tests - app pays for user transactions
+    function testERC20Transfer_IthacaAccount_AppSponsor() public {
+        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
+        bytes memory payload =
+            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testERC20Transfer_IthacaAccount_AppSponsor");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
+    }
+
+    function testERC20Transfer_batch100_IthacaAccount_AppSponsor() public {
+        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(100);
+        bytes memory payload =
+            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents);
+        vm.snapshotGasLastCall("testERC20Transfer_batch100_IthacaAccount_AppSponsor");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
+    }
+
+    function testNativeTransfer_IthacaAccount_AppSponsor() public {
+        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
+        bytes memory payload = _transferExecutionData(address(0), address(0xbabe), 1 ether);
+
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testNativeTransfer_IthacaAccount_AppSponsor");
+
+        assertEq(address(0xbabe).balance, 1 ether);
+    }
+
+    function testUniswapV2Swap_IthacaAccount_AppSponsor() public {
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
+        calls[0].data = _uniswapV2SwapPayload();
+        bytes memory payload = abi.encode(calls);
+        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
+
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testUniswapV2Swap_IthacaAccount_AppSponsor");
+    }
+
     function _getPayload_IthacaAccount(
         bytes memory executionData,
         bytes memory junk,
@@ -1349,6 +1413,14 @@ contract BenchmarkTest is BaseTest {
                 u.totalPaymentAmount = 1e18; // 1 token (assuming 18 decimals)
                 u.totalPaymentMaxAmount = 10e18; // 10 tokens max
                 u.paymentToken = address(paymentToken); // ERC20 token
+                u.payer = address(0); // Defaults to u.eoa
+            } else if (_paymentType == PaymentType.APP_SPONSOR) {
+                u.prePaymentAmount = 0 ether;
+                u.prePaymentMaxAmount = 0 ether;
+                u.totalPaymentAmount = 0.01 ether; // Sponsor pays this amount
+                u.totalPaymentMaxAmount = 0.1 ether;
+                u.paymentToken = address(0); // Native ETH
+                u.payer = address(appSponsor); // App sponsor pays
             } else {
                 // Default to original behavior (SELF_ETH)
                 u.prePaymentAmount = 0 ether;
@@ -1356,6 +1428,14 @@ contract BenchmarkTest is BaseTest {
                 u.totalPaymentAmount = 0.01 ether;
                 u.totalPaymentMaxAmount = 0.1 ether;
                 u.paymentToken = address(0); // Native ETH
+                u.payer = address(0); // Defaults to u.eoa
+            }
+
+            // Set paymentSignature for APP_SPONSOR
+            if (_paymentType == PaymentType.APP_SPONSOR) {
+                bytes32 digest = oc.computeDigest(u);
+                bytes32 signatureDigest = appSponsor.computeSignatureDigest(digest);
+                u.paymentSignature = _sig(appSponsorSigner, signatureDigest);
             }
 
             u.signature = _sig(delegatedEOAs[i], u);
