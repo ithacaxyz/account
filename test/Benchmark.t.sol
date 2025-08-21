@@ -83,6 +83,7 @@ contract BenchmarkTest is BaseTest {
         SELF_ETH,
         SELF_ERC20,
         APP_SPONSOR // App sponsoring transaction cost (in native tokens)
+
     }
 
     function setUp() public override {
@@ -365,9 +366,24 @@ contract BenchmarkTest is BaseTest {
                     )
                 );
             } else if (_paymentType == PaymentType.APP_SPONSOR) {
-                // Use a placeholder paymaster address for ERC20 paymaster
-                // u[i].paymasterAndData =
-                //     abi.encodePacked(address(0x2222222222222222222222222222222222222222));
+                u[i].paymasterAndData = abi.encodePacked(
+                    _PIMLICO_PAYMASTER_V07,
+                    uint128(1000000), // verification gas limit
+                    uint128(1000000), // postOp gas limit
+                    uint8(1), // allow all bundlers + native token mode
+                    type(uint48).max, // max validUntil
+                    uint48(0) // no validAfter
+                );
+
+                u[i].paymasterAndData = abi.encodePacked(
+                    u[i].paymasterAndData,
+                    _eoaSig(
+                        paymasterPrivateKey,
+                        SignatureCheckerLib.toEthSignedMessageHash(
+                            PimlicoHelpers.getHashV7(0, u[i])
+                        )
+                    )
+                );
             }
 
             u[i].signature = _eoaSig(
