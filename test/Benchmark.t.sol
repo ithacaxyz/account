@@ -589,9 +589,22 @@ contract BenchmarkTest is BaseTest {
                     )
                 );
             } else if (_paymentType == PaymentType.ETH_PAYMASTER) {
-                // Use a placeholder paymaster address for ERC20 paymaster
-                // u[i].paymasterAndData =
-                // abi.encodePacked(address(0x2222222222222222222222222222222222222222));
+                u[i].paymasterAndData = abi.encodePacked(
+                    _PIMLICO_PAYMASTER_V06,
+                    uint8(1), // allow all bundlers + native token mode
+                    type(uint48).max, // max validUntil
+                    uint48(0) // no validAfter
+                );
+
+                u[i].paymasterAndData = abi.encodePacked(
+                    u[i].paymasterAndData,
+                    _eoaSig(
+                        paymasterPrivateKey,
+                        SignatureCheckerLib.toEthSignedMessageHash(
+                            PimlicoHelpers.getHashV6(0, u[i])
+                        )
+                    )
+                );
             }
 
             u[i].signature = abi.encode(
@@ -811,8 +824,24 @@ contract BenchmarkTest is BaseTest {
                     )
                 );
             } else if (_paymentType == PaymentType.ETH_PAYMASTER) {
-                //userOps[i].paymasterAndData =
-                // abi.encodePacked(address(0x2222222222222222222222222222222222222222));
+                u[i].paymasterAndData = abi.encodePacked(
+                    _PIMLICO_PAYMASTER_V07,
+                    uint128(1000000), // verification gas limit
+                    uint128(1000000), // postOp gas limit
+                    uint8(1), // allow all bundlers + native token mode
+                    type(uint48).max, // max validUntil
+                    uint48(0) // no validAfter
+                );
+
+                u[i].paymasterAndData = abi.encodePacked(
+                    u[i].paymasterAndData,
+                    _eoaSig(
+                        paymasterPrivateKey,
+                        SignatureCheckerLib.toEthSignedMessageHash(
+                            PimlicoHelpers.getHashV7(0, u[i])
+                        )
+                    )
+                );
             }
 
             u[i].signature = abi.encodePacked(
@@ -1066,9 +1095,24 @@ contract BenchmarkTest is BaseTest {
                     )
                 );
             } else if (_paymentType == PaymentType.ETH_PAYMASTER) {
-                // Use a placeholder paymaster address for ERC20 paymaster
-                //userOps[i].paymasterAndData =
-                //abi.encodePacked(address(0x2222222222222222222222222222222222222222));
+                u[i].paymasterAndData = abi.encodePacked(
+                    _PIMLICO_PAYMASTER_V07,
+                    uint128(1000000), // verification gas limit
+                    uint128(1000000), // postOp gas limit
+                    uint8(1), // allow all bundlers + native token mode
+                    type(uint48).max, // max validUntil
+                    uint48(0) // no validAfter
+                );
+
+                u[i].paymasterAndData = abi.encodePacked(
+                    u[i].paymasterAndData,
+                    _eoaSig(
+                        paymasterPrivateKey,
+                        SignatureCheckerLib.toEthSignedMessageHash(
+                            PimlicoHelpers.getHashV7(0, u[i])
+                        )
+                    )
+                );
             }
 
             u[i].signature = _eoaSig(privateKeys[i], erc4337EntryPoint.getUserOpHash(u[i]));
