@@ -1407,25 +1407,19 @@ contract BenchmarkTest is BaseTest {
 
             // Set payment parameters based on payment type
             if (_paymentType == PaymentType.SELF_ERC20) {
-                u.prePaymentAmount = 0 ether;
-                u.prePaymentMaxAmount = 0 ether;
-                u.totalPaymentAmount = 1e18; // 1 token (assuming 18 decimals)
-                u.totalPaymentMaxAmount = 10e18; // 10 tokens max
+                u.paymentAmount = 1e18; // 1 token (assuming 18 decimals)
+                u.paymentMaxAmount = 10e18; // 10 tokens max
                 u.paymentToken = address(paymentToken); // ERC20 token
                 u.payer = address(0); // Defaults to u.eoa
             } else if (_paymentType == PaymentType.APP_SPONSOR) {
-                u.prePaymentAmount = 0 ether;
-                u.prePaymentMaxAmount = 0 ether;
-                u.totalPaymentAmount = 0.01 ether; // Sponsor pays this amount
-                u.totalPaymentMaxAmount = 0.1 ether;
+                u.paymentAmount = 0.01 ether; // Sponsor pays this amount
+                u.paymentMaxAmount = 0.1 ether;
                 u.paymentToken = address(0); // Native ETH
                 u.payer = address(appSponsor); // App sponsor pays
             } else {
                 // Default to original behavior (SELF_ETH)
-                u.prePaymentAmount = 0 ether;
-                u.prePaymentMaxAmount = 0 ether;
-                u.totalPaymentAmount = 0.01 ether;
-                u.totalPaymentMaxAmount = 0.1 ether;
+                u.paymentAmount = 0.01 ether;
+                u.paymentMaxAmount = 0.1 ether;
                 u.paymentToken = address(0); // Native ETH
                 u.payer = address(0); // Defaults to u.eoa
             }
