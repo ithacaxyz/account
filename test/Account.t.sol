@@ -97,10 +97,9 @@ contract AccountTest is BaseTest {
         = d.d.eip712Domain();
         bytes32 domain = keccak256(
             abi.encode(
-                0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f, // DOMAIN_TYPEHASH,
+                0x91ab3d17e3a50a9d89e63fd30b92be7f5336b03b287bb946787a83a9d62a2766, // DOMAIN_TYPEHASH without chainid,
                 keccak256(abi.encodePacked(name)),
                 keccak256(abi.encodePacked(version)),
-                chainId,
                 verifyingContract
             )
         );

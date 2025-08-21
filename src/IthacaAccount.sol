@@ -241,7 +241,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         // The account domain is added as a layer to prevent replay attacks since some apps do not include the
         // account address as a field in their 712 data.
         bytes32 replaySafeDigest = EfficientHashLib.hash(SIGN_TYPEHASH, digest);
-        digest = _hashTypedData(replaySafeDigest);
+        digest = _hashTypedDataSansChainId(replaySafeDigest);
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
