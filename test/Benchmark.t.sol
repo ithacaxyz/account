@@ -59,7 +59,6 @@ contract BenchmarkTest is BaseTest {
     address constant _ALCHEMY_MODULAR_ACCOUNT_FACTORY_ADDR =
         0x00000000000017c61b5bEe81050EC8eFc9c6fecd;
 
-    // Note: these are the v2 deployed addresses, but we test with v1 because v2 does not have a self-pay with ERC20 flow.
     address constant _PIMLICO_PAYMASTER_V06 = 0x6666666666667849c56f2850848cE1C4da65c68b;
     address constant _PIMLICO_PAYMASTER_V07 = 0x777777777777AeC03fd955926DbF81597e66834C;
     address paymasterSigner;
