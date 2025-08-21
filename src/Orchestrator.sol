@@ -279,9 +279,9 @@ contract Orchestrator is
         virtual
         returns (SignedCall calldata p)
     {
-        Intent calldata i = _extractIntent(encodedPreCall);
         assembly ("memory-safe") {
-            p := i
+            let t := calldataload(encodedPreCall.offset)
+            p := add(t, encodedPreCall.offset)
         }
     }
 
