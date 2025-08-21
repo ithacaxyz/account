@@ -1,23 +1,23 @@
 {
+  "lib/LayerZero-v2": {
+    "rev": "88428755be6caa71cb1d2926141d73c8989296b5"
+  },
+  "lib/devtools": {
+    "rev": "01c1eaeb123e4364fbe96cdddf875640edf2566c"
+  },
+  "lib/forge-std": {
+    "rev": "a3dca253700f19f15b1837c57c67b9388f5cc3fb"
+  },
   "lib/murky": {
     "rev": "5feccd1253d7da820f7cccccdedf64471025455d"
   },
   "lib/openzeppelin-contracts": {
     "rev": "69c8def5f222ff96f2b5beff05dfba996368aa79"
   },
-  "lib/forge-std": {
-    "rev": "a3dca253700f19f15b1837c57c67b9388f5cc3fb"
-  },
   "lib/solady": {
     "branch": {
       "name": "main",
       "rev": "834bbc4fd366ca8bce8c532a0e3b34eca6be709c"
     }
-  },
-  "lib/LayerZero-v2": {
-    "rev": "88428755be6caa71cb1d2926141d73c8989296b5"
-  },
-  "lib/devtools": {
-    "rev": "01c1eaeb123e4364fbe96cdddf875640edf2566c"
   }
 }
