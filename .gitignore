@@ -7,7 +7,6 @@ broadcast/
 
 # Dotenv file
 .env
-
 .DS_Store
 
 # Create2 build files
@@ -23,3 +22,6 @@ typechain
 # IDE
 .vscode/
 .cursor/
+
+# Unused foundry gas snapshot
+.gas-snapshot
