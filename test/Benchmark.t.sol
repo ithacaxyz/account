@@ -82,7 +82,7 @@ contract BenchmarkTest is BaseTest {
     enum PaymentType {
         SELF_ETH,
         SELF_ERC20,
-        ETH_PAYMASTER
+        APP_SPONSOR // App sponsoring transaction cost (in native tokens)
     }
 
     function setUp() public override {
@@ -280,7 +280,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_ERC4337MinimalAccount_ETHPaymaster() public {
+    function testERC20Transfer_ERC4337MinimalAccount_AppSponsor() public {
         ERC4337.Call[] memory calls = new ERC4337.Call[](1);
         calls[0].target = address(paymentToken);
         calls[0].data =
@@ -292,12 +292,12 @@ contract BenchmarkTest is BaseTest {
             _createERC4337MinimalAccount(1);
 
         PackedUserOperation[] memory u = _getPayload_ERC4337MinimalAccount(
-            payload, "", accounts, eoas, privateKeys, PaymentType.ETH_PAYMASTER
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(u, relayer);
-        vm.snapshotGasLastCall("testERC20Transfer_ERC4337MinimalAccount_ETHPaymaster");
+        vm.snapshotGasLastCall("testERC20Transfer_ERC4337MinimalAccount_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
@@ -364,7 +364,7 @@ contract BenchmarkTest is BaseTest {
                         )
                     )
                 );
-            } else if (_paymentType == PaymentType.ETH_PAYMASTER) {
+            } else if (_paymentType == PaymentType.APP_SPONSOR) {
                 // Use a placeholder paymaster address for ERC20 paymaster
                 // u[i].paymasterAndData =
                 //     abi.encodePacked(address(0x2222222222222222222222222222222222222222));
@@ -466,7 +466,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
     }
 
-    function testERC20Transfer_CoinbaseSmartWallet_ETHPaymaster() public {
+    function testERC20Transfer_CoinbaseSmartWallet_AppSponsor() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -478,12 +478,12 @@ contract BenchmarkTest is BaseTest {
             _createCoinbaseSmartWallet(1);
 
         UserOperation[] memory u = _getPayload_CoinbaseSmartWallet(
-            payload, "", accounts, eoas, privateKeys, PaymentType.ETH_PAYMASTER
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(u, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_CoinbaseSmartWallet_ETHPaymaster");
+        vm.snapshotGasLastCall("testERC20Transfer_CoinbaseSmartWallet_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
@@ -588,7 +588,7 @@ contract BenchmarkTest is BaseTest {
                         )
                     )
                 );
-            } else if (_paymentType == PaymentType.ETH_PAYMASTER) {
+            } else if (_paymentType == PaymentType.APP_SPONSOR) {
                 u[i].paymasterAndData = abi.encodePacked(
                     _PIMLICO_PAYMASTER_V06,
                     uint8(1), // allow all bundlers + native token mode
@@ -703,7 +703,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
     }
 
-    function testERC20Transfer_AlchemyModularAccount_ETHPaymaster() public {
+    function testERC20Transfer_AlchemyModularAccount_AppSponsor() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -715,12 +715,12 @@ contract BenchmarkTest is BaseTest {
             _createAlchemyModularAccount(1);
 
         PackedUserOperation[] memory userOpsErc20 = _getPayload_AlchemyModularAccount(
-            payload, "", accounts, eoas, privateKeys, PaymentType.ETH_PAYMASTER
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOpsErc20, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_AlchemyModularAccount_ETHPaymaster");
+        vm.snapshotGasLastCall("testERC20Transfer_AlchemyModularAccount_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
@@ -823,7 +823,7 @@ contract BenchmarkTest is BaseTest {
                         )
                     )
                 );
-            } else if (_paymentType == PaymentType.ETH_PAYMASTER) {
+            } else if (_paymentType == PaymentType.APP_SPONSOR) {
                 u[i].paymasterAndData = abi.encodePacked(
                     _PIMLICO_PAYMASTER_V07,
                     uint128(1000000), // verification gas limit
@@ -961,7 +961,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
     }
 
-    function testERC20Transfer_ZerodevKernel_ETHPaymaster() public {
+    function testERC20Transfer_ZerodevKernel_AppSponsor() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
@@ -976,12 +976,12 @@ contract BenchmarkTest is BaseTest {
             _createZerodevKernel(1);
 
         PackedUserOperation[] memory userOpsErc20 = _getPayload_ZerodevKernel(
-            payload, "", accounts, eoas, privateKeys, PaymentType.ETH_PAYMASTER
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOpsErc20, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_ZerodevKernel_ETHPaymaster");
+        vm.snapshotGasLastCall("testERC20Transfer_ZerodevKernel_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
@@ -1094,7 +1094,7 @@ contract BenchmarkTest is BaseTest {
                         )
                     )
                 );
-            } else if (_paymentType == PaymentType.ETH_PAYMASTER) {
+            } else if (_paymentType == PaymentType.APP_SPONSOR) {
                 u[i].paymasterAndData = abi.encodePacked(
                     _PIMLICO_PAYMASTER_V07,
                     uint128(1000000), // verification gas limit
