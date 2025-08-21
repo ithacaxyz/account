@@ -240,37 +240,6 @@ contract Orchestrator is
         }
     }
 
-    /// @dev Extracts the Intent from the calldata bytes, with minimal checks.
-    function _extractIntent(bytes calldata encodedIntent)
-        internal
-        view
-        virtual
-        returns (Intent calldata i)
-    {
-        // This function does NOT allocate memory to avoid quadratic memory expansion costs.
-        // Otherwise, it will be unfair to the Intents at the back of the batch.
-        assembly ("memory-safe") {
-            let t := calldataload(encodedIntent.offset)
-            i := add(t, encodedIntent.offset)
-            // Bounds check. We don't need to explicitly check the fields here.
-            // In the self call functions, we will use regular Solidity to access the
-            // dynamic fields like `signature`, which generate the implicit bounds checks.
-            if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
-        }
-    }
-    /// @dev Extracts the PreCall from the calldata bytes, with minimal checks.
-
-    function _extractPreCall(bytes calldata encodedPreCall)
-        internal
-        virtual
-        returns (SignedCall calldata p)
-    {
-        Intent calldata i = _extractIntent(encodedPreCall);
-        assembly ("memory-safe") {
-            p := i
-        }
-    }
-
     /// @dev Executes a single encoded intent.
     /// @dev If flags is non-zero, then all errors are bubbled up.
     /// Currently there can only be 2 modes - simulation mode, and execution mode.
@@ -282,7 +251,7 @@ contract Orchestrator is
         virtual
         returns (uint256 gUsed, bytes4 err)
     {
-        Intent calldata i = _extractIntent(encodedIntent);
+        Intent memory i = abi.decode(encodedIntent, (Intent));
 
         uint256 g = Math.coalesce(uint96(combinedGasOverride), i.combinedGas);
         uint256 gStart = gasleft();
@@ -504,7 +473,7 @@ contract Orchestrator is
         virtual
     {
         for (uint256 j; j < encodedPreCalls.length; ++j) {
-            SignedCall calldata p = _extractPreCall(encodedPreCalls[j]);
+            SignedCall memory p = abi.decode(encodedPreCalls[j], (SignedCall));
             address eoa = Math.coalesce(p.eoa, parentEOA);
             uint256 nonce = p.nonce;
 
@@ -713,7 +682,7 @@ contract Orchestrator is
     }
 
     /// @dev Computes the EIP712 digest for the PreCall.
-    function _computeDigest(SignedCall calldata p) internal view virtual returns (bytes32) {
+    function _computeDigest(SignedCall memory p) internal view virtual returns (bytes32) {
         bool isMultichain = p.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
         bytes32[] memory f = EfficientHashLib.malloc(5);
@@ -730,7 +699,7 @@ contract Orchestrator is
     /// If the the nonce starts with `MULTICHAIN_NONCE_PREFIX`,
     /// the digest will be computed without the chain ID.
     /// Otherwise, the digest will be computed with the chain ID.
-    function _computeDigest(Intent calldata i) internal view virtual returns (bytes32) {
+    function _computeDigest(Intent memory i) internal view virtual returns (bytes32) {
         bool isMultichain = i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
 
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
@@ -779,7 +748,7 @@ contract Orchestrator is
     }
 
     /// @dev Helper function to return the hash of the `encodedPreCalls`.
-    function _encodedArrHash(bytes[] calldata encodedArr) internal view virtual returns (bytes32) {
+    function _encodedArrHash(bytes[] memory encodedArr) internal view virtual returns (bytes32) {
         bytes32[] memory a = EfficientHashLib.malloc(encodedArr.length);
         for (uint256 i; i < encodedArr.length; ++i) {
             a.set(i, EfficientHashLib.hashCalldata(encodedArr[i]));
