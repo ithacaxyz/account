@@ -240,34 +240,16 @@ contract Orchestrator is
         }
     }
 
-    /// @dev Extracts the Intent from the calldata bytes, with minimal checks.
-    function _extractIntent(bytes calldata encodedIntent)
-        internal
-        view
-        virtual
-        returns (Intent calldata i)
-    {
-        // This function does NOT allocate memory to avoid quadratic memory expansion costs.
-        // Otherwise, it will be unfair to the Intents at the back of the batch.
-        assembly ("memory-safe") {
-            let t := calldataload(encodedIntent.offset)
-            i := add(t, encodedIntent.offset)
-            // Bounds check. We don't need to explicitly check the fields here.
-            // In the self call functions, we will use regular Solidity to access the
-            // dynamic fields like `signature`, which generate the implicit bounds checks.
-            if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
-        }
-    }
     /// @dev Extracts the PreCall from the calldata bytes, with minimal checks.
-
     function _extractPreCall(bytes calldata encodedPreCall)
         internal
         virtual
         returns (SignedCall calldata p)
     {
-        Intent calldata i = _extractIntent(encodedPreCall);
+        // We can skip safety checks here, since this is called within a call frame that we know the intent and precalls will be well formed
         assembly ("memory-safe") {
-            p := i
+            let t := calldataload(encodedPreCall.offset)
+            p := add(t, encodedPreCall.offset)
         }
     }
 
@@ -282,7 +264,7 @@ contract Orchestrator is
         virtual
         returns (uint256 gUsed, bytes4 err)
     {
-        Intent calldata i = _extractIntent(encodedIntent);
+        Intent memory i = abi.decode(encodedIntent, (Intent));
 
         uint256 g = Math.coalesce(uint96(combinedGasOverride), i.combinedGas);
         uint256 gStart = gasleft();
@@ -676,7 +658,7 @@ contract Orchestrator is
     }
 
     /// @dev Calls `unwrapAndValidateSignature` on the `eoa`.
-    function _verify(bytes32 digest, address eoa, bytes calldata sig)
+    function _verify(bytes32 digest, address eoa, bytes memory sig)
         internal
         view
         virtual
@@ -687,15 +669,19 @@ contract Orchestrator is
         // a single bytes32 digest avoids having to pass in the entire Intent. Additionally,
         // the account does not need to know anything about the Intent structure.
         assembly ("memory-safe") {
-            let m := mload(0x40)
-            mstore(m, 0x0cef73b4) // `unwrapAndValidateSignature(bytes32,bytes)`.
-            mstore(add(m, 0x20), digest)
-            mstore(add(m, 0x40), 0x40)
-            mstore(add(m, 0x60), sig.length)
-            calldatacopy(add(m, 0x80), sig.offset, sig.length)
-            isValid := staticcall(gas(), eoa, add(m, 0x1c), add(sig.length, 0x64), 0x00, 0x40)
+            // save memory values
+            let s1 := mload(sub(sig, 0x60))
+            let s2 := mload(sub(sig, 0x40))
+            let s3 := mload(sub(sig, 0x20))
+            mstore(sub(sig, 0x60), 0x0cef73b4) // `unwrapAndValidateSignature(bytes32,bytes)`.
+            mstore(sub(sig, 0x40), digest)
+            mstore(sub(sig, 0x20), 0x40)
+            isValid := staticcall(gas(), eoa, sub(sig, 0x44), add(mload(sig), 0x64), 0x00, 0x40)
             isValid := and(eq(mload(0x00), 1), and(gt(returndatasize(), 0x3f), isValid))
             keyHash := mload(0x20)
+            mstore(sub(sig, 0x60), s1)
+            mstore(sub(sig, 0x40), s2)
+            mstore(sub(sig, 0x20), s3)
         }
     }
 
@@ -713,14 +699,14 @@ contract Orchestrator is
     }
 
     /// @dev Computes the EIP712 digest for the PreCall.
-    function _computeDigest(SignedCall calldata p) internal view virtual returns (bytes32) {
+    function _computeDigest(SignedCall memory p) internal view virtual returns (bytes32) {
         bool isMultichain = p.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
         bytes32[] memory f = EfficientHashLib.malloc(5);
         f.set(0, SIGNED_CALL_TYPEHASH);
         f.set(1, LibBit.toUint(isMultichain));
         f.set(2, uint160(p.eoa));
-        f.set(3, _executionDataHash(p.executionData));
+        f.set(3, keccak256(p.executionData));
         f.set(4, p.nonce);
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
