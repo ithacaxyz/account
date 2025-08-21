@@ -466,7 +466,6 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
     }
 
-
     function testERC20Transfer_CoinbaseSmartWallet_ETHPaymaster() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
@@ -1097,7 +1096,8 @@ contract BenchmarkTest is BaseTest {
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
-        bytes[] memory encodedIntents = _getPayload_IthacaAccount(payload, "", delegatedEOAs);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testERC20Transfer_IthacaAccount");
@@ -1109,10 +1109,37 @@ contract BenchmarkTest is BaseTest {
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(100);
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
-        bytes[] memory encodedIntents = _getPayload_IthacaAccount(payload, "", delegatedEOAs);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents);
         vm.snapshotGasLastCall("testERC20Transfer_batch100_IthacaAccount");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
+    }
+
+    function testERC20Transfer_IthacaAccount_SELF_ERC20() public {
+        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
+        bytes memory payload =
+            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testERC20Transfer_IthacaAccount_SELF_ERC20");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
+    }
+
+    function testERC20Transfer_batch100_IthacaAccount_SELF_ERC20() public {
+        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(100);
+        bytes memory payload =
+            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents);
+        vm.snapshotGasLastCall("testERC20Transfer_batch100_IthacaAccount_SELF_ERC20");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 100 ether);
     }
@@ -1121,10 +1148,24 @@ contract BenchmarkTest is BaseTest {
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
         bytes memory payload = _transferExecutionData(address(0), address(0xbabe), 1 ether);
 
-        bytes[] memory encodedIntents = _getPayload_IthacaAccount(payload, "", delegatedEOAs);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testNativeTransfer_IthacaAccount");
+
+        assertEq(address(0xbabe).balance, 1 ether);
+    }
+
+    function testNativeTransfer_IthacaAccount_SELF_ERC20() public {
+        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
+        bytes memory payload = _transferExecutionData(address(0), address(0xbabe), 1 ether);
+
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testNativeTransfer_IthacaAccount_SELF_ERC20");
 
         assertEq(address(0xbabe).balance, 1 ether);
     }
@@ -1136,16 +1177,32 @@ contract BenchmarkTest is BaseTest {
         bytes memory payload = abi.encode(calls);
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
 
-        bytes[] memory encodedIntents = _getPayload_IthacaAccount(payload, "", delegatedEOAs);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testUniswapV2Swap_IthacaAccount");
     }
 
+    function testUniswapV2Swap_IthacaAccount_SELF_ERC20() public {
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
+        calls[0].data = _uniswapV2SwapPayload();
+        bytes memory payload = abi.encode(calls);
+        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
+
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testUniswapV2Swap_IthacaAccount_SELF_ERC20");
+    }
+
     function _getPayload_IthacaAccount(
         bytes memory executionData,
         bytes memory junk,
-        DelegatedEOA[] memory delegatedEOAs
+        DelegatedEOA[] memory delegatedEOAs,
+        PaymentType _paymentType
     ) internal view returns (bytes[] memory) {
         bytes[] memory encodedIntents = new bytes[](delegatedEOAs.length);
         for (uint256 i = 0; i < delegatedEOAs.length; i++) {
@@ -1153,13 +1210,25 @@ contract BenchmarkTest is BaseTest {
             u.eoa = delegatedEOAs[i].eoa;
             u.nonce = 0;
             u.combinedGas = 1000000;
-            u.prePaymentAmount = 0 ether;
-            u.prePaymentMaxAmount = 0 ether;
-            u.totalPaymentAmount = 0.01 ether;
-            u.totalPaymentMaxAmount = 0.1 ether;
-            u.paymentToken = address(0);
             u.paymentRecipient = address(0x69);
             u.executionData = executionData;
+
+            // Set payment parameters based on payment type
+            if (_paymentType == PaymentType.SELF_ERC20) {
+                u.prePaymentAmount = 0 ether;
+                u.prePaymentMaxAmount = 0 ether;
+                u.totalPaymentAmount = 1e18; // 1 token (assuming 18 decimals)
+                u.totalPaymentMaxAmount = 10e18; // 10 tokens max
+                u.paymentToken = address(paymentToken); // ERC20 token
+            } else {
+                // Default to original behavior (SELF_ETH)
+                u.prePaymentAmount = 0 ether;
+                u.prePaymentMaxAmount = 0 ether;
+                u.totalPaymentAmount = 0.01 ether;
+                u.totalPaymentMaxAmount = 0.1 ether;
+                u.paymentToken = address(0); // Native ETH
+            }
+
             u.signature = _sig(delegatedEOAs[i], u);
 
             encodedIntents[i] = abi.encodePacked(abi.encode(u), junk);
