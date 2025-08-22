@@ -280,6 +280,8 @@ contract Orchestrator is
         returns (SignedCall calldata p)
     {
         assembly ("memory-safe") {
+            // We can skip the offset checks here, since precalls are only accessed within the verify self-call.
+            // By that time, we already know that the intent struct is well formed.
             let t := calldataload(encodedPreCall.offset)
             p := add(t, encodedPreCall.offset)
         }
