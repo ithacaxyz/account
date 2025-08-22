@@ -2,7 +2,6 @@
 pragma solidity ^0.8.4;
 
 import "./IERC4337EntryPoint.sol";
-import {console} from "forge-std/console.sol";
 
 interface IPimlicoPaymaster {
     function tokenOracle() external view returns (address);

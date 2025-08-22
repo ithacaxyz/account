@@ -93,8 +93,8 @@ contract AccountTest is BaseTest {
 
         bytes32 replaySafeDigest = keccak256(abi.encode(d.d.SIGN_TYPEHASH(), digest));
 
-        (, string memory name, string memory version, uint256 chainId, address verifyingContract,,)
-        = d.d.eip712Domain();
+        (, string memory name, string memory version,, address verifyingContract,,) =
+            d.d.eip712Domain();
         bytes32 domain = keccak256(
             abi.encode(
                 0x91ab3d17e3a50a9d89e63fd30b92be7f5336b03b287bb946787a83a9d62a2766, // DOMAIN_TYPEHASH without chainid,
