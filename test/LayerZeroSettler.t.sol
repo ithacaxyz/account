@@ -41,6 +41,7 @@ contract LayerZeroSettlerTest is Test {
     address public depositor;
     address public recipient;
     address public orchestrator;
+    address public l0SettlerSigner;
 
     event Settled(address indexed sender, bytes32 indexed settlementId, uint256 senderChainId);
 
@@ -49,6 +50,7 @@ contract LayerZeroSettlerTest is Test {
         depositor = makeAddr("depositor");
         recipient = makeAddr("recipient");
         orchestrator = makeAddr("orchestrator");
+        l0SettlerSigner = makeAddr("l0SettlerSigner");
 
         // Deploy send library
         sendLib = new SendLibMock();
@@ -77,26 +79,23 @@ contract LayerZeroSettlerTest is Test {
         endpointC.setDefaultReceiveLibrary(EID_A, address(sendLib), 0);
         endpointC.setDefaultReceiveLibrary(EID_B, address(sendLib), 0);
 
-        // Deploy settlers
-        settlerA = new LayerZeroSettler(address(endpointA), owner);
-        settlerB = new LayerZeroSettler(address(endpointB), owner);
-        settlerC = new LayerZeroSettler(address(endpointC), owner);
+        // Deploy settlers with the same address on all chains (self-execution model)
+        // In production, these would be the same address deployed on different chains
+        settlerA = new LayerZeroSettler(owner, l0SettlerSigner);
+        settlerB = new LayerZeroSettler(owner, l0SettlerSigner);
+        settlerC = new LayerZeroSettler(owner, l0SettlerSigner);
 
-        // Set peers for each settler
+        // Set endpoints after deployment
         vm.prank(owner);
-        settlerA.setPeer(EID_B, bytes32(uint256(uint160(address(settlerB)))));
+        settlerA.setEndpoint(address(endpointA));
         vm.prank(owner);
-        settlerA.setPeer(EID_C, bytes32(uint256(uint160(address(settlerC)))));
+        settlerB.setEndpoint(address(endpointB));
+        vm.prank(owner);
+        settlerC.setEndpoint(address(endpointC));
 
-        vm.prank(owner);
-        settlerB.setPeer(EID_A, bytes32(uint256(uint160(address(settlerA)))));
-        vm.prank(owner);
-        settlerB.setPeer(EID_C, bytes32(uint256(uint160(address(settlerC)))));
-
-        vm.prank(owner);
-        settlerC.setPeer(EID_A, bytes32(uint256(uint160(address(settlerA)))));
-        vm.prank(owner);
-        settlerC.setPeer(EID_B, bytes32(uint256(uint160(address(settlerB)))));
+        // No need to set peers - the override makes peers() always return address(this)
+        // This implements a self-execution model where the same contract address
+        // is expected on all chains
 
         // Deploy escrows
         escrowA = new Escrow();
@@ -148,9 +147,9 @@ contract LayerZeroSettlerTest is Test {
         else revert("Invalid destination EID");
 
         // Get the nonce from the source endpoint
-        uint64 nonce = srcEndpoint.outboundNonce(
-            srcSettler, dstEid, bytes32(uint256(uint160(address(dstSettler))))
-        );
+        // In self-execution model, source and destination are the same address
+        uint64 nonce =
+            srcEndpoint.outboundNonce(srcSettler, dstEid, bytes32(uint256(uint160(srcSettler))));
 
         // Message payload that was sent
         bytes memory message = abi.encode(settlementId, sender, senderChainId);
@@ -160,13 +159,14 @@ contract LayerZeroSettlerTest is Test {
             Origin({srcEid: srcEid, sender: bytes32(uint256(uint160(srcSettler))), nonce: nonce});
 
         // Step 2: Generate GUID same way as the endpoint
+        // In self-execution model, use same address for source and destination
         bytes32 guid = keccak256(
             abi.encodePacked(
                 nonce,
                 srcEid,
                 bytes32(uint256(uint160(srcSettler))),
                 dstEid,
-                bytes32(uint256(uint160(address(dstSettler))))
+                bytes32(uint256(uint160(srcSettler)))
             )
         );
 
@@ -177,8 +177,10 @@ contract LayerZeroSettlerTest is Test {
         vm.prank(address(sendLib));
         dstEndpoint.verify(origin, dstSettler, payloadHash);
 
-        // Anyone can call lzReceive after verification
-        dstEndpoint.lzReceive(origin, dstSettler, guid, message, bytes(""));
+        // The endpoint calls lzReceive on the destination settler
+        // Since we're using settlerA for all chains in test, we use endpointA
+        vm.prank(address(endpointA));
+        LayerZeroSettler(dstSettler).lzReceive(origin, guid, message, address(0), bytes(""));
     }
 
     function test_send_validSettlement() public {
@@ -212,8 +214,11 @@ contract LayerZeroSettlerTest is Test {
         address randomCaller = makeAddr("randomCaller");
         vm.deal(randomCaller, fee);
 
+        bytes memory signature =
+            _createL0SettlerSignature(settlerA, orchestrator, settlementId, settlerContext);
+
         vm.prank(randomCaller);
-        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext, signature);
 
         // Verify message was sent through the send library
         assertEq(sendLib.getPacketCount(), 1);
@@ -223,14 +228,14 @@ contract LayerZeroSettlerTest is Test {
             EID_A,
             EID_B,
             address(settlerA),
-            payable(address(settlerB)),
+            payable(address(settlerA)), // Same address simulates same contract on chain B
             settlementId,
             orchestrator,
             block.chainid
         );
 
         // Check that settlement was recorded on destination
-        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+        assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Check on simulated chain B
     }
 
     function test_executeSend_multipleDestinations_success() public {
@@ -251,8 +256,11 @@ contract LayerZeroSettlerTest is Test {
         address executor = makeAddr("executor");
         vm.deal(executor, fee);
 
+        bytes memory signature =
+            _createL0SettlerSignature(settlerA, orchestrator, settlementId, settlerContext);
+
         vm.prank(executor);
-        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext, signature);
 
         // Verify messages were sent to both destinations
         assertEq(sendLib.getPacketCount(), 2);
@@ -262,7 +270,7 @@ contract LayerZeroSettlerTest is Test {
             EID_A,
             EID_B,
             address(settlerA),
-            payable(address(settlerB)),
+            payable(address(settlerA)), // Same address simulates same contract on chain B
             settlementId,
             orchestrator,
             block.chainid
@@ -271,15 +279,15 @@ contract LayerZeroSettlerTest is Test {
             EID_A,
             EID_C,
             address(settlerA),
-            payable(address(settlerC)),
+            payable(address(settlerA)), // Same address on chain C
             settlementId,
             orchestrator,
             block.chainid
         );
 
         // Check that settlements were recorded
-        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
-        assertTrue(settlerC.read(settlementId, orchestrator, block.chainid));
+        assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Check on simulated chain B
+        assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Also check on simulated chain C
     }
 
     function test_executeSend_invalidSettlementId_reverts() public {
@@ -288,9 +296,12 @@ contract LayerZeroSettlerTest is Test {
         endpointIds[0] = EID_B;
         bytes memory settlerContext = abi.encode(endpointIds);
 
-        // Try to execute without calling send first
+        // Try to execute without calling send first (even with valid signature should fail)
+        bytes memory signature =
+            _createL0SettlerSignature(settlerA, orchestrator, settlementId, settlerContext);
+
         vm.expectRevert(abi.encodeWithSelector(LayerZeroSettler.InvalidSettlementId.selector));
-        settlerA.executeSend{value: 1 ether}(orchestrator, settlementId, settlerContext);
+        settlerA.executeSend{value: 1 ether}(orchestrator, settlementId, settlerContext, signature);
     }
 
     function test_executeSend_invalidEndpointId_reverts() public {
@@ -304,8 +315,11 @@ contract LayerZeroSettlerTest is Test {
         settlerA.send(settlementId, settlerContext);
 
         // Try to execute with invalid endpoint
+        bytes memory signature =
+            _createL0SettlerSignature(settlerA, orchestrator, settlementId, settlerContext);
+
         vm.expectRevert(abi.encodeWithSelector(LayerZeroSettler.InvalidEndpointId.selector));
-        settlerA.executeSend{value: 1 ether}(orchestrator, settlementId, settlerContext);
+        settlerA.executeSend{value: 1 ether}(orchestrator, settlementId, settlerContext, signature);
     }
 
     function test_executeSend_insufficientFee_reverts() public {
@@ -321,9 +335,12 @@ contract LayerZeroSettlerTest is Test {
         // Calculate the fee
         uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
 
+        bytes memory signature =
+            _createL0SettlerSignature(settlerA, orchestrator, settlementId, settlerContext);
+
         // Try to execute with insufficient fee - will revert with OutOfFunds
         vm.expectRevert();
-        settlerA.executeSend{value: fee / 2}(orchestrator, settlementId, settlerContext);
+        settlerA.executeSend{value: fee / 2}(orchestrator, settlementId, settlerContext, signature);
     }
 
     function test_executeSend_orchestratorCanExecute() public {
@@ -339,21 +356,24 @@ contract LayerZeroSettlerTest is Test {
         // Calculate the fee
         uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
 
+        bytes memory signature =
+            _createL0SettlerSignature(settlerA, orchestrator, settlementId, settlerContext);
+
         // Orchestrator can also execute
         vm.prank(orchestrator);
-        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext, signature);
 
         // Simulate cross-chain message delivery and check settlement
         _deliverCrossChainMessage(
             EID_A,
             EID_B,
             address(settlerA),
-            payable(address(settlerB)),
+            payable(address(settlerA)), // Same address simulates same contract on chain B
             settlementId,
             orchestrator,
             block.chainid
         );
-        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+        assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Check on simulated chain B
     }
 
     function test_lzReceive_recordsSettlement() public {
@@ -368,22 +388,25 @@ contract LayerZeroSettlerTest is Test {
 
         uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
 
+        bytes memory signature =
+            _createL0SettlerSignature(settlerA, orchestrator, settlementId, settlerContext);
+
         vm.prank(orchestrator);
-        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext, signature);
 
         // Simulate cross-chain message delivery
         _deliverCrossChainMessage(
             EID_A,
             EID_B,
             address(settlerA),
-            payable(address(settlerB)),
+            payable(address(settlerA)), // Same address simulates same contract on chain B
             settlementId,
             orchestrator,
             block.chainid
         );
 
         // Verify the settlement was recorded
-        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+        assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Check on simulated chain B
     }
 
     function test_withdraw_nativeToken_onlyOwner() public {
@@ -437,7 +460,7 @@ contract LayerZeroSettlerTest is Test {
             escrowAmount: escrowAmount,
             refundAmount: refundAmount,
             refundTimestamp: refundTimestamp,
-            settler: payable(address(settlerB)),
+            settler: payable(address(settlerA)), // Same address on chain B
             sender: orchestrator,
             settlementId: settlementId,
             senderChainId: block.chainid
@@ -461,15 +484,18 @@ contract LayerZeroSettlerTest is Test {
 
         uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
 
+        bytes memory signature =
+            _createL0SettlerSignature(settlerA, orchestrator, settlementId, settlerContext);
+
         vm.prank(orchestrator);
-        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext, signature);
 
         // Simulate cross-chain message delivery
         _deliverCrossChainMessage(
             EID_A,
             EID_B,
             address(settlerA),
-            payable(address(settlerB)),
+            payable(address(settlerA)), // Same address simulates same contract on chain B
             settlementId,
             orchestrator,
             block.chainid
@@ -576,9 +602,12 @@ contract LayerZeroSettlerTest is Test {
         uint256 totalFee = _quoteFeeForEndpoints(settlerA, endpointIds);
         vm.deal(executor, totalFee);
 
+        bytes memory signature =
+            _createL0SettlerSignature(settlerA, orchestrator, settlementId, settlerContext);
+
         // Any address can execute
         vm.prank(executor);
-        settlerA.executeSend{value: totalFee}(orchestrator, settlementId, settlerContext);
+        settlerA.executeSend{value: totalFee}(orchestrator, settlementId, settlerContext, signature);
 
         // Verify and deliver messages
         if (includeB) {
@@ -586,24 +615,24 @@ contract LayerZeroSettlerTest is Test {
                 EID_A,
                 EID_B,
                 address(settlerA),
-                payable(address(settlerB)),
+                payable(address(settlerA)), // Same address on chain B
                 settlementId,
                 orchestrator,
                 block.chainid
             );
-            assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+            assertTrue(settlerA.read(settlementId, orchestrator, block.chainid));
         }
         if (includeC) {
             _deliverCrossChainMessage(
                 EID_A,
                 EID_C,
                 address(settlerA),
-                payable(address(settlerC)),
+                payable(address(settlerA)), // Same address on chain C
                 settlementId,
                 orchestrator,
                 block.chainid
             );
-            assertTrue(settlerC.read(settlementId, orchestrator, block.chainid));
+            assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Also check on simulated chain C
         }
     }
 
@@ -640,10 +669,13 @@ contract LayerZeroSettlerTest is Test {
         // Get the fee quote - this internally uses the minimal hex"0003" options
         uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
 
+        bytes memory signature =
+            _createL0SettlerSignature(settlerA, orchestrator, settlementId, settlerContext);
+
         // Execute send - this should work without LZ_ULN_InvalidWorkerOptions error
         vm.deal(orchestrator, fee);
         vm.prank(orchestrator);
-        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext, signature);
 
         // Verify message was sent
         assertEq(sendLib.getPacketCount(), 1);
@@ -653,13 +685,100 @@ contract LayerZeroSettlerTest is Test {
             EID_A,
             EID_B,
             address(settlerA),
-            payable(address(settlerB)),
+            payable(address(settlerA)), // Same address simulates same contract on chain B
             settlementId,
             orchestrator,
             block.chainid
         );
 
         // Verify settlement was recorded
-        assertTrue(settlerB.read(settlementId, orchestrator, block.chainid));
+        assertTrue(settlerA.read(settlementId, orchestrator, block.chainid)); // Check on simulated chain B
+    }
+
+    function test_executeSend_withInvalidSignature_reverts() public {
+        bytes32 settlementId = keccak256("test-settlement");
+        uint32[] memory endpointIds = new uint32[](1);
+        endpointIds[0] = EID_B;
+        bytes memory settlerContext = abi.encode(endpointIds);
+
+        // Orchestrator calls send
+        vm.prank(orchestrator);
+        settlerA.send(settlementId, settlerContext);
+
+        // Calculate the fee
+        uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
+
+        // Create an invalid signature (signed by wrong account)
+        bytes32 digest = _getExecuteSendDigest(settlerA, orchestrator, settlementId, settlerContext);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(uint256(keccak256("wrongSigner")), digest);
+        bytes memory invalidSignature = abi.encodePacked(r, s, v);
+
+        // Should revert with InvalidL0SettlerSignature
+        vm.expectRevert(abi.encodeWithSelector(LayerZeroSettler.InvalidL0SettlerSignature.selector));
+        settlerA.executeSend{value: fee}(
+            orchestrator, settlementId, settlerContext, invalidSignature
+        );
+    }
+
+    function test_executeSend_preventReplay() public {
+        bytes32 settlementId = keccak256("test-settlement");
+        uint32[] memory endpointIds = new uint32[](1);
+        endpointIds[0] = EID_B;
+        bytes memory settlerContext = abi.encode(endpointIds);
+
+        // Orchestrator calls send
+        vm.prank(orchestrator);
+        settlerA.send(settlementId, settlerContext);
+
+        // Calculate the fee
+        uint256 fee = _quoteFeeForEndpoints(settlerA, endpointIds);
+
+        // Create a valid signature
+        bytes memory signature =
+            _createL0SettlerSignature(settlerA, orchestrator, settlementId, settlerContext);
+
+        // First execution should succeed
+        vm.deal(address(this), fee * 2);
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext, signature);
+
+        // Second execution with same signature should fail (validSend was cleared)
+        vm.expectRevert(abi.encodeWithSelector(LayerZeroSettler.InvalidSettlementId.selector));
+        settlerA.executeSend{value: fee}(orchestrator, settlementId, settlerContext, signature);
+    }
+
+    function test_setL0SettlerSigner() public {
+        address newSigner = makeAddr("newSigner");
+
+        // Only owner can set L0SettlerSigner
+        vm.expectRevert();
+        settlerA.setL0SettlerSigner(newSigner);
+
+        // Owner sets new signer
+        vm.prank(owner);
+        settlerA.setL0SettlerSigner(newSigner);
+
+        assertEq(settlerA.l0SettlerSigner(), newSigner);
+    }
+
+    // Helper function to get the EIP-712 digest for executeSend
+    function _getExecuteSendDigest(
+        LayerZeroSettler settler,
+        address sender,
+        bytes32 settlementId,
+        bytes memory settlerContext
+    ) internal view returns (bytes32) {
+        return settler.computeExecuteSendDigest(sender, settlementId, settlerContext);
+    }
+
+    // Helper function to create L0SettlerSigner signature
+    function _createL0SettlerSignature(
+        LayerZeroSettler settler,
+        address sender,
+        bytes32 settlementId,
+        bytes memory settlerContext
+    ) internal view returns (bytes memory) {
+        bytes32 digest = _getExecuteSendDigest(settler, sender, settlementId, settlerContext);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(uint256(keccak256("l0SettlerSigner")), digest);
+        return abi.encodePacked(r, s, v);
     }
 }

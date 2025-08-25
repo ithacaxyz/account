@@ -46,6 +46,7 @@ contract ConfigureLayerZeroSettler is Script {
         string name;
         address layerZeroSettlerAddress;
         address layerZeroEndpoint;
+        address l0SettlerSigner;
         uint32 eid;
         address sendUln302;
         address receiveUln302;
@@ -152,6 +153,7 @@ contract ConfigureLayerZeroSettler is Script {
 
         // If we have a LayerZero settler, all other LayerZero fields are required
         config.layerZeroEndpoint = vm.readForkAddress("layerzero_endpoint");
+        config.l0SettlerSigner = vm.readForkAddress("l0_settler_signer");
         config.eid = uint32(vm.readForkUint("layerzero_eid"));
         config.sendUln302 = vm.readForkAddress("layerzero_send_uln302");
         config.receiveUln302 = vm.readForkAddress("layerzero_receive_uln302");
@@ -227,12 +229,46 @@ contract ConfigureLayerZeroSettler is Script {
         console.log(string.concat("Configuring ", config.name, " (", vm.toString(chainId), ")"));
         console.log("  LayerZero Settler:", config.layerZeroSettlerAddress);
         console.log("  Endpoint:", config.layerZeroEndpoint);
+        console.log("  L0SettlerSigner:", config.l0SettlerSigner);
         console.log("  EID:", config.eid);
 
         // Switch to the source chain
         vm.selectFork(forkIds[chainId]);
 
         LayerZeroSettler settler = LayerZeroSettler(payable(config.layerZeroSettlerAddress));
+
+        // Set or update the endpoint on the settler
+        address currentEndpoint = address(settler.endpoint());
+        if (currentEndpoint != config.layerZeroEndpoint) {
+            if (currentEndpoint == address(0)) {
+                console.log("  Setting endpoint to:", config.layerZeroEndpoint);
+            } else {
+                console.log("  Updating endpoint from:", currentEndpoint);
+                console.log("  To:", config.layerZeroEndpoint);
+            }
+            vm.broadcast();
+            settler.setEndpoint(config.layerZeroEndpoint);
+            console.log("  Endpoint configured successfully");
+        } else {
+            console.log("  Endpoint already set to:", config.layerZeroEndpoint);
+        }
+
+        // Set or update the L0SettlerSigner on the settler
+        address currentSigner = settler.l0SettlerSigner();
+        if (currentSigner != config.l0SettlerSigner) {
+            if (currentSigner == address(0)) {
+                console.log("  Setting L0SettlerSigner to:", config.l0SettlerSigner);
+            } else {
+                console.log("  Updating L0SettlerSigner from:", currentSigner);
+                console.log("  To:", config.l0SettlerSigner);
+            }
+            vm.broadcast();
+            settler.setL0SettlerSigner(config.l0SettlerSigner);
+            console.log("  L0SettlerSigner configured successfully");
+        } else {
+            console.log("  L0SettlerSigner already set to:", config.l0SettlerSigner);
+        }
+
         ILayerZeroEndpointV2 endpoint = ILayerZeroEndpointV2(config.layerZeroEndpoint);
 
         // Configure pathways to all destinations

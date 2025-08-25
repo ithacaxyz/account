@@ -1,55 +1,49 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {OApp, MessagingFee, Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+import {OApp, MessagingFee, Origin} from "./vendor/layerzero/oapp/OApp.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
+import {EIP712} from "solady/utils/EIP712.sol";
+import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 
 /// @title LayerZeroSettler
 /// @notice Cross-chain settlement using LayerZero v2 with self-execution model
 /// @dev Uses msg.value to pay for cross-chain messaging fees
-contract LayerZeroSettler is OApp, ISettler {
+contract LayerZeroSettler is OApp, ISettler, EIP712 {
     event Settled(address indexed sender, bytes32 indexed settlementId, uint256 senderChainId);
 
     error InvalidEndpointId();
     error InsufficientFee(uint256 provided, uint256 required);
     error InvalidSettlementId();
+    error InvalidL0SettlerSignature();
 
     // Mapping: settlementId => sender => chainId => isSettled
     mapping(bytes32 => mapping(address => mapping(uint256 => bool))) public settled;
     mapping(bytes32 => bool) public validSend;
 
-    constructor(address _endpoint, address _owner) OApp(_endpoint, _owner) Ownable(_owner) {}
+    // L0SettlerSigner role for authorizing executeSend
+    address public l0SettlerSigner;
 
-    ////////////////////////////////////////////////////////////////////////
-    // EIP-5267 Support
-    ////////////////////////////////////////////////////////////////////////
+    // EIP-712 type hash for executeSend authorization
+    bytes32 constant EXECUTE_SEND_TYPE_HASH =
+        keccak256("ExecuteSend(address sender,bytes32 settlementId,bytes settlerContext)");
 
-    /// @dev See: https://eips.ethereum.org/EIPS/eip-5267
-    /// Returns the fields and values that describe the domain separator used for signing.
-    /// Note: This is just for labelling and offchain verification purposes.
-    /// This contract does not use EIP712 signatures anywhere else.
-    function eip712Domain()
-        public
+    constructor(address _owner, address _l0SettlerSigner) OApp(_owner) Ownable(_owner) {
+        l0SettlerSigner = _l0SettlerSigner;
+    }
+
+    /// @dev For EIP712 domain name and version
+    function _domainNameAndVersion()
+        internal
         view
-        returns (
-            bytes1 fields,
-            string memory name,
-            string memory version,
-            uint256 chainId,
-            address verifyingContract,
-            bytes32 salt,
-            uint256[] memory extensions
-        )
+        virtual
+        override
+        returns (string memory name, string memory version)
     {
-        fields = hex"0f"; // `0b01111` - has name, version, chainId, verifyingContract
         name = "LayerZeroSettler";
-        version = "0.0.1";
-        chainId = block.chainid;
-        verifyingContract = address(this);
-        salt = bytes32(0);
-        extensions = new uint256[](0);
+        version = "0.1.0";
     }
 
     /// @notice Mark the settlement as valid to be sent
@@ -58,15 +52,34 @@ contract LayerZeroSettler is OApp, ISettler {
     }
 
     /// @notice Execute the settlement send to multiple chains
-    /// @dev `send` must have been called with the exact same parameters, before calling this function.
+    /// @dev Requires BOTH: 1) Prior `send()` call to set validSend[key] = true, AND 2) Valid L0SettlerSigner signature
     /// @dev Requires msg.value to cover all LayerZero fees.
-    function executeSend(address sender, bytes32 settlementId, bytes calldata settlerContext)
-        external
-        payable
-    {
-        if (!validSend[keccak256(abi.encode(sender, settlementId, settlerContext))]) {
+    /// @param sender The original sender of the settlement
+    /// @param settlementId The unique settlement identifier
+    /// @param settlerContext Encoded array of LayerZero endpoint IDs
+    /// @param signature EIP-712 signature from the L0SettlerSigner
+    function executeSend(
+        address sender,
+        bytes32 settlementId,
+        bytes calldata settlerContext,
+        bytes calldata signature
+    ) external payable {
+        bytes32 key = keccak256(abi.encode(sender, settlementId, settlerContext));
+
+        // Check that send() was called first
+        if (!validSend[key]) {
             revert InvalidSettlementId();
         }
+
+        // Verify L0SettlerSigner signature
+        bytes32 digest = computeExecuteSendDigest(sender, settlementId, settlerContext);
+
+        if (!SignatureCheckerLib.isValidSignatureNow(l0SettlerSigner, digest, signature)) {
+            revert InvalidL0SettlerSignature();
+        }
+
+        // Clear the authorization to prevent replay
+        validSend[key] = false;
 
         // Decode settlerContext as an array of LayerZero endpoint IDs
         uint32[] memory endpointIds = abi.decode(settlerContext, (uint32[]));
@@ -89,14 +102,15 @@ contract LayerZeroSettler is OApp, ISettler {
         }
     }
 
-    function _getPeerOrRevert(uint32 _eid) internal view virtual override returns (bytes32) {
-        bytes32 peer = peers[_eid];
-        // If no peer is set, use default peer (address(this))
-        if (peer == bytes32(0)) {
-            // The peer address for all chains is automatically set to `address(this)`
-            return bytes32(uint256(uint160(address(this))));
-        }
-        return peer;
+    function _getPeerOrRevert(uint32 /* _eid */ )
+        internal
+        view
+        virtual
+        override
+        returns (bytes32)
+    {
+        // The peer address for all chains is automatically set to `address(this)`
+        return bytes32(uint256(uint160(address(this))));
     }
 
     /// @notice Allow initialization path from configured peers
@@ -110,13 +124,7 @@ contract LayerZeroSettler is OApp, ISettler {
         override
         returns (bool)
     {
-        // Get the configured peer for this source endpoint
-        bytes32 peer = peers[_origin.srcEid];
-
-        // If no peer is set, use the default peer (address(this))
-        if (peer == bytes32(0)) {
-            peer = _getPeerOrRevert(_origin.srcEid);
-        }
+        bytes32 peer = _getPeerOrRevert(_origin.srcEid);
 
         // Allow initialization if the sender matches the configured peer
         return _origin.sender == peer;
@@ -159,6 +167,30 @@ contract LayerZeroSettler is OApp, ISettler {
         TokenTransferLib.safeTransfer(token, recipient, amount);
     }
 
+    /// @notice Owner can update the L0SettlerSigner address
+    /// @param newL0SettlerSigner The new address authorized to sign executeSend operations
+    function setL0SettlerSigner(address newL0SettlerSigner) external onlyOwner {
+        l0SettlerSigner = newL0SettlerSigner;
+    }
+
+    /// @notice Compute the EIP-712 digest for executeSend
+    /// @dev Useful for external signature generation and testing
+    /// @param sender The original sender of the settlement
+    /// @param settlementId The unique settlement identifier
+    /// @param settlerContext Encoded array of LayerZero endpoint IDs
+    /// @return The EIP-712 digest ready for signing
+    function computeExecuteSendDigest(
+        address sender,
+        bytes32 settlementId,
+        bytes memory settlerContext
+    ) public view returns (bytes32) {
+        return _hashTypedData(
+            keccak256(
+                abi.encode(EXECUTE_SEND_TYPE_HASH, sender, settlementId, keccak256(settlerContext))
+            )
+        );
+    }
+
     /// @notice We override this function, because multiple L0 messages are sent in a single transaction.
     function _payNative(uint256 _nativeFee) internal pure override returns (uint256 nativeFee) {
         // Return the fee amount; the base contract will handle the actual payment
@@ -171,11 +203,22 @@ contract LayerZeroSettler is OApp, ISettler {
     // ========================================================
     // ULN302 Executor Functions
     // ========================================================
-    function assignJob(uint32, address, uint256, bytes calldata) external returns (uint256) {
+    function assignJob(uint32, address, uint256, bytes calldata) external pure returns (uint256) {
         return 0;
     }
 
-    function getFee(uint32, address, uint256, bytes calldata) external view returns (uint256) {
+    function getFee(uint32, address, uint256, bytes calldata) external pure returns (uint256) {
         return 0;
+    }
+
+    /// @notice Override the peers getter to always return this contract's address
+    /// @dev This ensures all cross-chain messages are self-executed
+    /// @param _eid The endpoint ID (unused as we always return the same value)
+    /// @return peer The address of this contract as bytes32
+    function peers(uint32 _eid) public view virtual override returns (bytes32 peer) {
+        // Always return this contract's address for all endpoints
+        // This enables self-execution model where the same contract address is used across all chains
+        _eid; // Silence unused parameter warning
+        return bytes32(uint256(uint160(address(this))));
     }
 }

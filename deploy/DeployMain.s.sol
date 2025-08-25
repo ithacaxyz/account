@@ -62,6 +62,7 @@ contract DeployMain is Script, SafeSingletonDeployer {
         address funderSigner;
         address settlerOwner;
         address l0SettlerOwner;
+        address l0SettlerSigner;
         address layerZeroEndpoint;
         uint32 layerZeroEid;
         bytes32 salt;
@@ -217,6 +218,7 @@ contract DeployMain is Script, SafeSingletonDeployer {
         config.funderSigner = vm.readForkAddress("funder_signer");
         config.settlerOwner = vm.readForkAddress("settler_owner");
         config.l0SettlerOwner = vm.readForkAddress("l0_settler_owner");
+        config.l0SettlerSigner = vm.readForkAddress("l0_settler_signer");
         config.layerZeroEndpoint = vm.readForkAddress("layerzero_endpoint");
 
         // Load other configuration
@@ -315,6 +317,7 @@ contract DeployMain is Script, SafeSingletonDeployer {
             console.log("Funder Owner:", config.funderOwner);
             console.log("Funder Signer:", config.funderSigner);
             console.log("L0 Settler Owner:", config.l0SettlerOwner);
+            console.log("L0 Settler Signer:", config.l0SettlerSigner);
             console.log("Settler Owner:", config.settlerOwner);
             console.log("Pause Authority:", config.pauseAuthority);
             console.log("LayerZero Endpoint:", config.layerZeroEndpoint);
@@ -815,13 +818,18 @@ contract DeployMain is Script, SafeSingletonDeployer {
     ) internal {
         if (deployed.layerZeroSettler == address(0)) {
             bytes memory creationCode = type(LayerZeroSettler).creationCode;
-            bytes memory args = abi.encode(config.layerZeroEndpoint, config.l0SettlerOwner);
+            bytes memory args = abi.encode(config.l0SettlerOwner, config.l0SettlerSigner);
             address settler =
                 deployContractWithCreate2(chainId, creationCode, args, "LayerZeroSettler");
 
-            console.log("  Endpoint:", config.layerZeroEndpoint);
             console.log("  Owner:", config.l0SettlerOwner);
+            console.log("  L0SettlerSigner:", config.l0SettlerSigner);
+            console.log("  Endpoint to be configured:", config.layerZeroEndpoint);
             console.log("  EID:", config.layerZeroEid);
+            console.log(
+                "  Note: Endpoint must be set by owner via ConfigureLayerZeroSettler script"
+            );
+
             saveDeployedContract(chainId, "LayerZeroSettler", settler);
             deployed.layerZeroSettler = settler;
         } else {
