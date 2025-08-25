@@ -743,6 +743,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         returns (string memory name, string memory version)
     {
         name = "IthacaAccount";
-        version = "0.5.0";
+        version = "0.5.1";
     }
 }
