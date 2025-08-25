@@ -99,9 +99,6 @@ contract Orchestrator is
     /// @dev The intent has expired.
     error IntentExpired();
 
-    /// @dev The offset used is invalid.
-    error InvalidOffset();
-
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -252,25 +249,21 @@ contract Orchestrator is
     {
         // This function does NOT allocate memory to avoid quadratic memory expansion costs.
         // Otherwise, it will be unfair to the Intents at the back of the batch.
+
+        // `dynamicStructInCalldata` internally performs out-of-bounds checks.
+        bytes calldata intentCalldata = LibBytes.dynamicStructInCalldata(encodedIntent, 0x00);
         assembly ("memory-safe") {
-            let t := calldataload(encodedIntent.offset)
-            i := add(t, encodedIntent.offset)
-
-            // Just in case, we do bounds check on the offsets of the struct and the inner fields.
-            // We sum up the offsets after doing 2**64 shift and expect them to be == 0.
-            let s := add(shr(64, t), shr(64, calldataload(add(i, 0x20)))) // executionData
-            s := add(s, shr(64, calldataload(add(i, 0xe0)))) // bytes[] encodedPreCalls
-            s := add(s, shr(64, calldataload(add(i, 0x100)))) // bytes[] encodedFundTransfers
-            s := add(s, shr(64, calldataload(add(i, 0x1a0)))) // bytes funderSignature
-            s := add(s, shr(64, calldataload(add(i, 0x1c0)))) // bytes settlerContext
-            s := add(s, shr(64, calldataload(add(i, 0x220)))) // bytes signature
-            s := add(s, shr(64, calldataload(add(i, 0x240)))) // bytes paymentSignature
-
-            if or(s, lt(encodedIntent.length, 0x20)) {
-                mstore(0x00, 0x01da1572) // error InvalidOffset
-                revert(0x1c, 0x04)
-            }
+            i := intentCalldata.offset
         }
+        // These checks are included for more safety: Swiss Cheese Model.
+        // Ensures that all the dynamic children in `encodedIntent` are contained.
+        LibBytes.checkInCalldata(i.executionData, intentCalldata);
+        LibBytes.checkInCalldata(i.encodedPreCalls, intentCalldata);
+        LibBytes.checkInCalldata(i.encodedFundTransfers, intentCalldata);
+        LibBytes.checkInCalldata(i.funderSignature, intentCalldata);
+        LibBytes.checkInCalldata(i.settlerContext, intentCalldata);
+        LibBytes.checkInCalldata(i.signature, intentCalldata);
+        LibBytes.checkInCalldata(i.paymentSignature, intentCalldata);
     }
     /// @dev Extracts the PreCall from the calldata bytes, with minimal checks.
 
