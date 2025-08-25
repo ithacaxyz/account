@@ -99,9 +99,6 @@ contract Orchestrator is
     /// @dev The intent has expired.
     error IntentExpired();
 
-    /// @dev The offset used is invalid.
-    error InvalidOffset();
-
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -252,17 +249,21 @@ contract Orchestrator is
     {
         // This function does NOT allocate memory to avoid quadratic memory expansion costs.
         // Otherwise, it will be unfair to the Intents at the back of the batch.
+
+        // `dynamicStructInCalldata` internally performs out-of-bounds checks.
+        bytes calldata intentCalldata = LibBytes.dynamicStructInCalldata(encodedIntent, 0x00);
         assembly ("memory-safe") {
-            let t := calldataload(encodedIntent.offset)
-            i := add(t, encodedIntent.offset)
+            i := intentCalldata.offset
         }
-        LibBytes.checkInCalldata(i.executionData, encodedIntent);
-        LibBytes.checkInCalldata(i.encodedPreCalls, encodedIntent);
-        LibBytes.checkInCalldata(i.encodedFundTransfers, encodedIntent);
-        LibBytes.checkInCalldata(i.funderSignature, encodedIntent);
-        LibBytes.checkInCalldata(i.settlerContext, encodedIntent);
-        LibBytes.checkInCalldata(i.signature, encodedIntent);
-        LibBytes.checkInCalldata(i.paymentSignature, encodedIntent);
+        // These checks are included for more safety: Swiss Cheese Model.
+        // Ensures that all the dynamic children in `encodedIntent` are contained.
+        LibBytes.checkInCalldata(i.executionData, intentCalldata);
+        LibBytes.checkInCalldata(i.encodedPreCalls, intentCalldata);
+        LibBytes.checkInCalldata(i.encodedFundTransfers, intentCalldata);
+        LibBytes.checkInCalldata(i.funderSignature, intentCalldata);
+        LibBytes.checkInCalldata(i.settlerContext, intentCalldata);
+        LibBytes.checkInCalldata(i.signature, intentCalldata);
+        LibBytes.checkInCalldata(i.paymentSignature, intentCalldata);
     }
     /// @dev Extracts the PreCall from the calldata bytes, with minimal checks.
 
