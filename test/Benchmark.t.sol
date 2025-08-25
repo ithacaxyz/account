@@ -16,7 +16,7 @@ import "./utils/interfaces/IZerodevKernel.sol";
 import "./utils/interfaces/IAlchemyModularAccount.sol";
 import "./utils/interfaces/IPimlicoPaymaster.sol";
 import "./utils/interfaces/ISafe.sol";
-import "./utils/mocks/MockPayerWithSignature.sol";
+import "./utils/mocks/MockPayerWithSignatureOptimized.sol";
 
 interface IUniswapV2Router {
     function addLiquidity(
@@ -84,14 +84,13 @@ contract BenchmarkTest is BaseTest {
     address token1;
 
     IUniswapV2Router uniswapV2Router;
-    MockPayerWithSignature appSponsor;
+    MockPayerWithSignatureOptimized appSponsor;
     DelegatedEOA appSponsorSigner;
 
     enum PaymentType {
         SELF_ETH,
         SELF_ERC20,
         APP_SPONSOR // App sponsoring transaction cost (in native tokens)
-
     }
 
     function setUp() public override {
@@ -137,10 +136,8 @@ contract BenchmarkTest is BaseTest {
         vm.deal(relayer, type(uint128).max);
 
         // Set up app sponsor for APP_SPONSOR payment type
-        appSponsor = new MockPayerWithSignature();
-        appSponsorSigner = _randomEIP7702DelegatedEOA();
-        appSponsor.setSigner(appSponsorSigner.eoa);
-        appSponsor.setApprovedOrchestrator(address(oc), true);
+        appSponsor = new MockPayerWithSignatureOptimized(address(oc));
+        appSponsor.setSigner(paymasterSigner);
         vm.deal(address(appSponsor), type(uint128).max);
     }
 
@@ -1715,7 +1712,7 @@ contract BenchmarkTest is BaseTest {
             if (_paymentType == PaymentType.APP_SPONSOR) {
                 bytes32 digest = oc.computeDigest(u);
                 bytes32 signatureDigest = appSponsor.computeSignatureDigest(digest);
-                u.paymentSignature = _sig(appSponsorSigner, signatureDigest);
+                u.paymentSignature = _eoaSig(paymasterPrivateKey, signatureDigest);
             }
 
             u.signature = _sig(delegatedEOAs[i], u);
