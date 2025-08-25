@@ -15,6 +15,7 @@ import {SimpleFunder} from "../src/SimpleFunder.sol";
 import {Escrow} from "../src/Escrow.sol";
 import {SimpleSettler} from "../src/SimpleSettler.sol";
 import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
+import {ExperimentERC20} from "./mock/ExperimentalERC20.sol";
 
 /**
  * @title DeployMain
@@ -66,6 +67,9 @@ contract DeployMain is Script, SafeSingletonDeployer {
         uint32 layerZeroEid;
         bytes32 salt;
         string[] contracts; // Array of contract names to deploy
+        // EXP Token configuration (testnet only)
+        address expMinterAddress;
+        uint256 expMintAmount;
     }
 
     struct DeployedContracts {
@@ -77,6 +81,8 @@ contract DeployMain is Script, SafeSingletonDeployer {
         address layerZeroSettler;
         address simpleFunder;
         address simulator;
+        address expToken; // EXP token (testnet only)
+        address exp2Token; // EXP2 token (testnet only)
     }
 
     // State
@@ -223,6 +229,12 @@ contract DeployMain is Script, SafeSingletonDeployer {
         config.layerZeroEid = uint32(vm.readForkUint("layerzero_eid"));
         config.salt = vm.readForkBytes32("salt");
 
+        // Load EXP token configuration (testnet only)
+        if (config.isTestnet) {
+            config.expMinterAddress = vm.readForkAddress("exp_minter_address");
+            config.expMintAmount = vm.readForkUint("exp_mint_amount");
+        }
+
         // Load contracts list - required field, will revert if not present
         string[] memory contractsList = vm.readForkStringArray("contracts");
 
@@ -231,7 +243,19 @@ contract DeployMain is Script, SafeSingletonDeployer {
             contractsList.length == 1
                 && keccak256(bytes(contractsList[0])) == keccak256(bytes("ALL"))
         ) {
-            config.contracts = getAllContracts();
+            string[] memory baseContracts = getAllContracts();
+            // For testnets with ALL specified, append ExpToken
+            if (config.isTestnet) {
+                string[] memory testnetContracts = new string[](baseContracts.length + 1);
+                for (uint256 i = 0; i < baseContracts.length; i++) {
+                    testnetContracts[i] = baseContracts[i];
+                }
+                testnetContracts[baseContracts.length] = "ExpToken";
+                config.contracts = testnetContracts;
+            } else {
+                // For non-testnets, use base contracts (no ExpToken)
+                config.contracts = baseContracts;
+            }
         } else {
             config.contracts = contractsList;
         }
@@ -240,7 +264,7 @@ contract DeployMain is Script, SafeSingletonDeployer {
     }
 
     /**
-     * @notice Get all available contracts
+     * @notice Get all available contracts (excluding ExpToken)
      */
     function getAllContracts() internal pure returns (string[] memory) {
         string[] memory contracts = new string[](8);
@@ -292,6 +316,8 @@ contract DeployMain is Script, SafeSingletonDeployer {
                 deployed.layerZeroSettler = tryReadAddress(registryJson, ".LayerZeroSettler");
                 deployed.simpleFunder = tryReadAddress(registryJson, ".SimpleFunder");
                 deployed.simulator = tryReadAddress(registryJson, ".Simulator");
+                deployed.expToken = tryReadAddress(registryJson, ".ExpToken");
+                deployed.exp2Token = tryReadAddress(registryJson, ".Exp2Token");
 
                 deployedContracts[chainId] = deployed;
             } catch {
@@ -447,6 +473,10 @@ contract DeployMain is Script, SafeSingletonDeployer {
             deployedContracts[chainId].simpleSettler = contractAddress;
         } else if (keccak256(bytes(contractName)) == keccak256("LayerZeroSettler")) {
             deployedContracts[chainId].layerZeroSettler = contractAddress;
+        } else if (keccak256(bytes(contractName)) == keccak256("ExpToken")) {
+            deployedContracts[chainId].expToken = contractAddress;
+        } else if (keccak256(bytes(contractName)) == keccak256("Exp2Token")) {
+            deployedContracts[chainId].exp2Token = contractAddress;
         }
 
         // Write to registry file
@@ -520,6 +550,18 @@ contract DeployMain is Script, SafeSingletonDeployer {
             json = string.concat(
                 json, '"LayerZeroSettler": "', vm.toString(deployed.layerZeroSettler), '"'
             );
+            first = false;
+        }
+
+        if (deployed.expToken != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(json, '"ExpToken": "', vm.toString(deployed.expToken), '"');
+            first = false;
+        }
+
+        if (deployed.exp2Token != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(json, '"Exp2Token": "', vm.toString(deployed.exp2Token), '"');
         }
 
         json = string.concat(json, "}");
@@ -663,6 +705,8 @@ contract DeployMain is Script, SafeSingletonDeployer {
             deploySimpleSettler(chainId, config, deployed);
         } else if (nameHash == keccak256("LayerZeroSettler")) {
             deployLayerZeroSettler(chainId, config, deployed);
+        } else if (nameHash == keccak256("ExpToken")) {
+            deployExpToken(chainId, config, deployed);
         } else {
             console.log("Warning: Unknown contract name:", contractName);
         }
@@ -826,6 +870,56 @@ contract DeployMain is Script, SafeSingletonDeployer {
             deployed.layerZeroSettler = settler;
         } else {
             console.log("LayerZeroSettler already deployed:", deployed.layerZeroSettler);
+        }
+    }
+
+    function deployExpToken(
+        uint256 chainId,
+        ChainConfig memory config,
+        DeployedContracts memory deployed
+    ) internal {
+        // Only deploy on testnets
+        if (!config.isTestnet) {
+            console.log("Skipping ExpToken deployment - not a testnet");
+            return;
+        }
+
+        bytes memory creationCode = type(ExperimentERC20).creationCode;
+
+        // Deploy EXP token
+        if (deployed.expToken == address(0)) {
+            // Hardcode name and symbol to "EXP"
+            bytes memory args = abi.encode("EXP", "EXP", 1 ether);
+            address expToken = deployContractWithCreate2(chainId, creationCode, args, "ExpToken");
+
+            // Mint initial tokens to the configured minter address
+            ExperimentERC20(payable(expToken)).mint(config.expMinterAddress, config.expMintAmount);
+
+            console.log("  EXP Name/Symbol: EXP");
+            console.log("  EXP Address:", expToken);
+            saveDeployedContract(chainId, "ExpToken", expToken);
+            deployed.expToken = expToken;
+        } else {
+            console.log("ExpToken already deployed:", deployed.expToken);
+        }
+
+        // Deploy EXP2 token
+        if (deployed.exp2Token == address(0)) {
+            // Hardcode name and symbol to "EXP2"
+            bytes memory args2 = abi.encode("EXP2", "EXP2", 1 ether);
+            address exp2Token = deployContractWithCreate2(chainId, creationCode, args2, "Exp2Token");
+
+            // Mint initial tokens to the configured minter address (same as EXP)
+            ExperimentERC20(payable(exp2Token)).mint(config.expMinterAddress, config.expMintAmount);
+
+            console.log("  EXP2 Name/Symbol: EXP2");
+            console.log("  EXP2 Address:", exp2Token);
+            console.log("  Minter:", config.expMinterAddress);
+            console.log("  Mint Amount (each):", config.expMintAmount);
+            saveDeployedContract(chainId, "Exp2Token", exp2Token);
+            deployed.exp2Token = exp2Token;
+        } else {
+            console.log("Exp2Token already deployed:", deployed.exp2Token);
         }
     }
 }

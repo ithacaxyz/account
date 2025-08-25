@@ -49,6 +49,9 @@ layerzero_max_message_size = 10000
 # DVN addresses
 dvn_layerzero_labs = "0x8eebf8b423B73bFCa51a1Db4B7354AA0bFCA9193"
 dvn_google_cloud = "0x8e5a7b5959C5A7C732b87dCE401E07F5819eEC2d"
+# EXP Token configuration (testnet only)
+exp_minter_address = "0x0000000000000000000000000000000000000003"
+exp_mint_amount = "1000000000000000000000"  # 1000 tokens
 
 # Base Sepolia
 [forks.base-sepolia]
@@ -89,6 +92,9 @@ layerzero_max_message_size = 10000
 # DVN addresses
 dvn_layerzero_labs = "0xe1a12515F9AB2764b887bF60B923Ca494EBbB2d6"
 dvn_google_cloud = "0xFc9d8E5d3FaB22fB6E93E9E2C90916E9dCa83Ade"
+# EXP Token configuration (testnet only)
+exp_minter_address = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
+exp_mint_amount = "5000000000000000000000"  # 5000 tokens
 
 # Optimism Sepolia
 [forks.optimism-sepolia]
@@ -126,6 +132,9 @@ layerzero_max_message_size = 10000
 # DVN addresses
 dvn_layerzero_labs = "0x28B6140ead70cb2Fb669705b3598ffB4BEaA060b"
 dvn_google_cloud = "0x28b8B8Ea5C695EFa657B6b86a4a8E90ccbA93E9e"
+# EXP Token configuration (testnet only)
+exp_minter_address = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
+exp_mint_amount = "2000000000000000000000"  # 2000 tokens
 
 
 

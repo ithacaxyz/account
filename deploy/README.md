@@ -99,6 +99,10 @@ layerzero_optional_dvn_threshold = 0
 layerzero_confirmations = 1
 layerzero_max_message_size = 10000
 
+# EXP Token configuration (testnet only - REQUIRED fields)
+exp_minter_address = "0x..."          # Address to receive minted tokens
+exp_mint_amount = "5000000000000000000000"  # Amount to mint (in wei)
+
 dvn_layerzero_labs = "0x..."
 dvn_google_cloud = "0x..."
 ```
@@ -113,7 +117,8 @@ dvn_google_cloud = "0x..."
 - **Escrow** (Only needed for Interop Chains)
 - **SimpleSettler** (Only needed for Interop testing)
 - **LayerZeroSettler** (Only needed for Interop Chains)
-- **ALL** - Deploys all contracts
+- **ExpToken** - Test ERC20 tokens (Testnet only, automatically included with "ALL")
+- **ALL** - Deploys all contracts (+ ExpToken on testnets)
 
 **Dependencies**: 
 IthacaAccount requires Orchestrator; 
@@ -377,6 +382,7 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 5. **Use `--multi --slow`** - Ensures proper multi-chain ordering
 6. **Verify while deploying** - Use `--verify` flag
 
+
 ## Configuration Field Reference
 
 | Field | Used By | Purpose |
@@ -392,22 +398,51 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 | `simple_funder_address` | FundSigners, FundSimpleFunder | SimpleFunder location |
 | `default_num_signers` | FundSigners | Number of signers |
 | `layerzero_*` fields | ConfigureLayerZeroSettler | LayerZero configuration |
+| `exp_minter_address`, `exp_mint_amount` | DeployMain (testnet) | ExpToken deployment |
 
-## Test Token Deployment
+## ExpToken Deployment (Testnets Only)
 
-### DeployEXP - Test ERC20 Token
+### Automatic ExpToken Deployment
 
-**Purpose**: Deploy a simple test ERC20 token for testing.
+**Purpose**: Deploy EXP and EXP2 test tokens automatically on testnet chains.
 
-**Usage**:
-```bash
-# Deploy test token to a specific chain
-forge script deploy/DeployEXP.s.sol:DeployEXP \
-  --broadcast \
-  --sig "run()" \
-  --private-key $PRIVATE_KEY \
-  --rpc-url $RPC_<CHAIN_ID>
+**Behavior**:
+- **Testnets** (`is_testnet = true`): ExpToken automatically included when using `["ALL"]` contracts
+- **Production** (`is_testnet = false`): ExpToken never deployed, regardless of configuration
+- **Two tokens deployed**: "EXP" and "EXP2" with hardcoded names
+- **Same configuration**: Both tokens use the same minter address and mint amount
+
+### Configuration Requirements
+
+For testnet chains, **both fields are required** (deployment will fail if missing):
+
+```toml
+[forks.testnet-name.vars]
+is_testnet = true
+exp_minter_address = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"  # REQUIRED
+exp_mint_amount = "5000000000000000000000"  # REQUIRED (5000 tokens in wei)
+contracts = ["ALL"]  # ExpToken automatically included for testnets
 ```
 
-The test token includes basic ERC20 functionality and can be minted by anyone. 
-It should only be used for testing purposes.
+### Deployment Details
+
+**Two tokens are deployed**:
+1. **EXP Token**: Name and symbol "EXP"
+2. **EXP2 Token**: Name and symbol "EXP2"
+
+**Both tokens**:
+- Use CREATE2 for deterministic addresses
+- Mint `exp_mint_amount` tokens to `exp_minter_address`
+- Are deployed at the end of the contract deployment sequence
+- Are saved to registry files as "ExpToken" and "Exp2Token"
+
+### Examples
+
+**Base Sepolia (Testnet)**:
+```toml
+[forks.base-sepolia.vars]
+is_testnet = true
+exp_minter_address = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
+exp_mint_amount = "5000000000000000000000"
+contracts = ["ALL"]  # Deploys 8 core contracts + ExpToken
+```
