@@ -16,6 +16,7 @@ fs_permissions = [
     { access = "read-write", path = "deploy/registry" },
     { access = "read", path = "deploy/config.toml" }
 ]
+solc_version = "0.8.28"
 
 [fmt]
 line_length = 100 # While we allow up to 120, we lint at 100 for readability.
