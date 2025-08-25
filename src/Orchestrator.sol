@@ -255,22 +255,14 @@ contract Orchestrator is
         assembly ("memory-safe") {
             let t := calldataload(encodedIntent.offset)
             i := add(t, encodedIntent.offset)
-
-            // Just in case, we do bounds check on the offsets of the struct and the inner fields.
-            // We sum up the offsets after doing 2**64 shift and expect them to be == 0.
-            let s := add(shr(64, t), shr(64, calldataload(add(i, 0x20)))) // executionData
-            s := add(s, shr(64, calldataload(add(i, 0xe0)))) // bytes[] encodedPreCalls
-            s := add(s, shr(64, calldataload(add(i, 0x100)))) // bytes[] encodedFundTransfers
-            s := add(s, shr(64, calldataload(add(i, 0x1a0)))) // bytes funderSignature
-            s := add(s, shr(64, calldataload(add(i, 0x1c0)))) // bytes settlerContext
-            s := add(s, shr(64, calldataload(add(i, 0x220)))) // bytes signature
-            s := add(s, shr(64, calldataload(add(i, 0x240)))) // bytes paymentSignature
-
-            if or(s, lt(encodedIntent.length, 0x20)) {
-                mstore(0x00, 0x01da1572) // error InvalidOffset
-                revert(0x1c, 0x04)
-            }
         }
+        LibBytes.checkInCalldata(i.executionData, encodedIntent);
+        LibBytes.checkInCalldata(i.encodedPreCalls, encodedIntent);
+        LibBytes.checkInCalldata(i.encodedFundTransfers, encodedIntent);
+        LibBytes.checkInCalldata(i.funderSignature, encodedIntent);
+        LibBytes.checkInCalldata(i.settlerContext, encodedIntent);
+        LibBytes.checkInCalldata(i.signature, encodedIntent);
+        LibBytes.checkInCalldata(i.paymentSignature, encodedIntent);
     }
     /// @dev Extracts the PreCall from the calldata bytes, with minimal checks.
 
