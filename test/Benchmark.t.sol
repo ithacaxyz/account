@@ -91,6 +91,7 @@ contract BenchmarkTest is BaseTest {
         SELF_ETH,
         SELF_ERC20,
         APP_SPONSOR // App sponsoring transaction cost (in native tokens)
+
     }
 
     function setUp() public override {
