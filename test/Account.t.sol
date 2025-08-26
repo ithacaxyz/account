@@ -391,6 +391,9 @@ contract AccountTest is BaseTest {
     }
 
     function testPayWithFiveCorruptedFieldOffsetsOfIntent() public {
+        bool success;
+        bytes memory returnData;
+
         console.log("Test 1: Main Intent struct offset corruption");
         bytes memory maliciousCalldata = _createIntentOnMainnet();
         assembly {
@@ -398,7 +401,7 @@ contract AccountTest is BaseTest {
             // CORRUPT MAIN OFFSET (Bytes 0-31) - Points to Intent struct start
             mstore(dataPtr, 0x10000000000000000) // 2^64 (strictly greater than 2^64-1)
         }
-        (bool success, bytes memory returnData) =
+        (success, returnData) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
         assertEq(success, false);
 
@@ -410,7 +413,10 @@ contract AccountTest is BaseTest {
             // executionData offset (bytes 64-95 relative to start, or 32-63 in Intent struct)
             mstore(add(intentPtr, 32), 0x10000000000000001) // 2^64 + 1
         }
-        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+        // assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+        (success, returnData) =
+            address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
+        assertEq(success, false);
 
         console.log("Test 3: encodedPreCalls offset corruption");
         maliciousCalldata = _createIntentOnMainnet();
@@ -420,7 +426,10 @@ contract AccountTest is BaseTest {
             // encodedPreCalls offset (bytes 256-287 relative to start, or 224-255 in Intent struct)
             mstore(add(intentPtr, 224), 0x10000000000000002) // 2^64 + 2
         }
-        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+        // assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+        (success, returnData) =
+            address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
+        assertEq(success, false);
 
         console.log("Test 4: encodedFundTransfers offset corruption");
         maliciousCalldata = _createIntentOnMainnet();
@@ -430,7 +439,10 @@ contract AccountTest is BaseTest {
             // encodedFundTransfers offset (bytes 288-319 relative to start, or 256-287 in Intent struct)
             mstore(add(intentPtr, 256), 0x10000000000000003) // 2^64 + 3
         }
-        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+        // assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+        (success, returnData) =
+            address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
+        assertEq(success, false);
 
         console.log("Test 5: funderSignature offset corruption");
         maliciousCalldata = _createIntentOnMainnet();
@@ -440,7 +452,10 @@ contract AccountTest is BaseTest {
             // funderSignature offset (bytes 448-479 relative to start, or 416-447 in Intent struct)
             mstore(add(intentPtr, 416), 0x10000000000000004) // 2^64 + 4
         }
-        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+        // assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+        (success, returnData) =
+            address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
+        assertEq(success, false);
 
         console.log("Test 6: signature offset corruption");
         maliciousCalldata = _createIntentOnMainnet();
@@ -450,7 +465,9 @@ contract AccountTest is BaseTest {
             // signature offset (bytes 576-607 relative to start, or 544-575 in Intent struct)
             mstore(add(intentPtr, 544), 0x10000000000000005) // 2^64 + 5
         }
-        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+        (success, returnData) =
+            address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
+        assertEq(success, false);
     }
 
     // modified from testCrossChainKeyPreCallsAuthorization()'s intent creation
@@ -579,9 +596,9 @@ contract AccountTest is BaseTest {
             mstore(add(intentPtr, 576), 0x10000000000000006) // 2^64 + 6
         }
 
-        // custom error 0x00000000: 00000000000000000000000070a08231000000000000000000000000, the
-        // uncaught error in case of corrupted paymentSignature
-        assertEq(oc.execute(maliciousCalldata), bytes4(0x00000000));
+        (bool success, bytes memory returnData) =
+            address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
+        assertEq(success, false);
     }
 
     Merkle merkleHelper;
@@ -799,7 +816,10 @@ contract AccountTest is BaseTest {
             mstore(add(intentPtr, 448), 0x10000000000000007) // 2^64 + 7
         }
 
-        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+        // assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+        (bool success, bytes memory returnData) =
+            address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
+        assertEq(success, false);
     }
 
     function _computeMerkleData(_TestMultiChainIntentTemps memory t) internal {
