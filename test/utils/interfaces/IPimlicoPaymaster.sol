@@ -22,7 +22,7 @@ library PimlicoHelpers {
     /// @notice The length of the ERC-20 config without signature.
     uint8 constant ERC20_PAYMASTER_DATA_LENGTH = 117;
 
-    /// @notice The length of the verfiying config without signature.
+    /// @notice The length of the verifying config without signature.
     uint8 constant VERIFYING_PAYMASTER_DATA_LENGTH = 12; // 12
 
     uint256 constant PAYMASTER_DATA_OFFSET = 52;
