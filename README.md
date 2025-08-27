@@ -35,6 +35,10 @@ We believe that unstoppable crypto-powered accounts should be excellent througho
 - [ ] Privacy: Using stealth addresses, confidential ERC20 tokens, and privacy pool integrations.
 - [ ] Account Recovery & Identity: Using ZK {Email, OAUth, Passport} and more.
 
+## Benchmarks
+
+Gas benchmark implementations are in the [test repository](test/Benchmark.t.sol). We currently benchmark against leading ERC-4337 accounts. To generate the benchmarks, use `forge snapshot --isolate`. 
+
 ## Getting Help
 
 Have questions or building something cool with Porto Accounts?  
