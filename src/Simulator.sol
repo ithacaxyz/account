@@ -30,7 +30,7 @@ contract Simulator {
     {
         fields = hex"0f"; // `0b01111` - has name, version, chainId, verifyingContract
         name = "Simulator";
-        version = "0.0.1";
+        version = "0.0.2";
         chainId = block.chainid;
         verifyingContract = address(this);
         salt = bytes32(0);
