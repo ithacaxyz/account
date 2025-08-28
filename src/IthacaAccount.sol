@@ -253,6 +253,22 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         return bytes4(isValid ? 0x1626ba7e : 0xffffffff);
     }
 
+    /// @dev HAS to be called direcly by the EOA, either during simulation or in a transaction.
+    /// Since EOAs already have complete control over the account,
+    /// there are no additional security implications.
+    /// @dev Note: This function is not marked "view" to allow storage changes to authorize keys.
+    function isValidSignature8010(bytes32 digest, bytes calldata signature, bytes calldata initData)
+        public
+        payable
+        virtual
+        onlyThis
+        returns (bytes4)
+    {
+        (bool success,) = address(this).call{value: msg.value}(initData);
+        if (!success) revert();
+        return isValidSignature(digest, signature);
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Admin Functions
     ////////////////////////////////////////////////////////////////////////
