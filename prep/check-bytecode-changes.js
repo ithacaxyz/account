@@ -23,6 +23,22 @@ const CONTRACT_CONFIG = {
     name: "SimpleSettler",
     bumpsWhenChanged: [], // SimpleSettler changes only bump itself
   },
+  "Simulator.sol/Simulator.json": {
+    name: "Simulator",
+    bumpsWhenChanged: [], // Simulator changes only bump itself
+  },
+  "Escrow.sol/Escrow.json": {
+    name: "Escrow",
+    bumpsWhenChanged: [], // Escrow changes only bump itself
+  },
+  "MultiSigSigner.sol/MultiSigSigner.json": {
+    name: "MultiSigSigner",
+    bumpsWhenChanged: [], // MultiSigSigner changes only bump itself
+  },
+  "LayerZeroSettler.sol/LayerZeroSettler.json": {
+    name: "LayerZeroSettler",
+    bumpsWhenChanged: [], // LayerZeroSettler changes only bump itself
+  },
 };
 
 // All contracts to check for bytecode changes
