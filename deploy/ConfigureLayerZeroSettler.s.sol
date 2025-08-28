@@ -304,9 +304,29 @@ contract ConfigureLayerZeroSettler is Script {
             // Switch to destination chain to set receive config
             vm.selectFork(forkIds[destChainId]);
 
+            // Ensure destination settler has endpoint set before configuring
+            LayerZeroSettler destSettler =
+                LayerZeroSettler(payable(destConfig.layerZeroSettlerAddress));
+            address currentDestEndpoint = address(destSettler.endpoint());
+            if (currentDestEndpoint != destConfig.layerZeroEndpoint) {
+                if (currentDestEndpoint == address(0)) {
+                    console.log(
+                        "      Setting endpoint on destination:", destConfig.layerZeroEndpoint
+                    );
+                } else {
+                    console.log("      Updating endpoint on destination from:", currentDestEndpoint);
+                    console.log("      To:", destConfig.layerZeroEndpoint);
+                }
+                vm.broadcast();
+                destSettler.setEndpoint(destConfig.layerZeroEndpoint);
+                console.log("      Destination endpoint configured successfully");
+            } else {
+                console.log("      Destination endpoint already set:", destConfig.layerZeroEndpoint);
+            }
+
             // Set receive ULN config on destination
             setReceiveUlnConfig(
-                LayerZeroSettler(payable(destConfig.layerZeroSettlerAddress)),
+                destSettler,
                 ILayerZeroEndpointV2(destConfig.layerZeroEndpoint),
                 config.eid, // Source EID
                 destConfig.receiveUln302,
