@@ -244,7 +244,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             mstore(0x40, structHash) // Store the struct hash.
             digest := keccak256(0x1e, 0x42)
             mstore(0x40, m) // Restore the free memory pointer.
-            mstore(0x60, 0) // Restore the zero pointer.
         }
     }
 
