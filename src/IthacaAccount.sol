@@ -232,7 +232,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         virtual
         returns (bytes32 digest)
     {
-        /// @solidity memory-safe-assembly
         assembly ("memory-safe") {
             let m := mload(0x40) // Load the free memory pointer.
             // Domain Typehash: `keccak256("EIP712Domain(address verifyingContract)")`

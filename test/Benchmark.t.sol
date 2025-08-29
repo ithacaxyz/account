@@ -124,7 +124,7 @@ contract BenchmarkTest is BaseTest {
         );
         IStakeManager(_ERC4337_ENTRYPOINT_ADDR).depositTo{value: 1 ether}(_PIMLICO_PAYMASTER_V07);
 
-        (paymasterSigner, paymasterPrivateKey) = _randomUniqueSigner();
+        (paymasterSigner, paymasterPrivateKey) = makeAddrAndKey("");
 
         stdstore.target(_PIMLICO_PAYMASTER_V06).sig(IPimlicoPaymaster.signers.selector).with_key(
             paymasterSigner
@@ -260,7 +260,7 @@ contract BenchmarkTest is BaseTest {
         erc4337EntryPoint = IERC4337EntryPoint(_ERC4337_ENTRYPOINT_ADDR);
         for (uint256 i = 0; i < numAccounts; i++) {
             accounts[i] = ERC4337(payable(LibClone.clone(address(new MockERC4337Account()))));
-            (eoas[i], privateKeys[i]) = _randomUniqueSigner();
+            (eoas[i], privateKeys[i]) = makeAddrAndKey(string(abi.encodePacked("minimalacct", i)));
             accounts[i].initialize(eoas[i]);
             _giveAccountSomeTokens(address(accounts[i]));
         }
@@ -436,7 +436,7 @@ contract BenchmarkTest is BaseTest {
         privateKeys = new uint256[](numAccounts);
 
         for (uint256 i = 0; i < numAccounts; i++) {
-            (eoas[i], privateKeys[i]) = _randomUniqueSigner();
+            (eoas[i], privateKeys[i]) = makeAddrAndKey(string(abi.encodePacked("csw", i)));
             bytes[] memory owners = new bytes[](1);
             owners[0] = abi.encode(address(eoas[i]));
             accounts[i] = ICoinbaseSmartWalletFactory(_COINBASE_SMART_WALLET_FACTORY_ADDR)
@@ -697,7 +697,7 @@ contract BenchmarkTest is BaseTest {
         privateKeys = new uint256[](numAccounts);
 
         for (uint256 i = 0; i < numAccounts; i++) {
-            (eoas[i], privateKeys[i]) = _randomUniqueSigner();
+            (eoas[i], privateKeys[i]) = makeAddrAndKey(string(abi.encodePacked("alchemy-ma", i)));
             accounts[i] = IAlchemyModularAccountFactory(_ALCHEMY_MODULAR_ACCOUNT_FACTORY_ADDR)
                 .createSemiModularAccount(eoas[i], 0);
             _giveAccountSomeTokens(accounts[i]);
@@ -1037,7 +1037,7 @@ contract BenchmarkTest is BaseTest {
         ISafeProxyFactory safeFactory = ISafeProxyFactory(_SAFE_PROXY_FACTORY);
 
         for (uint256 i = 0; i < numAccounts; i++) {
-            (eoas[i], privateKeys[i]) = _randomUniqueSigner();
+            (eoas[i], privateKeys[i]) = makeAddrAndKey(string(abi.encodePacked("safe-4337", i)));
 
             // Create owners array with single owner
             address[] memory owners = new address[](1);
@@ -1224,7 +1224,8 @@ contract BenchmarkTest is BaseTest {
         privateKeys = new uint256[](numAccounts);
 
         for (uint256 i = 0; i < numAccounts; i++) {
-            (eoas[i], privateKeys[i]) = _randomUniqueSigner();
+            (eoas[i], privateKeys[i]) =
+                makeAddrAndKey(string(abi.encodePacked("zerodev-kernel", i)));
             accounts[i] = IKernelFactory(_ZERODEV_KERNEL_FACTORY_ADDR).createAccount(
                 abi.encodeWithSelector(
                     IKernel.initialize.selector,
@@ -1510,7 +1511,10 @@ contract BenchmarkTest is BaseTest {
         delegatedEOAs = new DelegatedEOA[](numAccounts);
 
         for (uint256 i = 0; i < numAccounts; i++) {
-            delegatedEOAs[i] = _randomEIP7702DelegatedEOA();
+            (delegatedEOAs[i].eoa, delegatedEOAs[i].privateKey) =
+                makeAddrAndKey(string(abi.encodePacked("ithaca", i)));
+            _setEIP7702Delegation(delegatedEOAs[i].eoa);
+            delegatedEOAs[i].d = MockAccount(payable(delegatedEOAs[i].eoa));
             _giveAccountSomeTokens(delegatedEOAs[i].eoa);
         }
     }
@@ -1528,7 +1532,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch100_IthacaAccount() public {
+    function testERC20Transfer_batch100_IthacaAccount2() public {
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(100);
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
