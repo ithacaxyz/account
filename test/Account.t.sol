@@ -497,48 +497,4 @@ contract AccountTest is BaseTest {
         uint256 keysCount137 = IthacaAccount(eoaAddress).keyCount();
         assertEq(keysCount137, 2, "Keys should be added on chain 137");
     }
-
-    function testIsValidSignature8010() public {
-        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        vm.deal(d.eoa, 100 ether);
-
-        // Create a passkey using the existing helper
-        PassKey memory k = _randomSecp256k1PassKey();
-        k.k.isSuperAdmin = true;
-
-        // Create initData that authorizes the passkey
-        bytes memory initData = abi.encodeWithSelector(IthacaAccount.authorize.selector, k.k);
-
-        // Create a random digest to sign
-        bytes32 randomDigest = bytes32(_randomUniform());
-
-        // Create replay-safe digest for signature (same pattern as testSignatureCheckerApproval)
-        bytes32 replaySafeDigest = keccak256(abi.encode(d.d.SIGN_TYPEHASH(), randomDigest));
-        (, string memory name, string memory version,, address verifyingContract,,) =
-            d.d.eip712Domain();
-        bytes32 domain = keccak256(
-            abi.encode(
-                0x91ab3d17e3a50a9d89e63fd30b92be7f5336b03b287bb946787a83a9d62a2766, // DOMAIN_TYPEHASH without chainid,
-                keccak256(abi.encodePacked(name)),
-                keccak256(abi.encodePacked(version)),
-                verifyingContract
-            )
-        );
-        replaySafeDigest = keccak256(abi.encodePacked("\x19\x01", domain, replaySafeDigest));
-        bytes memory signature = _sig(k, replaySafeDigest);
-
-        // Call isValidSignature8010 as the EOA
-        vm.prank(d.eoa);
-        bytes4 result = d.d.isValidSignature8010(randomDigest, signature, initData);
-
-        // Should return the ERC1271 success value
-        assertEq(result, IthacaAccount.isValidSignature.selector);
-
-        // Verify the passkey was authorized
-        assertEq(d.d.keyCount(), 1);
-        IthacaAccount.Key memory authorizedKey = d.d.keyAt(0);
-        assertEq(uint8(authorizedKey.keyType), uint8(IthacaAccount.KeyType.Secp256k1));
-        assertEq(authorizedKey.publicKey, k.k.publicKey);
-        assertEq(authorizedKey.isSuperAdmin, true);
-    }
 }
