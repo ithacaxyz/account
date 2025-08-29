@@ -8,6 +8,12 @@
     "diff:main": "forge snapshot --match-contract Benchmark --diff gas-snapshots/.gas-snapshot-main"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.28.1"
+    "@changesets/cli": "^2.28.1",
+    "husky": "^9.1.7"
+  },
+  "husky": {
+    "hooks": {
+      "pre-push": "clear && forge snapshot --isolate && git add ./snapshots"
+    }
   }
 }
