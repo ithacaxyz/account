@@ -1532,7 +1532,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch100_IthacaAccount2() public {
+    function testERC20Transfer_batch100_IthacaAccount() public {
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(100);
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
