@@ -172,10 +172,9 @@ contract Orchestrator is
 
     /// @dev DEPRECATION WARNING: This function will be deprecated in the future.
     /// Allows pre calls to be executed individually, for counterfactual signatures.
-    function executePreCalls(bytes[] calldata encodedPreCalls) public virtual {
-        for (uint256 j; j < encodedPreCalls.length; ++j) {
-            // TODO: Add calldata bounds checks here.
-            SignedCall calldata p = _extractPreCall(encodedPreCalls[j]);
+    function executePreCalls(SignedCall[] calldata preCalls) public virtual {
+        for (uint256 j; j < preCalls.length; ++j) {
+            SignedCall calldata p = preCalls[j];
             address eoa = Math.coalesce(p.eoa, msg.sender);
             uint256 nonce = p.nonce;
 

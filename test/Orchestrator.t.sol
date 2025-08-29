@@ -562,10 +562,10 @@ contract OrchestratorTest is BaseTest {
         preCall.nonce = (0xc1d0 << 240);
         preCall.signature = _eoaSig(ephemeralPK, oc.computeDigest(preCall));
 
-        bytes[] memory encodedPreCalls = new bytes[](1);
-        encodedPreCalls[0] = abi.encode(preCall);
+        ICommon.SignedCall[] memory preCalls = new ICommon.SignedCall[](1);
+        preCalls[0] = preCall;
 
-        oc.executePreCalls(encodedPreCalls);
+        oc.executePreCalls(preCalls);
 
         assertTrue(MockAccount(payable(eoa)).keyCount() > 0);
     }
