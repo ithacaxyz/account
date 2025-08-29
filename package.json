@@ -13,7 +13,7 @@
   },
   "husky": {
     "hooks": {
-      "pre-push": "clear && forge snapshot --isolate && git add ./snapshots"
+      "pre-commit": "clear && forge snapshot --isolate && git add ./snapshots"
     }
   }
 }
