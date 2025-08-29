@@ -554,7 +554,7 @@ contract OrchestratorTest is BaseTest {
         PassKey memory kSession = _randomSecp256r1PassKey();
 
         Orchestrator.SignedCall memory preCall;
-        preCall.eoa = eoa;
+        preCall.eoa = address(0);
 
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
         calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, kSession.k);
@@ -565,7 +565,7 @@ contract OrchestratorTest is BaseTest {
         ICommon.SignedCall[] memory preCalls = new ICommon.SignedCall[](1);
         preCalls[0] = preCall;
 
-        oc.executePreCalls(preCalls);
+        oc.executePreCalls(eoa, preCalls);
 
         assertTrue(MockAccount(payable(eoa)).keyCount() > 0);
     }
