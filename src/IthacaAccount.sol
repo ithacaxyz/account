@@ -253,7 +253,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// original EOA key and other super admin keys.
     /// Otherwise, any session key can be used to approve infinite allowances
     /// via Permit2 by default, which will allow apps infinite power.
-    /// @dev Note: The rehashing scheme is not EIP 5672 compliant.
+    /// @dev Note: The rehashing scheme is not EIP-5267 compliant.
     /// A different domain separator is used for the rehashing, which excludes `name` and `version`
     /// from the domain, for latency improvements offchain.
     function isValidSignature(bytes32 digest, bytes calldata signature)
