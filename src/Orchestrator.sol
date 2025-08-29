@@ -170,6 +170,42 @@ contract Orchestrator is
         TokenTransferLib.safeTransfer(token, recipient, amount);
     }
 
+    /// @dev DEPRECATION WARNING: This function will be deprecated in the future.
+    /// Allows pre calls to be executed individually, for counterfactual signatures.
+    function executePreCalls(bytes[] calldata encodedPreCalls) public virtual {
+        for (uint256 j; j < encodedPreCalls.length; ++j) {
+            // TODO: Add calldata bounds checks here.
+            SignedCall calldata p = _extractPreCall(encodedPreCalls[j]);
+            address eoa = Math.coalesce(p.eoa, msg.sender);
+            uint256 nonce = p.nonce;
+
+            (bool isValid, bytes32 keyHash) = _verify(_computeDigest(p), eoa, p.signature);
+
+            if (!isValid) revert PreCallVerificationError();
+
+            _checkAndIncrementNonce(eoa, nonce);
+
+            // This part is same as `selfCallPayVerifyCall537021665`. We simply inline to save gas.
+            bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
+                hex"01000000000078210001", // ERC7821 batch execution mode.
+                p.executionData,
+                abi.encode(keyHash) // `opData`.
+            );
+
+            assembly ("memory-safe") {
+                mstore(0x00, 0) // Zeroize the return slot.
+                if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
+                    if iszero(mload(0x00)) { mstore(0x00, shl(224, 0x2228d5db)) } // `PreCallError()`.
+                    revert(0x00, 0x20) // Revert the `err` (NOT return).
+                }
+            }
+
+            // Event so that indexers can know that the nonce is used.
+            // Reaching here means there's no error in the PreCall.
+            emit IntentExecuted(eoa, p.nonce, true, 0); // `incremented = true`, `err = 0`.
+        }
+    }
+
     /// @dev Executes a single encoded intent.
     /// `encodedIntent` is given by `abi.encode(intent)`, where `intent` is a struct of type `Intent`.
     /// If sufficient gas is provided, returns an error selector that is non-zero

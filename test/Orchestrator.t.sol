@@ -545,6 +545,31 @@ contract OrchestratorTest is BaseTest {
         vm.revertToStateAndDelete(snapshot);
     }
 
+    function testExecutePreCalls() public {
+        uint256 ephemeralPK = _randomPrivateKey();
+        address eoa = vm.addr(ephemeralPK);
+
+        vm.etch(eoa, abi.encodePacked(hex"ef0100", account));
+
+        PassKey memory kSession = _randomSecp256r1PassKey();
+
+        Orchestrator.SignedCall memory preCall;
+        preCall.eoa = eoa;
+
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, kSession.k);
+        preCall.executionData = abi.encode(calls);
+        preCall.nonce = (0xc1d0 << 240);
+        preCall.signature = _eoaSig(ephemeralPK, oc.computeDigest(preCall));
+
+        bytes[] memory encodedPreCalls = new bytes[](1);
+        encodedPreCalls[0] = abi.encode(preCall);
+
+        oc.executePreCalls(encodedPreCalls);
+
+        assertTrue(MockAccount(payable(eoa)).keyCount() > 0);
+    }
+
     struct _TestAuthorizeWithPreCallsAndTransferTemps {
         uint256 gExecute;
         uint256 gCombined;
