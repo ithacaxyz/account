@@ -225,6 +225,29 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     // ERC1271
     ////////////////////////////////////////////////////////////////////////
 
+    /// @dev Variant of `_hashTypedData` that includes only the verifying contract.
+    function _hashTypedDataOnlyVerifyingContract(bytes32 structHash)
+        internal
+        view
+        virtual
+        returns (bytes32 digest)
+    {
+        /// @solidity memory-safe-assembly
+        assembly ("memory-safe") {
+            let m := mload(0x40) // Load the free memory pointer.
+            // Domain Typehash: `keccak256("EIP712Domain(address verifyingContract)")`
+            mstore(0x00, 0x035aff83d86937d35b32e04f0ddc6ff469290eef2f1b692d8a815c89404d4749)
+            mstore(0x20, address())
+            // Compute the digest.
+            mstore(0x20, keccak256(0x00, 0x40)) // Store the domain separator.
+            mstore(0x00, 0x1901) // Store "\x19\x01".
+            mstore(0x40, structHash) // Store the struct hash.
+            digest := keccak256(0x1e, 0x42)
+            mstore(0x40, m) // Restore the free memory pointer.
+            mstore(0x60, 0) // Restore the zero pointer.
+        }
+    }
+
     /// @dev Checks if a signature is valid.
     /// Note: For security reasons, we can only let this function validate against the
     /// original EOA key and other super admin keys.
@@ -241,7 +264,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         // The account domain is added as a layer to prevent replay attacks since some apps do not include the
         // account address as a field in their 712 data.
         bytes32 replaySafeDigest = EfficientHashLib.hash(SIGN_TYPEHASH, digest);
-        digest = _hashTypedDataSansChainId(replaySafeDigest);
+        digest = _hashTypedDataOnlyVerifyingContract(replaySafeDigest);
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
