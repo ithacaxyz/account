@@ -20,7 +20,7 @@ import {IEscrow} from "../src/interfaces/IEscrow.sol";
 
 contract OrchestratorTest is BaseTest {
     struct _TestFullFlowTemps {
-        Orchestrator.Intent[] intents;
+        ICommon.Intent[] intents;
         TargetFunctionPayload[] targetFunctionPayloads;
         DelegatedEOA[] delegatedEOAs;
         bytes[] encodedIntents;
@@ -29,7 +29,7 @@ contract OrchestratorTest is BaseTest {
     function testFullFlow(uint256) public {
         _TestFullFlowTemps memory t;
 
-        t.intents = new Orchestrator.Intent[](_random() & 3);
+        t.intents = new ICommon.Intent[](_random() & 3);
         t.targetFunctionPayloads = new TargetFunctionPayload[](t.intents.length);
         t.delegatedEOAs = new DelegatedEOA[](t.intents.length);
         t.encodedIntents = new bytes[](t.intents.length);
@@ -38,7 +38,7 @@ contract OrchestratorTest is BaseTest {
             DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
             t.delegatedEOAs[i] = d;
 
-            Orchestrator.Intent memory u = t.intents[i];
+            ICommon.Intent memory u = t.intents[i];
             u.eoa = d.eoa;
 
             vm.deal(u.eoa, 2 ** 128 - 1);
@@ -78,7 +78,7 @@ contract OrchestratorTest is BaseTest {
         bytes memory executionData =
             _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         u.eoa = alice.eoa;
         u.nonce = 0;
         u.executionData = executionData;
@@ -107,7 +107,7 @@ contract OrchestratorTest is BaseTest {
         vm.prank(d.eoa);
         d.d.authorize(k.k);
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
@@ -154,7 +154,7 @@ contract OrchestratorTest is BaseTest {
         calls[0].to = target;
         calls[0].data = abi.encodeWithSignature("revertWithData(bytes)", data);
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = abi.encode(calls);
@@ -174,7 +174,7 @@ contract OrchestratorTest is BaseTest {
 
         paymentToken.mint(d.eoa, 500 ether);
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
@@ -212,7 +212,7 @@ contract OrchestratorTest is BaseTest {
             ds[i] = _randomEIP7702DelegatedEOA();
             paymentToken.mint(ds[i].eoa, 1 ether);
 
-            Orchestrator.Intent memory u;
+            ICommon.Intent memory u;
             u.eoa = ds[i].eoa;
             u.nonce = 0;
             u.executionData =
@@ -247,7 +247,7 @@ contract OrchestratorTest is BaseTest {
             calls[i] = _transferCall(address(paymentToken), address(0xabcd), 0.5 ether);
         }
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = abi.encode(calls);
@@ -271,7 +271,7 @@ contract OrchestratorTest is BaseTest {
 
         paymentToken.mint(d.eoa, 500 ether);
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.executionData = _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
@@ -313,7 +313,7 @@ contract OrchestratorTest is BaseTest {
         paymentToken.mint(d.eoa, 10 ether);
 
         // Create base intent with common fields
-        Orchestrator.Intent memory baseIntent;
+        ICommon.Intent memory baseIntent;
         baseIntent.eoa = d.eoa;
         baseIntent.paymentToken = address(paymentToken);
         baseIntent.paymentAmount = 0.1 ether;
@@ -322,7 +322,7 @@ contract OrchestratorTest is BaseTest {
 
         // Test case 1: Intent with no expiry (expiry = 0) should always be valid
         {
-            Orchestrator.Intent memory u = baseIntent;
+            ICommon.Intent memory u = baseIntent;
             u.nonce = d.d.getNonce(0);
             u.executionData =
                 _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
@@ -335,7 +335,7 @@ contract OrchestratorTest is BaseTest {
 
         // Test case 2: Intent with future expiry should be valid
         {
-            Orchestrator.Intent memory u = baseIntent;
+            ICommon.Intent memory u = baseIntent;
             u.nonce = d.d.getNonce(0);
             u.executionData =
                 _transferExecutionData(address(paymentToken), address(0xbcde), 1 ether);
@@ -348,7 +348,7 @@ contract OrchestratorTest is BaseTest {
 
         // Test case 3: Intent with past expiry should fail
         {
-            Orchestrator.Intent memory u = baseIntent;
+            ICommon.Intent memory u = baseIntent;
             u.nonce = d.d.getNonce(0); // This will be 2 after the previous two intents
             u.executionData =
                 _transferExecutionData(address(paymentToken), address(0xcdef), 1 ether);
@@ -365,7 +365,7 @@ contract OrchestratorTest is BaseTest {
             bytes[] memory encodedIntents = new bytes[](3);
 
             // Create base intent for batch with smaller amounts
-            Orchestrator.Intent memory batchBase;
+            ICommon.Intent memory batchBase;
             batchBase.eoa = d.eoa;
             batchBase.paymentToken = address(paymentToken);
             batchBase.paymentAmount = 0.05 ether;
@@ -373,7 +373,7 @@ contract OrchestratorTest is BaseTest {
             batchBase.combinedGas = 10000000;
 
             // Valid intent with nonce 2
-            Orchestrator.Intent memory u1 = batchBase;
+            ICommon.Intent memory u1 = batchBase;
             u1.nonce = 2;
             u1.executionData =
                 _transferExecutionData(address(paymentToken), address(0x1111), 0.5 ether);
@@ -382,7 +382,7 @@ contract OrchestratorTest is BaseTest {
             encodedIntents[0] = abi.encode(u1);
 
             // Expired intent with nonce 3
-            Orchestrator.Intent memory u2 = batchBase;
+            ICommon.Intent memory u2 = batchBase;
             u2.nonce = 3;
             u2.executionData =
                 _transferExecutionData(address(paymentToken), address(0x2222), 0.5 ether);
@@ -391,7 +391,7 @@ contract OrchestratorTest is BaseTest {
             encodedIntents[1] = abi.encode(u2);
 
             // Another valid intent with nonce 3 (since nonce 3 wasn't consumed due to expiry)
-            Orchestrator.Intent memory u3 = batchBase;
+            ICommon.Intent memory u3 = batchBase;
             u3.nonce = 3;
             u3.executionData =
                 _transferExecutionData(address(paymentToken), address(0x3333), 0.5 ether);
@@ -424,7 +424,7 @@ contract OrchestratorTest is BaseTest {
             paymentToken.mint(ds[i].eoa, 1 ether);
             vm.deal(ds[i].eoa, 1 ether);
 
-            Orchestrator.Intent memory u;
+            ICommon.Intent memory u;
             u.eoa = ds[i].eoa;
             u.nonce = 0;
             u.executionData =
@@ -463,7 +463,7 @@ contract OrchestratorTest is BaseTest {
         vm.prank(d.eoa);
         d.d.authorize(k.k);
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         u.eoa = d.eoa;
         u.executionData = _executionData(address(0), 0, bytes(""));
         u.nonce = 0x2;
@@ -478,7 +478,7 @@ contract OrchestratorTest is BaseTest {
 
     function testInvalidateNonce(uint96 seqKey, uint64 seq, uint64 seq2) public {
         uint256 nonce = (uint256(seqKey) << 64) | uint256(seq);
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         u.eoa = d.eoa;
 
@@ -593,7 +593,7 @@ contract OrchestratorTest is BaseTest {
 
     function testInitAndTransferInOneShot(bytes32) public {
         _TestAuthorizeWithPreCallsAndTransferTemps memory t;
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
 
         uint256 ephemeralPK = _randomPrivateKey();
         t.eoa = vm.addr(ephemeralPK);
@@ -689,7 +689,7 @@ contract OrchestratorTest is BaseTest {
 
     function testAuthorizeWithPreCallsAndTransfer(bytes32) public {
         _TestAuthorizeWithPreCallsAndTransferTemps memory t;
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         Orchestrator.SignedCall memory pInit;
 
         if (_randomChance(2)) {
@@ -904,7 +904,7 @@ contract OrchestratorTest is BaseTest {
         // 1 ether in the EOA for execution.
         vm.deal(address(d.d), 1 ether);
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
 
         u.eoa = d.eoa;
         u.payer = address(payer.d);
@@ -970,7 +970,7 @@ contract OrchestratorTest is BaseTest {
         t.token = _randomChance(2) ? address(0) : address(paymentToken);
         t.isWithState = _randomChance(2);
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         t.d = _randomEIP7702DelegatedEOA();
         vm.deal(t.d.eoa, type(uint192).max);
 
@@ -1064,7 +1064,7 @@ contract OrchestratorTest is BaseTest {
         t.testImplementationCheck = _randomChance(2);
         t.requireWrongImplementation = _randomChance(2);
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         vm.deal(t.d.eoa, type(uint192).max);
 
         u.eoa = t.d.eoa;
@@ -1176,7 +1176,7 @@ contract OrchestratorTest is BaseTest {
         vm.expectRevert(bytes4(keccak256("InvalidKeyHash()")));
         t.d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, abi.encode(calls));
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         u.eoa = t.d.eoa;
         u.nonce = t.d.d.getNonce(0);
         u.executionData = abi.encode(calls);
@@ -1358,12 +1358,11 @@ contract OrchestratorTest is BaseTest {
 
         // 1. Prepare the output intent first to get its digest as settlementId
         t.outputIntent.eoa = t.d.eoa;
-        t.outputIntent.nonce = t.d.d.getNonce(0);
+        t.outputIntent.nonce = t.d.d.getNonce(0xc1d0 << 176);
         t.outputIntent.executionData =
             _transferExecutionData(address(t.usdcMainnet), t.friend, 1000);
         t.outputIntent.combinedGas = 1000000;
         t.outputIntent.settler = address(t.settler);
-        t.outputIntent.isMultichain = true;
 
         {
             bytes[] memory encodedFundTransfers = new bytes[](1);
@@ -1386,9 +1385,8 @@ contract OrchestratorTest is BaseTest {
 
         // Base Intent with escrow execution data
         t.baseIntent.eoa = t.d.eoa;
-        t.baseIntent.nonce = t.d.d.getNonce(0);
+        t.baseIntent.nonce = t.d.d.getNonce(0xc1d0 << 176);
         t.baseIntent.combinedGas = 1000000;
-        t.baseIntent.isMultichain = true;
 
         // Create Base escrow execution data
         {
@@ -1426,9 +1424,8 @@ contract OrchestratorTest is BaseTest {
 
         // Arbitrum Intent with escrow execution data
         t.arbIntent.eoa = t.d.eoa;
-        t.arbIntent.nonce = t.d.d.getNonce(0);
+        t.arbIntent.nonce = t.d.d.getNonce(0xc1d0 << 176);
         t.arbIntent.combinedGas = 1000000;
-        t.arbIntent.isMultichain = true;
         // Create Arbitrum escrow execution data
         {
             IEscrow.Escrow[] memory escrows = new IEscrow.Escrow[](1);
@@ -1481,9 +1478,12 @@ contract OrchestratorTest is BaseTest {
         emit Escrow.EscrowCreated(t.escrowIdBase);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(t.encodedIntents);
+
         assertEq(uint256(bytes32(t.errs[0])), 0);
+
         // Verify funds are escrowed, not transferred yet
         vm.assertEq(t.usdcBase.balanceOf(address(t.escrowBase)), 600);
+
         vm.assertEq(t.usdcBase.balanceOf(t.relay), 0);
 
         // 4. Action on Arb
@@ -1495,6 +1495,7 @@ contract OrchestratorTest is BaseTest {
         t.encodedIntents[0] = abi.encode(t.baseIntent);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(t.encodedIntents);
+
         assertEq(
             uint256(bytes32(t.errs[0])), uint256(bytes32(bytes4(keccak256("VerificationError()"))))
         );
@@ -1530,6 +1531,7 @@ contract OrchestratorTest is BaseTest {
         emit Escrow.EscrowCreated(t.escrowIdArb);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(t.encodedIntents);
+
         assertEq(uint256(bytes32(t.errs[0])), 0);
         // Verify funds are escrowed, not transferred yet
         vm.assertEq(t.usdcArb.balanceOf(address(t.escrowArb)), 500);
