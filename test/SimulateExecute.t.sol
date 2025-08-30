@@ -53,7 +53,7 @@ contract SimulateExecuteTest is BaseTest {
             abi.encodeWithSignature("burnGas(uint256,uint256)", t.gasToBurn, t.randomness)
         );
 
-        Orchestrator.Intent memory i;
+        ICommon.Intent memory i;
         i.eoa = d.eoa;
         i.nonce = 0;
         i.executionData = t.executionData;
@@ -122,7 +122,7 @@ contract SimulateExecuteTest is BaseTest {
             abi.encodeWithSignature("burnGas(uint256,uint256)", t.gasToBurn, t.randomness)
         );
 
-        Orchestrator.Intent memory i;
+        ICommon.Intent memory i;
         i.eoa = d.eoa;
         i.nonce = 0;
         i.executionData = t.executionData;
@@ -168,7 +168,7 @@ contract SimulateExecuteTest is BaseTest {
             abi.encodeWithSignature("burnGas(uint256,uint256)", t.gasToBurn, t.randomness)
         );
 
-        Orchestrator.Intent memory i;
+        ICommon.Intent memory i;
         i.eoa = d.eoa;
         i.nonce = 0;
         i.executionData = t.executionData;
@@ -224,7 +224,7 @@ contract SimulateExecuteTest is BaseTest {
             abi.encodeWithSignature("burnGas(uint256,uint256)", t.gasToBurn, t.randomness)
         );
 
-        Orchestrator.Intent memory i;
+        ICommon.Intent memory i;
         i.eoa = d.eoa;
         i.nonce = 0;
         i.executionData = t.executionData;
@@ -284,7 +284,7 @@ contract SimulateExecuteTest is BaseTest {
             abi.encodeWithSignature("burnGas(uint256,uint256)", t.gasToBurn, t.randomness)
         );
 
-        Orchestrator.Intent memory i;
+        ICommon.Intent memory i;
         i.eoa = d.eoa;
         i.nonce = 0;
         i.executionData = t.executionData;
