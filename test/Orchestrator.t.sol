@@ -1358,7 +1358,7 @@ contract OrchestratorTest is BaseTest {
 
         // 1. Prepare the output intent first to get its digest as settlementId
         t.outputIntent.eoa = t.d.eoa;
-        t.outputIntent.nonce = t.d.d.getNonce(0xc1d0 << 176);
+        t.outputIntent.nonce = t.d.d.getNonce(0x6D76 << 176);
         t.outputIntent.executionData =
             _transferExecutionData(address(t.usdcMainnet), t.friend, 1000);
         t.outputIntent.combinedGas = 1000000;
@@ -1385,7 +1385,7 @@ contract OrchestratorTest is BaseTest {
 
         // Base Intent with escrow execution data
         t.baseIntent.eoa = t.d.eoa;
-        t.baseIntent.nonce = t.d.d.getNonce(0xc1d0 << 176);
+        t.baseIntent.nonce = t.d.d.getNonce(0x6D76 << 176);
         t.baseIntent.combinedGas = 1000000;
 
         // Create Base escrow execution data
@@ -1424,7 +1424,7 @@ contract OrchestratorTest is BaseTest {
 
         // Arbitrum Intent with escrow execution data
         t.arbIntent.eoa = t.d.eoa;
-        t.arbIntent.nonce = t.d.d.getNonce(0xc1d0 << 176);
+        t.arbIntent.nonce = t.d.d.getNonce(0x6D76 << 176);
         t.arbIntent.combinedGas = 1000000;
         // Create Arbitrum escrow execution data
         {

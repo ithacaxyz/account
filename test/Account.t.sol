@@ -474,14 +474,7 @@ contract AccountTest is BaseTest {
         ICommon.Intent memory u1 = baseIntent;
         u1.nonce = (0xc1d0 << 240) | 0; // Multichain nonce for main intent
 
-        // get a merkle sig
-        bytes32[] memory digests = new bytes32[](2);
-        digests[0] = _computeDigest(u1, 1); // chainId 1
-        digests[1] = _computeDigest(baseIntent, 137); // chainId 137
-        bytes32 root = merkleHelper.getRoot(digests);
-
-        bytes memory sig = _sig(adminKey, root);
-        u1.signature = abi.encode(merkleHelper.getProof(digests, 0), root, sig);
+        u1.signature = _sig(adminKey, oc.computeDigest(u1));
 
         // Execute on chain 1 - should succeed
         assertEq(oc.execute(abi.encode(u1)), 0, "Execution should succeed on chain 1");
@@ -500,7 +493,7 @@ contract AccountTest is BaseTest {
         vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
 
         // Execution should succeed due to multichain nonce in pre-calls
-        baseIntent.signature = abi.encode(merkleHelper.getProof(digests, 1), root, sig);
+        baseIntent.signature = u1.signature;
         assertEq(oc.execute(abi.encode(baseIntent)), 0, "Should succeed due to multichain nonce");
 
         // Verify keys were added on chain 137
