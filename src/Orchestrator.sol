@@ -127,6 +127,10 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
     /// This constant is a pun for "chain ID 0".
     uint16 public constant MULTICHAIN_NONCE_PREFIX = 0xc1d0;
 
+    /// @dev Nonce prefix to signal that the payload should use merkle verification.
+    /// This constant is "mv" in hex.
+    uint16 public constant MERKLE_VERIFICATION = 0x6D76;
+
     /// @dev For ensuring that the remaining gas is sufficient for a self-call with
     /// overhead for cleaning up after the self-call. This also has an added benefit
     /// of preventing the censorship vector of calling `execute` in a very deep call-stack.
@@ -475,7 +479,7 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
         bool isValid;
         bytes32 keyHash;
 
-        if (i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX) {
+        if (i.nonce >> 240 == MERKLE_VERIFICATION) {
             // For multi chain intents, we have to verify using merkle sigs.
             (isValid, keyHash) = _verifyMerkleSig(digest, eoa, i.signature);
 
@@ -753,12 +757,11 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
     function _computeDigest(SignedCall calldata p) internal view virtual returns (bytes32) {
         bool isMultichain = p.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(5);
+        bytes32[] memory f = EfficientHashLib.malloc(4);
         f.set(0, SIGNED_CALL_TYPEHASH);
-        f.set(1, LibBit.toUint(isMultichain));
-        f.set(2, uint160(p.eoa));
-        f.set(3, _executionDataHash(p.executionData));
-        f.set(4, p.nonce);
+        f.set(1, uint160(p.eoa));
+        f.set(2, _executionDataHash(p.executionData));
+        f.set(3, p.nonce);
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
@@ -766,7 +769,7 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
     /// @dev Computes the EIP712 digest for the Intent.
     function _computeDigest(Intent calldata i) internal view virtual returns (bytes32) {
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(13);
+        bytes32[] memory f = EfficientHashLib.malloc(12);
         f.set(0, INTENT_TYPEHASH);
         f.set(1, uint160(i.eoa));
         f.set(2, _executionDataHash(i.executionData));
@@ -780,7 +783,9 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
         f.set(10, uint160(i.settler));
         f.set(11, i.expiry);
 
-        return _hashTypedData(f.hash());
+        return i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX
+            ? _hashTypedDataSansChainId(f.hash())
+            : _hashTypedData(f.hash());
     }
 
     /// @dev Helper function to return the hash of the `execuctionData`.
