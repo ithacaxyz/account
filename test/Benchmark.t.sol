@@ -1687,7 +1687,7 @@ contract BenchmarkTest is BaseTest {
     ) internal view returns (bytes[] memory) {
         bytes[] memory encodedIntents = new bytes[](delegatedEOAs.length);
         for (uint256 i = 0; i < delegatedEOAs.length; i++) {
-            Orchestrator.Intent memory u;
+            ICommon.Intent memory u;
             u.eoa = delegatedEOAs[i].eoa;
             u.nonce = 0;
             u.combinedGas = 1000000;
@@ -1745,7 +1745,7 @@ contract BenchmarkTest is BaseTest {
         d.d.setSpendLimit(k.keyHash, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether);
         vm.stopPrank();
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.combinedGas = 1000000;
