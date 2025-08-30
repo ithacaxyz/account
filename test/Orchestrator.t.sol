@@ -1548,12 +1548,10 @@ contract OrchestratorTest is BaseTest {
         emit Escrow.EscrowCreated(t.escrowIdBase);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(t.encodedIntents);
-
         assertEq(uint256(bytes32(t.errs[0])), 0);
 
         // Verify funds are escrowed, not transferred yet
         vm.assertEq(t.usdcBase.balanceOf(address(t.escrowBase)), 600);
-
         vm.assertEq(t.usdcBase.balanceOf(t.relay), 0);
 
         // 4. Action on Arb
@@ -1565,7 +1563,6 @@ contract OrchestratorTest is BaseTest {
         t.encodedIntents[0] = abi.encode(t.baseIntent);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(t.encodedIntents);
-
         assertEq(
             uint256(bytes32(t.errs[0])), uint256(bytes32(bytes4(keccak256("VerificationError()"))))
         );
@@ -1601,7 +1598,6 @@ contract OrchestratorTest is BaseTest {
         emit Escrow.EscrowCreated(t.escrowIdArb);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(t.encodedIntents);
-
         assertEq(uint256(bytes32(t.errs[0])), 0);
         // Verify funds are escrowed, not transferred yet
         vm.assertEq(t.usdcArb.balanceOf(address(t.escrowArb)), 500);
