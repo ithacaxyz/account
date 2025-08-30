@@ -5,8 +5,11 @@ import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
 import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCallTarget.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
+import {Merkle} from "murky/Merkle.sol";
 
 contract AccountTest is BaseTest {
+    Merkle merkleHelper = new Merkle();
+
     struct _TestExecuteWithSignatureTemps {
         TargetFunctionPayload[] targetFunctionPayloads;
         ERC7821.Call[] calls;
@@ -327,8 +330,17 @@ contract AccountTest is BaseTest {
         vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
 
         // Use the prepared pre-calls on chain 1
-        baseIntent.nonce = (0xc1d0 << 240) | 0; // Multichain nonce for main intent
-        baseIntent.signature = _sig(adminKey, oc.computeDigest(baseIntent));
+        ICommon.Intent memory u1 = baseIntent;
+        u1.nonce = (0xc1d0 << 240) | 0; // Multichain nonce for main intent
+
+        // get a merkle sig
+        bytes32[] memory digests = new bytes32[](2);
+        digests[0] = _computeDigest(u1, 1); // chainId 1
+        digests[1] = _computeDigest(baseIntent, 137); // chainId 137
+        bytes32 root = merkleHelper.getRoot(digests);
+
+        bytes memory sig = _sig(adminKey, root);
+        u1.signature = abi.encode(merkleHelper.getProof(digests, 0), root, sig);
 
         // Execute on chain 1 - should succeed
         assertEq(oc.execute(abi.encode(baseIntent)), 0, "Execution should succeed on chain 1");
@@ -347,6 +359,7 @@ contract AccountTest is BaseTest {
         vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
 
         // Execution should succeed due to multichain nonce in pre-calls
+        baseIntent.signature = abi.encode(merkleHelper.getProof(digests, 1), root, sig);
         assertEq(oc.execute(abi.encode(baseIntent)), 0, "Should succeed due to multichain nonce");
 
         // Verify keys were added on chain 137
