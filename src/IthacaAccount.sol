@@ -494,20 +494,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         virtual
         returns (bool isValid, bytes32 keyHash)
     {
-        address oc = ORCHESTRATOR;
-        // We only have to enforce the pause flag here, because all execution/payment flows
-        // always have to do a signature validation.
-        assembly ("memory-safe") {
-            mstore(0x00, 0x060f052a) // `pauseFlag()`
-
-            let success := staticcall(gas(), oc, 0x1c, 0x04, 0x00, 0x20)
-
-            if or(mload(0x00), iszero(success)) {
-                mstore(0x00, 0x9e87fac8) // `Paused()`
-                revert(0x1c, 0x04)
-            }
-        }
-
         // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
             return (ECDSA.recoverCalldata(digest, signature) == address(this), 0);

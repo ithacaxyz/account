@@ -21,8 +21,7 @@ contract DeployAllScript is Script {
 
     function run() external {
         vm.startBroadcast();
-        address pauseAuthority = vm.envAddress("PAUSE_AUTHORITY");
-        orchestrator = address(new Orchestrator(pauseAuthority));
+        orchestrator = address(new Orchestrator());
         accountImplementation = address(new IthacaAccount(address(orchestrator)));
         accountProxy = LibEIP7702.deployProxy(accountImplementation, address(0));
         simulator = address(new Simulator());

@@ -17,7 +17,6 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
 import {ICommon} from "./interfaces/ICommon.sol";
-import {PauseAuthority} from "./PauseAuthority.sol";
 import {IFunder} from "./interfaces/IFunder.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
@@ -42,13 +41,7 @@ import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 ///   This means once an Intent is signed, it is infeasible to
 ///   alter or rearrange it to force it to fail.
 
-contract Orchestrator is
-    IOrchestrator,
-    EIP712,
-    CallContextChecker,
-    ReentrancyGuardTransient,
-    PauseAuthority
-{
+contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGuardTransient {
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
@@ -151,14 +144,6 @@ contract Orchestrator is
 
     /// @dev Flag for simulation mode.
     uint256 internal constant _SIMULATION_MODE_FLAG = 1;
-
-    ////////////////////////////////////////////////////////////////////////
-    // Constructor
-    ////////////////////////////////////////////////////////////////////////
-
-    constructor(address pauseAuthority) {
-        _pauseConfig = uint160(pauseAuthority);
-    }
 
     ////////////////////////////////////////////////////////////////////////
     // Main
