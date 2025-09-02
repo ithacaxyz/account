@@ -79,7 +79,7 @@ contract BaseTest is SoladyTest {
     }
 
     function setUp() public virtual {
-        oc = new MockOrchestrator(address(this));
+        oc = new MockOrchestrator();
         paymentToken = new MockPaymentToken();
         accountImplementation = address(new MockAccount(address(oc)));
         eip7702Proxy =

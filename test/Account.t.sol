@@ -261,7 +261,7 @@ contract AccountTest is BaseTest {
     }
 
     function testAddDisallowedSuperAdminKeyTypeReverts() public {
-        address orchestrator = address(new Orchestrator(address(this)));
+        address orchestrator = address(new Orchestrator());
         address accountImplementation = address(new IthacaAccount(address(orchestrator)));
         address accountProxy = address(LibEIP7702.deployProxy(accountImplementation, address(0)));
         account = MockAccount(payable(accountProxy));
@@ -281,124 +281,6 @@ contract AccountTest is BaseTest {
         d.d.authorize(k.k);
 
         vm.stopPrank();
-    }
-
-    function testPause() public {
-        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        vm.deal(d.eoa, 100 ether);
-        address pauseAuthority = _randomAddress();
-        oc.setPauseAuthority(pauseAuthority);
-
-        (address ocPauseAuthority, uint40 lastPaused) = oc.getPauseConfig();
-        assertEq(ocPauseAuthority, pauseAuthority);
-        assertEq(lastPaused, 0);
-
-        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
-
-        // Pause authority is always the EP
-        calls[0].to = address(d.d);
-        calls[0].data = abi.encodeWithSignature("setPauseAuthority(address)", pauseAuthority);
-        uint256 nonce = d.d.getNonce(0);
-        bytes memory opData = abi.encodePacked(nonce, _sig(d, d.d.computeDigest(calls, nonce)));
-        bytes memory executionData = abi.encode(calls, opData);
-
-        // Setup a mock call
-        calls[0] = _transferCall(address(0), address(0x1234), 1 ether);
-        nonce = d.d.getNonce(0);
-        bytes32 digest = d.d.computeDigest(calls, nonce);
-        bytes memory signature = _sig(d, digest);
-
-        opData = abi.encodePacked(nonce, signature);
-        executionData = abi.encode(calls, opData);
-
-        // Check that execution can pass before pause.
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
-
-        // The block timestamp needs to be realistic
-        vm.warp(6 weeks + 1 days);
-
-        // Only the pause authority can pause.
-        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        oc.setPauseAuthority(pauseAuthority);
-
-        vm.startPrank(pauseAuthority);
-        oc.pause(true);
-
-        assertEq(oc.pauseFlag(), 1);
-        (ocPauseAuthority, lastPaused) = oc.getPauseConfig();
-        assertEq(ocPauseAuthority, pauseAuthority);
-        assertEq(lastPaused, block.timestamp);
-        vm.stopPrank();
-
-        // Check that execute fails
-        nonce = d.d.getNonce(0);
-        digest = d.d.computeDigest(calls, nonce);
-        signature = _sig(d, digest);
-        opData = abi.encodePacked(nonce, signature);
-        executionData = abi.encode(calls, opData);
-
-        vm.expectRevert(bytes4(keccak256("Paused()")));
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
-
-        // Check that intent fails
-        Orchestrator.Intent memory u;
-        u.eoa = d.eoa;
-        u.nonce = d.d.getNonce(0);
-        u.combinedGas = 1000000;
-        u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
-        u.signature = _eoaSig(d.privateKey, u);
-
-        assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("VerificationError()")));
-
-        vm.startPrank(pauseAuthority);
-        // Try to pause already paused account.
-        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        oc.pause(true);
-
-        oc.pause(false);
-        assertEq(oc.pauseFlag(), 0);
-        (ocPauseAuthority, lastPaused) = oc.getPauseConfig();
-        assertEq(ocPauseAuthority, pauseAuthority);
-        assertEq(lastPaused, block.timestamp);
-
-        // Cannot immediately repause again.
-        vm.warp(lastPaused + 4 weeks + 1 days);
-        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        oc.pause(true);
-        vm.stopPrank();
-
-        // Intent should now succeed.
-        assertEq(oc.execute(abi.encode(u)), 0);
-
-        // Can pause again, after the cooldown period.
-        vm.warp(lastPaused + 5 weeks + 1);
-        vm.startPrank(pauseAuthority);
-        oc.pause(true);
-        vm.stopPrank();
-
-        assertEq(oc.pauseFlag(), 1);
-        (ocPauseAuthority, lastPaused) = oc.getPauseConfig();
-        assertEq(ocPauseAuthority, pauseAuthority);
-        assertEq(lastPaused, block.timestamp);
-
-        // Anyone can unpause after 4 weeks.
-        vm.warp(lastPaused + 4 weeks + 1);
-        oc.pause(false);
-        assertEq(oc.pauseFlag(), 0);
-        (ocPauseAuthority, lastPaused) = oc.getPauseConfig();
-        assertEq(ocPauseAuthority, pauseAuthority);
-        assertEq(lastPaused, block.timestamp - 4 weeks - 1);
-
-        address orchestratorAddress = address(oc);
-
-        // Try setting pauseAuthority with dirty bits.
-        assembly ("memory-safe") {
-            mstore(0x00, 0x4b90364f) // `setPauseAuthority(address)`
-            mstore(0x20, 0xffffffffffffffffffffffffffffffffffffffff)
-
-            let success := call(gas(), orchestratorAddress, 0x00, 0x1c, 0x24, 0x00, 0x00)
-            if success { revert(0, 0) }
-        }
     }
 
     function testCrossChainKeyPreCallsAuthorization() public {

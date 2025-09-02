@@ -58,7 +58,6 @@ contract DeployMain is Script, SafeSingletonDeployer {
         uint256 chainId;
         string name;
         bool isTestnet;
-        address pauseAuthority;
         address funderOwner;
         address funderSigner;
         address settlerOwner;
@@ -219,7 +218,6 @@ contract DeployMain is Script, SafeSingletonDeployer {
         config.isTestnet = vm.readForkBool("is_testnet");
 
         // Load addresses
-        config.pauseAuthority = vm.readForkAddress("pause_authority");
         config.funderOwner = vm.readForkAddress("funder_owner");
         config.funderSigner = vm.readForkAddress("funder_signer");
         config.settlerOwner = vm.readForkAddress("settler_owner");
@@ -345,7 +343,6 @@ contract DeployMain is Script, SafeSingletonDeployer {
             console.log("L0 Settler Owner:", config.l0SettlerOwner);
             console.log("L0 Settler Signer:", config.l0SettlerSigner);
             console.log("Settler Owner:", config.settlerOwner);
-            console.log("Pause Authority:", config.pauseAuthority);
             console.log("LayerZero Endpoint:", config.layerZeroEndpoint);
             console.log("LayerZero EID:", config.layerZeroEid);
             console.log("Salt:");
@@ -722,9 +719,8 @@ contract DeployMain is Script, SafeSingletonDeployer {
     ) internal {
         if (deployed.orchestrator == address(0)) {
             bytes memory creationCode = type(Orchestrator).creationCode;
-            bytes memory args = abi.encode(config.pauseAuthority);
             address orchestrator =
-                deployContractWithCreate2(chainId, creationCode, args, "Orchestrator");
+                deployContractWithCreate2(chainId, creationCode, "", "Orchestrator");
 
             saveDeployedContract(chainId, "Orchestrator", orchestrator);
             deployed.orchestrator = orchestrator;
