@@ -478,11 +478,11 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
                 )
             );
         }
-        bool isMultichain = nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
-        bytes32 structHash = EfficientHashLib.hash(
-            uint256(EXECUTE_TYPEHASH), LibBit.toUint(isMultichain), uint256(a.hash()), nonce
-        );
-        return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
+        bytes32 structHash =
+            EfficientHashLib.hash(uint256(EXECUTE_TYPEHASH), uint256(a.hash()), nonce);
+        return nonce >> 240 == MULTICHAIN_NONCE_PREFIX
+            ? _hashTypedDataSansChainId(structHash)
+            : _hashTypedData(structHash);
     }
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.
