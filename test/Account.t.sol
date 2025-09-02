@@ -92,13 +92,10 @@ contract AccountTest is BaseTest {
         assertTrue(d.d.isValidSignature(digest, sig) == 0xFFFFFFFF);
 
         bytes32 replaySafeDigest = keccak256(abi.encode(d.d.SIGN_TYPEHASH(), digest));
-
-        (, string memory name, string memory version,, address verifyingContract,,) =
-            d.d.eip712Domain();
         bytes32 domain = keccak256(
             abi.encode(
                 0x035aff83d86937d35b32e04f0ddc6ff469290eef2f1b692d8a815c89404d4749, // DOMAIN_TYPEHASH with only verifyingContract
-                verifyingContract
+                d.eoa
             )
         );
         replaySafeDigest = keccak256(abi.encodePacked("\x19\x01", domain, replaySafeDigest));
