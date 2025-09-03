@@ -58,6 +58,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         /// Super admin keys are allowed to call into super admin functions such as
         /// `authorize` and `revoke` via `execute`.
         bool isSuperAdmin;
+        /// @dev Time delay in seconds before key operations take effect (0 = immediate).
+        uint40 timelock;
         /// @dev Public key in encoded form.
         bytes publicKey;
     }
@@ -384,11 +386,12 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         bytes memory data = _getAccountStorage().keyStorage[keyHash].get();
         if (data.length == uint256(0)) revert KeyDoesNotExist();
         unchecked {
-            uint256 n = data.length - 7; // 5 + 1 + 1 bytes of fixed length fields.
-            uint256 packed = uint56(bytes7(LibBytes.load(data, n)));
-            key.expiry = uint40(packed >> 16); // 5 bytes.
-            key.keyType = KeyType(uint8(packed >> 8)); // 1 byte.
-            key.isSuperAdmin = uint8(packed) != 0; // 1 byte.
+            uint256 n = data.length - 12; // 5 + 1 + 1 + 5 bytes of fixed length fields.
+            uint256 packed = uint96(bytes12(LibBytes.load(data, n)));
+            key.expiry = uint40(packed >> 56); // 5 bytes.
+            key.keyType = KeyType(uint8(packed >> 48)); // 1 byte.
+            key.isSuperAdmin = uint8(packed >> 40) != 0; // 1 byte.
+            key.timelock = uint40(packed); // 5 bytes.
             key.publicKey = LibBytes.truncate(data, n);
         }
     }
@@ -591,7 +594,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         keyHash = hash(key);
         AccountStorage storage $ = _getAccountStorage();
         $.keyStorage[keyHash].set(
-            abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin)
+            abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin, key.timelock)
         );
         $.keyHashes.add(keyHash);
     }
@@ -725,11 +728,14 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
         if (!isValid) revert Unauthorized();
-
-        // TODO: Figure out where else to add these operations, after removing delegate call.
-        LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
-        _execute(calls, keyHash);
-        LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
+        if (getKey(keyHash).timelock > 0 ) {
+            // TODO: Add timelock enforcement
+        } else {
+            // TODO: Figure out where else to add these operations, after removing delegate call.
+            LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
+            _execute(calls, keyHash);
+            LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -741,7 +747,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         LibBytes.BytesStorage storage s = _getAccountStorage().keyStorage[keyHash];
         uint256 encodedLength = s.length();
         if (encodedLength == uint256(0)) revert KeyDoesNotExist();
-        return s.uint8At(Math.rawSub(encodedLength, 1)) != 0;
+        // return s.uint8At(Math.rawSub(encodedLength, 1)) != 0;
+        return getKey(keyHash).isSuperAdmin; // TODO: fix this after testing
     }
 
     /// @dev Returns the storage seed for a `keyHash`.
