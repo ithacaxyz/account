@@ -68,6 +68,123 @@ contract AccountTest is BaseTest {
         }
     }
 
+    struct _TestExecuteWithCallSansToTemps {
+        TargetFunctionPayload[] targetFunctionPayloads;
+        ERC7821.CallSansTo[] calls;
+        address to;
+        uint256 n;
+        uint256 nonce;
+        bytes opData;
+        bytes executionData;
+    }
+
+    function testExecuteWithCallSansTo(bytes32) public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+
+        _TestExecuteWithCallSansToTemps memory t;
+        t.n = _bound(_randomUniform(), 1, 5);
+        t.targetFunctionPayloads = new TargetFunctionPayload[](t.n);
+        t.calls = new ERC7821.CallSansTo[](t.n);
+        t.to = address(this);
+        
+        for (uint256 i; i < t.n; ++i) {
+            uint256 value = _random() % 0.1 ether;
+            bytes memory data = _truncateBytes(_randomBytes(), 0xff);
+            t.calls[i] = ERC7821.CallSansTo(value, abi.encodeWithSignature("targetFunction(bytes)", data));
+            t.targetFunctionPayloads[i].value = value;
+            t.targetFunctionPayloads[i].data = data;
+        }
+
+        t.nonce = d.d.getNonce(0);
+        bytes memory signature = _sig(d, d.d.computeDigest(t.calls, t.to, t.nonce));
+        t.opData = abi.encodePacked(t.nonce, signature);
+        t.executionData = abi.encode(t.to, t.calls, t.opData);
+
+        // Negative test: wrong signature (32/256 chance)
+        if (_randomChance(32)) {
+            bytes memory wrongSignature = _sig(_randomEIP7702DelegatedEOA(), d.d.computeDigest(t.calls, t.to, t.nonce));
+            t.opData = abi.encodePacked(t.nonce, wrongSignature);
+            t.executionData = abi.encode(t.to, t.calls, t.opData);
+            vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+            d.d.execute(_ERC7821_BATCH_SANS_TO_EXECUTION_MODE, t.executionData);
+            return;
+        }
+
+        d.d.execute(_ERC7821_BATCH_SANS_TO_EXECUTION_MODE, t.executionData);
+
+        assertEq(targetFunctionPayloads.length, t.n);
+        for (uint256 i; i < t.n; ++i) {
+            assertEq(targetFunctionPayloads[i].by, d.eoa);
+            assertEq(targetFunctionPayloads[i].value, t.targetFunctionPayloads[i].value);
+            assertEq(targetFunctionPayloads[i].data, t.targetFunctionPayloads[i].data);
+        }
+    }
+
+    function testExecuteWithCallSansToWrongNonce() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+
+        _TestExecuteWithCallSansToTemps memory t;
+        t.n = 1;
+        t.targetFunctionPayloads = new TargetFunctionPayload[](t.n);
+        t.calls = new ERC7821.CallSansTo[](t.n);
+        t.to = address(this);
+        
+        t.calls[0] = ERC7821.CallSansTo(0, abi.encodeWithSignature("targetFunction(bytes)", "test"));
+
+        t.nonce = d.d.getNonce(0);
+        uint256 wrongNonce = t.nonce + 1;
+        bytes memory signature = _sig(d, d.d.computeDigest(t.calls, t.to, wrongNonce));
+        t.opData = abi.encodePacked(wrongNonce, signature);
+        t.executionData = abi.encode(t.to, t.calls, t.opData);
+
+        vm.expectRevert(); // Should revert due to invalid nonce
+        d.d.execute(_ERC7821_BATCH_SANS_TO_EXECUTION_MODE, t.executionData);
+    }
+
+    function testExecuteWithCallSansToWrongDigest() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+
+        _TestExecuteWithCallSansToTemps memory t;
+        t.n = 1;
+        t.targetFunctionPayloads = new TargetFunctionPayload[](t.n);
+        t.calls = new ERC7821.CallSansTo[](t.n);
+        t.to = address(this);
+        
+        t.calls[0] = ERC7821.CallSansTo(0, abi.encodeWithSignature("targetFunction(bytes)", "test"));
+
+        t.nonce = d.d.getNonce(0);
+        // Sign with wrong to address
+        address wrongTo = address(0x123);
+        bytes memory signature = _sig(d, d.d.computeDigest(t.calls, wrongTo, t.nonce));
+        t.opData = abi.encodePacked(t.nonce, signature);
+        t.executionData = abi.encode(t.to, t.calls, t.opData);
+
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        d.d.execute(_ERC7821_BATCH_SANS_TO_EXECUTION_MODE, t.executionData);
+    }
+
+    function testExecuteWithCallSansToInvalidOpData() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+
+        _TestExecuteWithCallSansToTemps memory t;
+        t.n = 1;
+        t.calls = new ERC7821.CallSansTo[](t.n);
+        t.to = address(this);
+        
+        t.calls[0] = ERC7821.CallSansTo(0, abi.encodeWithSignature("targetFunction(bytes)", "test"));
+
+        // Test with opData too short (less than 32 bytes for nonce)
+        t.opData = hex"1234"; // Only 2 bytes
+        t.executionData = abi.encode(t.to, t.calls, t.opData);
+
+        vm.expectRevert(bytes4(keccak256("OpDataError()")));
+        d.d.execute(_ERC7821_BATCH_SANS_TO_EXECUTION_MODE, t.executionData);
+    }
+
     function testSignatureCheckerApproval(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256k1PassKey();
