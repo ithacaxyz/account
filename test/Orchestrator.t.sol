@@ -1113,6 +1113,7 @@ contract OrchestratorTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(
                 address(t.multiSigSigner), bytes12(uint96(_bound(_random(), 0, type(uint96).max)))
             )
