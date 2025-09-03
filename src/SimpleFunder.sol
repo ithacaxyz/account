@@ -58,7 +58,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
         returns (string memory name, string memory version)
     {
         name = "SimpleFunder";
-        version = "0.1.3";
+        version = "0.1.4";
     }
 
     ////////////////////////////////////////////////////////////////////////
