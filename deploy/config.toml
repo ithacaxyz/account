@@ -21,7 +21,6 @@ rpc_url = "${RPC_11155111}"
 chain_id = 11155111
 name = "Sepolia"
 is_testnet = true
-pause_authority = "0x0000000000000000000000000000000000000001"
 funder_owner = "0x0000000000000000000000000000000000000003"
 funder_signer = "0x0000000000000000000000000000000000000002"
 settler_owner = "0x0000000000000000000000000000000000000004"
@@ -64,7 +63,6 @@ orchestrator_address = "0x0000000000000000000000000000000000000000"
 chain_id = 84532
 name = "Base Sepolia"
 is_testnet = true
-pause_authority = "0x0000000000000000000000000000000000000001" # Set to separate PAUSE KEY
 funder_owner = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4" # Set to Master Key
 funder_signer = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4" # Set to Master Key
 settler_owner = "0x0000000000000000000000000000000000000004" # Set to Master Key 
@@ -106,7 +104,6 @@ rpc_url = "${RPC_11155420}"
 chain_id = 11155420
 name = "Optimism Sepolia"
 is_testnet = true
-pause_authority = "0x0000000000000000000000000000000000000001"
 funder_owner = "0x0000000000000000000000000000000000000003"
 funder_signer = "0x0000000000000000000000000000000000000002"
 settler_owner = "0x0000000000000000000000000000000000000004"
@@ -138,11 +135,3 @@ dvn_google_cloud = "0x28b8B8Ea5C695EFa657B6b86a4a8E90ccbA93E9e"
 # EXP Token configuration (testnet only)
 exp_minter_address = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
 exp_mint_amount = "2000000000000000000000"  # 2000 tokens
-
-
-
-# Master Key has gas funds on all chains.
-# 1. Deployment Key ( Master Key )
-# 2. Funder Owner Key ( Master Key )
-# 3. Gas Signers ( Funding is included in the fund signers script + setting them as gas wallets )
-# 4. Simple Funder Address ( Funds need to come from GK after bridging, no automation )
