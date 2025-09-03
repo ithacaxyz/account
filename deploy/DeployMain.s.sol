@@ -64,6 +64,7 @@ contract DeployMain is Script, SafeSingletonDeployer {
         address l0SettlerOwner;
         address l0SettlerSigner;
         address layerZeroEndpoint;
+        address[] oldOrchestrators;
         uint32 layerZeroEid;
         bytes32 salt;
         string[] contracts; // Array of contract names to deploy
@@ -805,8 +806,13 @@ contract DeployMain is Script, SafeSingletonDeployer {
 
         if (deployed.simpleFunder == address(0)) {
             bytes memory creationCode = type(SimpleFunder).creationCode;
+            address[] memory newOrchestrators = new address[](config.orchestrators.length + 1);
+            for (uint256 i; i < config.orchestrators.length; i++) {
+                newOrchestrators[i] = config.orchestrators[i];
+            }
+            newOrchestrators[config.orchestrators.length] = deployed.orchestrator;
             bytes memory args =
-                abi.encode(config.funderSigner, deployed.orchestrator, config.funderOwner);
+                abi.encode(config.funderSigner, newOrchestrators, config.funderOwner);
             address funder = deployContractWithCreate2(chainId, creationCode, args, "SimpleFunder");
 
             saveDeployedContract(chainId, "SimpleFunder", funder);
