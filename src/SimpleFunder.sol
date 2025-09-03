@@ -28,12 +28,11 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
     error InvalidNonce();
     error DeadlineExpired();
 
-    address public immutable ORCHESTRATOR;
-
     address public funder;
 
     mapping(address => bool) public gasWallets;
     mapping(uint256 => bool) public nonces;
+    mapping(address => bool) public orchestrators;
 
     bytes32 constant WITHDRAWAL_TYPE_HASH = keccak256(
         "Withdrawal(address token,address recipient,uint256 amount,uint256 deadline,uint256 nonce)"
@@ -43,10 +42,12 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
     // Constructor
     ////////////////////////////////////////////////////////////////////////
 
-    constructor(address _funder, address _orchestrator, address _owner) {
+    constructor(address _funder, address[] memory _orchestrators, address _owner) {
         funder = _funder;
-        ORCHESTRATOR = _orchestrator;
         _initializeOwner(_owner);
+        for (uint256 i = 0; i < _orchestrators.length; i++) {
+            orchestrators[_orchestrators[i]] = true;
+        }
     }
 
     /// @dev For EIP712.
@@ -105,6 +106,10 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
         funder = newFunder;
     }
 
+    function setOrchestrator(address oc, bool val) external onlyOwner {
+        orchestrators[oc] = val;
+    }
+
     /// @dev Allows the owner to set the gas wallets.
     function setGasWallet(address[] memory wallets, bool isGasWallet) external onlyOwner {
         for (uint256 i; i < wallets.length; ++i) {
@@ -116,12 +121,22 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
     // Orchestrator Functions
     ////////////////////////////////////////////////////////////////////////
 
+    function fund(
+        address,
+        bytes32 digest,
+        ICommon.Transfer[] memory transfers,
+        bytes memory funderSignature
+    ) external override {
+        return fund(digest, transfers, funderSignature);
+    }
+
     /// @dev Allows the orchestrator to fund an account.
     /// The `digest` includes the intent nonce and the transfers.
     function fund(bytes32 digest, ICommon.Transfer[] memory transfers, bytes memory funderSignature)
-        external
+        public
+        override
     {
-        if (msg.sender != ORCHESTRATOR) {
+        if (!orchestrators[msg.sender]) {
             revert OnlyOrchestrator();
         }
 
@@ -140,12 +155,11 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
         uint256 i = 0;
         if (transfers[0].token == address(0)) {
             // Since we know the orchestrator implements a clean `Receive()` we don't need to check if the call was successful.
-            (bool success,) = ORCHESTRATOR.call{value: transfers[0].amount}("");
+            (bool success,) = msg.sender.call{value: transfers[0].amount}("");
             (success);
             i++;
         }
 
-        address orchestrator = ORCHESTRATOR;
         for (i; i < transfers.length; ++i) {
             address token = transfers[i].token;
             uint256 amount = transfers[i].amount;
@@ -154,7 +168,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
                 let m := mload(0x40)
                 mstore(m, 0xdd62ed3e) // `allowance(address,address)`.
                 mstore(add(m, 0x20), address())
-                mstore(add(m, 0x40), orchestrator)
+                mstore(add(m, 0x40), caller())
                 mstore(0, 0)
                 // Orchestrator checks for token transfer success, so we don't need to check it here.
                 pop(call(gas(), token, 0, add(m, 0x1c), 0x44, 0x00, 0x20))
@@ -162,7 +176,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
                 let allowance := mload(0x00)
                 if gt(amount, allowance) {
                     mstore(m, 0x095ea7b3) // `approve(address,uint256)`.
-                    mstore(add(m, 0x20), orchestrator)
+                    mstore(add(m, 0x20), caller())
                     mstore(add(m, 0x40), 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF) // type(uint256).max
                     // Orchestrator checks for token transfer success, so we don't need to check it here.
                     pop(call(gas(), token, 0, add(m, 0x1c), 0x44, 0x00, 0x00))

@@ -1301,10 +1301,13 @@ contract OrchestratorTest is BaseTest {
     function testMultiChainIntent() public {
         _TestMultiChainIntentTemps memory t;
 
+        address[] memory ocs = new address[](1);
+        ocs[0] = address(oc);
+
         // Initialize core test data
         t.funderPrivateKey = _randomPrivateKey();
         t.settlementOracle = makeAddr("SETTLEMENT_ORACLE");
-        t.funder = new SimpleFunder(vm.addr(t.funderPrivateKey), address(oc), address(this));
+        t.funder = new SimpleFunder(vm.addr(t.funderPrivateKey), ocs, address(this));
         t.settler = new SimpleSettler(t.settlementOracle);
         t.gasWallet = makeAddr("GAS_WALLET");
         t.relay = makeAddr("RELAY");

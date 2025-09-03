@@ -34,7 +34,9 @@ contract SimpleFunderTest is Test {
         owner = vm.addr(ownerPrivateKey);
         recipient = makeAddr("recipient");
 
-        simpleFunder = new SimpleFunder(funder, orchestrator, owner);
+        address[] memory ocs = new address[](1);
+        ocs[0] = address(orchestrator);
+        simpleFunder = new SimpleFunder(funder, ocs, owner);
         token = new MockPaymentToken();
 
         // Fund the SimpleFunder with tokens
