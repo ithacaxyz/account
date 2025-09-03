@@ -390,80 +390,220 @@ contract AccountTest is BaseTest {
         assertEq(keysCount137, 2, "Keys should be added on chain 137");
     }
 
+    /**
+     *
+     *     Calldata layout (32-byte words; left column = byte offset from start)
+     *
+     *     bytes
+     *     pos  0x
+     *     0:   0000000000000000000000000000000000000000000000000000000000000b20 - bytes length prefix (=2848)
+     *     32:  0000000000000000000000000000000000000000000000000000000000000020 - Intent start offset
+     *     64:  0000000000000000000000005c6bd1597b1411cce0e79a0841fd11073120493b - eoa
+     *     96:  0000000000000000000000000000000000000000000000000000000000000280 - executionData offset
+     *     128: c1d0000000000000000000000000000000000000000000000000000000000000 - nonce
+     *     160: 0000000000000000000000000000000000000000000000000000000000000000 - payer
+     *     192: 0000000000000000000000002e234dae75c793f67a35089c9d99245e1c58470b - paymentToken
+     *     224: 000000000000000000000000000000000000000000000000000000008e95aab8 - paymentMaxAmount
+     *     256: 0000000000000000000000000000000000000000000000000000000000989680 - combinedGas
+     *     288: 00000000000000000000000000000000000000000000000000000000000002e0 - encodedPreCalls offset
+     *     320: 00000000000000000000000000000000000000000000000000000000000009e0 - encodedFundTransfers offset
+     *     352: 0000000000000000000000000000000000000000000000000000000000000000 - settler
+     *     384: 0000000000000000000000000000000000000000000000000000000000000000 - expiry
+     *     416: 0000000000000000000000000000000000000000000000000000000000000000 - isMultichain
+     *     448: 0000000000000000000000000000000000000000000000000000000000000000 - funder
+     *     480: 0000000000000000000000000000000000000000000000000000000000000a00 - funderSignature offset
+     *     512: 0000000000000000000000000000000000000000000000000000000000000a20 - settlerContext offset
+     *     544: 000000000000000000000000000000000000000000000000000000008e95aab8 - paymentAmount
+     *     576: 0000000000000000000000000000000000000000000000000000000000000000 - paymentReceipt
+     *     608: 0000000000000000000000000000000000000000000000000000000000000a40 - signature offset
+     *     640: 0000000000000000000000000000000000000000000000000000000000000ae0 - paymentSignature offset
+     *     672: 0000000000000000000000000000000000000000000000000000000000000000 - supportedAccountImplementation
+     *
+     */
+
+    // Test 1: eoa corruption
+    function testPayWithAllCorruptedEOAFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            mstore(add(maliciousCalldata, 64), 0x10000000000000000) // 2^64 (strictly greater than 2^64-1)
+        }
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("PaymentError()")));
+    }
+
+    // Test 2: nonce corruption
+    function testPayWithAllCorruptedNonceFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            mstore(add(maliciousCalldata, 128), 0x10000000000000001) // 2^64 + 1
+        }
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerificationError()")));
+    }
+
+    // Test 3: payer corruption
+    function testPayWithAllCorruptedPayerFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            mstore(add(maliciousCalldata, 160), 0x10000000000000002) // 2^64 + 2
+        }
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("PaymentError()")));
+    }
+
+    // Test 4: paymentToken corruption
+    function testPayWithAllCorruptedPaymentTokenFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            mstore(add(maliciousCalldata, 192), 0x10000000000000003) // 2^64 + 3
+        }
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("PaymentError()")));
+    }
+
+    // Test 5: paymentMaxAmount corruption
+    function testPayWithAllCorruptedPaymentMaxAmountFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            mstore(add(maliciousCalldata, 224), 0x10000000000000004) // 2^64 + 4
+        }
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerificationError()")));
+    }
+
+    // Test 6: combinedGas corruption
+    function testPayWithAllCorruptedCombinedGasFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            mstore(add(maliciousCalldata, 256), 0x00) // 0 gas limit
+        }
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+    }
+
+    // Test 7: settler corruption
+    function testPayWithAllCorruptedSettlerFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            mstore(add(maliciousCalldata, 352), 0x10000000000000005) // 2^64 + 5
+        }
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerificationError()")));
+    }
+
+    // Test 8: expiry corruption
+    function testPayWithAllCorruptedExpiryFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            mstore(add(maliciousCalldata, 384), 0x10000000000000006) // 2^64 + 6
+        }
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerificationError()")));
+    }
+
+    // Test 9: isMultichain corruption
+    function testPayWithAllCorruptedIsMultichainFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            mstore(add(maliciousCalldata, 416), 0x01) // true flag with non-multichain intent
+        }
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+    }
+
+    // Test 10: funder corruption
+    function testPayWithAllCorruptedFunderFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            // corupting with garbage address as returns 0x00000000 with 0x10000000000000008 (2^64 + 8)
+            mstore(
+                add(maliciousCalldata, 448),
+                0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+            )
+        }
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+    }
+
+    // Test 11: paymentAmount corruption
+    function testPayWithAllCorruptedPaymentAmountFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            let paymentMaxAmount := mload(add(maliciousCalldata, 224))
+            // corrupt paymentAmount with paymentMaxAmount + 1
+            mstore(add(maliciousCalldata, 544), add(paymentMaxAmount, 1))
+        }
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("PaymentError()")));
+    }
+
+    // Test 12: paymentReceipt corruption
+    function testPayWithAllCorruptedPaymentReceiptFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        // corrupt paymentReceipt with garbage address as returns 0x00000000 with 0x10000000000000009 (2^64 + 9)
+        assembly {
+            mstore(
+                add(maliciousCalldata, 576),
+                0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+            )
+        }
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
+    }
+
+    // Test 13: supportedAccountImplementation corruption
+    function testPayWithAllCorruptedSupportedAccountImplementationFieldOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            mstore(add(maliciousCalldata, 672), 0x10000000000000009) // 2^64 + 9
+        }
+        assertEq(
+            oc.execute(maliciousCalldata), bytes4(keccak256("UnsupportedAccountImplementation()"))
+        );
+    }
+
     function testPayWithFiveCorruptedFieldOffsetsOfIntent() public {
         bool success;
         bytes memory returnData;
 
-        console.log("Test 1: Main Intent struct offset corruption");
+        // Test 1: Main Intent struct offset corruption
         bytes memory maliciousCalldata = _createIntentOnMainnet();
+        uint256 len;
         assembly {
-            let dataPtr := add(maliciousCalldata, 0x20) // Skip bytes length prefix
-            // CORRUPT MAIN OFFSET (Bytes 0-31) - Points to Intent struct start
-            mstore(dataPtr, 0x10000000000000000) // 2^64 (strictly greater than 2^64-1)
+            mstore(add(maliciousCalldata, 32), 0x10000000000000000) // 2^64 (strictly greater than 2^64-1)
         }
         (success, returnData) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
         assertEq(success, false);
 
-        console.log("Test 2: executionData offset corruption");
+        // Test 2: executionData offset corruption
         maliciousCalldata = _createIntentOnMainnet();
         assembly {
-            let dataPtr := add(maliciousCalldata, 0x20) // Skip bytes length prefix
-            let intentPtr := add(dataPtr, 0x20) // Points to start of Intent struct
-            // executionData offset (bytes 64-95 relative to start, or 32-63 in Intent struct)
-            mstore(add(intentPtr, 32), 0x10000000000000001) // 2^64 + 1
+            mstore(add(maliciousCalldata, 96), 0x10000000000000001) // 2^64 + 1
         }
-        // assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
         (success, returnData) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
         assertEq(success, false);
 
-        console.log("Test 3: encodedPreCalls offset corruption");
+        // Test 3: encodedPreCalls offset corruption
         maliciousCalldata = _createIntentOnMainnet();
         assembly {
-            let dataPtr := add(maliciousCalldata, 0x20) // Skip bytes length prefix
-            let intentPtr := add(dataPtr, 0x20) // Points to start of Intent struct
-            // encodedPreCalls offset (bytes 256-287 relative to start, or 224-255 in Intent struct)
-            mstore(add(intentPtr, 224), 0x10000000000000002) // 2^64 + 2
+            mstore(add(maliciousCalldata, 288), 0x10000000000000002) // 2^64 + 2
         }
-        // assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
         (success, returnData) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
         assertEq(success, false);
 
-        console.log("Test 4: encodedFundTransfers offset corruption");
+        // Test 4: encodedFundTransfers offset corruption
         maliciousCalldata = _createIntentOnMainnet();
         assembly {
-            let dataPtr := add(maliciousCalldata, 0x20) // Skip bytes length prefix
-            let intentPtr := add(dataPtr, 0x20) // Points to start of Intent struct
-            // encodedFundTransfers offset (bytes 288-319 relative to start, or 256-287 in Intent struct)
-            mstore(add(intentPtr, 256), 0x10000000000000003) // 2^64 + 3
+            mstore(add(maliciousCalldata, 320), 0x10000000000000003) // 2^64 + 3
         }
-        // assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
         (success, returnData) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
         assertEq(success, false);
 
-        console.log("Test 5: funderSignature offset corruption");
+        // Test 5: funderSignature offset corruption
         maliciousCalldata = _createIntentOnMainnet();
         assembly {
-            let dataPtr := add(maliciousCalldata, 0x20) // Skip bytes length prefix
-            let intentPtr := add(dataPtr, 0x20) // Points to start of Intent struct
-            // funderSignature offset (bytes 448-479 relative to start, or 416-447 in Intent struct)
-            mstore(add(intentPtr, 416), 0x10000000000000004) // 2^64 + 4
+            mstore(add(maliciousCalldata, 480), 0x10000000000000004) // 2^64 + 4
         }
-        // assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
         (success, returnData) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
         assertEq(success, false);
 
-        console.log("Test 6: signature offset corruption");
+        // Test 6: signature offset corruption
         maliciousCalldata = _createIntentOnMainnet();
         assembly {
-            let dataPtr := add(maliciousCalldata, 0x20) // Skip bytes length prefix
-            let intentPtr := add(dataPtr, 0x20) // Points to start of Intent struct
-            // signature offset (bytes 576-607 relative to start, or 544-575 in Intent struct)
-            mstore(add(intentPtr, 544), 0x10000000000000005) // 2^64 + 5
+            mstore(add(maliciousCalldata, 608), 0x10000000000000005) // 2^64 + 5
         }
         (success, returnData) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
@@ -587,15 +727,11 @@ contract AccountTest is BaseTest {
         u.signature = _eoaSig(d.privateKey, digest);
         u.paymentSignature = _eoaSig(payer.privateKey, digest);
 
-        console.log("Test 7: paymentSignature offset corruption");
+        // Test 7: paymentSignature offset corruption
         bytes memory maliciousCalldata = abi.encode(u);
         assembly {
-            let dataPtr := add(maliciousCalldata, 0x20) // Skip bytes length prefix
-            let intentPtr := add(dataPtr, 0x20) // Points to start of Intent struct
-            // paymentSignature offset (bytes 608-639 relative to start, or 576-607 in Intent struct)
-            mstore(add(intentPtr, 576), 0x10000000000000006) // 2^64 + 6
+            mstore(add(maliciousCalldata, 640), 0x10000000000000006) // 2^64 + 6
         }
-
         (bool success, bytes memory returnData) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
         assertEq(success, false);
@@ -807,17 +943,12 @@ contract AccountTest is BaseTest {
         // Relay funds the user account, and the intended execution happens.
         t.encodedIntents[0] = abi.encode(t.outputIntent);
 
-        console.log("Test 8: settlerContext offset corruption");
+        // Test 8: settlerContext offset corruption
         bytes memory maliciousCalldata = t.encodedIntents[0];
         assembly {
-            let dataPtr := add(maliciousCalldata, 0x20) // Skip bytes length prefix
-            let intentPtr := add(dataPtr, 0x20) // Points to start of Intent struct
-            // settlerContext offset (bytes 480-511 relative to start, or 448-479 in Intent struct)
-            mstore(add(intentPtr, 448), 0x10000000000000007) // 2^64 + 7
+            mstore(add(maliciousCalldata, 512), 0x10000000000000007) // 2^64 + 7
         }
-
-        // assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerifiedCallError()")));
-        (bool success, bytes memory returnData) =
+        (bool success,) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
         assertEq(success, false);
     }
