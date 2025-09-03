@@ -60,6 +60,7 @@ contract ERC7821Ithaca is Receiver {
     /// - `0x01000000000000000000...`: Single batch. Does not support optional `opData`.
     /// - `0x01000000000078210001...`: Single batch. Supports optional `opData`.
     /// - `0x01000000000078210002...`: Batch of batches.
+    /// - `0x01000000000078210003...`: Single batch with common `to` address and optional `opData`.
     ///
     /// For the "batch of batches" mode, each batch will be recursively passed into
     /// `execute` internally with mode `0x01000000000078210001...`.
@@ -82,7 +83,6 @@ contract ERC7821Ithaca is Receiver {
         Call[] calldata calls;
         bytes calldata opData;
 
-        //
         /// @solidity memory-safe-assembly
         assembly {
             if iszero(id) {
@@ -138,13 +138,16 @@ contract ERC7821Ithaca is Receiver {
         }
     }
 
+    /// @dev For execution of a batch of batches with a common `to` address.
+    /// @dev if to == address(0), it will be replaced with address(this)
+    /// Execution Data: abi.encode(address to, CallSansTo[] calls, bytes opData)
     function _executeBatchCommonTo(bytes32 mode, bytes calldata executionData) internal virtual {
-        // Execution Data: abi.encode(address to, CallSansTo[] calls, bytes opData)
         address to;
         CallSansTo[] calldata calls;
         bytes calldata opData;
 
-        assembly ("memory-safe") {
+        /// @solidity memory-safe-assembly
+        assembly {
             to := calldataload(executionData.offset)
 
             let callOffset :=
@@ -156,7 +159,7 @@ contract ERC7821Ithaca is Receiver {
             // Otherwise the compiler complains.
             opData.length := 0
             // If the offset of `executionData` allows for `opData`, and the mode supports it.
-            if not(gt(0x60, calldataload(add(0x20, executionData.offset)))) {
+            if gt(calldataload(add(0x20, executionData.offset)), 0x40) {
                 let opDataOffset :=
                     add(executionData.offset, calldataload(add(0x40, executionData.offset)))
                 opData.offset := add(opDataOffset, 0x20)
@@ -228,6 +231,9 @@ contract ERC7821Ithaca is Receiver {
         revert(); // In your override, replace this with logic to operate on `opData`.
     }
 
+    /// @dev Executes the calls.
+    /// Reverts and bubbles up error if any call fails.
+    /// The `mode` and `executionData` are passed along in case there's a need to use them.
     function _execute(
         bytes32 mode,
         bytes calldata executionData,
@@ -262,9 +268,15 @@ contract ERC7821Ithaca is Receiver {
         }
     }
 
+    /// @dev Executes the calls.
+    /// Reverts and bubbles up error if any call fails.
+    /// `extraData` can be any supplementary data (e.g. a memory pointer, some hash).
     function _execute(CallSansTo[] calldata calls, address to, bytes32 keyHash) internal virtual {
         unchecked {
             uint256 i;
+            if (to == address(0)) {
+                to = address(this);
+            }
             if (calls.length == uint256(0)) return;
             do {
                 (uint256 value, bytes calldata data) = _get(calls, i);
@@ -293,6 +305,7 @@ contract ERC7821Ithaca is Receiver {
         }
     }
 
+    /// @dev Convenience function for getting `calls[i]`, without bounds checks.
     function _get(CallSansTo[] calldata calls, uint256 i)
         internal
         view
