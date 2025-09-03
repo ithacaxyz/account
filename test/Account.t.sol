@@ -555,7 +555,8 @@ contract AccountTest is BaseTest {
         assertEq(d.d.timelockCount(), t.preTimelockCount + 1, "Timelock should be created");
         
         // Get the created timelock
-        t.timelocker = d.d.timelockAt(0);
+        bytes32 timelockDigest = d.d.computeDigest(t.timelockCalls, t.timelockNonce);
+        t.timelocker = d.d.getTimelock(timelockDigest);
         // The keyHash should be computed based on keyType and publicKey only (not timelock field)
         assertEq(t.timelocker.keyHash, t.keyHash, "Timelock should reference correct key");
         assertEq(t.timelocker.executed, false, "Timelock should not be executed yet");
@@ -567,14 +568,10 @@ contract AccountTest is BaseTest {
         vm.deal(d.eoa, 100 ether);
 
         // Create a key with short timelock for testing
-        PassKey memory timelockKey = _randomSecp256r1PassKey();
-        IthacaAccount.Key memory key = IthacaAccount.Key({
-            expiry: 0,
-            keyType: IthacaAccount.KeyType.P256,
-            isSuperAdmin: false,
-            timelock: 10, // 10 seconds timelock
-            publicKey: timelockKey.k.publicKey
-        });
+        PassKey memory timelockKey = _randomSecp256k1PassKey();
+        timelockKey.k.isSuperAdmin = true; // Super admin to bypass call restrictions
+        timelockKey.k.timelock = 10; // 10 seconds timelock
+        IthacaAccount.Key memory key = timelockKey.k;
 
         // Authorize the key
         ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
@@ -608,14 +605,14 @@ contract AccountTest is BaseTest {
         
         // Try to execute before timelock is ready - should fail
         vm.expectRevert(IthacaAccount.TimelockNotReady.selector);
-        d.d.executeTimelock(timelockDigest);
+        d.d.executeTimelock(timelockCalls, timelockNonce);
         
         // Fast forward time to make timelock ready
         vm.warp(block.timestamp + 11);
         
         // Now execution should work
         uint256 preBalance = address(this).balance;
-        d.d.executeTimelock(timelockDigest);
+        d.d.executeTimelock(timelockCalls, timelockNonce);
         
         // Verify execution occurred
         assertEq(address(this).balance - preBalance, 0.1 ether, "Execution should transfer value");
@@ -633,9 +630,11 @@ contract AccountTest is BaseTest {
         vm.expectRevert(IthacaAccount.TimelockDoesNotExist.selector);
         d.d.getTimelock(nonExistentDigest);
         
-        // Test: Execute non-existent timelock
+        // Test: Execute non-existent timelock with dummy calls
+        ERC7821.Call[] memory dummyCalls = new ERC7821.Call[](1);
+        dummyCalls[0] = _thisTargetFunctionCall(0.1 ether, "dummy");
         vm.expectRevert(IthacaAccount.TimelockDoesNotExist.selector);
-        d.d.executeTimelock(nonExistentDigest);
+        d.d.executeTimelock(dummyCalls, 12345);
     }
 
     function testTimelockDoubleExecution() public {
@@ -643,14 +642,10 @@ contract AccountTest is BaseTest {
         vm.deal(d.eoa, 100 ether);
 
         // Create and authorize timelock key
-        PassKey memory timelockKey = _randomSecp256r1PassKey();
-        IthacaAccount.Key memory key = IthacaAccount.Key({
-            expiry: 0,
-            keyType: IthacaAccount.KeyType.P256,
-            isSuperAdmin: false,
-            timelock: 1, // 1 second for quick test
-            publicKey: timelockKey.k.publicKey
-        });
+        PassKey memory timelockKey = _randomSecp256k1PassKey();
+        timelockKey.k.isSuperAdmin = true; // Super admin to bypass call restrictions
+        timelockKey.k.timelock = 1; // 1 second for quick test
+        IthacaAccount.Key memory key = timelockKey.k;
 
         ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
         authCalls[0] = ERC7821.Call({
@@ -677,11 +672,11 @@ contract AccountTest is BaseTest {
         
         // Wait for timelock to be ready and execute once
         vm.warp(block.timestamp + 2);
-        d.d.executeTimelock(digest);
+        d.d.executeTimelock(timelockCalls, timelockNonce);
         
         // Try to execute again - should fail
         vm.expectRevert(IthacaAccount.TimelockAlreadyExecuted.selector);
-        d.d.executeTimelock(digest);
+        d.d.executeTimelock(timelockCalls, timelockNonce);
     }
 
     function testTimelockEnumeration() public {
@@ -779,14 +774,11 @@ contract AccountTest is BaseTest {
         vm.deal(d.eoa, 100 ether);
 
         // Create key that will expire soon
-        PassKey memory timelockKey = _randomSecp256r1PassKey();
-        IthacaAccount.Key memory key = IthacaAccount.Key({
-            expiry: uint40(block.timestamp + 5), // Expires in 5 seconds
-            keyType: IthacaAccount.KeyType.P256,
-            isSuperAdmin: false,
-            timelock: 10, // 10 second timelock
-            publicKey: timelockKey.k.publicKey
-        });
+        PassKey memory timelockKey = _randomSecp256k1PassKey();
+        timelockKey.k.expiry = uint40(block.timestamp + 5); // Expires in 5 seconds
+        timelockKey.k.isSuperAdmin = true; // Super admin to bypass call restrictions
+        timelockKey.k.timelock = 10; // 10 second timelock
+        IthacaAccount.Key memory key = timelockKey.k;
 
         // Authorize the key
         ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
@@ -818,7 +810,7 @@ contract AccountTest is BaseTest {
         vm.warp(block.timestamp + 12);
         
         // Timelock should still be executable even though key expired after creation
-        d.d.executeTimelock(digest);
+        d.d.executeTimelock(timelockCalls, timelockNonce);
         
         IthacaAccount.Timelocker memory timelocker = d.d.getTimelock(digest);
         assertEq(timelocker.executed, true, "Timelock should execute successfully");
@@ -829,14 +821,10 @@ contract AccountTest is BaseTest {
         vm.deal(d.eoa, 100 ether);
 
         // Create timelock key
-        PassKey memory timelockKey = _randomSecp256r1PassKey();
-        IthacaAccount.Key memory key = IthacaAccount.Key({
-            expiry: 0,
-            keyType: IthacaAccount.KeyType.P256,
-            isSuperAdmin: false,
-            timelock: 1, // 1 second for quick test
-            publicKey: timelockKey.k.publicKey
-        });
+        PassKey memory timelockKey = _randomSecp256k1PassKey();
+        timelockKey.k.isSuperAdmin = true; // Super admin to bypass call restrictions
+        timelockKey.k.timelock = 1; // 1 second for quick test
+        IthacaAccount.Key memory key = timelockKey.k;
 
         // Authorize key
         ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
@@ -870,7 +858,7 @@ contract AccountTest is BaseTest {
         
         // Wait for timelock and execute
         vm.warp(block.timestamp + 2);
-        d.d.executeTimelock(digest);
+        d.d.executeTimelock(contextCalls, contextNonce);
         
         // Verify timelock execution
         IthacaAccount.Timelocker memory timelocker = d.d.getTimelock(digest);
@@ -885,14 +873,10 @@ contract AccountTest is BaseTest {
         vm.deal(d.eoa, 100 ether);
 
         // Create key with fuzzed timelock
-        PassKey memory timelockKey = _randomSecp256r1PassKey();
-        IthacaAccount.Key memory key = IthacaAccount.Key({
-            expiry: 0,
-            keyType: IthacaAccount.KeyType.P256,
-            isSuperAdmin: false,
-            timelock: timelockSeconds,
-            publicKey: timelockKey.k.publicKey
-        });
+        PassKey memory timelockKey = _randomSecp256k1PassKey();
+        timelockKey.k.isSuperAdmin = true; // Super admin to bypass call restrictions
+        timelockKey.k.timelock = timelockSeconds;
+        IthacaAccount.Key memory key = timelockKey.k;
 
         // Authorize key
         ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
@@ -926,13 +910,13 @@ contract AccountTest is BaseTest {
         
         // Try to execute before ready - should fail
         vm.expectRevert(IthacaAccount.TimelockNotReady.selector);
-        d.d.executeTimelock(digest);
+        d.d.executeTimelock(timelockCalls, timelockNonce);
         
         // Fast forward to exactly ready time
         vm.warp(creationTime + timelockSeconds);
         
         // Should succeed at exact ready time
-        d.d.executeTimelock(digest);
+        d.d.executeTimelock(timelockCalls, timelockNonce);
         
         timelocker = d.d.getTimelock(digest);
         assertEq(timelocker.executed, true, "Timelock should be executed");

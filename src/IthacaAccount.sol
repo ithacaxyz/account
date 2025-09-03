@@ -64,7 +64,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         bytes publicKey;
     }
 
-    /// @dev A timelock that holds execution data until a specific timestamp.
+    /// @dev A timelock that holds minimal data until a specific timestamp.
     struct Timelocker {
         /// @dev Whether the timelock has been executed.
         bool executed;
@@ -72,8 +72,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         bytes32 keyHash;
         /// @dev Unix timestamp when the timelock becomes ready for execution.
         uint40 readyTimestamp;
-        /// @dev Execution data to be executed when timelock is ready.
-        bytes executionData;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -657,35 +655,31 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     function _addTimelock(Timelocker memory timelocker, bytes32 digest) internal virtual returns (bytes32 timelockHash) {
         AccountStorage storage $ = _getAccountStorage();
         $.timelockStorage[digest].set(
-            abi.encode(timelocker.executionData, timelocker.executed, timelocker.keyHash, timelocker.readyTimestamp)
+            abi.encode(timelocker.executed, timelocker.keyHash, timelocker.readyTimestamp)
         );
         $.timelockHashes.add(digest);
         return digest;
     }
 
-    function executeTimelock(bytes32 digest) public virtual {
+    function executeTimelock(Call[] calldata calls, uint256 nonce) public virtual {
+        // Recalculate digest from calls and nonce
+        bytes32 digest = computeDigest(calls, nonce);
+        
+        // Get timelock using the digest
         Timelocker memory timelocker = getTimelock(digest);
+        
+        // Check if timelock is ready and not executed
         if (timelocker.readyTimestamp > block.timestamp) revert TimelockNotReady();
         if (timelocker.executed) revert TimelockAlreadyExecuted();
         
-        // Decode the stored execution data back to Call[] array
-        Call[] memory calls = abi.decode(timelocker.executionData, (Call[]));
-        
-        // Set the key context and execute each call
+        // Set the key context and execute
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(timelocker.keyHash);
-        
         _execute(calls, timelocker.keyHash);
-        
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
         
         // Update storage to mark as executed
         AccountStorage storage $ = _getAccountStorage();
-        bytes memory newData = abi.encode(
-            timelocker.executionData, // executionData
-            true, // executed = true
-            timelocker.keyHash,
-            timelocker.readyTimestamp
-        );
+        bytes memory newData = abi.encode(true, timelocker.keyHash, timelocker.readyTimestamp);
         $.timelockStorage[digest].set(newData);
         
         emit TimelockExecuted(digest);
@@ -695,8 +689,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     function getTimelock(bytes32 timelockHash) public view virtual returns (Timelocker memory timelocker) {
         bytes memory data = _getAccountStorage().timelockStorage[timelockHash].get();
         if (data.length == uint256(0)) revert TimelockDoesNotExist();
-        (timelocker.executionData, timelocker.executed, timelocker.keyHash, timelocker.readyTimestamp) = 
-            abi.decode(data, (bytes, bool, bytes32, uint40));
+        (timelocker.executed, timelocker.keyHash, timelocker.readyTimestamp) = 
+            abi.decode(data, (bool, bytes32, uint40));
     }
 
     /// @dev Removes the timelock corresponding to the `timelockHash`. Reverts if the timelock does not exist.
@@ -824,7 +818,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         if (!isValid) revert Unauthorized();
         if (keyHash!=bytes32(0)&&getKey(keyHash).timelock > 0 ) {
             Timelocker memory timelocker = Timelocker({
-                executionData: abi.encode(calls),
                 executed: false,
                 keyHash: keyHash,
                 readyTimestamp: uint40(block.timestamp + getKey(keyHash).timelock)
