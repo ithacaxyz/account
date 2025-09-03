@@ -260,6 +260,13 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         virtual
         returns (bytes4)
     {
+        // EOA signatures for 7702 can always be validated without a replay safe wrapper
+        if (LibBit.or(signature.length == 64, signature.length == 65)) {
+            if (ECDSA.recoverCalldata(digest, signature) == address(this)) {
+                return 0x1626ba7e;
+            }
+        }
+
         // To sign an app digest (e.g. Permit2), you would need to perform a `hashTypedData` on the app's 712,
         // along with the app's domain, then `signTypedData` with the account's 712 and account domain.
         // The account domain is added as a layer to prevent replay attacks since some apps do not include the
@@ -267,7 +274,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         bytes32 replaySafeDigest = EfficientHashLib.hash(SIGN_TYPEHASH, digest);
         digest = _hashTypedDataOnlyVerifyingContract(replaySafeDigest);
 
-        (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
+        (bool isValid, bytes32 keyHash) = _unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
             isValid =
                 _isSuperAdmin(keyHash) || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
@@ -498,7 +505,14 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
             return (ECDSA.recoverCalldata(digest, signature) == address(this), 0);
         }
+        return _unwrapAndValidateSignature(digest, signature);
+    }
 
+    function _unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
+        internal
+        view
+        returns (bool isValid, bytes32 keyHash)
+    {
         // Early return if unable to unwrap the signature.
         if (signature.length < 0x21) return (false, 0);
 
