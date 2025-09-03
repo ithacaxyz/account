@@ -485,6 +485,32 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
 
+    function computeDigest(CallSansTo[] calldata calls, address to, uint256 nonce)
+        public
+        view
+        virtual
+        returns (bytes32 result)
+    {
+        bytes32[] memory a = EfficientHashLib.malloc(calls.length);
+        for (uint256 i; i < calls.length; ++i) {
+            (uint256 value, bytes calldata data) = _get(calls, i);
+            a.set(
+                i,
+                EfficientHashLib.hash(
+                    CALL_TYPEHASH,
+                    bytes32(uint256(uint160(to))),
+                    bytes32(value),
+                    EfficientHashLib.hashCalldata(data)
+                )
+            );
+        }
+        bool isMultichain = nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
+        bytes32 structHash = EfficientHashLib.hash(
+            uint256(EXECUTE_TYPEHASH), LibBit.toUint(isMultichain), uint256(a.hash()), nonce
+        );
+        return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
+    }
+
     /// @dev Returns if the signature is valid, along with its `keyHash`.
     /// The `signature` is a wrapped signature, given by
     /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
@@ -675,6 +701,49 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     // ERC7821
     ////////////////////////////////////////////////////////////////////////
 
+    function _execute(
+        bytes32,
+        bytes calldata,
+        address to,
+        CallSansTo[] calldata calls,
+        bytes calldata opData
+    ) internal virtual override {
+        // Orchestrator workflow.
+        if (msg.sender == ORCHESTRATOR) {
+            // opdata
+            // 0x00: keyHash
+            if (opData.length != 0x20) revert OpDataError();
+            bytes32 _keyHash = LibBytes.loadCalldata(opData, 0x00);
+
+            LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(_keyHash);
+            _execute(calls, to, _keyHash);
+            LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
+
+            return;
+        }
+
+        // Simple workflow without `opData`.
+        if (opData.length == uint256(0)) {
+            if (msg.sender != address(this)) revert Unauthorized();
+            return _execute(calls, to, bytes32(0));
+        }
+
+        // Simple workflow with `opData`.
+        if (opData.length < 0x20) revert OpDataError();
+        uint256 nonce = uint256(LibBytes.loadCalldata(opData, 0x00));
+        LibNonce.checkAndIncrement(_getAccountStorage().nonceSeqs, nonce);
+        emit NonceInvalidated(nonce);
+
+        (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
+            computeDigest(calls, to, nonce), LibBytes.sliceCalldata(opData, 0x20)
+        );
+
+        if (!isValid) revert Unauthorized();
+        LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
+        _execute(calls, to, keyHash);
+        LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
+    }
+
     /// @dev For ERC7821.
     function _execute(bytes32, bytes calldata, Call[] calldata calls, bytes calldata opData)
         internal
@@ -711,8 +780,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
         if (!isValid) revert Unauthorized();
-
-        // TODO: Figure out where else to add these operations, after removing delegate call.
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
         _execute(calls, keyHash);
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
