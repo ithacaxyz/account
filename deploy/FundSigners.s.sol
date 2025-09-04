@@ -8,6 +8,8 @@ import {stdToml} from "forge-std/StdToml.sol";
 interface ISimpleFunder {
     function setGasWallet(address[] memory wallets, bool isGasWallet) external;
     function gasWallets(address) external view returns (bool);
+    function setOrchestrators(address[] memory ocs, bool val) external;
+    function orchestrators(address) external view returns (bool);
 }
 
 /**
@@ -59,6 +61,7 @@ contract FundSigners is Script {
         uint256 targetBalance;
         address simpleFunderAddress;
         uint256 defaultNumSigners;
+        address[] supportedOrchestrators;
     }
 
     /**
@@ -211,6 +214,7 @@ contract FundSigners is Script {
         if (config.simpleFunderAddress != address(0) && config.simpleFunderAddress.code.length > 0)
         {
             setGasWalletsInSimpleFunder(config.simpleFunderAddress, signers);
+            setOrchestratorsInSimpleFunder(config.simpleFunderAddress, config.supportedOrchestrators);
         }
 
         vm.stopBroadcast();
@@ -413,6 +417,29 @@ contract FundSigners is Script {
     }
 
     /**
+     * @notice Set orchestrators in SimpleFunder contract
+     */
+    function setOrchestratorsInSimpleFunder(address simpleFunder, address[] memory orchestrators) internal {
+        if (orchestrators.length == 0) {
+            console.log("No orchestrators configured, skipping orchestrator setup");
+            return;
+        }
+
+        ISimpleFunder funder = ISimpleFunder(simpleFunder);
+
+        console.log("\nSetting orchestrators in SimpleFunder:");
+        console.log("  SimpleFunder address:", simpleFunder);
+        console.log(string.concat("  Setting ", vm.toString(orchestrators.length), " orchestrators..."));
+
+        for (uint256 i = 0; i < orchestrators.length; i++) {
+            console.log(string.concat("  Orchestrator ", vm.toString(i), ": ", vm.toString(orchestrators[i])));
+        }
+
+        funder.setOrchestrators(orchestrators, true);
+        console.log(string.concat("  Successfully set all ", vm.toString(orchestrators.length), " orchestrators"));
+    }
+
+    /**
      * @notice Derive signer addresses from mnemonic
      */
     function deriveSigners(string memory mnemonic, uint256 count)
@@ -468,6 +495,9 @@ contract FundSigners is Script {
         } catch {
             config.defaultNumSigners = 10; // Default fallback
         }
+
+        // Read supported orchestrators - required field
+        config.supportedOrchestrators = vm.readForkAddressArray("supported_orchestrators");
 
         return config;
     }

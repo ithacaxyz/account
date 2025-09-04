@@ -1307,7 +1307,9 @@ contract OrchestratorTest is BaseTest {
         // Initialize core test data
         t.funderPrivateKey = _randomPrivateKey();
         t.settlementOracle = makeAddr("SETTLEMENT_ORACLE");
-        t.funder = new SimpleFunder(vm.addr(t.funderPrivateKey), ocs, address(this));
+        t.funder = new SimpleFunder(vm.addr(t.funderPrivateKey), address(this));
+
+        t.funder.setOrchestrators(ocs, true);
         t.settler = new SimpleSettler(t.settlementOracle);
         t.gasWallet = makeAddr("GAS_WALLET");
         t.relay = makeAddr("RELAY");

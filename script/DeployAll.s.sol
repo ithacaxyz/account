@@ -26,18 +26,10 @@ contract DeployAllScript is Script {
         accountProxy = LibEIP7702.deployProxy(accountImplementation, address(0));
         simulator = address(new Simulator());
 
-        address[] memory orchestrators = vm.envOr("ORCHESTRATORS", ",", new address[](0));
-        address[] memory newOrchestrators = new address[](orchestrators.length + 1);
-        for (uint256 i; i < orchestrators.length; i++) {
-            newOrchestrators[i] = orchestrators[i];
-        }
-        newOrchestrators[orchestrators.length] = orchestrator;
-
-        funder = address(
-            new SimpleFunder(
-                vm.envAddress("FUNDER"), newOrchestrators, vm.envAddress("FUNDER_OWNER")
-            )
-        );
+        funder = address(new SimpleFunder(vm.envAddress("FUNDER"), msg.sender));
+        address[] memory ocs = new address[](1);
+        ocs[0] = address(orchestrator);
+        SimpleFunder(payable(funder)).setOrchestrators(ocs, true);
         simpleSettler = address(new SimpleSettler(vm.envAddress("SETTLER_OWNER")));
         escrow = address(new Escrow());
 

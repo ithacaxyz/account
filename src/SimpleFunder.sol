@@ -42,12 +42,9 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
     // Constructor
     ////////////////////////////////////////////////////////////////////////
 
-    constructor(address _funder, address[] memory _orchestrators, address _owner) {
+    constructor(address _funder, address _owner) {
         funder = _funder;
         _initializeOwner(_owner);
-        for (uint256 i = 0; i < _orchestrators.length; i++) {
-            orchestrators[_orchestrators[i]] = true;
-        }
     }
 
     /// @dev For EIP712.
@@ -59,7 +56,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
         returns (string memory name, string memory version)
     {
         name = "SimpleFunder";
-        version = "0.1.4";
+        version = "0.1.5";
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -106,8 +103,10 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
         funder = newFunder;
     }
 
-    function setOrchestrator(address oc, bool val) external onlyOwner {
-        orchestrators[oc] = val;
+    function setOrchestrators(address[] memory ocs, bool val) external onlyOwner {
+        for (uint256 i; i < ocs.length; ++i) {
+            orchestrators[ocs[i]] = val;
+        }
     }
 
     /// @dev Allows the owner to set the gas wallets.
