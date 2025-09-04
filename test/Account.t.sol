@@ -87,11 +87,12 @@ contract AccountTest is BaseTest {
         t.targetFunctionPayloads = new TargetFunctionPayload[](t.n);
         t.calls = new ERC7821.CallSansTo[](t.n);
         t.to = address(this);
-        
+
         for (uint256 i; i < t.n; ++i) {
             uint256 value = _random() % 0.1 ether;
             bytes memory data = _truncateBytes(_randomBytes(), 0xff);
-            t.calls[i] = ERC7821.CallSansTo(value, abi.encodeWithSignature("targetFunction(bytes)", data));
+            t.calls[i] =
+                ERC7821.CallSansTo(value, abi.encodeWithSignature("targetFunction(bytes)", data));
             t.targetFunctionPayloads[i].value = value;
             t.targetFunctionPayloads[i].data = data;
         }
@@ -103,7 +104,8 @@ contract AccountTest is BaseTest {
 
         // Negative test: wrong signature (32/256 chance)
         if (_randomChance(32)) {
-            bytes memory wrongSignature = _sig(_randomEIP7702DelegatedEOA(), d.d.computeDigest(t.calls, t.to, t.nonce));
+            bytes memory wrongSignature =
+                _sig(_randomEIP7702DelegatedEOA(), d.d.computeDigest(t.calls, t.to, t.nonce));
             t.opData = abi.encodePacked(t.nonce, wrongSignature);
             t.executionData = abi.encode(t.to, t.calls, t.opData);
             vm.expectRevert(bytes4(keccak256("Unauthorized()")));
@@ -130,7 +132,7 @@ contract AccountTest is BaseTest {
         t.targetFunctionPayloads = new TargetFunctionPayload[](t.n);
         t.calls = new ERC7821.CallSansTo[](t.n);
         t.to = address(this);
-        
+
         t.calls[0] = ERC7821.CallSansTo(0, abi.encodeWithSignature("targetFunction(bytes)", "test"));
 
         t.nonce = d.d.getNonce(0);
@@ -152,7 +154,7 @@ contract AccountTest is BaseTest {
         t.targetFunctionPayloads = new TargetFunctionPayload[](t.n);
         t.calls = new ERC7821.CallSansTo[](t.n);
         t.to = address(this);
-        
+
         t.calls[0] = ERC7821.CallSansTo(0, abi.encodeWithSignature("targetFunction(bytes)", "test"));
 
         t.nonce = d.d.getNonce(0);
@@ -174,7 +176,7 @@ contract AccountTest is BaseTest {
         t.n = 1;
         t.calls = new ERC7821.CallSansTo[](t.n);
         t.to = address(this);
-        
+
         t.calls[0] = ERC7821.CallSansTo(0, abi.encodeWithSignature("targetFunction(bytes)", "test"));
 
         // Test with opData too short (less than 32 bytes for nonce)
@@ -470,5 +472,38 @@ contract AccountTest is BaseTest {
         // Verify keys were added on chain 137
         uint256 keysCount137 = IthacaAccount(eoaAddress).keyCount();
         assertEq(keysCount137, 2, "Keys should be added on chain 137");
+    }
+
+    function testCommonToZeroAddressReplacement() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+
+        // Test that address(0) gets replaced with address(this) by comparing digest computation
+        // First, create calls with explicit address(this)
+        ERC7821.CallSansTo[] memory calls = new ERC7821.CallSansTo[](1);
+        calls[0] = ERC7821.CallSansTo(1 ether, "");
+
+        uint256 nonce = d.d.getNonce(0);
+
+        // Compute digest with explicit address(this)
+        bytes32 digestExplicit = d.d.computeDigest(calls, address(d.d), nonce);
+
+        // Compute digest with address(0) - should be the same due to replacement
+        bytes32 digestZero = d.d.computeDigest(calls, address(0), nonce);
+
+        // If address(0) replacement is working, these digests should be identical
+        assertEq(
+            digestExplicit,
+            digestZero,
+            "Digest with address(0) should equal digest with address(this)"
+        );
+
+        // Additionally, test that the execution works
+        bytes memory signature = _sig(d, digestZero);
+        bytes memory opData = abi.encodePacked(nonce, signature);
+        bytes memory executionData = abi.encode(address(0), calls, opData);
+
+        // This should succeed without reverting (proving the replacement works in execution too)
+        d.d.execute(_ERC7821_BATCH_SANS_TO_EXECUTION_MODE, executionData);
     }
 }
