@@ -421,6 +421,8 @@ contract AccountTest is BaseTest {
      *
      */
 
+    //////// Corrupting the 13 static fields of Intent ////////
+
     // Test 1: eoa corruption
     function testPayWithAllCorruptedEOAFieldOfIntent() public {
         bytes memory maliciousCalldata = _createIntentOnMainnet();
@@ -550,64 +552,75 @@ contract AccountTest is BaseTest {
         );
     }
 
-    function testPayWithFiveCorruptedFieldOffsetsOfIntent() public {
-        bool success;
-        bytes memory returnData;
+    //////// Corrupting the main offset and 7 dynamic field offsets of Intent ////////
 
-        // Test 1: Main Intent struct offset corruption
+    // Test 1: Main Intent struct offset corruption
+    function testPayWithCorruptedMainIntentStructOffsetOfIntent() public {
         bytes memory maliciousCalldata = _createIntentOnMainnet();
-        uint256 len;
         assembly {
-            mstore(add(maliciousCalldata, 32), 0x10000000000000000) // 2^64 (strictly greater than 2^64-1)
+            // 0x10000000000000000 = 2^64 (strictly greater than 2^64-1, which is the max value
+            // checked against, by the compiler in abi.decode())
+            mstore(add(maliciousCalldata, 32), 0x10000000000000000)
         }
-        (success, returnData) =
+        (bool success, bytes memory returnData) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
         assertEq(success, false);
+    }
 
-        // Test 2: executionData offset corruption
-        maliciousCalldata = _createIntentOnMainnet();
+    // Test 2: executionData offset corruption
+    function testPayWithCorruptedExecutionDataOffsetOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
         assembly {
-            mstore(add(maliciousCalldata, 96), 0x10000000000000001) // 2^64 + 1
+            // note: this reverts with decoding error on corrupting with a random offset part of Intent
+            mstore(add(maliciousCalldata, 96), 0x300)
         }
-        (success, returnData) =
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("DecodingError()")));
+    }
+
+    // Test 3: encodedPreCalls offset corruption
+    function testPayWithCorruptedEncodedPreCallsOffsetOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
+        assembly {
+            // note: this evm reverts with a value well within bounds of 2^64 - 1 too
+            mstore(add(maliciousCalldata, 288), 0x300)
+        }
+        (bool success, bytes memory returnData) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
         assertEq(success, false);
+    }
 
-        // Test 3: encodedPreCalls offset corruption
-        maliciousCalldata = _createIntentOnMainnet();
-        assembly {
-            mstore(add(maliciousCalldata, 288), 0x10000000000000002) // 2^64 + 2
-        }
-        (success, returnData) =
-            address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
-        assertEq(success, false);
-
-        // Test 4: encodedFundTransfers offset corruption
-        maliciousCalldata = _createIntentOnMainnet();
+    // Test 4: encodedFundTransfers offset corruption
+    function testPayWithCorruptedEncodedFundTransfersOffsetOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
         assembly {
             mstore(add(maliciousCalldata, 320), 0x10000000000000003) // 2^64 + 3
         }
-        (success, returnData) =
+        (bool success, bytes memory returnData) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
         assertEq(success, false);
+    }
 
-        // Test 5: funderSignature offset corruption
-        maliciousCalldata = _createIntentOnMainnet();
+    // Test 5: funderSignature offset corruption
+    function testPayWithCorruptedFunderSignatureOffsetOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
         assembly {
+            // note: corrupting with 0xa20 returns 0x00000000, which is equivalent to not being corrupted
+            // so we corrupt with extreme value
             mstore(add(maliciousCalldata, 480), 0x10000000000000004) // 2^64 + 4
         }
-        (success, returnData) =
+        (bool success, bytes memory returnData) =
             address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
         assertEq(success, false);
+    }
 
-        // Test 6: signature offset corruption
-        maliciousCalldata = _createIntentOnMainnet();
+    // Test 6: signature offset corruption
+    function testPayWithCorruptedSignatureOffsetOfIntent() public {
+        bytes memory maliciousCalldata = _createIntentOnMainnet();
         assembly {
-            mstore(add(maliciousCalldata, 608), 0x10000000000000005) // 2^64 + 5
+            // note: this reverts with verification error on corrupting with a random offset part of Intent
+            mstore(add(maliciousCalldata, 608), 0x300)
         }
-        (success, returnData) =
-            address(oc).call(abi.encodeWithSignature("execute(bytes)", maliciousCalldata));
-        assertEq(success, false);
+        assertEq(oc.execute(maliciousCalldata), bytes4(keccak256("VerificationError()")));
     }
 
     // modified from testCrossChainKeyPreCallsAuthorization()'s intent creation
@@ -685,6 +698,7 @@ contract AccountTest is BaseTest {
         return abi.encode(u1);
     }
 
+    // Test 7: paymentSignature offset corruption
     // modified from Orchestrator.t.sol's testAccountPaymaster()
     function testPayWithCorruptedPaymentSignatureOffsetOfIntent() public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
@@ -727,7 +741,6 @@ contract AccountTest is BaseTest {
         u.signature = _eoaSig(d.privateKey, digest);
         u.paymentSignature = _eoaSig(payer.privateKey, digest);
 
-        // Test 7: paymentSignature offset corruption
         bytes memory maliciousCalldata = abi.encode(u);
         assembly {
             mstore(add(maliciousCalldata, 640), 0x10000000000000006) // 2^64 + 6
@@ -775,6 +788,7 @@ contract AccountTest is BaseTest {
         uint256 snapshot;
     }
 
+    // Test 8: settlerContext offset corruption
     // modified from Orchestrator.t.sol's testMultiChainIntent()
     function testPayWithCorruptedSettlerContextOffsetOfIntent() public {
         _TestMultiChainIntentTemps memory t;
@@ -943,7 +957,6 @@ contract AccountTest is BaseTest {
         // Relay funds the user account, and the intended execution happens.
         t.encodedIntents[0] = abi.encode(t.outputIntent);
 
-        // Test 8: settlerContext offset corruption
         bytes memory maliciousCalldata = t.encodedIntents[0];
         assembly {
             mstore(add(maliciousCalldata, 512), 0x10000000000000007) // 2^64 + 7
