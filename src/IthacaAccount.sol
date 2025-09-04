@@ -491,6 +491,12 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         virtual
         returns (bytes32 result)
     {
+        // If to is 0, it will be replaced with address(this)
+        assembly ("memory-safe") {
+            let t := shr(96, shl(96, to))
+            to := or(mul(address(), iszero(t)), t)
+        }
+
         bytes32[] memory a = EfficientHashLib.malloc(calls.length);
         for (uint256 i; i < calls.length; ++i) {
             (uint256 value, bytes calldata data) = _get(calls, i);
