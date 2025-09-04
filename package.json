@@ -1,6 +1,6 @@
 {
   "name": "ithaca-account",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "EIP-7702 account for Ithaca Porto",
   "license": "MIT",
   "scripts": {
