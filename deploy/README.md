@@ -85,6 +85,7 @@ contracts = ["ALL"]               # Or specific: ["Orchestrator", "IthacaAccount
 target_balance = 1000000000000000 # Target balance per signer (0.001 ETH)
 simple_funder_address = "0x..."   # SimpleFunder address
 default_num_signers = 10          # Number of signers to fund
+supported_orchestrators = ["0x..."] # Orchestrator addresses to enable in SimpleFunder
 
 # LayerZero configuration (only needed for ConfigureLayerZero)
 layerzero_settler_address = "0x..."
@@ -244,6 +245,7 @@ forge script deploy/ConfigureLayerZeroSettler.s.sol:ConfigureLayerZeroSettler \
 1. Derives signer addresses from mnemonic
 2. Tops up signers below target_balance
 3. Registers signers as gas wallets in SimpleFunder
+4. Sets configured orchestrators in SimpleFunder
 
 ```bash
 # Fund default number of signers (from config)
@@ -397,6 +399,7 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 | `target_balance` | FundSigners | Minimum signer balance |
 | `simple_funder_address` | FundSigners, FundSimpleFunder | SimpleFunder location |
 | `default_num_signers` | FundSigners | Number of signers |
+| `supported_orchestrators` | FundSigners | Orchestrator addresses to enable in SimpleFunder |
 | `layerzero_*` fields | ConfigureLayerZeroSettler | LayerZero configuration |
 | `exp_minter_address`, `exp_mint_amount` | DeployMain (testnet) | ExpToken deployment |
 

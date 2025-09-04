@@ -1,5 +1,15 @@
 # porto-account
 
+## 0.5.4
+
+### Patch Changes
+
+- SimpleFunder supports multiple orchestrators instead of single immutable orchestrator
+  - Replaced immutable `ORCHESTRATOR` with `orchestrators` mapping and `setOrchestrators()` function
+  - Maintained backward compatibility with old `fund()` signature
+  - Added `supported_orchestrators` config field for deployment
+  - Version bumped to "0.1.5"
+
 ## 0.5.0
 
 ### Minor Changes
