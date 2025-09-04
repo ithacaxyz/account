@@ -71,7 +71,7 @@ jobs:
           
           # Commit changes (only Solidity files, not package.json)
           git add src/*.sol
-          git commit -m "chore: bump contract versions due to bytecode changes - Contracts updated: $CONTRACTS_TO_BUMP"
+          git commit -m "chore: bump contract versions due to bytecode changes - Contracts updated: $CONTRACTS_TO_BUMP" --no-verify
           
           # Pull latest changes and rebase
           # Pull latest changes and rebase
