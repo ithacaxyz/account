@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import {ICommon} from "./interfaces/ICommon.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
+import {ERC7821} from "solady/accounts/ERC7821.sol";
 
 /// @title Simulator
 /// @notice A separate contract for calling the Orchestrator contract solely for gas simulation.
@@ -260,6 +261,13 @@ contract Simulator {
                 returndatacopy(m, 0x00, returndatasize())
                 revert(m, returndatasize())
             }
+        }
+    }
+
+    function multicall(ERC7821.Call[] calldata c) public {
+        for (uint256 i; i < c.length; i++) {
+            (bool success,) = c[i].to.call{value: c[i].value}(c[i].data);
+            (success);
         }
     }
 }
