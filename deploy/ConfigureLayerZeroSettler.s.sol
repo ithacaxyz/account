@@ -360,11 +360,8 @@ contract ConfigureLayerZeroSettler is Script {
 
         bytes memory executorConfig = abi.encode(config.maxMessageSize, settler);
         SetConfigParam[] memory params = new SetConfigParam[](1);
-        params[0] = SetConfigParam({
-            eid: destEid,
-            configType: CONFIG_TYPE_EXECUTOR,
-            config: abi.encode(executorConfig)
-        });
+        params[0] =
+            SetConfigParam({eid: destEid, configType: CONFIG_TYPE_EXECUTOR, config: executorConfig});
 
         vm.broadcast();
         endpoint.setConfig(address(settler), config.sendUln302, params);
