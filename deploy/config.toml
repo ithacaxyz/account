@@ -71,9 +71,9 @@ l0_settler_owner = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4" # Set to Master 
 l0_settler_signer = "0x0000000000000000000000000000000000000006" 
 layerzero_endpoint = "0x6EDCE65403992e310A62460808c4b910D972f10f" # Get from LayerZero docs
 layerzero_eid = 40245 # Get from LayerZero docs
-salt = "0x00000000000000000000000000000000000000000000000000000000000000c7" # Almost alwayse be bytes32(0)
+salt = "0x00000000000000000000000000000000000000000000000000000000000000c8" # New salt for fresh deployment
 # Specify contracts to deploy. Use ["ALL"] to deploy all available contracts
-contracts = ["ALL"]  
+contracts = ["LayerZeroSettler"]  
 # Funding Script 
 target_balance = 1000000000000000 # 0.001 ether
 
@@ -82,7 +82,7 @@ simple_funder_address = "0x09F6eF9525efAdb6167dFe71fFcfbE306De07988"
 default_num_signers = 10
 supported_orchestrators = ["0xEd7c1e839381c489Dcd1ED3CE1B0e79DaE714f77"]
 # LayerZero configuration 
-layerzero_settler_address = "0x4225041FF3DB1C7d7a1029406bB80C7298767aca"
+layerzero_settler_address = "0xd71d3c3ff2249A67cEa12030b20E66734fB1f833"
 layerzero_send_uln302 = "0xC1868e054425D378095A003EcbA3823a5D0135C9"
 layerzero_receive_uln302 = "0x12523de19dc41c91F7d2093E0CFbB76b17012C8d"
 layerzero_destination_chain_ids = [11155420] # optimism sepolia
@@ -113,19 +113,19 @@ l0_settler_owner = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
 l0_settler_signer = "0x0000000000000000000000000000000000000006" 
 layerzero_endpoint = "0x6EDCE65403992e310A62460808c4b910D972f10f"
 layerzero_eid = 40232
-salt = "0x0000000000000000000000000000000000000000000000000000000000000001"
+salt = "0x0000000000000000000000000000000000000000000000000000000000000002"
 target_balance = 10000000000000000 # 0.01 ether
 # Specify contracts to deploy. Use ["ALL"] to deploy all available contracts
-contracts = ["ALL"]  # Deploy all contracts
+contracts = ["LayerZeroSettler"]  # Deploy all contracts
 # SimpleFunder configuration
 simple_funder_address = "0x2AD8F6a3bB1126a777606eaFa9da9b95530d9597" 
 default_num_signers = 10
 supported_orchestrators = ["0xEd7c1e839381c489Dcd1ED3CE1B0e79DaE714f77"]
 # LayerZero configuration
-layerzero_settler_address = "0x4225041FF3DB1C7d7a1029406bB80C7298767aca"
+layerzero_settler_address = "0x9F610182BD096ab7734C1365A44f48dD0A574d0D"
 layerzero_send_uln302 = "0xB31D2cb502E25B30C651842C7C3293c51Fe6d16f"
 layerzero_receive_uln302 = "0x9284fd59B95b9143AF0b9795CAC16eb3C723C9Ca"
-layerzero_destination_chain_ids = [84532, 11155111]
+layerzero_destination_chain_ids = [84532]
 layerzero_required_dvns = ["dvn_layerzero_labs"]
 layerzero_optional_dvns = []
 layerzero_optional_dvn_threshold = 0

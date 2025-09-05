@@ -287,7 +287,7 @@ contract ConfigureLayerZeroSettler is Script {
             console.log("    Destination EID:", destConfig.eid);
 
             // Set executor config (self-execution model)
-            setExecutorConfig(settler, endpoint, destConfig.eid);
+            setExecutorConfig(config, settler, endpoint, destConfig.eid);
 
             // Set send ULN config
             setSendUlnConfig(
@@ -348,12 +348,27 @@ contract ConfigureLayerZeroSettler is Script {
     // ============================================
 
     function setExecutorConfig(
+        LayerZeroChainConfig memory config,
         LayerZeroSettler settler,
         ILayerZeroEndpointV2 endpoint,
         uint32 destEid
     ) internal {
-        // LayerZeroSettler uses self-execution model, no executor config needed
-        console.log("    Using self-execution model (no executor config)");
+        console.log("    Setting executor config:");
+        console.log("      Executor (self-execution):", address(settler));
+        console.log("      Max message size:", config.maxMessageSize);
+        console.log("      Send ULN302:", config.sendUln302);
+
+        bytes memory executorConfig = abi.encode(config.maxMessageSize, settler);
+        SetConfigParam[] memory params = new SetConfigParam[](1);
+        params[0] = SetConfigParam({
+            eid: destEid,
+            configType: CONFIG_TYPE_EXECUTOR,
+            config: abi.encode(executorConfig)
+        });
+
+        vm.broadcast();
+        endpoint.setConfig(address(settler), config.sendUln302, params);
+        console.log("      Executor config set");
     }
 
     function setSendUlnConfig(
