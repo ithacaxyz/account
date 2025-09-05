@@ -7,7 +7,7 @@
 # Extend the deployment configuration from deploy/config.toml
 # This inherits all [forks.*] configurations for multi-chain deployments
 extends = "deploy/config.toml"
-evm_version = "prague" # Cancun will be tested in the CI.
+evm_version = "prague"
 auto_detect_solc = false
 solc_version = "0.8.28"
 optimizer = true
@@ -35,5 +35,3 @@ runs = 10
 # mainnet = { key = "${VERIFICATION_KEY_1}" }
 # arbitrum = { key = "${VERIFICATION_KEY_42161}" }
 # base = { key = "${VERIFICATION_KEY_8453}" }
-
-
