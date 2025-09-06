@@ -135,7 +135,7 @@ contract BenchmarkTest is BaseTest {
             paymasterSigner
         ).checked_write(true);
 
-        vm.deal(relayer, type(uint128).max);
+        _giveAccountSomeTokens(relayer);
 
         // Set up app sponsor for APP_SPONSOR payment type
         appSponsor = new MockPayerWithSignatureOptimized(address(oc));
