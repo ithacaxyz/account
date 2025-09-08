@@ -43,7 +43,7 @@ contract LayerZeroSettler is OApp, ISettler, EIP712 {
         returns (string memory name, string memory version)
     {
         name = "LayerZeroSettler";
-        version = "0.1.1";
+        version = "0.1.2";
     }
 
     /// @notice Mark the settlement as valid to be sent
