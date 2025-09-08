@@ -60,6 +60,7 @@ contract ConfigureLayerZeroSettler is Script {
 
     // Fork ids for chain switching
     mapping(uint256 => uint256) public forkIds;
+    mapping(uint256 => bool) public isForkInitialized;
     mapping(uint256 => LayerZeroChainConfig) public chainConfigs;
     uint256[] public configuredChainIds;
 
@@ -109,22 +110,16 @@ contract ConfigureLayerZeroSettler is Script {
             // Try to load LayerZero configuration
             LayerZeroChainConfig memory config = loadChainConfig(chainId);
 
-            // Only store if chain has LayerZero configuration
-            if (config.sendUln302 != address(0)) {
-                chainConfigs[chainId] = config;
-                configuredChainIds.push(chainId);
-                forkIds[chainId] = forkId;
+            chainConfigs[chainId] = config;
+            configuredChainIds.push(chainId);
+            forkIds[chainId] = forkId;
+            isForkInitialized[forkId] = true;
 
-                console.log(
-                    string.concat(
-                        "  Loaded LayerZero config for ",
-                        config.name,
-                        " (",
-                        vm.toString(chainId),
-                        ")"
-                    )
-                );
-            }
+            console.log(
+                string.concat(
+                    "  Loaded LayerZero config for ", config.name, " (", vm.toString(chainId), ")"
+                )
+            );
         }
 
         console.log("Found LayerZero configuration for", configuredChainIds.length, "chains");
@@ -219,6 +214,17 @@ contract ConfigureLayerZeroSettler is Script {
         }
     }
 
+    function _selectFork(uint256 chainId) internal {
+        if (isForkInitialized[forkIds[chainId]]) {
+            vm.selectFork(forkIds[chainId]);
+        } else {
+            string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
+            vm.selectFork(forkIds[chainId]);
+            forkIds[chainId] = vm.createFork(rpcUrl);
+            isForkInitialized[forkIds[chainId]] = true;
+        }
+    }
+
     /**
      * @notice Configure a single chain
      */
@@ -233,7 +239,7 @@ contract ConfigureLayerZeroSettler is Script {
         console.log("  EID:", config.eid);
 
         // Switch to the source chain
-        vm.selectFork(forkIds[chainId]);
+        _selectFork(chainId);
 
         LayerZeroSettler settler = LayerZeroSettler(payable(config.layerZeroSettlerAddress));
 
@@ -275,12 +281,6 @@ contract ConfigureLayerZeroSettler is Script {
         for (uint256 i = 0; i < config.destinationChainIds.length; i++) {
             uint256 destChainId = config.destinationChainIds[i];
 
-            // Skip if destination not configured
-            if (forkIds[destChainId] == 0) {
-                console.log("  Skipping unconfigured destination:", destChainId);
-                continue;
-            }
-
             LayerZeroChainConfig memory destConfig = chainConfigs[destChainId];
 
             console.log(string.concat("\n  Configuring pathway to ", destConfig.name));
@@ -302,7 +302,7 @@ contract ConfigureLayerZeroSettler is Script {
             );
 
             // Switch to destination chain to set receive config
-            vm.selectFork(forkIds[destChainId]);
+            _selectFork(destChainId);
 
             // Ensure destination settler has endpoint set before configuring
             LayerZeroSettler destSettler =
@@ -337,7 +337,7 @@ contract ConfigureLayerZeroSettler is Script {
             );
 
             // Switch back to source chain
-            vm.selectFork(forkIds[chainId]);
+            _selectFork(chainId);
         }
 
         console.log("\n  Configuration complete for", config.name);
