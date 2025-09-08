@@ -1,5 +1,11 @@
 # porto-account
 
+## 0.5.5
+
+### Patch Changes
+- Update foundry config, to not include metadata in the bytecode. This ensures that the contract bytecode doesn't change because of some other change in the repository.
+
+
 ## 0.5.4
 
 ### Patch Changes
