@@ -274,7 +274,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         bytes32 replaySafeDigest = EfficientHashLib.hash(SIGN_TYPEHASH, digest);
         digest = _hashTypedDataOnlyVerifyingContract(replaySafeDigest);
 
-        (bool isValid, bytes32 keyHash) = _unwrapAndValidateSignature(digest, signature);
+        (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
             isValid =
                 _isSuperAdmin(keyHash) || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
@@ -501,20 +501,13 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         virtual
         returns (bool isValid, bytes32 keyHash)
     {
+        // Early return if unable to unwrap the signature.
+        if (signature.length < 0x21) return (false, 0);
+
         // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
             return (ECDSA.recoverCalldata(digest, signature) == address(this), 0);
         }
-        return _unwrapAndValidateSignature(digest, signature);
-    }
-
-    function _unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
-        internal
-        view
-        returns (bool isValid, bytes32 keyHash)
-    {
-        // Early return if unable to unwrap the signature.
-        if (signature.length < 0x21) return (false, 0);
 
         unchecked {
             uint256 n = signature.length - 0x21;
