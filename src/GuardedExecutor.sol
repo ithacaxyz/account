@@ -400,7 +400,7 @@ abstract contract GuardedExecutor is ERC7821 {
         checkKeyHashIsNonZero(keyHash)
     {
         if (keyHash != ANY_KEYHASH) {
-            if (_isSuperAdmin(keyHash)) revert SuperAdminCanSpendAnything();
+            if (_isSuperAdmin(keyHash)) revert SuperAdminCanExecuteEverything();
         }
 
         // It is ok even if we don't check for `_isSelfExecute` here, as we will still
