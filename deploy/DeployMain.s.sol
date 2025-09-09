@@ -611,16 +611,12 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        if (deployed.orchestrator == address(0)) {
-            bytes memory creationCode = type(Orchestrator).creationCode;
-            address orchestrator =
-                deployContractWithCreate2(chainId, creationCode, "", "Orchestrator");
+        bytes memory creationCode = type(Orchestrator).creationCode;
+        address orchestrator =
+            deployContractWithCreate2(chainId, creationCode, "", "Orchestrator");
 
-            saveDeployedContract(chainId, "Orchestrator", orchestrator);
-            deployed.orchestrator = orchestrator;
-        } else {
-            console.log("Orchestrator already deployed:", deployed.orchestrator);
-        }
+        saveDeployedContract(chainId, "Orchestrator", orchestrator);
+        deployed.orchestrator = orchestrator;
     }
 
     function deployIthacaAccount(
@@ -629,22 +625,15 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         DeployedContracts memory deployed
     ) internal {
         // Ensure Orchestrator is deployed first (dependency)
-        if (deployed.orchestrator == address(0)) {
-            console.log("Deploying Orchestrator first (dependency for IthacaAccount)...");
-            deployOrchestrator(chainId, config, deployed);
-        }
+        require(deployed.orchestrator != address(0), "Orchestrator must be deployed before IthacaAccount");
 
-        if (deployed.ithacaAccount == address(0)) {
-            bytes memory creationCode = type(IthacaAccount).creationCode;
-            bytes memory args = abi.encode(deployed.orchestrator);
-            address ithacaAccount =
-                deployContractWithCreate2(chainId, creationCode, args, "IthacaAccount");
+        bytes memory creationCode = type(IthacaAccount).creationCode;
+        bytes memory args = abi.encode(deployed.orchestrator);
+        address ithacaAccount =
+            deployContractWithCreate2(chainId, creationCode, args, "IthacaAccount");
 
-            saveDeployedContract(chainId, "IthacaAccount", ithacaAccount);
-            deployed.ithacaAccount = ithacaAccount;
-        } else {
-            console.log("IthacaAccount already deployed:", deployed.ithacaAccount);
-        }
+        saveDeployedContract(chainId, "IthacaAccount", ithacaAccount);
+        deployed.ithacaAccount = ithacaAccount;
     }
 
     function deployAccountProxy(
@@ -653,21 +642,14 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         DeployedContracts memory deployed
     ) internal {
         // Ensure IthacaAccount is deployed first (dependency)
-        if (deployed.ithacaAccount == address(0)) {
-            console.log("Deploying IthacaAccount first (dependency for AccountProxy)...");
-            deployIthacaAccount(chainId, config, deployed);
-        }
+        require(deployed.ithacaAccount != address(0), "IthacaAccount must be deployed before AccountProxy");
 
-        if (deployed.accountProxy == address(0)) {
-            bytes memory proxyCode = LibEIP7702.proxyInitCode(deployed.ithacaAccount, address(0));
-            address accountProxy = deployContractWithCreate2(chainId, proxyCode, "", "AccountProxy");
+        bytes memory proxyCode = LibEIP7702.proxyInitCode(deployed.ithacaAccount, address(0));
+        address accountProxy = deployContractWithCreate2(chainId, proxyCode, "", "AccountProxy");
 
-            require(accountProxy != address(0), "Account proxy deployment failed");
-            saveDeployedContract(chainId, "AccountProxy", accountProxy);
-            deployed.accountProxy = accountProxy;
-        } else {
-            console.log("AccountProxy already deployed:", deployed.accountProxy);
-        }
+        require(accountProxy != address(0), "Account proxy deployment failed");
+        saveDeployedContract(chainId, "AccountProxy", accountProxy);
+        deployed.accountProxy = accountProxy;
     }
 
     function deploySimulator(
@@ -675,15 +657,11 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        if (deployed.simulator == address(0)) {
-            bytes memory creationCode = type(Simulator).creationCode;
-            address simulator = deployContractWithCreate2(chainId, creationCode, "", "Simulator");
+        bytes memory creationCode = type(Simulator).creationCode;
+        address simulator = deployContractWithCreate2(chainId, creationCode, "", "Simulator");
 
-            saveDeployedContract(chainId, "Simulator", simulator);
-            deployed.simulator = simulator;
-        } else {
-            console.log("Simulator already deployed:", deployed.simulator);
-        }
+        saveDeployedContract(chainId, "Simulator", simulator);
+        deployed.simulator = simulator;
     }
 
     function deploySimpleFunder(
@@ -691,17 +669,13 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        if (deployed.simpleFunder == address(0)) {
-            bytes memory creationCode = type(SimpleFunder).creationCode;
+        bytes memory creationCode = type(SimpleFunder).creationCode;
 
-            bytes memory args = abi.encode(config.funderSigner, config.funderOwner);
-            address funder = deployContractWithCreate2(chainId, creationCode, args, "SimpleFunder");
+        bytes memory args = abi.encode(config.funderSigner, config.funderOwner);
+        address funder = deployContractWithCreate2(chainId, creationCode, args, "SimpleFunder");
 
-            saveDeployedContract(chainId, "SimpleFunder", funder);
-            deployed.simpleFunder = funder;
-        } else {
-            console.log("SimpleFunder already deployed:", deployed.simpleFunder);
-        }
+        saveDeployedContract(chainId, "SimpleFunder", funder);
+        deployed.simpleFunder = funder;
     }
 
     function deployEscrow(
@@ -709,15 +683,11 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        if (deployed.escrow == address(0)) {
-            bytes memory creationCode = type(Escrow).creationCode;
-            address escrow = deployContractWithCreate2(chainId, creationCode, "", "Escrow");
+        bytes memory creationCode = type(Escrow).creationCode;
+        address escrow = deployContractWithCreate2(chainId, creationCode, "", "Escrow");
 
-            saveDeployedContract(chainId, "Escrow", escrow);
-            deployed.escrow = escrow;
-        } else {
-            console.log("Escrow already deployed:", deployed.escrow);
-        }
+        saveDeployedContract(chainId, "Escrow", escrow);
+        deployed.escrow = escrow;
     }
 
     function deploySimpleSettler(
@@ -725,18 +695,14 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        if (deployed.simpleSettler == address(0)) {
-            bytes memory creationCode = type(SimpleSettler).creationCode;
-            bytes memory args = abi.encode(config.settlerOwner);
-            address settler =
-                deployContractWithCreate2(chainId, creationCode, args, "SimpleSettler");
+        bytes memory creationCode = type(SimpleSettler).creationCode;
+        bytes memory args = abi.encode(config.settlerOwner);
+        address settler =
+            deployContractWithCreate2(chainId, creationCode, args, "SimpleSettler");
 
-            console.log("  Owner:", config.settlerOwner);
-            saveDeployedContract(chainId, "SimpleSettler", settler);
-            deployed.simpleSettler = settler;
-        } else {
-            console.log("SimpleSettler already deployed:", deployed.simpleSettler);
-        }
+        console.log("  Owner:", config.settlerOwner);
+        saveDeployedContract(chainId, "SimpleSettler", settler);
+        deployed.simpleSettler = settler;
     }
 
     function deployLayerZeroSettler(
@@ -744,25 +710,21 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        if (deployed.layerZeroSettler == address(0)) {
-            bytes memory creationCode = type(LayerZeroSettler).creationCode;
-            bytes memory args = abi.encode(config.l0SettlerOwner, config.l0SettlerSigner);
-            address settler =
-                deployContractWithCreate2(chainId, creationCode, args, "LayerZeroSettler");
+        bytes memory creationCode = type(LayerZeroSettler).creationCode;
+        bytes memory args = abi.encode(config.l0SettlerOwner, config.l0SettlerSigner);
+        address settler =
+            deployContractWithCreate2(chainId, creationCode, args, "LayerZeroSettler");
 
-            console.log("  Owner:", config.l0SettlerOwner);
-            console.log("  L0SettlerSigner:", config.l0SettlerSigner);
-            console.log("  Endpoint to be configured:", config.layerZeroEndpoint);
-            console.log("  EID:", config.layerZeroEid);
-            console.log(
-                "  Note: Endpoint must be set by owner via ConfigureLayerZeroSettler script"
-            );
+        console.log("  Owner:", config.l0SettlerOwner);
+        console.log("  L0SettlerSigner:", config.l0SettlerSigner);
+        console.log("  Endpoint to be configured:", config.layerZeroEndpoint);
+        console.log("  EID:", config.layerZeroEid);
+        console.log(
+            "  Note: Endpoint must be set by owner via ConfigureLayerZeroSettler script"
+        );
 
-            saveDeployedContract(chainId, "LayerZeroSettler", settler);
-            deployed.layerZeroSettler = settler;
-        } else {
-            console.log("LayerZeroSettler already deployed:", deployed.layerZeroSettler);
-        }
+        saveDeployedContract(chainId, "LayerZeroSettler", settler);
+        deployed.layerZeroSettler = settler;
     }
 
     function deployExpToken(
@@ -779,39 +741,31 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         bytes memory creationCode = type(ExperimentERC20).creationCode;
 
         // Deploy EXP token
-        if (deployed.expToken == address(0)) {
-            // Hardcode name and symbol to "EXP"
-            bytes memory args = abi.encode("EXP", "EXP", 1 ether);
-            address expToken = deployContractWithCreate2(chainId, creationCode, args, "ExpToken");
+        // Hardcode name and symbol to "EXP"
+        bytes memory args = abi.encode("EXP", "EXP", 1 ether);
+        address expToken = deployContractWithCreate2(chainId, creationCode, args, "ExpToken");
 
-            // Mint initial tokens to the configured minter address
-            ExperimentERC20(payable(expToken)).mint(config.expMinterAddress, config.expMintAmount);
+        // Mint initial tokens to the configured minter address
+        ExperimentERC20(payable(expToken)).mint(config.expMinterAddress, config.expMintAmount);
 
-            console.log("  EXP Name/Symbol: EXP");
-            console.log("  EXP Address:", expToken);
-            saveDeployedContract(chainId, "ExpToken", expToken);
-            deployed.expToken = expToken;
-        } else {
-            console.log("ExpToken already deployed:", deployed.expToken);
-        }
+        console.log("  EXP Name/Symbol: EXP");
+        console.log("  EXP Address:", expToken);
+        saveDeployedContract(chainId, "ExpToken", expToken);
+        deployed.expToken = expToken;
 
         // Deploy EXP2 token
-        if (deployed.exp2Token == address(0)) {
-            // Hardcode name and symbol to "EXP2"
-            bytes memory args2 = abi.encode("EXP2", "EXP2", 1 ether);
-            address exp2Token = deployContractWithCreate2(chainId, creationCode, args2, "Exp2Token");
+        // Hardcode name and symbol to "EXP2"
+        bytes memory args2 = abi.encode("EXP2", "EXP2", 1 ether);
+        address exp2Token = deployContractWithCreate2(chainId, creationCode, args2, "Exp2Token");
 
-            // Mint initial tokens to the configured minter address (same as EXP)
-            ExperimentERC20(payable(exp2Token)).mint(config.expMinterAddress, config.expMintAmount);
+        // Mint initial tokens to the configured minter address (same as EXP)
+        ExperimentERC20(payable(exp2Token)).mint(config.expMinterAddress, config.expMintAmount);
 
-            console.log("  EXP2 Name/Symbol: EXP2");
-            console.log("  EXP2 Address:", exp2Token);
-            console.log("  Minter:", config.expMinterAddress);
-            console.log("  Mint Amount (each):", config.expMintAmount);
-            saveDeployedContract(chainId, "Exp2Token", exp2Token);
-            deployed.exp2Token = exp2Token;
-        } else {
-            console.log("Exp2Token already deployed:", deployed.exp2Token);
-        }
+        console.log("  EXP2 Name/Symbol: EXP2");
+        console.log("  EXP2 Address:", exp2Token);
+        console.log("  Minter:", config.expMinterAddress);
+        console.log("  Mint Amount (each):", config.expMintAmount);
+        saveDeployedContract(chainId, "Exp2Token", exp2Token);
+        deployed.exp2Token = exp2Token;
     }
 }
