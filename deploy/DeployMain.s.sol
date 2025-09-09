@@ -3,7 +3,8 @@ pragma solidity ^0.8.23;
 
 import {Script, console} from "forge-std/Script.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {stdToml} from "forge-std/StdToml.sol";
+import {Config} from "forge-std/Config.sol";
+import {Variable, TypeKind} from "forge-std/LibVariable.sol";
 import {SafeSingletonDeployer} from "./SafeSingletonDeployer.sol";
 
 // Import contracts to deploy
@@ -50,8 +51,7 @@ import {ExperimentERC20} from "./mock/ExperimentalERC20.sol";
  *   --private-key $PRIVATE_KEY \
  *   "[1]" "/deploy/custom-config.toml"
  */
-contract DeployMain is Script, SafeSingletonDeployer {
-    using stdToml for string;
+contract DeployMain is Script, Config, SafeSingletonDeployer {
 
     // Chain configuration struct
     struct ChainConfig {
@@ -91,9 +91,7 @@ contract DeployMain is Script, SafeSingletonDeployer {
     mapping(uint256 => DeployedContracts) internal deployedContracts;
     uint256[] internal targetChainIds;
 
-    // Paths and config
-    string internal registryPath;
-    string internal configContent; // For unified config
+    // Config path
     string internal configPath = "/deploy/config.toml";
 
     // Events for tracking
@@ -111,9 +109,17 @@ contract DeployMain is Script, SafeSingletonDeployer {
      * @notice Deploy to all chains in config
      */
     function run() external {
-        // Get all available chain IDs from fork configuration
-        uint256[] memory chainIds = vm.readForkChainIds();
-        initializeDeployment(chainIds);
+        // Load configuration and setup forks (enable write-back to save deployed addresses)
+        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
+        _loadConfigAndForks(fullConfigPath, true);
+        
+        // Get all available chain IDs from configuration
+        targetChainIds = config.getChainIds();
+        require(targetChainIds.length > 0, "No chains found in configuration");
+        
+        // Load configuration for each chain
+        loadConfigurations();
+        loadDeployedContracts();
         executeDeployment();
     }
 
@@ -122,11 +128,20 @@ contract DeployMain is Script, SafeSingletonDeployer {
      * @param chainIds Array of chain IDs to deploy to (empty array = all chains)
      */
     function run(uint256[] memory chainIds) external {
+        // Load configuration and setup forks (enable write-back to save deployed addresses)
+        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
+        _loadConfigAndForks(fullConfigPath, true);
+        
         // If empty array, get all available chains
         if (chainIds.length == 0) {
-            chainIds = vm.readForkChainIds();
+            chainIds = config.getChainIds();
         }
-        initializeDeployment(chainIds);
+        targetChainIds = chainIds;
+        require(targetChainIds.length > 0, "No chains found in configuration");
+        
+        // Load configuration for each chain
+        loadConfigurations();
+        loadDeployedContracts();
         executeDeployment();
     }
 
@@ -136,47 +151,25 @@ contract DeployMain is Script, SafeSingletonDeployer {
      * @param _configPath Path to custom TOML config file
      */
     function run(uint256[] memory chainIds, string memory _configPath) external {
+        configPath = _configPath;
+        
+        // Load configuration and setup forks (enable write-back to save deployed addresses)
+        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
+        _loadConfigAndForks(fullConfigPath, true);
+        
         // If empty array, get all available chains
         if (chainIds.length == 0) {
-            chainIds = vm.readForkChainIds();
+            chainIds = config.getChainIds();
         }
-        initializeDeployment(chainIds, _configPath);
+        targetChainIds = chainIds;
+        require(targetChainIds.length > 0, "No chains found in configuration");
+        
+        // Load configuration for each chain
+        loadConfigurations();
+        loadDeployedContracts();
         executeDeployment();
     }
 
-    /**
-     * @notice Initialize deployment with target chains using TOML config
-     * @param chainIds Array of chain IDs to deploy to
-     */
-    function initializeDeployment(uint256[] memory chainIds) internal {
-        require(chainIds.length > 0, "No chains found in configuration");
-
-        // Load unified configuration
-        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
-        configContent = vm.readFile(fullConfigPath);
-
-        // Load registry path from config.toml
-        registryPath = configContent.readString(".profile.deployment.registry_path");
-
-        // Store target chain IDs
-        targetChainIds = chainIds;
-
-        // Load configuration for each chain
-        loadConfigurations();
-
-        // Load existing deployed contracts from registry
-        loadDeployedContracts();
-    }
-
-    /**
-     * @notice Initialize deployment with custom config path
-     * @param chainIds Array of chain IDs to deploy to
-     * @param _configPath Path to the config file
-     */
-    function initializeDeployment(uint256[] memory chainIds, string memory _configPath) internal {
-        configPath = _configPath;
-        initializeDeployment(chainIds);
-    }
 
     /**
      * @notice Load configurations for all target chains
@@ -185,20 +178,15 @@ contract DeployMain is Script, SafeSingletonDeployer {
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
 
-            // Use the RPC_{chainId} environment variable directly
-            // This matches the naming convention in config.toml
-            string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
-
-            // Create fork using the RPC URL
-            uint256 forkId = vm.createFork(rpcUrl);
-            vm.selectFork(forkId);
+            // Switch to the fork for this chain (already created by _loadConfigAndForks)
+            vm.selectFork(forkOf[chainId]);
 
             // Verify we're on the correct chain
             require(block.chainid == chainId, "Chain ID mismatch");
 
-            // Load configuration from fork variables
-            ChainConfig memory config = loadChainConfigFromFork(chainId);
-            chainConfigs[chainId] = config;
+            // Load configuration using new StdConfig pattern
+            ChainConfig memory chainConfig = loadChainConfigFromStdConfig(chainId);
+            chainConfigs[chainId] = chainConfig;
         }
 
         // Log the loaded configuration for verification
@@ -206,38 +194,38 @@ contract DeployMain is Script, SafeSingletonDeployer {
     }
 
     /**
-     * @notice Load chain configuration from the currently active fork
+     * @notice Load chain configuration using StdConfig
      * @param chainId The chain ID we're loading config for
      */
-    function loadChainConfigFromFork(uint256 chainId) internal view returns (ChainConfig memory) {
-        ChainConfig memory config;
+    function loadChainConfigFromStdConfig(uint256 chainId) internal view returns (ChainConfig memory) {
+        ChainConfig memory chainConfig;
 
-        config.chainId = chainId;
+        chainConfig.chainId = chainId;
 
-        // Use vm.readFork* functions to read variables from the active fork
-        config.name = vm.readForkString("name");
-        config.isTestnet = vm.readForkBool("is_testnet");
+        // Use StdConfig to read variables
+        chainConfig.name = config.get(chainId, "name").toString();
+        chainConfig.isTestnet = config.get(chainId, "is_testnet").toBool();
 
         // Load addresses
-        config.funderOwner = vm.readForkAddress("funder_owner");
-        config.funderSigner = vm.readForkAddress("funder_signer");
-        config.settlerOwner = vm.readForkAddress("settler_owner");
-        config.l0SettlerOwner = vm.readForkAddress("l0_settler_owner");
-        config.l0SettlerSigner = vm.readForkAddress("l0_settler_signer");
-        config.layerZeroEndpoint = vm.readForkAddress("layerzero_endpoint");
+        chainConfig.funderOwner = config.get(chainId, "funder_owner").toAddress();
+        chainConfig.funderSigner = config.get(chainId, "funder_signer").toAddress();
+        chainConfig.settlerOwner = config.get(chainId, "settler_owner").toAddress();
+        chainConfig.l0SettlerOwner = config.get(chainId, "l0_settler_owner").toAddress();
+        chainConfig.l0SettlerSigner = config.get(chainId, "l0_settler_signer").toAddress();
+        chainConfig.layerZeroEndpoint = config.get(chainId, "layerzero_endpoint").toAddress();
 
         // Load other configuration
-        config.layerZeroEid = uint32(vm.readForkUint("layerzero_eid"));
-        config.salt = vm.readForkBytes32("salt");
+        chainConfig.layerZeroEid = uint32(config.get(chainId, "layerzero_eid").toUint256());
+        chainConfig.salt = config.get(chainId, "salt").toBytes32();
 
         // Load EXP token configuration (testnet only)
-        if (config.isTestnet) {
-            config.expMinterAddress = vm.readForkAddress("exp_minter_address");
-            config.expMintAmount = vm.readForkUint("exp_mint_amount");
+        if (chainConfig.isTestnet) {
+            chainConfig.expMinterAddress = config.get(chainId, "exp_minter_address").toAddress();
+            chainConfig.expMintAmount = config.get(chainId, "exp_mint_amount").toUint256();
         }
 
         // Load contracts list - required field, will revert if not present
-        string[] memory contractsList = vm.readForkStringArray("contracts");
+        string[] memory contractsList = config.get(chainId, "contracts").toStringArray();
 
         // Check if user specified "ALL" to deploy all contracts
         if (
@@ -246,22 +234,22 @@ contract DeployMain is Script, SafeSingletonDeployer {
         ) {
             string[] memory baseContracts = getAllContracts();
             // For testnets with ALL specified, append ExpToken
-            if (config.isTestnet) {
+            if (chainConfig.isTestnet) {
                 string[] memory testnetContracts = new string[](baseContracts.length + 1);
                 for (uint256 i = 0; i < baseContracts.length; i++) {
                     testnetContracts[i] = baseContracts[i];
                 }
                 testnetContracts[baseContracts.length] = "ExpToken";
-                config.contracts = testnetContracts;
+                chainConfig.contracts = testnetContracts;
             } else {
                 // For non-testnets, use base contracts (no ExpToken)
-                config.contracts = baseContracts;
+                chainConfig.contracts = baseContracts;
             }
         } else {
-            config.contracts = contractsList;
+            chainConfig.contracts = contractsList;
         }
 
-        return config;
+        return chainConfig;
     }
 
     /**
@@ -298,33 +286,40 @@ contract DeployMain is Script, SafeSingletonDeployer {
     }
 
     /**
-     * @notice Load deployed contracts from registry
+     * @notice Load deployed contracts from config
      */
     function loadDeployedContracts() internal {
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
-            bytes32 salt = chainConfigs[chainId].salt;
-            string memory registryFile = getRegistryFilename(chainId, salt);
 
-            try vm.readFile(registryFile) returns (string memory registryJson) {
-                // Use individual parsing for flexibility with missing fields
-                DeployedContracts memory deployed;
-                deployed.ithacaAccount = tryReadAddress(registryJson, ".IthacaAccount");
-                deployed.accountProxy = tryReadAddress(registryJson, ".AccountProxy");
-                deployed.escrow = tryReadAddress(registryJson, ".Escrow");
-                deployed.orchestrator = tryReadAddress(registryJson, ".Orchestrator");
-                deployed.simpleSettler = tryReadAddress(registryJson, ".SimpleSettler");
-                deployed.layerZeroSettler = tryReadAddress(registryJson, ".LayerZeroSettler");
-                deployed.simpleFunder = tryReadAddress(registryJson, ".SimpleFunder");
-                deployed.simulator = tryReadAddress(registryJson, ".Simulator");
-                deployed.expToken = tryReadAddress(registryJson, ".ExpToken");
-                deployed.exp2Token = tryReadAddress(registryJson, ".Exp2Token");
+            DeployedContracts memory deployed;
+            
+            // Read deployed contract addresses from config, defaulting to address(0) if not set
+            deployed.orchestrator = tryGetAddress(chainId, "orchestrator_deployed");
+            deployed.ithacaAccount = tryGetAddress(chainId, "ithaca_account_deployed");
+            deployed.accountProxy = tryGetAddress(chainId, "account_proxy_deployed");
+            deployed.escrow = tryGetAddress(chainId, "escrow_deployed");
+            deployed.simpleSettler = tryGetAddress(chainId, "simple_settler_deployed");
+            deployed.layerZeroSettler = tryGetAddress(chainId, "layerzero_settler_deployed");
+            deployed.simpleFunder = tryGetAddress(chainId, "simple_funder_deployed");
+            deployed.simulator = tryGetAddress(chainId, "simulator_deployed");
+            deployed.expToken = tryGetAddress(chainId, "exp_token_deployed");
+            deployed.exp2Token = tryGetAddress(chainId, "exp2_token_deployed");
 
-                deployedContracts[chainId] = deployed;
-            } catch {
-                // No registry file exists yet
-            }
+            deployedContracts[chainId] = deployed;
         }
+    }
+    
+    /**
+     * @notice Try to get an address from config, return address(0) if not found
+     */
+    function tryGetAddress(uint256 chainId, string memory key) internal view returns (address) {
+        Variable memory variable = config.get(chainId, key);
+        // Check if variable exists (TypeKind.None means missing key)
+        if (variable.ty.kind == TypeKind.None) {
+            return address(0);
+        }
+        return variable.toAddress();
     }
 
     /**
@@ -450,7 +445,7 @@ contract DeployMain is Script, SafeSingletonDeployer {
     }
 
     /**
-     * @notice Save deployed contract address to registry
+     * @notice Save deployed contract address to config
      */
     function saveDeployedContract(
         uint256 chainId,
@@ -480,134 +475,32 @@ contract DeployMain is Script, SafeSingletonDeployer {
             deployedContracts[chainId].exp2Token = contractAddress;
         }
 
-        // Write to registry file
-        writeToRegistry(chainId, contractName, contractAddress);
-    }
-
-    /**
-     * @notice Write to registry file
-     */
-    function writeToRegistry(uint256 chainId, string memory contractName, address contractAddress)
-        internal
-    {
-        // Only save registry during actual broadcasts, not dry runs
-        if (
-            !vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
-                && !vm.isContext(VmSafe.ForgeContext.ScriptResume)
-        ) {
-            return;
-        }
-
-        DeployedContracts memory deployed = deployedContracts[chainId];
-
-        string memory json = "{";
-        bool first = true;
-
-        if (deployed.orchestrator != address(0)) {
-            json = string.concat(json, '"Orchestrator": "', vm.toString(deployed.orchestrator), '"');
-            first = false;
-        }
-
-        if (deployed.ithacaAccount != address(0)) {
-            if (!first) json = string.concat(json, ",");
-            json =
-                string.concat(json, '"IthacaAccount": "', vm.toString(deployed.ithacaAccount), '"');
-            first = false;
-        }
-
-        if (deployed.accountProxy != address(0)) {
-            if (!first) json = string.concat(json, ",");
-            json = string.concat(json, '"AccountProxy": "', vm.toString(deployed.accountProxy), '"');
-            first = false;
-        }
-
-        if (deployed.simulator != address(0)) {
-            if (!first) json = string.concat(json, ",");
-            json = string.concat(json, '"Simulator": "', vm.toString(deployed.simulator), '"');
-            first = false;
-        }
-
-        if (deployed.simpleFunder != address(0)) {
-            if (!first) json = string.concat(json, ",");
-            json = string.concat(json, '"SimpleFunder": "', vm.toString(deployed.simpleFunder), '"');
-            first = false;
-        }
-
-        if (deployed.escrow != address(0)) {
-            if (!first) json = string.concat(json, ",");
-            json = string.concat(json, '"Escrow": "', vm.toString(deployed.escrow), '"');
-            first = false;
-        }
-
-        if (deployed.simpleSettler != address(0)) {
-            if (!first) json = string.concat(json, ",");
-            json =
-                string.concat(json, '"SimpleSettler": "', vm.toString(deployed.simpleSettler), '"');
-            first = false;
-        }
-
-        if (deployed.layerZeroSettler != address(0)) {
-            if (!first) json = string.concat(json, ",");
-            json = string.concat(
-                json, '"LayerZeroSettler": "', vm.toString(deployed.layerZeroSettler), '"'
-            );
-            first = false;
-        }
-
-        if (deployed.expToken != address(0)) {
-            if (!first) json = string.concat(json, ",");
-            json = string.concat(json, '"ExpToken": "', vm.toString(deployed.expToken), '"');
-            first = false;
-        }
-
-        if (deployed.exp2Token != address(0)) {
-            if (!first) json = string.concat(json, ",");
-            json = string.concat(json, '"Exp2Token": "', vm.toString(deployed.exp2Token), '"');
-        }
-
-        json = string.concat(json, "}");
-
-        bytes32 salt = chainConfigs[chainId].salt;
-        string memory registryFile = getRegistryFilename(chainId, salt);
-        vm.writeFile(registryFile, json);
-    }
-
-    /**
-     * @notice Get registry filename based on chainId and salt
-     */
-    function getRegistryFilename(uint256 chainId, bytes32 salt)
-        internal
-        view
-        returns (string memory)
-    {
-        string memory filename = string.concat(
-            vm.projectRoot(),
-            "/",
-            registryPath,
-            "deployment_",
-            vm.toString(chainId),
-            "_",
-            vm.toString(salt),
-            ".json"
-        );
-        return filename;
-    }
-
-    /**
-     * @notice Try to read an address from JSON
-     */
-    function tryReadAddress(string memory json, string memory key)
-        internal
-        pure
-        returns (address)
-    {
-        try vm.parseJson(json, key) returns (bytes memory data) {
-            if (data.length > 0) {
-                return abi.decode(data, (address));
+        // Only write to config file during actual broadcasts, not simulations
+        if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast) || vm.isContext(VmSafe.ForgeContext.ScriptResume)) {
+            if (keccak256(bytes(contractName)) == keccak256("Orchestrator")) {
+                config.set(chainId, "orchestrator_deployed", contractAddress);
+            } else if (keccak256(bytes(contractName)) == keccak256("IthacaAccount")) {
+                config.set(chainId, "ithaca_account_deployed", contractAddress);
+            } else if (keccak256(bytes(contractName)) == keccak256("AccountProxy")) {
+                config.set(chainId, "account_proxy_deployed", contractAddress);
+            } else if (keccak256(bytes(contractName)) == keccak256("Simulator")) {
+                config.set(chainId, "simulator_deployed", contractAddress);
+            } else if (keccak256(bytes(contractName)) == keccak256("SimpleFunder")) {
+                config.set(chainId, "simple_funder_deployed", contractAddress);
+            } else if (keccak256(bytes(contractName)) == keccak256("Escrow")) {
+                config.set(chainId, "escrow_deployed", contractAddress);
+            } else if (keccak256(bytes(contractName)) == keccak256("SimpleSettler")) {
+                config.set(chainId, "simple_settler_deployed", contractAddress);
+            } else if (keccak256(bytes(contractName)) == keccak256("LayerZeroSettler")) {
+                config.set(chainId, "layerzero_settler_deployed", contractAddress);
+            } else if (keccak256(bytes(contractName)) == keccak256("ExpToken")) {
+                config.set(chainId, "exp_token_deployed", contractAddress);
+            } else if (keccak256(bytes(contractName)) == keccak256("Exp2Token")) {
+                config.set(chainId, "exp2_token_deployed", contractAddress);
             }
-        } catch {}
-        return address(0);
+        }
     }
+
 
     /**
      * @notice Verify Safe Singleton Factory is deployed

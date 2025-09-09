@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/Script.sol";
+import {Config} from "forge-std/Config.sol";
 import {ILayerZeroEndpointV2} from
     "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {SetConfigParam} from
@@ -36,7 +37,7 @@ import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
  *   --private-key $L0_SETTLER_OWNER_PK \
  *   "[84532,11155420]"
  */
-contract ConfigureLayerZeroSettler is Script {
+contract ConfigureLayerZeroSettler is Script, Config {
     // Configuration type constants (matching ULN302)
     uint32 constant CONFIG_TYPE_EXECUTOR = 1;
     uint32 constant CONFIG_TYPE_ULN = 2;
@@ -68,8 +69,12 @@ contract ConfigureLayerZeroSettler is Script {
      * @notice Configure all chains with LayerZero configuration
      */
     function run() external {
-        // Get all chain IDs from fork configuration
-        uint256[] memory chainIds = vm.readForkChainIds();
+        // Load configuration and setup forks
+        string memory configPath = string.concat(vm.projectRoot(), "/deploy/config.toml");
+        _loadConfigAndForks(configPath, false);
+        
+        // Get all chain IDs from configuration
+        uint256[] memory chainIds = config.getChainIds();
         run(chainIds);
     }
 
@@ -81,11 +86,14 @@ contract ConfigureLayerZeroSettler is Script {
         console.log("Loading configuration from deploy/config.toml");
         console.log("Configuring", chainIds.length, "chains");
 
+        // If config not already loaded, load it
+        if (address(config) == address(0)) {
+            string memory configPath = string.concat(vm.projectRoot(), "/deploy/config.toml");
+            _loadConfigAndForks(configPath, false);
+        }
+
         // Load configurations for all chains
         loadConfigurations(chainIds);
-
-        // Create forks for all chains that have LayerZero config
-        createForks();
 
         // Configure each chain
         for (uint256 i = 0; i < configuredChainIds.length; i++) {
@@ -102,87 +110,93 @@ contract ConfigureLayerZeroSettler is Script {
         for (uint256 i = 0; i < chainIds.length; i++) {
             uint256 chainId = chainIds[i];
 
-            // Create fork to read configuration
-            string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
-            uint256 forkId = vm.createFork(rpcUrl);
-            vm.selectFork(forkId);
+            // Switch to the fork for this chain (already created by _loadConfigAndForks)
+            vm.selectFork(forkOf[chainId]);
 
             // Try to load LayerZero configuration
-            LayerZeroChainConfig memory config = loadChainConfig(chainId);
+            LayerZeroChainConfig memory chainConfig = loadChainConfig(chainId);
+            
+            // Only add chains that have LayerZero configuration
+            if (chainConfig.layerZeroSettlerAddress != address(0)) {
+                chainConfigs[chainId] = chainConfig;
+                configuredChainIds.push(chainId);
+                forkIds[chainId] = forkOf[chainId];
+                isForkInitialized[forkOf[chainId]] = true;
 
-            chainConfigs[chainId] = config;
-            configuredChainIds.push(chainId);
-            forkIds[chainId] = forkId;
-            isForkInitialized[forkId] = true;
-
-            console.log(
-                string.concat(
-                    "  Loaded LayerZero config for ", config.name, " (", vm.toString(chainId), ")"
-                )
-            );
+                console.log(
+                    string.concat(
+                        "  Loaded LayerZero config for ", chainConfig.name, " (", vm.toString(chainId), ")"
+                    )
+                );
+            }
         }
 
         console.log("Found LayerZero configuration for", configuredChainIds.length, "chains");
     }
 
     /**
-     * @notice Load configuration for a single chain from fork variables
+     * @notice Load configuration for a single chain using StdConfig
      */
     function loadChainConfig(uint256 chainId)
         internal
         view
-        returns (LayerZeroChainConfig memory config)
+        returns (LayerZeroChainConfig memory chainConfig)
     {
-        config.chainId = chainId;
+        chainConfig.chainId = chainId;
 
         // Load basic chain info - required
-        config.name = vm.readForkString("name");
+        chainConfig.name = config.get(chainId, "name").toString();
 
-        // Try to load LayerZero settler address - if not present, this chain doesn't have LayerZero config
-        try vm.readForkAddress("layerzero_settler_address") returns (address addr) {
-            config.layerZeroSettlerAddress = addr;
-        } catch {
-            // No LayerZero settler configured for this chain - this is ok, return empty config
-            return config;
+        // Try to load LayerZero settler deployed address first, then fall back to expected address
+        address settlerAddr = config.get(chainId, "layerzero_settler_deployed").toAddress();
+        if (settlerAddr == address(0)) {
+            // Fall back to expected address from config
+            settlerAddr = config.get(chainId, "layerzero_settler_address").toAddress();
         }
+        if (settlerAddr == address(0)) {
+            // No LayerZero settler configured for this chain - this is ok, return empty config
+            return chainConfig;
+        }
+        chainConfig.layerZeroSettlerAddress = settlerAddr;
 
         // If we have a LayerZero settler, all other LayerZero fields are required
-        config.layerZeroEndpoint = vm.readForkAddress("layerzero_endpoint");
-        config.l0SettlerSigner = vm.readForkAddress("l0_settler_signer");
-        config.eid = uint32(vm.readForkUint("layerzero_eid"));
-        config.sendUln302 = vm.readForkAddress("layerzero_send_uln302");
-        config.receiveUln302 = vm.readForkAddress("layerzero_receive_uln302");
+        chainConfig.layerZeroEndpoint = config.get(chainId, "layerzero_endpoint").toAddress();
+        chainConfig.l0SettlerSigner = config.get(chainId, "l0_settler_signer").toAddress();
+        chainConfig.eid = uint32(config.get(chainId, "layerzero_eid").toUint256());
+        chainConfig.sendUln302 = config.get(chainId, "layerzero_send_uln302").toAddress();
+        chainConfig.receiveUln302 = config.get(chainId, "layerzero_receive_uln302").toAddress();
 
         // Load destination chain IDs - required for LayerZero configuration
-        config.destinationChainIds = vm.readForkUintArray("layerzero_destination_chain_ids");
+        chainConfig.destinationChainIds = config.get(chainId, "layerzero_destination_chain_ids").toUint256Array();
 
         // Load DVN configuration - required and optional DVN arrays
-        string[] memory requiredDVNNames = vm.readForkStringArray("layerzero_required_dvns");
-        string[] memory optionalDVNNames = vm.readForkStringArray("layerzero_optional_dvns");
+        string[] memory requiredDVNNames = config.get(chainId, "layerzero_required_dvns").toStringArray();
+        string[] memory optionalDVNNames = config.get(chainId, "layerzero_optional_dvns").toStringArray();
 
         // Resolve DVN names to addresses
-        config.requiredDVNs = resolveDVNAddresses(requiredDVNNames);
-        config.optionalDVNs = resolveDVNAddresses(optionalDVNNames);
+        chainConfig.requiredDVNs = resolveDVNAddresses(chainId, requiredDVNNames);
+        chainConfig.optionalDVNs = resolveDVNAddresses(chainId, optionalDVNNames);
 
         // Load optional DVN threshold - required field
-        config.optionalDVNThreshold = uint8(vm.readForkUint("layerzero_optional_dvn_threshold"));
+        chainConfig.optionalDVNThreshold = uint8(config.get(chainId, "layerzero_optional_dvn_threshold").toUint256());
 
         // Load confirmations - required field
-        config.confirmations = uint64(vm.readForkUint("layerzero_confirmations"));
+        chainConfig.confirmations = uint64(config.get(chainId, "layerzero_confirmations").toUint256());
 
         // Load max message size - required field
-        config.maxMessageSize = uint32(vm.readForkUint("layerzero_max_message_size"));
+        chainConfig.maxMessageSize = uint32(config.get(chainId, "layerzero_max_message_size").toUint256());
 
-        return config;
+        return chainConfig;
     }
 
     /**
-     * @notice Resolve DVN names to addresses by reading from fork variables
-     * @dev Takes DVN variable names and looks up their addresses using vm.readForkAddress
+     * @notice Resolve DVN names to addresses using StdConfig
+     * @dev Takes DVN variable names and looks up their addresses using config.get
+     * @param chainId The chain ID to resolve DVN addresses for
      * @param dvnNames Array of DVN variable names from config (e.g., "dvn_layerzero_labs")
      * @return addresses Array of resolved DVN addresses
      */
-    function resolveDVNAddresses(string[] memory dvnNames)
+    function resolveDVNAddresses(uint256 chainId, string[] memory dvnNames)
         internal
         view
         returns (address[] memory)
@@ -190,7 +204,7 @@ contract ConfigureLayerZeroSettler is Script {
         address[] memory addresses = new address[](dvnNames.length);
 
         for (uint256 i = 0; i < dvnNames.length; i++) {
-            addresses[i] = vm.readForkAddress(dvnNames[i]);
+            addresses[i] = config.get(chainId, dvnNames[i]).toAddress();
             require(
                 addresses[i] != address(0),
                 string.concat("DVN address not configured for: ", dvnNames[i])
@@ -200,29 +214,8 @@ contract ConfigureLayerZeroSettler is Script {
         return addresses;
     }
 
-    /**
-     * @notice Create forks for all configured chains
-     */
-    function createForks() internal {
-        console.log("\n=== Creating forks for configured chains ===");
-
-        for (uint256 i = 0; i < configuredChainIds.length; i++) {
-            uint256 chainId = configuredChainIds[i];
-            LayerZeroChainConfig memory config = chainConfigs[chainId];
-
-            console.log("  Fork created for", config.name, "fork ID:", forkIds[chainId]);
-        }
-    }
-
     function _selectFork(uint256 chainId) internal {
-        if (isForkInitialized[forkIds[chainId]]) {
-            vm.selectFork(forkIds[chainId]);
-        } else {
-            string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
-            vm.selectFork(forkIds[chainId]);
-            forkIds[chainId] = vm.createFork(rpcUrl);
-            isForkInitialized[forkIds[chainId]] = true;
-        }
+        vm.selectFork(forkOf[chainId]);
     }
 
     /**
@@ -405,7 +398,7 @@ contract ConfigureLayerZeroSettler is Script {
         });
 
         // Get the L0 settler owner who should be the delegate
-        address l0SettlerOwner = vm.readForkAddress("l0_settler_owner");
+        address l0SettlerOwner = config.get(vm.getChainId(), "l0_settler_owner").toAddress();
         console.log("      L0 Settler Owner (delegate):", l0SettlerOwner);
 
         vm.broadcast();

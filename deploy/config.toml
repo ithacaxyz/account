@@ -1,139 +1,148 @@
-# Ithaca Account Deployment Configuration
-# Single source of truth for all deployment and fork configurations
-# This file extends foundry.toml and contains both Foundry fork configs and deployment-specific settings
+[sepolia]
+endpoint_url = "${RPC_11155111}"
 
-# ============================================
-# GLOBAL DEPLOYMENT CONFIGURATION
-# ============================================
-
-[profile.deployment]
-registry_path = "deploy/registry/"
-
-# ============================================
-# FORK CONFIGURATIONS (for vm.readFork* cheatcodes)
-# ============================================
-
-# Sepolia
-[forks.sepolia]
-rpc_url = "${RPC_11155111}"
-
-[forks.sepolia.vars]
-chain_id = 11155111
-name = "Sepolia"
+[sepolia.bool]
 is_testnet = true
+
+[sepolia.address]
 funder_owner = "0x0000000000000000000000000000000000000003"
 funder_signer = "0x0000000000000000000000000000000000000002"
 settler_owner = "0x0000000000000000000000000000000000000004"
 l0_settler_owner = "0x0000000000000000000000000000000000000005"
-l0_settler_signer = "0x0000000000000000000000000000000000000006" 
+l0_settler_signer = "0x0000000000000000000000000000000000000006"
 layerzero_endpoint = "0x6EDCE65403992e310A62460808c4b910D972f10f"
-layerzero_eid = 40161
-salt = "0x0000000000000000000000000000000000000000000000000000000000000000"
-target_balance = 50000000000000000 # 0.05 ether
-# Specify contracts to deploy. Use ["ALL"] to deploy all available contracts
-contracts = ["LayerZeroSettler"]
-# SimpleFunder configuration
-simple_funder_address = "0x2AD8F6a3bB1126a777606eaFa9da9b95530d9597" # TODO: automate write when foundry upgrades
-default_num_signers = 10
-supported_orchestrators = ["0xEd7c1e839381c489Dcd1ED3CE1B0e79DaE714f77"]
-# LayerZero configuration (copied from Base Sepolia for testing)
-# TODO: Set correct addresses here.
+simple_funder_address = "0x2AD8F6a3bB1126a777606eaFa9da9b95530d9597"
 layerzero_settler_address = "0x4225041FF3DB1C7d7a1029406bB80C7298767aca"
 layerzero_send_uln302 = "0xC1868e054425D378095A003EcbA3823a5D0135C9"
 layerzero_receive_uln302 = "0x12523de19dc41c91F7d2093E0CFbB76b17012C8d"
-layerzero_destination_chain_ids = [84532, 11155420]
-layerzero_required_dvns = ["dvn_layerzero_labs"] # optimism sepolia
-layerzero_optional_dvns = []
-layerzero_optional_dvn_threshold = 0
-layerzero_confirmations = 1
-layerzero_max_message_size = 10000
-# DVN addresses
 dvn_layerzero_labs = "0x8eebf8b423B73bFCa51a1Db4B7354AA0bFCA9193"
 dvn_google_cloud = "0x8e5a7b5959C5A7C732b87dCE401E07F5819eEC2d"
-# EXP Token configuration (testnet only)
 exp_minter_address = "0x0000000000000000000000000000000000000003"
-exp_mint_amount = "1000000000000000000000"  # 1000 tokens
-
-# Base Sepolia
-[forks.base-sepolia]
-rpc_url = "${RPC_84532}"
-
-[forks.base-sepolia.vars]
-orchestrator_address = "0x0000000000000000000000000000000000000000"
-# Deployment Script
-chain_id = 84532
-name = "Base Sepolia"
-is_testnet = true
-funder_owner = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4" # Set to Master Key
-funder_signer = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4" # Set to Master Key
-settler_owner = "0x0000000000000000000000000000000000000004" # Set to Master Key 
-l0_settler_owner = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4" # Set to Master Key
-l0_settler_signer = "0x0000000000000000000000000000000000000006" 
-layerzero_endpoint = "0x6EDCE65403992e310A62460808c4b910D972f10f" # Get from LayerZero docs
-layerzero_eid = 40245 # Get from LayerZero docs
-salt = "0x00000000000000000000000000000000000000000000000000000000000000c8" # New salt for fresh deployment
-# Specify contracts to deploy. Use ["ALL"] to deploy all available contracts
-contracts = ["LayerZeroSettler"]  
-# Funding Script 
-target_balance = 1000000000000000 # 0.001 ether
-
-# SimpleFunder configuration
-simple_funder_address = "0x09F6eF9525efAdb6167dFe71fFcfbE306De07988"
-default_num_signers = 10
 supported_orchestrators = ["0xEd7c1e839381c489Dcd1ED3CE1B0e79DaE714f77"]
-# LayerZero configuration 
+
+[sepolia.uint]
+chain_id = 11155111
+layerzero_eid = 40161
+target_balance = "50000000000000000"
+default_num_signers = 10
+layerzero_confirmations = 1
+layerzero_max_message_size = 10000
+layerzero_optional_dvn_threshold = 0
+exp_mint_amount = "1000000000000000000000"
+layerzero_destination_chain_ids = [
+    84532,
+    11155420,
+]
+
+[sepolia.bytes32]
+salt = "0x00000000000000000000000000000000000000000000000000000000000000c8"
+
+[sepolia.string]
+name = "Sepolia"
+contracts = ["ALL"]
+layerzero_required_dvns = ["dvn_layerzero_labs"]
+layerzero_optional_dvns = []
+
+[base-sepolia]
+endpoint_url = "${RPC_84532}"
+
+[base-sepolia.bool]
+is_testnet = true
+
+[base-sepolia.address]
+funder_owner = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
+funder_signer = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
+settler_owner = "0x0000000000000000000000000000000000000004"
+l0_settler_owner = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
+l0_settler_signer = "0x0000000000000000000000000000000000000006"
+layerzero_endpoint = "0x6EDCE65403992e310A62460808c4b910D972f10f"
+simple_funder_address = "0x09F6eF9525efAdb6167dFe71fFcfbE306De07988"
 layerzero_settler_address = "0xd71d3c3ff2249A67cEa12030b20E66734fB1f833"
 layerzero_send_uln302 = "0xC1868e054425D378095A003EcbA3823a5D0135C9"
 layerzero_receive_uln302 = "0x12523de19dc41c91F7d2093E0CFbB76b17012C8d"
-layerzero_destination_chain_ids = [11155420] # optimism sepolia
-layerzero_required_dvns = ["dvn_layerzero_labs"]
-layerzero_optional_dvns = []
-layerzero_optional_dvn_threshold = 0
-layerzero_confirmations = 1
-layerzero_max_message_size = 10000
-# DVN addresses
 dvn_layerzero_labs = "0xe1a12515F9AB2764b887bF60B923Ca494EBbB2d6"
 dvn_google_cloud = "0xFc9d8E5d3FaB22fB6E93E9E2C90916E9dCa83Ade"
-# EXP Token configuration (testnet only)
 exp_minter_address = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
-exp_mint_amount = "5000000000000000000000"  # 5000 tokens
+supported_orchestrators = ["0xEd7c1e839381c489Dcd1ED3CE1B0e79DaE714f77"]
+orchestrator_deployed = "0xcacbAcab105D31E14c17a79D15a7c9Ada16A7109"
+ithaca_account_deployed = "0xca06c950fB169ba53c7082fB893AC6936e19f884"
+account_proxy_deployed = "0x589C43cECEd775590ff66B7731dfc4f9a888a9E6"
+simulator_deployed = "0x96E89c420f29b53BEC7f3adE6D1eD4BeA4E7EA4b"
+simple_funder_deployed = "0xD7F8a664f9e46f9AEaBb18A7B23a2008472181a1"
+escrow_deployed = "0xcFcB15859557E63BeF5f50fc92f9C263a819936c"
+simple_settler_deployed = "0x66E9a67928B759a6e39CdA70cF315fa9246B0b43"
+layerzero_settler_deployed = "0x8384C0F3Bc309Fbc8B8Cc9127FD04E76786171Ca"
+exp_token_deployed = "0x07696D0300703805864F04d74EAfC8EC0A0b2f9c"
+exp2_token_deployed = "0xB021AA86D11fe5fea3e20b19c8eDAD867FBE72C7"
 
-# Optimism Sepolia
-[forks.optimism-sepolia]
-rpc_url = "${RPC_11155420}"
+[base-sepolia.uint]
+chain_id = 84532
+layerzero_eid = 40245
+target_balance = "1000000000000000"
+default_num_signers = 10
+layerzero_confirmations = 1
+layerzero_max_message_size = 10000
+layerzero_optional_dvn_threshold = 0
+exp_mint_amount = "5000000000000000000000"
+layerzero_destination_chain_ids = [11155420]
 
-[forks.optimism-sepolia.vars] 
-chain_id = 11155420
-name = "Optimism Sepolia"
+[base-sepolia.bytes32]
+salt = "0x0000000000000000000000000000000000000000000000000000000000001234"
+
+[base-sepolia.string]
+name = "Base Sepolia"
+contracts = ["ALL"]
+layerzero_required_dvns = ["dvn_layerzero_labs"]
+layerzero_optional_dvns = []
+
+[optimism-sepolia]
+endpoint_url = "${RPC_11155420}"
+
+[optimism-sepolia.bool]
 is_testnet = true
+
+[optimism-sepolia.address]
 funder_owner = "0x0000000000000000000000000000000000000003"
 funder_signer = "0x0000000000000000000000000000000000000002"
 settler_owner = "0x0000000000000000000000000000000000000004"
 l0_settler_owner = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
-l0_settler_signer = "0x0000000000000000000000000000000000000006" 
+l0_settler_signer = "0x0000000000000000000000000000000000000006"
 layerzero_endpoint = "0x6EDCE65403992e310A62460808c4b910D972f10f"
-layerzero_eid = 40232
-salt = "0x0000000000000000000000000000000000000000000000000000000000000002"
-target_balance = 10000000000000000 # 0.01 ether
-# Specify contracts to deploy. Use ["ALL"] to deploy all available contracts
-contracts = ["LayerZeroSettler"]  # Deploy all contracts
-# SimpleFunder configuration
-simple_funder_address = "0x2AD8F6a3bB1126a777606eaFa9da9b95530d9597" 
-default_num_signers = 10
-supported_orchestrators = ["0xEd7c1e839381c489Dcd1ED3CE1B0e79DaE714f77"]
-# LayerZero configuration
+simple_funder_address = "0x2AD8F6a3bB1126a777606eaFa9da9b95530d9597"
 layerzero_settler_address = "0x9F610182BD096ab7734C1365A44f48dD0A574d0D"
 layerzero_send_uln302 = "0xB31D2cb502E25B30C651842C7C3293c51Fe6d16f"
 layerzero_receive_uln302 = "0x9284fd59B95b9143AF0b9795CAC16eb3C723C9Ca"
-layerzero_destination_chain_ids = [84532]
-layerzero_required_dvns = ["dvn_layerzero_labs"]
-layerzero_optional_dvns = []
-layerzero_optional_dvn_threshold = 0
-layerzero_confirmations = 1
-layerzero_max_message_size = 10000
-# DVN addresses
 dvn_layerzero_labs = "0x28B6140ead70cb2Fb669705b3598ffB4BEaA060b"
 dvn_google_cloud = "0x28b8B8Ea5C695EFa657B6b86a4a8E90ccbA93E9e"
-# EXP Token configuration (testnet only)
 exp_minter_address = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
-exp_mint_amount = "2000000000000000000000"  # 2000 tokens
+supported_orchestrators = ["0xEd7c1e839381c489Dcd1ED3CE1B0e79DaE714f77"]
+orchestrator_deployed = "0xcacbAcab105D31E14c17a79D15a7c9Ada16A7109"
+ithaca_account_deployed = "0xca06c950fB169ba53c7082fB893AC6936e19f884"
+account_proxy_deployed = "0x589C43cECEd775590ff66B7731dfc4f9a888a9E6"
+simulator_deployed = "0x96E89c420f29b53BEC7f3adE6D1eD4BeA4E7EA4b"
+simple_funder_deployed = "0xb1f2CeF9416FA81530cC601bE3442C4841dDAe61"
+escrow_deployed = "0xcFcB15859557E63BeF5f50fc92f9C263a819936c"
+simple_settler_deployed = "0x66E9a67928B759a6e39CdA70cF315fa9246B0b43"
+layerzero_settler_deployed = "0x8384C0F3Bc309Fbc8B8Cc9127FD04E76786171Ca"
+exp_token_deployed = "0x07696D0300703805864F04d74EAfC8EC0A0b2f9c"
+exp2_token_deployed = "0xB021AA86D11fe5fea3e20b19c8eDAD867FBE72C7"
+
+[optimism-sepolia.uint]
+chain_id = 11155420
+layerzero_eid = 40232
+target_balance = "1000000000000000"
+default_num_signers = 10
+layerzero_confirmations = 1
+layerzero_max_message_size = 10000
+layerzero_optional_dvn_threshold = 0
+exp_mint_amount = "2000000000000000000000"
+layerzero_destination_chain_ids = [84532]
+
+[optimism-sepolia.bytes32]
+salt = "0x0000000000000000000000000000000000000000000000000000000000001234"
+
+[optimism-sepolia.string]
+name = "Optimism Sepolia"
+contracts = ["ALL"]
+layerzero_required_dvns = ["dvn_layerzero_labs"]
+layerzero_optional_dvns = []
