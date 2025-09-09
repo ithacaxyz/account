@@ -55,58 +55,73 @@ optimism-sepolia = { key = "${ETHERSCAN_API_KEY}" }
 
 ## Configuration Structure
 
-All configuration is in `deploy/config.toml`:
+All configuration is in `deploy/config.toml` using the StdConfig format:
 
 ```toml
-[profile.deployment]
-registry_path = "deploy/registry/"
+[base-sepolia]
+endpoint_url = "${RPC_84532}"
 
-[forks.base-sepolia]
-rpc_url = "${RPC_84532}"
-
-[forks.base-sepolia.vars]
-# Chain identification
-chain_id = 84532
-name = "Base Sepolia"
+[base-sepolia.bool]
 is_testnet = true
 
-# Contract ownership
-pause_authority = "0x..."         # Can pause contracts
-funder_owner = "0x..."            # Owns SimpleFunder
-funder_signer = "0x..."           # Signs funding operations
-settler_owner = "0x..."           # Owns SimpleSettler
-l0_settler_owner = "0x..."        # Owns LayerZeroSettler
+[base-sepolia.address]
+# Chain identification
+funder_owner = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
+funder_signer = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
+settler_owner = "0x0000000000000000000000000000000000000004"
+l0_settler_owner = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
+l0_settler_signer = "0x0000000000000000000000000000000000000006"
+layerzero_endpoint = "0x6EDCE65403992e310A62460808c4b910D972f10f"
+simple_funder_address = "0x09F6eF9525efAdb6167dFe71fFcfbE306De07988"
+layerzero_settler_address = "0xd71d3c3ff2249A67cEa12030b20E66734fB1f833"
+layerzero_send_uln302 = "0xC1868e054425D378095A003EcbA3823a5D0135C9"
+layerzero_receive_uln302 = "0x12523de19dc41c91F7d2093E0CFbB76b17012C8d"
+dvn_layerzero_labs = "0xe1a12515F9AB2764b887bF60B923Ca494EBbB2d6"
+dvn_google_cloud = "0xFc9d8E5d3FaB22fB6E93E9E2C90916E9dCa83Ade"
+exp_minter_address = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
+supported_orchestrators = ["0xEd7c1e839381c489Dcd1ED3CE1B0e79DaE714f77"]
 
-# Deployment configuration
-salt = "0x0000..."                # CREATE2 salt (SAVE THIS!)
-contracts = ["ALL"]               # Or specific: ["Orchestrator", "IthacaAccount"]
+# Deployed contract addresses - automatically written during deployment
+orchestrator_deployed = "0xC662Af195CD57bC330552f3E2Be5E03Ef69cB041"
+ithaca_account_deployed = "0x49627C39cC7f39f95540C2100f18608f2365a59f"
+account_proxy_deployed = "0xD2a48e4635fCB2437d2e482122137F06C8433706"
+simulator_deployed = "0x332A5Cd675D9d26c4af3BF618A7175d0D623CABA"
+simple_funder_deployed = "0x1ADE5D4CE3183D913791DEcaeaD42Fff193AeF8F"
+escrow_deployed = "0xD1c7e21f2a50A2cDDCFaf554b998a800C3C35aD1"
+simple_settler_deployed = "0x3291f7Ce832997920874d70d68A8186B388024F5"
+layerzero_settler_deployed = "0xBDb45dA9e075a9fCbdf8fAa9d0c93A21b3D8671a"
+exp_token_deployed = "0xaeB83430528fB0DeE5E15bF07A5056B6c0b37809"
+exp2_token_deployed = "0x246c631Dac318a13023e98aB925499930c9801fB"
 
-# Funding configuration (only needed for Funding Script)
-target_balance = 1000000000000000 # Target balance per signer (0.001 ETH)
-simple_funder_address = "0x..."   # SimpleFunder address
-default_num_signers = 10          # Number of signers to fund
-supported_orchestrators = ["0x..."] # Orchestrator addresses to enable in SimpleFunder
-
-# LayerZero configuration (only needed for ConfigureLayerZero)
-layerzero_settler_address = "0x..."
-layerzero_endpoint = "0x..."
+[base-sepolia.uint]
+chain_id = 84532
 layerzero_eid = 40245
-layerzero_send_uln302 = "0x..."
-layerzero_receive_uln302 = "0x..."
-layerzero_destination_chain_ids = [11155420]
-layerzero_required_dvns = ["dvn_layerzero_labs"]
-layerzero_optional_dvns = []
-layerzero_optional_dvn_threshold = 0
+target_balance = "1000000000000000"  # Target balance per signer (0.001 ETH) - must be quoted for large numbers
+default_num_signers = 10             # Number of signers to fund
 layerzero_confirmations = 1
 layerzero_max_message_size = 10000
+layerzero_optional_dvn_threshold = 0
+exp_mint_amount = "5000000000000000000000"  # Amount to mint (in wei) - must be quoted
+layerzero_destination_chain_ids = [11155420]
 
-# EXP Token configuration (testnet only - REQUIRED fields)
-exp_minter_address = "0x..."          # Address to receive minted tokens
-exp_mint_amount = "5000000000000000000000"  # Amount to mint (in wei)
+[base-sepolia.bytes32]
+salt = "0x0000000000000000000000000000000000000000000000000000000000005678"  # CREATE2 salt (SAVE THIS!)
 
-dvn_layerzero_labs = "0x..."
-dvn_google_cloud = "0x..."
+[base-sepolia.string]
+name = "Base Sepolia"
+contracts = ["ALL"]  # Or specific: ["Orchestrator", "IthacaAccount"]
+layerzero_required_dvns = ["dvn_layerzero_labs"]
+layerzero_optional_dvns = []
 ```
+
+### Deployed Address Management
+
+**Automatic Address Writing**: The deployment scripts automatically write deployed contract addresses to the config file during broadcast operations:
+
+- ✅ **During `--broadcast`**: Deployed addresses are written to config.toml as `contract_name_deployed = "0x..."`
+- ❌ **During simulation** (no `--broadcast`): No config writes occur - safe for testing
+- 📍 **Address detection**: Scripts always check actual on-chain state, not config file data
+- 🔄 **State synchronization**: Config file stays in sync with actual deployments
 
 ### Available Contracts
 
@@ -307,34 +322,32 @@ All contracts deploy via Safe Singleton Factory (`0x914d7Fec6aaC8cd542e72Bca78B3
 - Same salt + same bytecode = same address on every chain
 - Addresses can be predicted before deployment
 - **⚠️ SAVE YOUR SALT VALUES** - Required for deploying to same addresses on new chains
-
-## Registry Files
-
-Deployment addresses are saved in `deploy/registry/deployment_{chainId}_{salt}.json`:
-
-```json
-{
-  "Orchestrator": "0xb33adF2c2257a94314d408255aC843fd53B1a7e1",
-  "IthacaAccount": "0x5a87ef243CDA70a855828d4989Fad61B56A467d3",
-  "AccountProxy": "0x4ACD713815fbb363a89D9Ff046C56cEdC7EF3ad7",
-  "SimpleFunder": "0xA47C5C472449979a2F37dF2971627cD6587bADb8"
-}
-```
-
-Registry files are for reference only - deployment decisions are based on on-chain state.
+- **Deployment decisions based on on-chain state** - Scripts check actual deployed contracts, not config file data
 
 ## Adding New Chains
 
 1. Add configuration to `deploy/config.toml`:
 
 ```toml
-[forks.new-chain]
-rpc_url = "${RPC_CHAINID}"
+[new-chain]
+endpoint_url = "${RPC_CHAINID}"
 
-[forks.new-chain.vars]
-chain_id = CHAINID
-name = "Chain Name"
+[new-chain.bool]
+is_testnet = true
+
+[new-chain.address]
+funder_owner = "0x..."
 # ... all required fields
+
+[new-chain.uint]
+chain_id = CHAINID
+# ... all required fields
+
+[new-chain.bytes32]
+salt = "0x0000000000000000000000000000000000000000000000000000000000005678"
+
+[new-chain.string]
+name = "Chain Name"
 contracts = ["ALL"]
 ```
 
@@ -383,6 +396,7 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 4. **Commit registry files** - Provides deployment history
 5. **Use `--multi --slow`** - Ensures proper multi-chain ordering
 6. **Verify while deploying** - Use `--verify` flag
+7. **Large numbers must be quoted in TOML** - Use `"1000000000000000000"` not `1000000000000000000`
 
 
 ## Configuration Field Reference
@@ -402,6 +416,7 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 | `supported_orchestrators` | FundSigners | Orchestrator addresses to enable in SimpleFunder |
 | `layerzero_*` fields | ConfigureLayerZeroSettler | LayerZero configuration |
 | `exp_minter_address`, `exp_mint_amount` | DeployMain (testnet) | ExpToken deployment |
+| `*_deployed` fields | All scripts | Auto-written deployed contract addresses |
 
 ## ExpToken Deployment (Testnets Only)
 
@@ -420,10 +435,16 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 For testnet chains, **both fields are required** (deployment will fail if missing):
 
 ```toml
-[forks.testnet-name.vars]
+[testnet-name.bool]
 is_testnet = true
+
+[testnet-name.address]
 exp_minter_address = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"  # REQUIRED
+
+[testnet-name.uint]
 exp_mint_amount = "5000000000000000000000"  # REQUIRED (5000 tokens in wei)
+
+[testnet-name.string]
 contracts = ["ALL"]  # ExpToken automatically included for testnets
 ```
 
@@ -443,9 +464,15 @@ contracts = ["ALL"]  # ExpToken automatically included for testnets
 
 **Base Sepolia (Testnet)**:
 ```toml
-[forks.base-sepolia.vars]
+[base-sepolia.bool]
 is_testnet = true
+
+[base-sepolia.address]
 exp_minter_address = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
+
+[base-sepolia.uint]
 exp_mint_amount = "5000000000000000000000"
+
+[base-sepolia.string]
 contracts = ["ALL"]  # Deploys 8 core contracts + ExpToken
 ```
