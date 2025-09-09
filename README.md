@@ -33,6 +33,11 @@ We believe that unstoppable crypto-powered accounts should be excellent througho
 
 Gas benchmark implementations are in the [test repository](test/Benchmark.t.sol). We currently benchmark against leading ERC-4337 accounts. To generate the benchmarks, use `forge snapshot --isolate`. 
 
+## Security
+Contracts were audited in a 2 week engagement by @MiloTruck @rholterhus @kadenzipfel
+
+We also maintain an active bug bounty program, you can find more details about it [here](https://porto.sh/contracts/security-and-bug-bounty)
+
 ## Getting Help
 
 Have questions or building something cool with Porto Accounts?  
