@@ -4,9 +4,6 @@
 
 # The Default Profile
 [profile.default]
-# Extend the deployment configuration from deploy/config.toml
-# This inherits all [forks.*] configurations for multi-chain deployments
-extends = "deploy/config.toml"
 evm_version = "prague"
 auto_detect_solc = false
 solc_version = "0.8.28"
