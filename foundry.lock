@@ -6,7 +6,10 @@
     "rev": "01c1eaeb123e4364fbe96cdddf875640edf2566c"
   },
   "lib/forge-std": {
-    "rev": "a3dca253700f19f15b1837c57c67b9388f5cc3fb"
+    "branch": {
+      "name": "master",
+      "rev": "c2cf7017d27c1d20e74ace4dacb6c5ce4bbbe899"
+    }
   },
   "lib/murky": {
     "rev": "5feccd1253d7da820f7cccccdedf64471025455d"
