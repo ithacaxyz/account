@@ -9,6 +9,14 @@ name: Test Deployment Script
 # - funding-only: Checks signer balances and gas wallet configuration
 
 on:
+  # Temporary push trigger for testing - REMOVE BEFORE MERGING
+  push:
+    branches:
+      - tanishk/infra-scripts-tests
+    paths:
+      - '.github/workflows/test-deployment.yml'
+      - 'deploy/test_deployment.sh'
+  
   workflow_dispatch:
     inputs:
       test_type:
@@ -77,7 +85,11 @@ jobs:
           
       - name: Run deployment test
         run: |
-          case "${{ github.event.inputs.test_type }}" in
+          # Use config-only as default for push triggers (safe, read-only)
+          TEST_TYPE="${{ github.event.inputs.test_type || 'config-only' }}"
+          echo "Running test type: $TEST_TYPE"
+          
+          case "$TEST_TYPE" in
             full)
               echo "============================================"
               echo "Running FULL deployment test"
@@ -91,7 +103,7 @@ jobs:
             
             deploy-only | config-only | funding-only)
               echo "============================================"
-              echo "PARTIAL TEST MODE: ${{ github.event.inputs.test_type }}"
+              echo "PARTIAL TEST MODE: $TEST_TYPE"
               echo "============================================"
               echo ""
               echo "NOTE: For partial tests, the CI extracts specific sections from test_deployment.sh"
@@ -120,7 +132,7 @@ jobs:
               }
               
               # Run specific test based on type
-              if [ "${{ github.event.inputs.test_type }}" == "deploy-only" ]; then
+              if [ "$TEST_TYPE" == "deploy-only" ]; then
                   echo "Running deployment only (without LayerZero config or funding)..."
                   
                   # Generate salt
@@ -138,7 +150,7 @@ jobs:
                     -vvv
                   
                   
-              elif [ "${{ github.event.inputs.test_type }}" == "config-only" ]; then
+              elif [ "$TEST_TYPE" == "config-only" ]; then
                   echo "Running configuration verification only..."
                   
                   # Just verify existing contracts
@@ -166,7 +178,7 @@ jobs:
                       fi
                   fi
                   
-              elif [ "${{ github.event.inputs.test_type }}" == "funding-only" ]; then
+              elif [ "$TEST_TYPE" == "funding-only" ]; then
                   echo "Running funding verification only..."
                   
                   # Check signer balances
