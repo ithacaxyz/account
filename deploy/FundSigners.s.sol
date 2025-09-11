@@ -49,7 +49,6 @@ interface ISimpleFunder {
  *   "[84532]" 5
  */
 contract FundSigners is Script, Config {
-
     /**
      * @notice Configuration for funding on a specific chain
      */
@@ -98,7 +97,7 @@ contract FundSigners is Script, Config {
         // Load configuration and setup forks
         string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
         _loadConfigAndForks(fullConfigPath, false);
-        
+
         // Get all chain IDs from configuration
         uint256[] memory chainIds = config.getChainIds();
         uint256 numSigners = 10; // Default
@@ -113,7 +112,7 @@ contract FundSigners is Script, Config {
         // Load configuration and setup forks
         string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
         _loadConfigAndForks(fullConfigPath, false);
-        
+
         uint256 numSigners = 10; // Default
         execute(chainIds, numSigners);
     }
@@ -127,7 +126,7 @@ contract FundSigners is Script, Config {
         // Load configuration and setup forks
         string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
         _loadConfigAndForks(fullConfigPath, false);
-        
+
         execute(chainIds, numSigners);
     }
 
@@ -218,7 +217,9 @@ contract FundSigners is Script, Config {
         if (config.simpleFunderAddress != address(0) && config.simpleFunderAddress.code.length > 0)
         {
             setGasWalletsInSimpleFunder(config.simpleFunderAddress, signers);
-            setOrchestratorsInSimpleFunder(config.simpleFunderAddress, config.supportedOrchestrators);
+            setOrchestratorsInSimpleFunder(
+                config.simpleFunderAddress, config.supportedOrchestrators
+            );
         }
 
         vm.stopBroadcast();
@@ -423,7 +424,9 @@ contract FundSigners is Script, Config {
     /**
      * @notice Set orchestrators in SimpleFunder contract
      */
-    function setOrchestratorsInSimpleFunder(address simpleFunder, address[] memory orchestrators) internal {
+    function setOrchestratorsInSimpleFunder(address simpleFunder, address[] memory orchestrators)
+        internal
+    {
         if (orchestrators.length == 0) {
             console.log("No orchestrators configured, skipping orchestrator setup");
             return;
@@ -433,14 +436,24 @@ contract FundSigners is Script, Config {
 
         console.log("\nSetting orchestrators in SimpleFunder:");
         console.log("  SimpleFunder address:", simpleFunder);
-        console.log(string.concat("  Setting ", vm.toString(orchestrators.length), " orchestrators..."));
+        console.log(
+            string.concat("  Setting ", vm.toString(orchestrators.length), " orchestrators...")
+        );
 
         for (uint256 i = 0; i < orchestrators.length; i++) {
-            console.log(string.concat("  Orchestrator ", vm.toString(i), ": ", vm.toString(orchestrators[i])));
+            console.log(
+                string.concat(
+                    "  Orchestrator ", vm.toString(i), ": ", vm.toString(orchestrators[i])
+                )
+            );
         }
 
         funder.setOrchestrators(orchestrators, true);
-        console.log(string.concat("  Successfully set all ", vm.toString(orchestrators.length), " orchestrators"));
+        console.log(
+            string.concat(
+                "  Successfully set all ", vm.toString(orchestrators.length), " orchestrators"
+            )
+        );
     }
 
     /**
@@ -462,7 +475,6 @@ contract FundSigners is Script, Config {
         return signers;
     }
 
-
     /**
      * @notice Get chain funding configuration
      */
@@ -475,16 +487,15 @@ contract FundSigners is Script, Config {
         chainConfig.name = config.get(chainId, "name").toString();
         chainConfig.isTestnet = config.get(chainId, "is_testnet").toBool();
         chainConfig.targetBalance = config.get(chainId, "target_balance").toUint256();
-
-        // Try to read SimpleFunder address - may not be deployed on all chains
-        chainConfig.simpleFunderAddress = config.get(chainId, "simple_funder_address").toAddress();
+        chainConfig.simpleFunderAddress = config.get(chainId, "simple_funder_deployed").toAddress();
 
         // Try to read default number of signers
         uint256 numSigners = config.get(chainId, "default_num_signers").toUint256();
         chainConfig.defaultNumSigners = numSigners == 0 ? 10 : numSigners; // Default fallback
 
         // Read supported orchestrators - required field
-        chainConfig.supportedOrchestrators = config.get(chainId, "supported_orchestrators").toAddressArray();
+        chainConfig.supportedOrchestrators =
+            config.get(chainId, "supported_orchestrators").toAddressArray();
 
         return chainConfig;
     }
