@@ -435,32 +435,70 @@ SIGNER_0="0x33097354Acf259e1fD19fB91159BAE6ccf912Fdb"
 SIGNER_1="0x49e1f963ddb4122BD3ccC786eB8F9983dABa8658"
 SIGNER_2="0x46C66f82B32f04bf04D05ED92e10b57188BF408A"
 
+# Get target balance from config
+TARGET_BALANCE_BASE=$(awk '/^\[base-sepolia\.uint\]/,/^\[base-sepolia\.bytes32\]/' deploy/config.toml | grep "target_balance" | awk -F' = ' '{print $2}' | tr -d '"')
+
 # Check balances on Base Sepolia
-log_info "Base Sepolia (84532) signer balances:"
+log_info "Base Sepolia (84532) signer balances (target: $TARGET_BALANCE_BASE wei):"
 BALANCE_0_BASE=$(cast balance $SIGNER_0 --rpc-url $RPC_84532 2>/dev/null || echo "0")
 BALANCE_1_BASE=$(cast balance $SIGNER_1 --rpc-url $RPC_84532 2>/dev/null || echo "0")
 BALANCE_2_BASE=$(cast balance $SIGNER_2 --rpc-url $RPC_84532 2>/dev/null || echo "0")
 
-log_info "  Signer 0 ($SIGNER_0): $BALANCE_0_BASE wei"
-log_info "  Signer 1 ($SIGNER_1): $BALANCE_1_BASE wei"
-log_info "  Signer 2 ($SIGNER_2): $BALANCE_2_BASE wei"
+# Check if balances meet target
+if [ "$BALANCE_0_BASE" -ge "$TARGET_BALANCE_BASE" ]; then
+    log_info "  Signer 0 ($SIGNER_0): $BALANCE_0_BASE wei ✓"
+else
+    log_warning "  Signer 0 ($SIGNER_0): $BALANCE_0_BASE wei (below target)"
+fi
+
+if [ "$BALANCE_1_BASE" -ge "$TARGET_BALANCE_BASE" ]; then
+    log_info "  Signer 1 ($SIGNER_1): $BALANCE_1_BASE wei ✓"
+else
+    log_warning "  Signer 1 ($SIGNER_1): $BALANCE_1_BASE wei (below target)"
+fi
+
+if [ "$BALANCE_2_BASE" -ge "$TARGET_BALANCE_BASE" ]; then
+    log_info "  Signer 2 ($SIGNER_2): $BALANCE_2_BASE wei ✓"
+else
+    log_warning "  Signer 2 ($SIGNER_2): $BALANCE_2_BASE wei (below target)"
+fi
+
+# Get target balance from config
+TARGET_BALANCE_OP=$(awk '/^\[optimism-sepolia\.uint\]/,/^\[optimism-sepolia\.bytes32\]/' deploy/config.toml | grep "target_balance" | awk -F' = ' '{print $2}' | tr -d '"')
 
 # Check balances on Optimism Sepolia
-log_info "Optimism Sepolia (11155420) signer balances:"
+log_info "Optimism Sepolia (11155420) signer balances (target: $TARGET_BALANCE_OP wei):"
 BALANCE_0_OP=$(cast balance $SIGNER_0 --rpc-url $RPC_11155420 2>/dev/null || echo "0")
 BALANCE_1_OP=$(cast balance $SIGNER_1 --rpc-url $RPC_11155420 2>/dev/null || echo "0")
 BALANCE_2_OP=$(cast balance $SIGNER_2 --rpc-url $RPC_11155420 2>/dev/null || echo "0")
 
-log_info "  Signer 0 ($SIGNER_0): $BALANCE_0_OP wei"
-log_info "  Signer 1 ($SIGNER_1): $BALANCE_1_OP wei"
-log_info "  Signer 2 ($SIGNER_2): $BALANCE_2_OP wei"
+# Check if balances meet target
+if [ "$BALANCE_0_OP" -ge "$TARGET_BALANCE_OP" ]; then
+    log_info "  Signer 0 ($SIGNER_0): $BALANCE_0_OP wei ✓"
+else
+    log_warning "  Signer 0 ($SIGNER_0): $BALANCE_0_OP wei (below target)"
+fi
+
+if [ "$BALANCE_1_OP" -ge "$TARGET_BALANCE_OP" ]; then
+    log_info "  Signer 1 ($SIGNER_1): $BALANCE_1_OP wei ✓"
+else
+    log_warning "  Signer 1 ($SIGNER_1): $BALANCE_1_OP wei (below target)"
+fi
+
+if [ "$BALANCE_2_OP" -ge "$TARGET_BALANCE_OP" ]; then
+    log_info "  Signer 2 ($SIGNER_2): $BALANCE_2_OP wei ✓"
+else
+    log_warning "  Signer 2 ($SIGNER_2): $BALANCE_2_OP wei (below target)"
+fi
 
 # Verify gas wallets and orchestrators in SimpleFunder
 log_info "Checking SimpleFunder configuration..."
 
 # Read orchestrator addresses from config.toml
-ORCHESTRATOR_BASE_CONFIG=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "supported_orchestrators" | sed 's/.*\["\(.*\)"\].*/\1/' | cut -d'"' -f1)
-ORCHESTRATOR_OP_CONFIG=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "supported_orchestrators" | sed 's/.*\["\(.*\)"\].*/\1/' | cut -d'"' -f1)
+# supported_orchestrators is an array like ["0xAddr1", "0xAddr2"]
+# For simplicity, we'll extract the first orchestrator address
+ORCHESTRATOR_BASE_CONFIG=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "supported_orchestrators" | sed 's/.*\["\([^"]*\)".*/\1/')
+ORCHESTRATOR_OP_CONFIG=$(grep "^supported_orchestrators" deploy/config.toml | tail -1 | sed 's/.*\["\([^"]*\)".*/\1/')
 
 # For Base Sepolia
 if [ ! -z "$SIMPLE_FUNDER_BASE" ]; then
