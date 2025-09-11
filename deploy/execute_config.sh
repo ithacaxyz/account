@@ -1,7 +1,15 @@
 #!/bin/bash
 
-# Comprehensive deployment testing script for Base Sepolia and Optimism Sepolia
+# Comprehensive deployment testing script for multiple chains
 # This script deploys contracts, configures LayerZero, and funds signers
+#
+# Usage: bash deploy/test_deployment.sh [chain_id1] [chain_id2] ...
+#
+# Examples:
+#   bash deploy/test_deployment.sh                    # Deploy to all chains in config.toml
+#   bash deploy/test_deployment.sh 84532              # Deploy only to Base Sepolia
+#   bash deploy/test_deployment.sh 84532 11155420     # Deploy to Base Sepolia and Optimism Sepolia
+#   bash deploy/test_deployment.sh 11155111 84532 11155420  # Deploy to all three chains
 
 set -e  # Exit on any error
 
@@ -34,8 +42,28 @@ check_success() {
     fi
 }
 
+# Function to get all chain IDs from config.toml
+get_all_chains() {
+    grep '^\[' deploy/config.toml | grep -v '\.' | sed 's/\[//g' | sed 's/\]//g'
+}
+
+# Parse command-line arguments
+REQUESTED_CHAINS=()
+if [ $# -gt 0 ]; then
+    # User provided specific chain IDs to deploy to
+    REQUESTED_CHAINS=("$@")
+    log_info "Requested deployment for chain IDs: ${REQUESTED_CHAINS[*]}"
+else
+    # Get all chains from config.toml
+    REQUESTED_CHAINS=($(get_all_chains))
+    log_info "No specific chains requested, will deploy to all chains in config.toml: ${REQUESTED_CHAINS[*]}"
+fi
+
 # Start deployment process
-log_info "Starting comprehensive deployment test for Base Sepolia and Optimism Sepolia"
+log_info "Starting comprehensive deployment test"
+if [ ${#REQUESTED_CHAINS[@]} -gt 0 ]; then
+    log_info "Deploying to chains: ${REQUESTED_CHAINS[*]}"
+fi
 echo "========================================================================"
 
 # Step 1: Load environment variables
@@ -55,15 +83,15 @@ if [ -z "$PRIVATE_KEY" ]; then
     exit 1
 fi
 
-if [ -z "$RPC_84532" ]; then
-    log_error "RPC_84532 (Base Sepolia) is not set in .env"
-    exit 1
-fi
-
-if [ -z "$RPC_11155420" ]; then
-    log_error "RPC_11155420 (Optimism Sepolia) is not set in .env"
-    exit 1
-fi
+# Check RPC URLs for requested chains
+for chain_id in "${REQUESTED_CHAINS[@]}"; do
+    RPC_VAR="RPC_${chain_id}"
+    if [ -z "${!RPC_VAR}" ]; then
+        log_error "$RPC_VAR is not set in .env for chain $chain_id"
+        log_info "Please set $RPC_VAR in your .env file"
+        exit 1
+    fi
+done
 
 if [ -z "$GAS_SIGNER_MNEMONIC" ]; then
     log_warning "GAS_SIGNER_MNEMONIC is not set - FundSigners may fail"
@@ -79,176 +107,51 @@ log_info "Generating random salt for new contract addresses"
 RANDOM_SALT="0x$(openssl rand -hex 32)"
 log_info "Generated salt: $RANDOM_SALT"
 
-# Update salt in config.toml for Base Sepolia (chain ID 84532)
-log_info "Updating salt for Base Sepolia (84532) in config.toml"
-sed -i.bak "/^\[84532\.bytes32\]/,/^\[/ s/^salt = .*/salt = \"$RANDOM_SALT\"/" deploy/config.toml
-
-# Update salt in config.toml for Optimism Sepolia (chain ID 11155420)
-log_info "Updating salt for Optimism Sepolia (11155420) in config.toml"
-sed -i.bak "/^\[11155420\.bytes32\]/,/^\[/ s/^salt = .*/salt = \"$RANDOM_SALT\"/" deploy/config.toml
-
-# Update salt for Sepolia too if needed (chain ID 11155111)
-if grep -q "^\[11155111\.bytes32\]" deploy/config.toml; then
-    log_info "Updating salt for Sepolia (11155111) in config.toml"
-    sed -i.bak "/^\[11155111\.bytes32\]/,/^\[/ s/^salt = .*/salt = \"$RANDOM_SALT\"/" deploy/config.toml
-fi
+# Update salt in config.toml for all requested chains
+for chain_id in "${REQUESTED_CHAINS[@]}"; do
+    if grep -q "^\[${chain_id}\.bytes32\]" deploy/config.toml; then
+        # Get chain name if available
+        CHAIN_NAME=$(sed -n "/^\[${chain_id}\.string\]/,/^\[/p" deploy/config.toml | grep "^name" | cut -d'"' -f2)
+        if [ -z "$CHAIN_NAME" ]; then
+            CHAIN_NAME="Chain $chain_id"
+        fi
+        
+        log_info "Updating salt for $CHAIN_NAME ($chain_id) in config.toml"
+        sed -i.bak "/^\[${chain_id}\.bytes32\]/,/^\[/ s/^salt = .*/salt = \"$RANDOM_SALT\"/" deploy/config.toml
+    else
+        log_warning "No bytes32 section found for chain $chain_id, skipping salt update"
+    fi
+done
 
 # Clean up backup files
 rm -f deploy/config.toml.bak
 
-log_info "Salt updated in config.toml for both chains"
+log_info "Salt updated in config.toml for all requested chains"
 log_warning "⚠️  IMPORTANT: Save this salt value if you need to deploy to the same addresses on other chains: $RANDOM_SALT"
 echo ""
 
 # Step 4: Deploy contracts to Base Sepolia and Optimism Sepolia
 echo "========================================================================"
-log_info "STEP 1: Deploying contracts to Base Sepolia (84532) and Optimism Sepolia (11155420)"
+# Build chain array string for forge script
+CHAIN_ARRAY="["
+for i in "${!REQUESTED_CHAINS[@]}"; do
+    if [ $i -gt 0 ]; then
+        CHAIN_ARRAY="${CHAIN_ARRAY},"
+    fi
+    CHAIN_ARRAY="${CHAIN_ARRAY}${REQUESTED_CHAINS[$i]}"
+done
+CHAIN_ARRAY="${CHAIN_ARRAY}]"
+
+log_info "STEP 1: Deploying contracts to chains: $CHAIN_ARRAY"
 echo "========================================================================"
 
 forge script deploy/DeployMain.s.sol:DeployMain \
     --broadcast --multi --slow \
-    --sig "run(uint256[])" "[84532,11155420]" \
+    --sig "run(uint256[])" "$CHAIN_ARRAY" \
     --private-key $PRIVATE_KEY \
     -vvv
 
 check_success "Contract deployment"
-echo ""
-
-# Now execute the deployment verification
-# Verify deployment - check that contracts are deployed on both chains
-echo "========================================================================"
-log_info "Verifying contract deployment on both chains"
-echo "========================================================================"
-
-# Extract deployed addresses from the deployment output or config
-log_info "Checking deployed contracts on Base Sepolia (84532)..."
-
-# Read addresses from config.toml for Base Sepolia (chain ID 84532)
-ORCHESTRATOR_BASE=$(sed -n "/^\[84532\.address\]/,/^\[/p" deploy/config.toml | grep "orchestrator_deployed" | cut -d'"' -f2)
-ITHACA_ACCOUNT_BASE=$(sed -n "/^\[84532\.address\]/,/^\[/p" deploy/config.toml | grep "ithaca_account_deployed" | cut -d'"' -f2)
-SIMPLE_FUNDER_BASE=$(sed -n "/^\[84532\.address\]/,/^\[/p" deploy/config.toml | grep "simple_funder_deployed" | cut -d'"' -f2)
-LAYERZERO_SETTLER_BASE=$(sed -n "/^\[84532\.address\]/,/^\[/p" deploy/config.toml | grep "layerzero_settler_deployed" | cut -d'"' -f2)
-
-log_info "Orchestrator address from config: '$ORCHESTRATOR_BASE'"
-if [ ! -z "$ORCHESTRATOR_BASE" ]; then
-    CODE=$(cast code $ORCHESTRATOR_BASE --rpc-url $RPC_84532 2>/dev/null || echo "0x")
-    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
-        log_info "✓ Orchestrator deployed at $ORCHESTRATOR_BASE"
-    else
-        log_error "✗ Orchestrator NOT found at $ORCHESTRATOR_BASE"
-        exit 1
-    fi
-else
-    log_error "⚠ Orchestrator address not found in config.toml"
-    exit 1
-fi
-
-log_info "IthacaAccount address from config: '$ITHACA_ACCOUNT_BASE'"
-if [ ! -z "$ITHACA_ACCOUNT_BASE" ]; then
-    CODE=$(cast code $ITHACA_ACCOUNT_BASE --rpc-url $RPC_84532 2>/dev/null || echo "0x")
-    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
-        log_info "✓ IthacaAccount deployed at $ITHACA_ACCOUNT_BASE"
-    else
-        log_error "✗ IthacaAccount NOT found at $ITHACA_ACCOUNT_BASE"
-        exit 1
-    fi
-else
-    log_error "⚠ IthacaAccount address not found in config.toml"
-    exit 1
-fi
-
-log_info "SimpleFunder address from config: '$SIMPLE_FUNDER_BASE'"
-if [ ! -z "$SIMPLE_FUNDER_BASE" ]; then
-    CODE=$(cast code $SIMPLE_FUNDER_BASE --rpc-url $RPC_84532 2>/dev/null || echo "0x")
-    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
-        log_info "✓ SimpleFunder deployed at $SIMPLE_FUNDER_BASE"
-    else
-        log_error "✗ SimpleFunder NOT found at $SIMPLE_FUNDER_BASE"
-        exit 1
-    fi
-else
-    log_error "⚠ SimpleFunder address not found in config.toml"
-    exit 1
-fi
-
-log_info "LayerZeroSettler address from config: '$LAYERZERO_SETTLER_BASE'"
-if [ ! -z "$LAYERZERO_SETTLER_BASE" ]; then
-    CODE=$(cast code $LAYERZERO_SETTLER_BASE --rpc-url $RPC_84532 2>/dev/null || echo "0x")
-    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
-        log_info "✓ LayerZeroSettler deployed at $LAYERZERO_SETTLER_BASE"
-    else
-        log_error "✗ LayerZeroSettler NOT found at $LAYERZERO_SETTLER_BASE"
-        exit 1
-    fi
-else
-    log_error "⚠ LayerZeroSettler address not found in config.toml"
-    exit 1
-fi
-
-log_info "Checking deployed contracts on Optimism Sepolia (11155420)..."
-
-# Read addresses from config.toml for Optimism Sepolia (chain ID 11155420)
-ORCHESTRATOR_OP=$(sed -n "/^\[11155420\.address\]/,/^\[/p" deploy/config.toml | grep "orchestrator_deployed" | cut -d'"' -f2)
-ITHACA_ACCOUNT_OP=$(sed -n "/^\[11155420\.address\]/,/^\[/p" deploy/config.toml | grep "ithaca_account_deployed" | cut -d'"' -f2)
-SIMPLE_FUNDER_OP=$(sed -n "/^\[11155420\.address\]/,/^\[/p" deploy/config.toml | grep "simple_funder_deployed" | cut -d'"' -f2)
-LAYERZERO_SETTLER_OP=$(sed -n "/^\[11155420\.address\]/,/^\[/p" deploy/config.toml | grep "layerzero_settler_deployed" | cut -d'"' -f2)
-
-log_info "Orchestrator address from config: '$ORCHESTRATOR_OP'"
-if [ ! -z "$ORCHESTRATOR_OP" ]; then
-    CODE=$(cast code $ORCHESTRATOR_OP --rpc-url $RPC_11155420 2>/dev/null || echo "0x")
-    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
-        log_info "✓ Orchestrator deployed at $ORCHESTRATOR_OP"
-    else
-        log_error "✗ Orchestrator NOT found at $ORCHESTRATOR_OP"
-        exit 1
-    fi
-else
-    log_error "⚠ Orchestrator address not found in config.toml"
-    exit 1
-fi
-
-log_info "IthacaAccount address from config: '$ITHACA_ACCOUNT_OP'"
-if [ ! -z "$ITHACA_ACCOUNT_OP" ]; then
-    CODE=$(cast code $ITHACA_ACCOUNT_OP --rpc-url $RPC_11155420 2>/dev/null || echo "0x")
-    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
-        log_info "✓ IthacaAccount deployed at $ITHACA_ACCOUNT_OP"
-    else
-        log_error "✗ IthacaAccount NOT found at $ITHACA_ACCOUNT_OP"
-        exit 1
-    fi
-else
-    log_error "⚠ IthacaAccount address not found in config.toml"
-    exit 1
-fi
-
-log_info "SimpleFunder address from config: '$SIMPLE_FUNDER_OP'"
-if [ ! -z "$SIMPLE_FUNDER_OP" ]; then
-    CODE=$(cast code $SIMPLE_FUNDER_OP --rpc-url $RPC_11155420 2>/dev/null || echo "0x")
-    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
-        log_info "✓ SimpleFunder deployed at $SIMPLE_FUNDER_OP"
-    else
-        log_error "✗ SimpleFunder NOT found at $SIMPLE_FUNDER_OP"
-        exit 1
-    fi
-else
-    log_error "⚠ SimpleFunder address not found in config.toml"
-    exit 1
-fi
-
-log_info "LayerZeroSettler address from config: '$LAYERZERO_SETTLER_OP'"
-if [ ! -z "$LAYERZERO_SETTLER_OP" ]; then
-    CODE=$(cast code $LAYERZERO_SETTLER_OP --rpc-url $RPC_11155420 2>/dev/null || echo "0x")
-    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
-        log_info "✓ LayerZeroSettler deployed at $LAYERZERO_SETTLER_OP"
-    else
-        log_error "✗ LayerZeroSettler NOT found at $LAYERZERO_SETTLER_OP"
-        exit 1
-    fi
-else
-    log_error "⚠ LayerZeroSettler address not found in config.toml"
-    exit 1
-fi
-
 echo ""
 
 # Step 5: Configure LayerZero for cross-chain communication
@@ -259,20 +162,12 @@ echo "========================================================================"
 # Note: Using the same PRIVATE_KEY as requested (instead of L0_SETTLER_OWNER_PK)
 forge script deploy/ConfigureLayerZeroSettler.s.sol:ConfigureLayerZeroSettler \
     --broadcast --multi --slow \
-    --sig "run(uint256[])" "[84532,11155420]" \
+    --sig "run(uint256[])" "$CHAIN_ARRAY" \
     --private-key $PRIVATE_KEY \
     -vvv
 
 check_success "LayerZero configuration"
 echo ""
-
-# Verify LayerZero configuration
-echo "========================================================================"
-log_info "Verifying LayerZero configuration"
-echo "========================================================================"
-
-# Get LayerZero configuration from config.toml
-log_info "Checking LayerZero configuration on both chains..."
 
 # Base Sepolia LayerZero verification
 if [ ! -z "$LAYERZERO_SETTLER_BASE" ]; then
@@ -408,7 +303,7 @@ fi
 
 echo ""
 
-# Step 6: Fund signers and set them as gas wallets
+# Step 3: Fund signers and set them as gas wallets
 echo "========================================================================"
 log_info "STEP 3: Funding signers and setting them as gas wallets"
 echo "========================================================================"
@@ -420,17 +315,37 @@ fi
 
 forge script deploy/FundSigners.s.sol:FundSigners \
     --broadcast --multi --slow \
-    --sig "run(uint256[])" "[84532,11155420]" \
+    --sig "run(uint256[])" "$CHAIN_ARRAY" \
     --private-key $PRIVATE_KEY \
     -vvv
 
 check_success "Signer funding"
 echo ""
 
-# Verify signer funding and gas wallet configuration
+# Final Step: Run comprehensive verification for all deployed contracts and configurations
 echo "========================================================================"
-log_info "Verifying signer balances and gas wallet configuration"
+log_info "FINAL VERIFICATION: Running comprehensive verification"
 echo "========================================================================"
+
+log_info "Running verification script for all deployments and configurations..."
+bash deploy/verify_config.sh "${REQUESTED_CHAINS[@]}"
+check_success "Comprehensive verification"
+
+echo ""
+echo "========================================================================"
+log_info "DEPLOYMENT COMPLETED SUCCESSFULLY!"
+echo "========================================================================"
+log_info "✅ All contracts deployed to requested chains"
+log_info "✅ LayerZero configured for cross-chain communication"
+log_info "✅ Signers funded and set as gas wallets"
+log_info "✅ All verifications passed"
+echo ""
+log_info "Deployment and configuration completed successfully for chains: ${REQUESTED_CHAINS[*]}"
+exit 0
+
+# The old verification code below is no longer needed since verify_config.sh handles everything
+: '
+# Old verification code starts here
 
 # Derive signer addresses from mnemonic (first 3 for verification)
 log_info "Checking signer balances..."
@@ -568,3 +483,4 @@ echo ""
 
 echo ""
 log_info "All deployment steps completed successfully!"
+'  # End of commented old verification code
