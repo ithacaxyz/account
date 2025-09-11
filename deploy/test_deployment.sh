@@ -72,7 +72,29 @@ fi
 log_info "All required environment variables are set"
 echo ""
 
-# Step 3: Deploy contracts to Base Sepolia and Optimism Sepolia
+# Step 3: Generate random salt for new deployment addresses
+log_info "Generating random salt for new contract addresses"
+
+# Generate a random 32-byte hex string for salt
+RANDOM_SALT="0x$(openssl rand -hex 32)"
+log_info "Generated salt: $RANDOM_SALT"
+
+# Update salt in config.toml for Base Sepolia
+log_info "Updating salt for Base Sepolia in config.toml"
+sed -i.bak "/^\[base-sepolia\.bytes32\]/,/^\[/ s/^salt = .*/salt = \"$RANDOM_SALT\"/" deploy/config.toml
+
+# Update salt in config.toml for Optimism Sepolia  
+log_info "Updating salt for Optimism Sepolia in config.toml"
+sed -i.bak "/^\[optimism-sepolia\.bytes32\]/,/^\[/ s/^salt = .*/salt = \"$RANDOM_SALT\"/" deploy/config.toml
+
+# Clean up backup files
+rm -f deploy/config.toml.bak
+
+log_info "Salt updated in config.toml for both chains"
+log_warning "⚠️  IMPORTANT: Save this salt value if you need to deploy to the same addresses on other chains: $RANDOM_SALT"
+echo ""
+
+# Step 4: Deploy contracts to Base Sepolia and Optimism Sepolia
 echo "========================================================================"
 log_info "STEP 1: Deploying contracts to Base Sepolia (84532) and Optimism Sepolia (11155420)"
 echo "========================================================================"
@@ -86,7 +108,128 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 check_success "Contract deployment"
 echo ""
 
-# Step 4: Configure LayerZero for cross-chain communication
+# Now execute the deployment verification
+# Verify deployment - check that contracts are deployed on both chains
+echo "========================================================================"
+log_info "Verifying contract deployment on both chains"
+echo "========================================================================"
+
+# Extract deployed addresses from the deployment output or config
+log_info "Checking deployed contracts on Base Sepolia (84532)..."
+
+# Read addresses from config.toml for Base Sepolia
+ORCHESTRATOR_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "orchestrator_deployed" | cut -d'"' -f2)
+ITHACA_ACCOUNT_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "ithaca_account_deployed" | cut -d'"' -f2)
+SIMPLE_FUNDER_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "simple_funder_deployed" | cut -d'"' -f2)
+LAYERZERO_SETTLER_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_settler_deployed" | cut -d'"' -f2)
+
+log_info "Orchestrator address from config: '$ORCHESTRATOR_BASE'"
+if [ ! -z "$ORCHESTRATOR_BASE" ]; then
+    CODE=$(cast code $ORCHESTRATOR_BASE --rpc-url $RPC_84532 2>/dev/null || echo "0x")
+    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
+        log_info "✓ Orchestrator deployed at $ORCHESTRATOR_BASE"
+    else
+        log_error "✗ Orchestrator NOT found at $ORCHESTRATOR_BASE"
+    fi
+else
+    log_warning "⚠ Orchestrator address not found in config.toml"
+fi
+
+log_info "IthacaAccount address from config: '$ITHACA_ACCOUNT_BASE'"
+if [ ! -z "$ITHACA_ACCOUNT_BASE" ]; then
+    CODE=$(cast code $ITHACA_ACCOUNT_BASE --rpc-url $RPC_84532 2>/dev/null || echo "0x")
+    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
+        log_info "✓ IthacaAccount deployed at $ITHACA_ACCOUNT_BASE"
+    else
+        log_error "✗ IthacaAccount NOT found at $ITHACA_ACCOUNT_BASE"
+    fi
+else
+    log_warning "⚠ IthacaAccount address not found in config.toml"
+fi
+
+log_info "SimpleFunder address from config: '$SIMPLE_FUNDER_BASE'"
+if [ ! -z "$SIMPLE_FUNDER_BASE" ]; then
+    CODE=$(cast code $SIMPLE_FUNDER_BASE --rpc-url $RPC_84532 2>/dev/null || echo "0x")
+    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
+        log_info "✓ SimpleFunder deployed at $SIMPLE_FUNDER_BASE"
+    else
+        log_error "✗ SimpleFunder NOT found at $SIMPLE_FUNDER_BASE"
+    fi
+else
+    log_warning "⚠ SimpleFunder address not found in config.toml"
+fi
+
+log_info "LayerZeroSettler address from config: '$LAYERZERO_SETTLER_BASE'"
+if [ ! -z "$LAYERZERO_SETTLER_BASE" ]; then
+    CODE=$(cast code $LAYERZERO_SETTLER_BASE --rpc-url $RPC_84532 2>/dev/null || echo "0x")
+    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
+        log_info "✓ LayerZeroSettler deployed at $LAYERZERO_SETTLER_BASE"
+    else
+        log_error "✗ LayerZeroSettler NOT found at $LAYERZERO_SETTLER_BASE"
+    fi
+else
+    log_warning "⚠ LayerZeroSettler address not found in config.toml"
+fi
+
+log_info "Checking deployed contracts on Optimism Sepolia (11155420)..."
+
+# Read addresses from config.toml for Optimism Sepolia
+ORCHESTRATOR_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "orchestrator_deployed" | cut -d'"' -f2)
+ITHACA_ACCOUNT_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "ithaca_account_deployed" | cut -d'"' -f2)
+SIMPLE_FUNDER_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "simple_funder_deployed" | cut -d'"' -f2)
+LAYERZERO_SETTLER_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "layerzero_settler_deployed" | cut -d'"' -f2)
+
+log_info "Orchestrator address from config: '$ORCHESTRATOR_OP'"
+if [ ! -z "$ORCHESTRATOR_OP" ]; then
+    CODE=$(cast code $ORCHESTRATOR_OP --rpc-url $RPC_11155420 2>/dev/null || echo "0x")
+    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
+        log_info "✓ Orchestrator deployed at $ORCHESTRATOR_OP"
+    else
+        log_error "✗ Orchestrator NOT found at $ORCHESTRATOR_OP"
+    fi
+else
+    log_warning "⚠ Orchestrator address not found in config.toml"
+fi
+
+log_info "IthacaAccount address from config: '$ITHACA_ACCOUNT_OP'"
+if [ ! -z "$ITHACA_ACCOUNT_OP" ]; then
+    CODE=$(cast code $ITHACA_ACCOUNT_OP --rpc-url $RPC_11155420 2>/dev/null || echo "0x")
+    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
+        log_info "✓ IthacaAccount deployed at $ITHACA_ACCOUNT_OP"
+    else
+        log_error "✗ IthacaAccount NOT found at $ITHACA_ACCOUNT_OP"
+    fi
+else
+    log_warning "⚠ IthacaAccount address not found in config.toml"
+fi
+
+log_info "SimpleFunder address from config: '$SIMPLE_FUNDER_OP'"
+if [ ! -z "$SIMPLE_FUNDER_OP" ]; then
+    CODE=$(cast code $SIMPLE_FUNDER_OP --rpc-url $RPC_11155420 2>/dev/null || echo "0x")
+    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
+        log_info "✓ SimpleFunder deployed at $SIMPLE_FUNDER_OP"
+    else
+        log_error "✗ SimpleFunder NOT found at $SIMPLE_FUNDER_OP"
+    fi
+else
+    log_warning "⚠ SimpleFunder address not found in config.toml"
+fi
+
+log_info "LayerZeroSettler address from config: '$LAYERZERO_SETTLER_OP'"
+if [ ! -z "$LAYERZERO_SETTLER_OP" ]; then
+    CODE=$(cast code $LAYERZERO_SETTLER_OP --rpc-url $RPC_11155420 2>/dev/null || echo "0x")
+    if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
+        log_info "✓ LayerZeroSettler deployed at $LAYERZERO_SETTLER_OP"
+    else
+        log_error "✗ LayerZeroSettler NOT found at $LAYERZERO_SETTLER_OP"
+    fi
+else
+    log_warning "⚠ LayerZeroSettler address not found in config.toml"
+fi
+
+echo ""
+
+# Step 5: Configure LayerZero for cross-chain communication
 echo "========================================================================"
 log_info "STEP 2: Configuring LayerZero for cross-chain communication"
 echo "========================================================================"
@@ -101,7 +244,135 @@ forge script deploy/ConfigureLayerZeroSettler.s.sol:ConfigureLayerZeroSettler \
 check_success "LayerZero configuration"
 echo ""
 
-# Step 5: Fund signers and set them as gas wallets
+# Verify LayerZero configuration
+echo "========================================================================"
+log_info "Verifying LayerZero configuration"
+echo "========================================================================"
+
+# Get LayerZero configuration from config.toml
+log_info "Checking LayerZero configuration on both chains..."
+
+# Base Sepolia LayerZero verification
+if [ ! -z "$LAYERZERO_SETTLER_BASE" ]; then
+    log_info "Base Sepolia LayerZero configuration:"
+    
+    # Get LayerZero endpoint from config
+    LZ_ENDPOINT_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_endpoint" | cut -d'"' -f2)
+    LZ_EID_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_eid" | awk '{print $3}')
+    LZ_SEND_ULN_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_send_uln302" | cut -d'"' -f2)
+    LZ_RECEIVE_ULN_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_receive_uln302" | cut -d'"' -f2)
+    
+    # Check if endpoint is set on LayerZeroSettler
+    CURRENT_ENDPOINT=$(cast call $LAYERZERO_SETTLER_BASE "endpoint()(address)" --rpc-url $RPC_84532 2>/dev/null || echo "0x0000000000000000000000000000000000000000")
+    
+    if [ "$CURRENT_ENDPOINT" == "$LZ_ENDPOINT_BASE" ]; then
+        log_info "  ✓ Endpoint correctly set to $LZ_ENDPOINT_BASE"
+    else
+        log_error "  ✗ Endpoint mismatch: Expected $LZ_ENDPOINT_BASE, got $CURRENT_ENDPOINT"
+    fi
+    
+    # Check L0SettlerSigner
+    LZ_SIGNER=$(cast call $LAYERZERO_SETTLER_BASE "l0SettlerSigner()(address)" --rpc-url $RPC_84532 2>/dev/null || echo "0x0000000000000000000000000000000000000000")
+    log_info "  L0SettlerSigner: $LZ_SIGNER"
+fi
+
+# Optimism Sepolia LayerZero verification
+if [ ! -z "$LAYERZERO_SETTLER_OP" ]; then
+    log_info "Optimism Sepolia LayerZero configuration:"
+    
+    # Get LayerZero endpoint from config
+    LZ_ENDPOINT_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "layerzero_endpoint" | cut -d'"' -f2)
+    LZ_EID_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "layerzero_eid" | awk '{print $3}')
+    LZ_SEND_ULN_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "layerzero_send_uln302" | cut -d'"' -f2)
+    LZ_RECEIVE_ULN_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "layerzero_receive_uln302" | cut -d'"' -f2)
+    
+    # Check if endpoint is set on LayerZeroSettler
+    CURRENT_ENDPOINT=$(cast call $LAYERZERO_SETTLER_OP "endpoint()(address)" --rpc-url $RPC_11155420 2>/dev/null || echo "0x0000000000000000000000000000000000000000")
+    
+    if [ "$CURRENT_ENDPOINT" == "$LZ_ENDPOINT_OP" ]; then
+        log_info "  ✓ Endpoint correctly set to $LZ_ENDPOINT_OP"
+    else
+        log_error "  ✗ Endpoint mismatch: Expected $LZ_ENDPOINT_OP, got $CURRENT_ENDPOINT"
+    fi
+    
+    # Check L0SettlerSigner
+    LZ_SIGNER=$(cast call $LAYERZERO_SETTLER_OP "l0SettlerSigner()(address)" --rpc-url $RPC_11155420 2>/dev/null || echo "0x0000000000000000000000000000000000000000")
+    log_info "  L0SettlerSigner: $LZ_SIGNER"
+fi
+
+# Verify cross-chain pathway configuration
+log_info "Cross-chain pathway verification:"
+
+# Get EIDs for both chains
+LZ_EID_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_eid" | awk '{print $3}')
+LZ_EID_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "layerzero_eid" | awk '{print $3}')
+
+# Check Base Sepolia -> Optimism Sepolia pathway
+if [ ! -z "$LAYERZERO_SETTLER_BASE" ] && [ ! -z "$LZ_EID_OP" ] && [ ! -z "$LZ_ENDPOINT_BASE" ] && [ ! -z "$LZ_SEND_ULN_BASE" ]; then
+    log_info "  Base Sepolia -> Optimism Sepolia pathway:"
+    
+    # Check if destination endpoint is set on Base settler
+    DEST_ENDPOINT=$(cast call $LAYERZERO_SETTLER_BASE "destinationEndpoints(uint32)(address)" "$LZ_EID_OP" --rpc-url $RPC_84532 2>/dev/null || echo "0x0000000000000000000000000000000000000000")
+    
+    if [ "$DEST_ENDPOINT" != "0x0000000000000000000000000000000000000000" ]; then
+        log_info "    ✓ Destination endpoint configured for EID $LZ_EID_OP"
+    else
+        log_warning "    ⚠ Destination endpoint not set for EID $LZ_EID_OP"
+    fi
+    
+    # Check executor configuration (CONFIG_TYPE_EXECUTOR = 1)
+    # The executor should be set to the LayerZeroSettler address itself for self-execution
+    EXECUTOR_CONFIG=$(cast call $LZ_SEND_ULN_BASE "getExecutorConfig(address,uint32)((uint32,address))" "$LAYERZERO_SETTLER_BASE" "$LZ_EID_OP" --rpc-url $RPC_84532 2>/dev/null || echo "")
+    
+    if [ ! -z "$EXECUTOR_CONFIG" ]; then
+        # Extract executor address from the returned tuple (second element)
+        # The output format is (uint32,address) so we need to parse it
+        EXECUTOR_ADDR=$(echo "$EXECUTOR_CONFIG" | sed 's/.*,\(0x[a-fA-F0-9]\{40\}\).*/\1/i')
+        
+        if [ "$EXECUTOR_ADDR" == "$LAYERZERO_SETTLER_BASE" ] || [ "$(echo $EXECUTOR_ADDR | tr '[:upper:]' '[:lower:]')" == "$(echo $LAYERZERO_SETTLER_BASE | tr '[:upper:]' '[:lower:]')" ]; then
+            log_info "    ✓ Executor correctly set to LayerZeroSettler: $LAYERZERO_SETTLER_BASE"
+        else
+            log_error "    ✗ Executor mismatch: Expected $LAYERZERO_SETTLER_BASE, got $EXECUTOR_ADDR"
+        fi
+    else
+        log_warning "    ⚠ Could not retrieve executor configuration"
+    fi
+fi
+
+# Check Optimism Sepolia -> Base Sepolia pathway
+if [ ! -z "$LAYERZERO_SETTLER_OP" ] && [ ! -z "$LZ_EID_BASE" ] && [ ! -z "$LZ_ENDPOINT_OP" ] && [ ! -z "$LZ_SEND_ULN_OP" ]; then
+    log_info "  Optimism Sepolia -> Base Sepolia pathway:"
+    
+    # Check if destination endpoint is set on Optimism settler
+    DEST_ENDPOINT=$(cast call $LAYERZERO_SETTLER_OP "destinationEndpoints(uint32)(address)" "$LZ_EID_BASE" --rpc-url $RPC_11155420 2>/dev/null || echo "0x0000000000000000000000000000000000000000")
+    
+    if [ "$DEST_ENDPOINT" != "0x0000000000000000000000000000000000000000" ]; then
+        log_info "    ✓ Destination endpoint configured for EID $LZ_EID_BASE"
+    else
+        log_warning "    ⚠ Destination endpoint not set for EID $LZ_EID_BASE"
+    fi
+    
+    # Check executor configuration (CONFIG_TYPE_EXECUTOR = 1)
+    # The executor should be set to the LayerZeroSettler address itself for self-execution
+    EXECUTOR_CONFIG=$(cast call $LZ_SEND_ULN_OP "getExecutorConfig(address,uint32)((uint32,address))" "$LAYERZERO_SETTLER_OP" "$LZ_EID_BASE" --rpc-url $RPC_11155420 2>/dev/null || echo "")
+    
+    if [ ! -z "$EXECUTOR_CONFIG" ]; then
+        # Extract executor address from the returned tuple (second element)
+        EXECUTOR_ADDR=$(echo "$EXECUTOR_CONFIG" | sed 's/.*,\(0x[a-fA-F0-9]\{40\}\).*/\1/i')
+        
+        if [ "$EXECUTOR_ADDR" == "$LAYERZERO_SETTLER_OP" ] || [ "$(echo $EXECUTOR_ADDR | tr '[:upper:]' '[:lower:]')" == "$(echo $LAYERZERO_SETTLER_OP | tr '[:upper:]' '[:lower:]')" ]; then
+            log_info "    ✓ Executor correctly set to LayerZeroSettler: $LAYERZERO_SETTLER_OP"
+        else
+            log_error "    ✗ Executor mismatch: Expected $LAYERZERO_SETTLER_OP, got $EXECUTOR_ADDR"
+        fi
+    else
+        log_warning "    ⚠ Could not retrieve executor configuration"
+    fi
+fi
+
+echo ""
+
+# Step 6: Fund signers and set them as gas wallets
 echo "========================================================================"
 log_info "STEP 3: Funding signers and setting them as gas wallets"
 echo "========================================================================"
@@ -120,7 +391,99 @@ forge script deploy/FundSigners.s.sol:FundSigners \
 check_success "Signer funding"
 echo ""
 
-# Step 6: Summary
+# Verify signer funding and gas wallet configuration
+echo "========================================================================"
+log_info "Verifying signer balances and gas wallet configuration"
+echo "========================================================================"
+
+# Derive signer addresses from mnemonic (first 3 for verification)
+log_info "Checking signer balances..."
+
+# First signer address (derived from the mnemonic)
+SIGNER_0="0x33097354Acf259e1fD19fB91159BAE6ccf912Fdb"
+SIGNER_1="0x49e1f963ddb4122BD3ccC786eB8F9983dABa8658"
+SIGNER_2="0x46C66f82B32f04bf04D05ED92e10b57188BF408A"
+
+# Check balances on Base Sepolia
+log_info "Base Sepolia (84532) signer balances:"
+BALANCE_0_BASE=$(cast balance $SIGNER_0 --rpc-url $RPC_84532 2>/dev/null || echo "0")
+BALANCE_1_BASE=$(cast balance $SIGNER_1 --rpc-url $RPC_84532 2>/dev/null || echo "0")
+BALANCE_2_BASE=$(cast balance $SIGNER_2 --rpc-url $RPC_84532 2>/dev/null || echo "0")
+
+log_info "  Signer 0 ($SIGNER_0): $BALANCE_0_BASE wei"
+log_info "  Signer 1 ($SIGNER_1): $BALANCE_1_BASE wei"
+log_info "  Signer 2 ($SIGNER_2): $BALANCE_2_BASE wei"
+
+# Check balances on Optimism Sepolia
+log_info "Optimism Sepolia (11155420) signer balances:"
+BALANCE_0_OP=$(cast balance $SIGNER_0 --rpc-url $RPC_11155420 2>/dev/null || echo "0")
+BALANCE_1_OP=$(cast balance $SIGNER_1 --rpc-url $RPC_11155420 2>/dev/null || echo "0")
+BALANCE_2_OP=$(cast balance $SIGNER_2 --rpc-url $RPC_11155420 2>/dev/null || echo "0")
+
+log_info "  Signer 0 ($SIGNER_0): $BALANCE_0_OP wei"
+log_info "  Signer 1 ($SIGNER_1): $BALANCE_1_OP wei"
+log_info "  Signer 2 ($SIGNER_2): $BALANCE_2_OP wei"
+
+# Verify gas wallets and orchestrators in SimpleFunder
+log_info "Checking SimpleFunder configuration..."
+
+# Read orchestrator addresses from config.toml
+ORCHESTRATOR_BASE_CONFIG=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "supported_orchestrators" | sed 's/.*\["\(.*\)"\].*/\1/' | cut -d'"' -f1)
+ORCHESTRATOR_OP_CONFIG=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "supported_orchestrators" | sed 's/.*\["\(.*\)"\].*/\1/' | cut -d'"' -f1)
+
+# For Base Sepolia
+if [ ! -z "$SIMPLE_FUNDER_BASE" ]; then
+    log_info "Base Sepolia SimpleFunder ($SIMPLE_FUNDER_BASE):"
+    
+    # Check if signers are gas wallets (using mapping gasWallets(address) => bool)
+    IS_GAS_WALLET_0=$(cast call $SIMPLE_FUNDER_BASE "gasWallets(address)(bool)" $SIGNER_0 --rpc-url $RPC_84532 2>/dev/null || echo "false")
+    
+    if [ "$IS_GAS_WALLET_0" == "true" ]; then
+        log_info "  ✓ Signer 0 is registered as gas wallet"
+    else
+        log_warning "  ✗ Signer 0 is NOT registered as gas wallet"
+    fi
+    
+    # Check orchestrator configuration (using mapping orchestrators(address) => bool)
+    if [ ! -z "$ORCHESTRATOR_BASE_CONFIG" ]; then
+        IS_SUPPORTED=$(cast call $SIMPLE_FUNDER_BASE "orchestrators(address)(bool)" $ORCHESTRATOR_BASE_CONFIG --rpc-url $RPC_84532 2>/dev/null || echo "false")
+        
+        if [ "$IS_SUPPORTED" == "true" ]; then
+            log_info "  ✓ Orchestrator $ORCHESTRATOR_BASE_CONFIG is supported"
+        else
+            log_warning "  ✗ Orchestrator $ORCHESTRATOR_BASE_CONFIG is NOT supported"
+        fi
+    fi
+fi
+
+# For Optimism Sepolia
+if [ ! -z "$SIMPLE_FUNDER_OP" ]; then
+    log_info "Optimism Sepolia SimpleFunder ($SIMPLE_FUNDER_OP):"
+    
+    # Check if signers are gas wallets
+    IS_GAS_WALLET_0=$(cast call $SIMPLE_FUNDER_OP "gasWallets(address)(bool)" $SIGNER_0 --rpc-url $RPC_11155420 2>/dev/null || echo "false")
+    
+    if [ "$IS_GAS_WALLET_0" == "true" ]; then
+        log_info "  ✓ Signer 0 is registered as gas wallet"
+    else
+        log_warning "  ✗ Signer 0 is NOT registered as gas wallet"
+    fi
+    
+    # Check orchestrator configuration
+    if [ ! -z "$ORCHESTRATOR_OP_CONFIG" ]; then
+        IS_SUPPORTED=$(cast call $SIMPLE_FUNDER_OP "orchestrators(address)(bool)" $ORCHESTRATOR_OP_CONFIG --rpc-url $RPC_11155420 2>/dev/null || echo "false")
+        
+        if [ "$IS_SUPPORTED" == "true" ]; then
+            log_info "  ✓ Orchestrator $ORCHESTRATOR_OP_CONFIG is supported"
+        else
+            log_warning "  ✗ Orchestrator $ORCHESTRATOR_OP_CONFIG is NOT supported"
+        fi
+    fi
+fi
+
+echo ""
+
+# Step 7: Summary
 echo "========================================================================"
 log_info "DEPLOYMENT TEST COMPLETED SUCCESSFULLY!"
 echo "========================================================================"

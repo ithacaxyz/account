@@ -171,7 +171,6 @@ forge script deploy/FundSigners.s.sol:FundSigners \
   "[84532,11155420]"
 
 # 5. Fund SimpleFunder contract 
-SIMPLE_FUNDER=$(cat deploy/registry/deployment_84532_*.json | jq -r .SimpleFunder)
 
 forge script deploy/FundSimpleFunder.s.sol:FundSimpleFunder \
   --broadcast --multi --slow \
