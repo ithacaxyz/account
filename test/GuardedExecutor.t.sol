@@ -25,7 +25,7 @@ contract GuardedExecutorTest is BaseTest {
         vm.prank(d.eoa);
         d.d.authorize(k.k);
 
-        ICommon.Intent memory u;
+        Intent memory u;
         u.eoa = d.eoa;
         u.combinedGas = 10000000;
 
@@ -94,7 +94,7 @@ contract GuardedExecutorTest is BaseTest {
         d.d.setCanExecute(k.keyHash, address(paymentToken), _ANY_FN_SEL, true);
         vm.stopPrank();
 
-        ICommon.Intent memory u;
+        Intent memory u;
         u.eoa = d.eoa;
         u.combinedGas = 10000000;
 
@@ -230,7 +230,7 @@ contract GuardedExecutorTest is BaseTest {
         vm.prank(address(0xb0b));
         paymentToken.approve(d.eoa, 1 ether);
 
-        ICommon.Intent memory u;
+        Intent memory u;
         u.eoa = d.eoa;
         u.combinedGas = 10000000;
 
@@ -281,7 +281,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function testOnlySuperAdminAndEOACanSelfExecute() public {
-        ICommon.Intent memory u;
+        Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         u.eoa = d.eoa;
         u.combinedGas = 10000000;
@@ -349,7 +349,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function testSetAndRemoveSpendLimitRevertsForSuperAdmin() public {
-        ICommon.Intent memory u;
+        Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
@@ -400,7 +400,7 @@ contract GuardedExecutorTest is BaseTest {
     function testSetAndRemoveSpendLimit(uint256 amount) public {
         vm.warp(86400 * 100);
 
-        ICommon.Intent memory u;
+        Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
@@ -593,7 +593,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function testSetSpendLimitWithTwoPeriods() public {
-        ICommon.Intent memory u;
+        Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
@@ -651,7 +651,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function testSpends(bytes32) public {
-        ICommon.Intent memory u;
+        Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
@@ -802,7 +802,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function _testSpendWithPassKeyViaOrchestrator(PassKey memory k, address tokenToSpend) internal {
-        Orchestrator.Intent memory u;
+        Intent memory u;
         GuardedExecutor.SpendInfo memory info;
 
         uint256 gExecute;

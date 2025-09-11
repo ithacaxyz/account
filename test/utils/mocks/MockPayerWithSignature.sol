@@ -51,18 +51,23 @@ contract MockPayerWithSignature is Ownable {
     }
 
     /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
-    /// The EOA and token details are extracted from the `encodedIntent`.
-    /// Reverts if the specified Orchestrator (`msg.sender`) is not approved,
-    /// if the signature is invalid, or if the nonce has already been used.
-    /// @param paymentAmount The amount to pay.
-    /// @param keyHash The key hash associated with the operation (not used in this mock's logic but kept for signature compatibility).
-    /// @param digest The digest of the intent (used for nonce tracking).
-    /// @param encodedIntent ABI encoded Intent struct.
+    /// @param paymentAmount The amount to pay
+    /// @param keyHash The hash of the key used to authorize the operation
+    /// @param intentDigest The digest of the user operation
+    /// @param eoa The EOA address
+    /// @param payer The payer address
+    /// @param paymentToken The token to pay with
+    /// @param paymentRecipient The recipient of the payment
+    /// @param paymentSignature The payment signature
     function pay(
         uint256 paymentAmount,
         bytes32 keyHash,
-        bytes32 digest,
-        bytes calldata encodedIntent
+        bytes32 intentDigest,
+        address eoa,
+        address payer,
+        address paymentToken,
+        address paymentRecipient,
+        bytes calldata paymentSignature
     ) public virtual {
         if (!isApprovedOrchestrator[msg.sender]) revert Unauthorized();
 
@@ -72,17 +77,18 @@ contract MockPayerWithSignature is Ownable {
         }
         paymasterNonces[digest] = true;
 
-        ICommon.Intent memory u = abi.decode(encodedIntent, (ICommon.Intent));
+        bytes32 signatureDigest = computeSignatureDigest(intentDigest);
 
-        bytes32 signatureDigest = computeSignatureDigest(digest);
-
-        if (ECDSA.recover(signatureDigest, u.paymentSignature) != signer) {
+        if (ECDSA.recover(signatureDigest, paymentSignature) != signer) {
             revert InvalidSignature();
         }
 
-        TokenTransferLib.safeTransfer(u.paymentToken, u.paymentRecipient, paymentAmount);
+        TokenTransferLib.safeTransfer(paymentToken, paymentRecipient, paymentAmount);
 
-        emit Compensated(u.paymentToken, u.paymentRecipient, paymentAmount, u.eoa, keyHash);
+        emit Compensated(paymentToken, paymentRecipient, paymentAmount, eoa, keyHash);
+
+        // Unused parameters
+        payer;
     }
 
     function computeSignatureDigest(bytes32 intentDigest) public view returns (bytes32) {

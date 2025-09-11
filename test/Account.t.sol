@@ -303,7 +303,7 @@ contract AccountTest is BaseTest {
         }
 
         // Prepare main Intent structure (will be reused with same pre-calls)
-        ICommon.Intent memory baseIntent;
+        Intent memory baseIntent;
         baseIntent.eoa = eoaAddress;
         baseIntent.paymentToken = address(paymentToken);
         baseIntent.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
@@ -328,7 +328,7 @@ contract AccountTest is BaseTest {
 
         // Use the prepared pre-calls on chain 1
         baseIntent.nonce = (0xc1d0 << 240) | 0; // Multichain nonce for main intent
-        baseIntent.signature = _sig(adminKey, oc.computeDigest(baseIntent));
+        baseIntent.signature = _sig(adminKey, computeDigest(baseIntent));
 
         // Execute on chain 1 - should succeed
         assertEq(oc.execute(abi.encode(baseIntent)), 0, "Execution should succeed on chain 1");
