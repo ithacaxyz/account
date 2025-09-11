@@ -275,7 +275,7 @@ if [ ! -z "$LAYERZERO_SETTLER_BASE" ]; then
     
     # Get LayerZero endpoint from config
     LZ_ENDPOINT_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_endpoint" | cut -d'"' -f2)
-    LZ_EID_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_eid" | awk '{print $3}')
+    LZ_EID_BASE=$(awk '/^\[base-sepolia\.uint\]/,/^\[base-sepolia\.bytes32\]/' deploy/config.toml | grep "layerzero_eid" | awk -F' = ' '{print $2}')
     LZ_SEND_ULN_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_send_uln302" | cut -d'"' -f2)
     LZ_RECEIVE_ULN_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_receive_uln302" | cut -d'"' -f2)
     
@@ -297,11 +297,11 @@ fi
 if [ ! -z "$LAYERZERO_SETTLER_OP" ]; then
     log_info "Optimism Sepolia LayerZero configuration:"
     
-    # Get LayerZero endpoint from config
-    LZ_ENDPOINT_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "layerzero_endpoint" | cut -d'"' -f2)
-    LZ_EID_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "layerzero_eid" | awk '{print $3}')
-    LZ_SEND_ULN_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "layerzero_send_uln302" | cut -d'"' -f2)
-    LZ_RECEIVE_ULN_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "layerzero_receive_uln302" | cut -d'"' -f2)
+    # Get LayerZero endpoint from config - these are in the address section
+    LZ_ENDPOINT_OP=$(grep "^layerzero_endpoint" deploy/config.toml | tail -1 | cut -d'"' -f2)
+    LZ_EID_OP=$(awk '/^\[optimism-sepolia\.uint\]/,/^\[optimism-sepolia\.bytes32\]/' deploy/config.toml | grep "layerzero_eid" | awk -F' = ' '{print $2}')
+    LZ_SEND_ULN_OP=$(grep "^layerzero_send_uln302" deploy/config.toml | tail -1 | cut -d'"' -f2)
+    LZ_RECEIVE_ULN_OP=$(grep "^layerzero_receive_uln302" deploy/config.toml | tail -1 | cut -d'"' -f2)
     
     # Check if endpoint is set on LayerZeroSettler
     CURRENT_ENDPOINT=$(cast call $LAYERZERO_SETTLER_OP "endpoint()(address)" --rpc-url $RPC_11155420 2>/dev/null || echo "0x0000000000000000000000000000000000000000")
@@ -320,39 +320,46 @@ fi
 # Verify cross-chain pathway configuration
 log_info "Cross-chain pathway verification:"
 
-# Get EIDs for both chains
-LZ_EID_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_eid" | awk '{print $3}')
-LZ_EID_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "layerzero_eid" | awk '{print $3}')
+# Get EIDs for both chains - they are in the uint sections
+LZ_EID_BASE=$(awk '/^\[base-sepolia\.uint\]/,/^\[base-sepolia\.bytes32\]/' deploy/config.toml | grep "layerzero_eid" | awk -F' = ' '{print $2}')
+LZ_EID_OP=$(awk '/^\[optimism-sepolia\.uint\]/,/^\[optimism-sepolia\.bytes32\]/' deploy/config.toml | grep "layerzero_eid" | awk -F' = ' '{print $2}')
 
 # Check Base Sepolia -> Optimism Sepolia pathway
 if [ ! -z "$LAYERZERO_SETTLER_BASE" ] && [ ! -z "$LZ_EID_OP" ] && [ ! -z "$LZ_ENDPOINT_BASE" ] && [ ! -z "$LZ_SEND_ULN_BASE" ]; then
     log_info "  Base Sepolia -> Optimism Sepolia pathway:"
     
-    # Check if destination endpoint is set on Base settler
-    DEST_ENDPOINT=$(cast call $LAYERZERO_SETTLER_BASE "destinationEndpoints(uint32)(address)" "$LZ_EID_OP" --rpc-url $RPC_84532 2>/dev/null || echo "0x0000000000000000000000000000000000000000")
+    # Check executor configuration using endpoint.getConfig()
+    # CONFIG_TYPE_EXECUTOR = 1
+    EXECUTOR_CONFIG_BYTES=$(cast call $LZ_ENDPOINT_BASE "getConfig(address,address,uint32,uint32)(bytes)" "$LAYERZERO_SETTLER_BASE" "$LZ_SEND_ULN_BASE" "$LZ_EID_OP" "1" --rpc-url $RPC_84532 2>/dev/null || echo "0x")
     
-    if [ "$DEST_ENDPOINT" != "0x0000000000000000000000000000000000000000" ]; then
-        log_info "    ✓ Destination endpoint configured for EID $LZ_EID_OP"
-    else
-        log_warning "    ⚠ Destination endpoint not set for EID $LZ_EID_OP"
-    fi
-    
-    # Check executor configuration (CONFIG_TYPE_EXECUTOR = 1)
-    # The executor should be set to the LayerZeroSettler address itself for self-execution
-    EXECUTOR_CONFIG=$(cast call $LZ_SEND_ULN_BASE "getExecutorConfig(address,uint32)((uint32,address))" "$LAYERZERO_SETTLER_BASE" "$LZ_EID_OP" --rpc-url $RPC_84532 2>/dev/null || echo "")
-    
-    if [ ! -z "$EXECUTOR_CONFIG" ]; then
-        # Extract executor address from the returned tuple (second element)
-        # The output format is (uint32,address) so we need to parse it
-        EXECUTOR_ADDR=$(echo "$EXECUTOR_CONFIG" | sed 's/.*,\(0x[a-fA-F0-9]\{40\}\).*/\1/i')
-        
-        if [ "$EXECUTOR_ADDR" == "$LAYERZERO_SETTLER_BASE" ] || [ "$(echo $EXECUTOR_ADDR | tr '[:upper:]' '[:lower:]')" == "$(echo $LAYERZERO_SETTLER_BASE | tr '[:upper:]' '[:lower:]')" ]; then
-            log_info "    ✓ Executor correctly set to LayerZeroSettler: $LAYERZERO_SETTLER_BASE"
+    if [ "$EXECUTOR_CONFIG_BYTES" != "0x" ] && [ ! -z "$EXECUTOR_CONFIG_BYTES" ]; then
+        # The executor config is encoded as (uint32 maxMessageSize, address executor)
+        # We need to decode the bytes - first 32 bytes is maxMessageSize, next 32 bytes is executor address
+        # Remove 0x prefix and get the executor address (last 40 hex chars of the second 32-byte word)
+        EXECUTOR_HEX=$(echo "$EXECUTOR_CONFIG_BYTES" | sed 's/0x//' | tail -c 41)
+        if [ ! -z "$EXECUTOR_HEX" ]; then
+            EXECUTOR_ADDR="0x$EXECUTOR_HEX"
+            
+            if [ "$(echo $EXECUTOR_ADDR | tr '[:upper:]' '[:lower:]')" == "$(echo $LAYERZERO_SETTLER_BASE | tr '[:upper:]' '[:lower:]')" ]; then
+                log_info "    ✓ Executor correctly set to LayerZeroSettler"
+            else
+                log_warning "    ⚠ Executor not set to LayerZeroSettler (self-execution model)"
+            fi
         else
-            log_error "    ✗ Executor mismatch: Expected $LAYERZERO_SETTLER_BASE, got $EXECUTOR_ADDR"
+            log_warning "    ⚠ Could not parse executor configuration"
         fi
     else
-        log_warning "    ⚠ Could not retrieve executor configuration"
+        log_warning "    ⚠ Executor configuration not set"
+    fi
+    
+    # Check ULN configuration using endpoint.getConfig()
+    # CONFIG_TYPE_ULN = 2
+    ULN_CONFIG_BYTES=$(cast call $LZ_ENDPOINT_BASE "getConfig(address,address,uint32,uint32)(bytes)" "$LAYERZERO_SETTLER_BASE" "$LZ_SEND_ULN_BASE" "$LZ_EID_OP" "2" --rpc-url $RPC_84532 2>/dev/null || echo "0x")
+    
+    if [ "$ULN_CONFIG_BYTES" != "0x" ] && [ ! -z "$ULN_CONFIG_BYTES" ] && [ ${#ULN_CONFIG_BYTES} -gt 10 ]; then
+        log_info "    ✓ ULN configuration is set"
+    else
+        log_warning "    ⚠ ULN configuration not set"
     fi
 fi
 
@@ -360,30 +367,37 @@ fi
 if [ ! -z "$LAYERZERO_SETTLER_OP" ] && [ ! -z "$LZ_EID_BASE" ] && [ ! -z "$LZ_ENDPOINT_OP" ] && [ ! -z "$LZ_SEND_ULN_OP" ]; then
     log_info "  Optimism Sepolia -> Base Sepolia pathway:"
     
-    # Check if destination endpoint is set on Optimism settler
-    DEST_ENDPOINT=$(cast call $LAYERZERO_SETTLER_OP "destinationEndpoints(uint32)(address)" "$LZ_EID_BASE" --rpc-url $RPC_11155420 2>/dev/null || echo "0x0000000000000000000000000000000000000000")
+    # Check executor configuration using endpoint.getConfig()
+    # CONFIG_TYPE_EXECUTOR = 1
+    EXECUTOR_CONFIG_BYTES=$(cast call $LZ_ENDPOINT_OP "getConfig(address,address,uint32,uint32)(bytes)" "$LAYERZERO_SETTLER_OP" "$LZ_SEND_ULN_OP" "$LZ_EID_BASE" "1" --rpc-url $RPC_11155420 2>/dev/null || echo "0x")
     
-    if [ "$DEST_ENDPOINT" != "0x0000000000000000000000000000000000000000" ]; then
-        log_info "    ✓ Destination endpoint configured for EID $LZ_EID_BASE"
-    else
-        log_warning "    ⚠ Destination endpoint not set for EID $LZ_EID_BASE"
-    fi
-    
-    # Check executor configuration (CONFIG_TYPE_EXECUTOR = 1)
-    # The executor should be set to the LayerZeroSettler address itself for self-execution
-    EXECUTOR_CONFIG=$(cast call $LZ_SEND_ULN_OP "getExecutorConfig(address,uint32)((uint32,address))" "$LAYERZERO_SETTLER_OP" "$LZ_EID_BASE" --rpc-url $RPC_11155420 2>/dev/null || echo "")
-    
-    if [ ! -z "$EXECUTOR_CONFIG" ]; then
-        # Extract executor address from the returned tuple (second element)
-        EXECUTOR_ADDR=$(echo "$EXECUTOR_CONFIG" | sed 's/.*,\(0x[a-fA-F0-9]\{40\}\).*/\1/i')
-        
-        if [ "$EXECUTOR_ADDR" == "$LAYERZERO_SETTLER_OP" ] || [ "$(echo $EXECUTOR_ADDR | tr '[:upper:]' '[:lower:]')" == "$(echo $LAYERZERO_SETTLER_OP | tr '[:upper:]' '[:lower:]')" ]; then
-            log_info "    ✓ Executor correctly set to LayerZeroSettler: $LAYERZERO_SETTLER_OP"
+    if [ "$EXECUTOR_CONFIG_BYTES" != "0x" ] && [ ! -z "$EXECUTOR_CONFIG_BYTES" ]; then
+        # The executor config is encoded as (uint32 maxMessageSize, address executor)
+        # Remove 0x prefix and get the executor address (last 40 hex chars of the second 32-byte word)
+        EXECUTOR_HEX=$(echo "$EXECUTOR_CONFIG_BYTES" | sed 's/0x//' | tail -c 41)
+        if [ ! -z "$EXECUTOR_HEX" ]; then
+            EXECUTOR_ADDR="0x$EXECUTOR_HEX"
+            
+            if [ "$(echo $EXECUTOR_ADDR | tr '[:upper:]' '[:lower:]')" == "$(echo $LAYERZERO_SETTLER_OP | tr '[:upper:]' '[:lower:]')" ]; then
+                log_info "    ✓ Executor correctly set to LayerZeroSettler"
+            else
+                log_warning "    ⚠ Executor not set to LayerZeroSettler (self-execution model)"
+            fi
         else
-            log_error "    ✗ Executor mismatch: Expected $LAYERZERO_SETTLER_OP, got $EXECUTOR_ADDR"
+            log_warning "    ⚠ Could not parse executor configuration"
         fi
     else
-        log_warning "    ⚠ Could not retrieve executor configuration"
+        log_warning "    ⚠ Executor configuration not set"
+    fi
+    
+    # Check ULN configuration using endpoint.getConfig()
+    # CONFIG_TYPE_ULN = 2
+    ULN_CONFIG_BYTES=$(cast call $LZ_ENDPOINT_OP "getConfig(address,address,uint32,uint32)(bytes)" "$LAYERZERO_SETTLER_OP" "$LZ_SEND_ULN_OP" "$LZ_EID_BASE" "2" --rpc-url $RPC_11155420 2>/dev/null || echo "0x")
+    
+    if [ "$ULN_CONFIG_BYTES" != "0x" ] && [ ! -z "$ULN_CONFIG_BYTES" ] && [ ${#ULN_CONFIG_BYTES} -gt 10 ]; then
+        log_info "    ✓ ULN configuration is set"
+    else
+        log_warning "    ⚠ ULN configuration not set"
     fi
 fi
 
@@ -508,18 +522,6 @@ log_info "✅ Contracts deployed to Base Sepolia and Optimism Sepolia"
 log_info "✅ LayerZero configured for cross-chain communication"
 log_info "✅ Signers funded and set as gas wallets"
 echo ""
-
-# Optional: Display deployed contract addresses
-log_info "Checking for deployment registry files..."
-if ls deploy/registry/deployment_84532_*.json 1> /dev/null 2>&1; then
-    log_info "Base Sepolia deployment registry:"
-    ls -la deploy/registry/deployment_84532_*.json
-fi
-
-if ls deploy/registry/deployment_11155420_*.json 1> /dev/null 2>&1; then
-    log_info "Optimism Sepolia deployment registry:"
-    ls -la deploy/registry/deployment_11155420_*.json
-fi
 
 echo ""
 log_info "All deployment steps completed successfully!"
