@@ -404,10 +404,16 @@ echo "========================================================================"
 # Derive signer addresses from mnemonic (first 3 for verification)
 log_info "Checking signer balances..."
 
-# First signer addresses (derived from the mnemonic)
-SIGNER_0="0x33097354Acf259e1fD19fB91159BAE6ccf912Fdb"
-SIGNER_1="0x49e1f963ddb4122BD3ccC786eB8F9983dABa8658"
-SIGNER_2="0x46C66f82B32f04bf04D05ED92e10b57188BF408A"
+# Derive signer addresses from mnemonic
+log_info "Deriving signer addresses from gas wallet mnemonic..."
+SIGNER_0=$(cast wallet address --mnemonic "$GAS_SIGNER_MNEMONIC" --mnemonic-index 0)
+SIGNER_1=$(cast wallet address --mnemonic "$GAS_SIGNER_MNEMONIC" --mnemonic-index 1)
+SIGNER_2=$(cast wallet address --mnemonic "$GAS_SIGNER_MNEMONIC" --mnemonic-index 2)
+
+log_info "Signer addresses:"
+log_info "  Signer 0: $SIGNER_0"
+log_info "  Signer 1: $SIGNER_1"
+log_info "  Signer 2: $SIGNER_2"
 
 # Check balances on all chains
 for chain in "${CHAINS[@]}"; do

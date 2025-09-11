@@ -1,0 +1,75 @@
+name: Manual Deployment Execution
+
+on:
+  workflow_dispatch:
+    inputs:
+      chain_ids:
+        description: 'Chain IDs to deploy to (space-separated, e.g., "84532 11155420")'
+        required: false
+        default: '84532 11155420'
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Create .env file from secrets
+        run: |
+          echo "PRIVATE_KEY=${{ secrets.PRIVATE_KEY }}" >> .env
+          echo "GAS_SIGNER_MNEMONIC=${{ secrets.GAS_SIGNER_MNEMONIC }}" >> .env
+          echo "RPC_11155111=${{ secrets.RPC_11155111 }}" >> .env
+          echo "RPC_84532=${{ secrets.RPC_84532 }}" >> .env
+          echo "RPC_11155420=${{ secrets.RPC_11155420 }}" >> .env 
+
+      - name: Make scripts executable
+        run: |
+          chmod +x deploy/execute_config.sh
+          chmod +x deploy/verify_config.sh
+
+      - name: Run deployment script
+        run: |
+          # Use the input chain IDs or default to 84532 11155420
+          CHAIN_IDS="${{ inputs.chain_ids }}"
+          echo "Deploying to chains: $CHAIN_IDS"
+          ./deploy/execute_config.sh $CHAIN_IDS
+        env:
+          FOUNDRY_PROFILE: default
+
+      - name: Upload deployment artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-artifacts
+          path: |
+            broadcast/
+            cache/
+            deploy/config.toml
+          retention-days: 30
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ **Deployment Successful**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Deployed to chains: ${{ inputs.chain_ids }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Deployment Failed**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Attempted to deploy to chains: ${{ inputs.chain_ids }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the logs for more details." >> $GITHUB_STEP_SUMMARY
+          fi
