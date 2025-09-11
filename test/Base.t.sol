@@ -78,6 +78,149 @@ contract BaseTest is SoladyTest {
         MockAccount d;
     }
 
+    // The struct isnt used in prod, but makes test setup easier
+    struct Intent {
+        address supportedAccountImplementation;
+        address eoa;
+        uint256 nonce;
+        address payer;
+        address paymentToken;
+        uint256 paymentMaxAmount;
+        uint256 combinedGas;
+        uint256 expiry;
+        uint256 paymentAmount;
+        address paymentRecipient;
+        bytes executionData;
+        address funder;
+        bytes funderSignature;
+        bytes[] encodedFundTransfers;
+        bytes[] encodedPreCalls;
+        bytes signature;
+        address settler;
+        bytes settlerContext; // To use settler, nonce needs to have `MERKLE_VERIFICATION` prefix. 20b settler + settlerContext
+        bytes paymentSignature;
+    }
+
+    function computeDigest(Intent memory i) internal view returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                oc.INTENT_TYPEHASH(),
+                keccak256(i.executionData),
+                i.eoa,
+                i.nonce,
+                i.payer,
+                i.paymentToken,
+                i.paymentMaxAmount,
+                i.combinedGas,
+                i.expiry
+            )
+        );
+
+        // Apply EIP712 domain separator
+        return i.nonce >> 240 == oc.MULTICHAIN_NONCE_PREFIX()
+            ? oc.hashTypedDataSansChainId(structHash)
+            : oc.hashTypedData(structHash);
+    }
+
+    function encodeIntent(Intent memory i) internal view returns (bytes memory) {
+        console.log("=== Intent Encoding Parameters (in packed order) ===");
+        console.log("supportedAccountImplementation:", i.supportedAccountImplementation);
+        console.log("eoa:", i.eoa);
+        console.log("nonce:", i.nonce);
+        console.log("payer:", i.payer);
+        console.log("paymentToken:", i.paymentToken);
+        console.log("paymentMaxAmount:", i.paymentMaxAmount);
+        console.log("combinedGas:", i.combinedGas);
+        console.log("expiry:", i.expiry);
+        console.log("paymentAmount:", i.paymentAmount);
+        console.log("paymentRecipient:", i.paymentRecipient);
+        console.log("keyHash: (will be determined during signature verification)");
+        console.logBytes32(computeDigest(i));
+        console.log("=== End Intent Encoding Parameters ===");
+
+        bytes memory returnData = abi.encodePacked(
+            i.supportedAccountImplementation,
+            abi.encode(i.eoa), // pad the fields that go into 712 digest to 32b so we can do a calldatacopy
+            i.nonce,
+            abi.encode(i.payer),
+            abi.encode(i.paymentToken),
+            i.paymentMaxAmount,
+            i.combinedGas,
+            i.expiry,
+            i.paymentAmount,
+            i.paymentRecipient
+        );
+
+        {
+            bytes memory encodedPreCallsBytes =
+                i.encodedPreCalls.length > 0 ? abi.encode(i.encodedPreCalls) : bytes("");
+            bytes memory fundDataBytes = i.funder != address(0)
+                ? abi.encode(i.funder, i.funderSignature, i.encodedFundTransfers)
+                : bytes("");
+
+            console.log("=== Dynamic Data Section Logging ===");
+            console.log("execution data length:", i.executionData.length);
+            console.log("execution data:");
+            console.logBytes(i.executionData);
+
+            console.log("funder:", i.funder);
+            console.log("funder signature length:", i.funderSignature.length);
+            console.log("fund data bytes length:", fundDataBytes.length);
+            console.log("fund data bytes:");
+            console.logBytes(fundDataBytes);
+
+            console.log("encoded pre-calls length:", i.encodedPreCalls.length);
+            console.log("encoded pre-calls bytes length:", encodedPreCallsBytes.length);
+            console.log("encoded pre-calls bytes:");
+            console.logBytes(encodedPreCallsBytes);
+            console.log("=== End Dynamic Data Section ===");
+
+            returnData = abi.encodePacked(
+                returnData,
+                uint256(i.executionData.length),
+                i.executionData,
+                uint256(fundDataBytes.length),
+                fundDataBytes,
+                uint256(encodedPreCallsBytes.length),
+                encodedPreCallsBytes,
+                uint256(i.signature.length),
+                i.signature
+            );
+        }
+
+        bytes memory settlerBytes =
+            i.settler != address(0) ? abi.encode(i.settler, i.settlerContext) : bytes("");
+
+        if (i.nonce >> 240 == 0x6D76) {
+            returnData = abi.encodePacked(returnData, uint256(settlerBytes.length), settlerBytes);
+        }
+
+        console.log("=== Final Data Section Logging ===");
+        console.log("signature length:", i.signature.length);
+        console.log("signature:");
+        console.logBytes(i.signature);
+
+        console.log("settler:", i.settler);
+        console.log("settler context length:", i.settlerContext.length);
+        console.log("settler bytes length:", settlerBytes.length);
+        console.log("settler bytes:");
+        console.logBytes(settlerBytes);
+
+        console.log("payment signature length:", i.paymentSignature.length);
+        console.log("payment signature:");
+        console.logBytes(i.paymentSignature);
+        console.log("=== End Final Data Section ===");
+
+        returnData =
+            abi.encodePacked(returnData, i.paymentSignature, uint256(i.paymentSignature.length));
+
+        console.log("=== Complete Encoded Intent ===");
+        console.log("Total encoded length:", returnData.length);
+        console.logBytes(returnData);
+        console.log("=== End Complete Encoded Intent ===");
+        return returnData;
+    }
+
     function setUp() public virtual {
         oc = new MockOrchestrator();
         paymentToken = new MockPaymentToken();
@@ -129,11 +272,7 @@ contract BaseTest is SoladyTest {
         k.keyHash = _hash(k.k);
     }
 
-    function _sig(DelegatedEOA memory d, ICommon.Intent memory i)
-        internal
-        view
-        returns (bytes memory)
-    {
+    function _sig(DelegatedEOA memory d, Intent memory i) internal view returns (bytes memory) {
         return _eoaSig(d.privateKey, i);
     }
 
@@ -141,12 +280,10 @@ contract BaseTest is SoladyTest {
         return _eoaSig(d.privateKey, digest);
     }
 
-    function _eoaSig(uint256 privateKey, ICommon.Intent memory i)
-        internal
-        view
-        returns (bytes memory)
-    {
-        return _eoaSig(privateKey, oc.computeDigest(i));
+    function _eoaSig(uint256 privateKey, Intent memory i) internal view returns (bytes memory) {
+        console.log("in signing operation:");
+        console.logBytes32(computeDigest(i));
+        return _eoaSig(privateKey, computeDigest(i));
     }
 
     function _eoaSig(uint256 privateKey, bytes32 digest) internal pure returns (bytes memory) {
@@ -154,8 +291,8 @@ contract BaseTest is SoladyTest {
         return abi.encodePacked(r, s, v);
     }
 
-    function _sig(PassKey memory k, ICommon.Intent memory i) internal view returns (bytes memory) {
-        return _sig(k, false, oc.computeDigest(i));
+    function _sig(PassKey memory k, Intent memory i) internal view returns (bytes memory) {
+        return _sig(k, false, computeDigest(i));
     }
 
     function _sig(PassKey memory k, bytes32 digest) internal pure returns (bytes memory) {
@@ -180,12 +317,8 @@ contract BaseTest is SoladyTest {
         return _multiSig(k, _hash(k.k), false, digest);
     }
 
-    function _sig(MultiSigKey memory k, ICommon.Intent memory u)
-        internal
-        view
-        returns (bytes memory)
-    {
-        return _multiSig(k, _hash(k.k), false, oc.computeDigest(u));
+    function _sig(MultiSigKey memory k, Intent memory u) internal view returns (bytes memory) {
+        return _multiSig(k, _hash(k.k), false, computeDigest(u));
     }
 
     function _sig(MultiSigKey memory k, bool prehash, bytes32 digest)
@@ -244,7 +377,7 @@ contract BaseTest is SoladyTest {
         return abi.encodePacked(abi.encode(signatures), keyHash, uint8(preHash ? 1 : 0));
     }
 
-    function _estimateGasForEOAKey(ICommon.Intent memory i)
+    function _estimateGasForEOAKey(Intent memory i)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
@@ -254,7 +387,7 @@ contract BaseTest is SoladyTest {
         return _estimateGas(i);
     }
 
-    function _estimateGas(PassKey memory k, ICommon.Intent memory i)
+    function _estimateGas(PassKey memory k, Intent memory i)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
@@ -267,7 +400,7 @@ contract BaseTest is SoladyTest {
         revert("Unsupported");
     }
 
-    function _estimateGasForSecp256k1Key(bytes32 keyHash, ICommon.Intent memory i)
+    function _estimateGasForSecp256k1Key(bytes32 keyHash, Intent memory i)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
@@ -277,7 +410,7 @@ contract BaseTest is SoladyTest {
         return _estimateGas(i);
     }
 
-    function _estimateGasForSecp256r1Key(bytes32 keyHash, ICommon.Intent memory i)
+    function _estimateGasForSecp256r1Key(bytes32 keyHash, Intent memory i)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
@@ -286,7 +419,7 @@ contract BaseTest is SoladyTest {
         return _estimateGas(i);
     }
 
-    function _estimateGasForMultiSigKey(MultiSigKey memory k, ICommon.Intent memory u)
+    function _estimateGasForMultiSigKey(MultiSigKey memory k, Intent memory u)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
@@ -301,7 +434,7 @@ contract BaseTest is SoladyTest {
         );
     }
 
-    function _estimateGas(ICommon.Intent memory i)
+    function _estimateGas(Intent memory i)
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
@@ -320,7 +453,7 @@ contract BaseTest is SoladyTest {
     }
 
     struct _EstimateGasParams {
-        ICommon.Intent u;
+        Intent u;
         uint8 paymentPerGasPrecision;
         uint256 paymentPerGas;
         uint256 combinedGasIncrement;
@@ -487,13 +620,10 @@ contract BaseTest is SoladyTest {
         vm.etch(address(0x100), verifierBytecode);
     }
 
-    function _computeDigest(ICommon.Intent memory m, uint256 chainId)
-        internal
-        returns (bytes32 digest)
-    {
+    function _computeDigest(Intent memory m, uint256 chainId) internal returns (bytes32 digest) {
         uint256 currChain = block.chainid;
         vm.chainId(chainId);
-        digest = oc.computeDigest(m);
+        digest = computeDigest(m);
         vm.chainId(currChain);
     }
 }

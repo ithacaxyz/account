@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import {ICommon} from "./interfaces/ICommon.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
+import {console} from "forge-std/console.sol";
 
 /// @title Simulator
 /// @notice A separate contract for calling the Orchestrator contract solely for gas simulation.
@@ -53,15 +54,22 @@ contract Simulator {
 
     /// @dev Updates the payment amounts for the Intent passed in.
     function _updatePaymentAmounts(
-        ICommon.Intent memory u,
+        bytes memory u,
         uint256 gas,
         uint8 paymentPerGasPrecision,
         uint256 paymentPerGas
     ) internal pure {
         uint256 paymentAmount = Math.fullMulDiv(gas, paymentPerGas, 10 ** paymentPerGasPrecision);
 
-        u.paymentAmount += paymentAmount;
-        u.paymentMaxAmount += paymentAmount;
+        assembly ("memory-safe") {
+            // Update paymentAmount at offset 312
+            let currentPaymentAmount := mload(add(u, 344)) // 312 + 32 for memory offset
+            mstore(add(u, 344), add(currentPaymentAmount, paymentAmount))
+
+            // Update paymentMaxAmount at offset 216
+            let currentPaymentMaxAmount := mload(add(u, 248)) // 216 + 32 for memory offset
+            mstore(add(u, 248), add(currentPaymentMaxAmount, paymentAmount))
+        }
     }
 
     /// @dev Performs a call to the Orchestrator, and returns the gas used by the Intent.
@@ -114,13 +122,10 @@ contract Simulator {
         address oc,
         bool isStateOverride,
         uint256 combinedGasOverride,
-        ICommon.Intent memory u
+        bytes memory u
     ) internal freeTempMemory returns (uint256) {
         bytes memory data = abi.encodeWithSignature(
-            "simulateExecute(bool,uint256,bytes)",
-            isStateOverride,
-            combinedGasOverride,
-            abi.encode(u)
+            "simulateExecute(bool,uint256,bytes)", isStateOverride, combinedGasOverride, u
         );
         return _callOrchestrator(oc, isStateOverride, data);
     }
@@ -163,7 +168,7 @@ contract Simulator {
     /// @dev The closer this number is to 10_000, the more precise combined gas will be. But more iterations will be needed.
     /// @dev This number should always be > 10_000, to get correct results.
     //// If the increment is too small, the function might run out of gas while finding the combined gas value.
-    /// @param encodedIntent The encoded user operation
+    /// @param calldataIntent The encoded intent
     /// @return gasUsed The gas used in the successful simulation
     /// @return combinedGas The first combined gas value that gives a successful simulation.
     /// This function reverts if the primary simulation run with max combinedGas fails.
@@ -174,10 +179,10 @@ contract Simulator {
         uint8 paymentPerGasPrecision,
         uint256 paymentPerGas,
         uint256 combinedGasIncrement,
-        bytes calldata encodedIntent
+        bytes calldata calldataIntent
     ) public payable virtual returns (uint256 gasUsed, uint256 combinedGas) {
         // 1. Primary Simulation Run to get initial gasUsed value with combinedGasOverride
-        gasUsed = _callOrchestratorCalldata(oc, false, type(uint256).max, encodedIntent);
+        gasUsed = _callOrchestratorCalldata(oc, false, type(uint256).max, calldataIntent);
 
         // If the simulation failed, bubble up the full revert.
         assembly ("memory-safe") {
@@ -188,15 +193,21 @@ contract Simulator {
             }
         }
 
-        // Update payment amounts using the gasUsed value
-        ICommon.Intent memory u = abi.decode(encodedIntent, (ICommon.Intent));
+        bytes memory memoryIntent = calldataIntent;
 
-        u.combinedGas += gasUsed;
+        // Update combinedGas using assembly - offset 248 + 32 for memory = 280
+        assembly ("memory-safe") {
+            let currentCombinedGas := mload(add(memoryIntent, 280))
+            let newCombinedGas := add(currentCombinedGas, gasUsed)
+            mstore(add(memoryIntent, 280), newCombinedGas)
+            combinedGas := newCombinedGas
+        }
 
-        _updatePaymentAmounts(u, u.combinedGas, paymentPerGasPrecision, paymentPerGas);
+        _updatePaymentAmounts(memoryIntent, combinedGas, paymentPerGasPrecision, paymentPerGas);
 
+        console.log("in sim");
         while (true) {
-            gasUsed = _callOrchestratorMemory(oc, false, 0, u);
+            gasUsed = _callOrchestratorMemory(oc, false, 0, memoryIntent);
 
             // If the simulation failed, bubble up the full revert.
             assembly ("memory-safe") {
@@ -211,16 +222,29 @@ contract Simulator {
             }
 
             if (gasUsed != 0) {
-                return (gasUsed, u.combinedGas);
+                // Get current combinedGas from bytes
+                assembly ("memory-safe") {
+                    combinedGas := mload(add(memoryIntent, 280))
+                }
+                return (gasUsed, combinedGas);
             }
 
-            uint256 gasIncrement = Math.mulDiv(u.combinedGas, combinedGasIncrement, 10_000);
+            // Get current combinedGas and calculate increment
+            assembly ("memory-safe") {
+                combinedGas := mload(add(memoryIntent, 280))
+            }
+            uint256 gasIncrement = Math.mulDiv(combinedGas, combinedGasIncrement, 10_000);
 
-            _updatePaymentAmounts(u, gasIncrement, paymentPerGasPrecision, paymentPerGas);
+            _updatePaymentAmounts(memoryIntent, gasIncrement, paymentPerGasPrecision, paymentPerGas);
 
-            // Step up the combined gas, until we see a simulation passing
-            u.combinedGas += gasIncrement;
+            // Update combinedGas with increment using assembly
+            assembly ("memory-safe") {
+                let currentCombinedGas := mload(add(memoryIntent, 280))
+                let newCombinedGas := add(currentCombinedGas, gasIncrement)
+                mstore(add(memoryIntent, 280), newCombinedGas)
+            }
         }
+        console.log("finished sim");
     }
 
     /// @dev Same as simulateCombinedGas, but with an additional verification run
@@ -244,14 +268,17 @@ contract Simulator {
 
         combinedGas += combinedGasVerificationOffset;
 
-        ICommon.Intent memory u = abi.decode(encodedIntent, (ICommon.Intent));
+        bytes memory encodedIntentCopy = encodedIntent;
 
-        _updatePaymentAmounts(u, combinedGas, paymentPerGasPrecision, paymentPerGas);
+        _updatePaymentAmounts(encodedIntentCopy, combinedGas, paymentPerGasPrecision, paymentPerGas);
 
-        u.combinedGas = combinedGas;
+        // Update combinedGas in the bytes using assembly
+        assembly ("memory-safe") {
+            mstore(add(encodedIntentCopy, 280), combinedGas)
+        }
 
         // Verification Run to generate the logs with the correct combinedGas and payment amounts.
-        gasUsed = _callOrchestratorMemory(oc, true, 0, u);
+        gasUsed = _callOrchestratorMemory(oc, true, 0, encodedIntentCopy);
 
         // If the simulation failed, bubble up full revert
         assembly ("memory-safe") {
