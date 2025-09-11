@@ -64,16 +64,16 @@ dvn_layerzero_labs = "0xe1a12515F9AB2764b887bF60B923Ca494EBbB2d6"
 dvn_google_cloud = "0xFc9d8E5d3FaB22fB6E93E9E2C90916E9dCa83Ade"
 exp_minter_address = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
 supported_orchestrators = ["0xEd7c1e839381c489Dcd1ED3CE1B0e79DaE714f77"]
-orchestrator_deployed = "0x861D297E9218833F88ac0910e95B4f98CD8A67AA"
-ithaca_account_deployed = "0xBe3E3c9029420FDa524AF1106b381A778A213d4A"
-account_proxy_deployed = "0xaEAb66C3a36aAa8348253BfFdcBd4015699Eb4c1"
-simulator_deployed = "0x2d1770d2F908160486cCA5b0cE8569a69AD984fa"
-simple_funder_deployed = "0xa5dA259eCabCd28Cf6fa1293b276e287538a32D2"
-escrow_deployed = "0xe99e5205A8474544BD559F8f1E97a423A1e8181D"
-simple_settler_deployed = "0xf2eB9BDdC76edBDe6150E4fC11617a02AcdAE083"
-layerzero_settler_deployed = "0x6422fcbfaE0D9e22BF90EA969749E269439685FB"
-exp_token_deployed = "0x91bE1d7FF3C0E86ce729f70b7A394d6Cc314BE43"
-exp2_token_deployed = "0xF91E3E83E60f012c36099cd154E3dD5F67d1A935"
+orchestrator_deployed = "0x4baE7D66054848F93B038133c2CD457aefF2d55A"
+ithaca_account_deployed = "0xc38D2bD96605419315b58D2FA8F58764c96A9A9A"
+account_proxy_deployed = "0x2346254d61657a4712cb2D6132dbD71849B497fc"
+simulator_deployed = "0x4657cE4Fa25556BF6559a1B4B341f220FfdDEDB0"
+simple_funder_deployed = "0x3AE0B010554de2f644B55259dd745B7224B4F7e2"
+escrow_deployed = "0x3F2AD935a7d5960c3495B9A960Fd9B54442AAd8e"
+simple_settler_deployed = "0xed5ed877e5EA67Fd10ae43E0A68949ed14D184c4"
+layerzero_settler_deployed = "0x5f9020277349261607EA2011EF0714EdC4DF668b"
+exp_token_deployed = "0xD2EC54990016a9F8Ef7C7FDeEf58b0cb8F40e0Ee"
+exp2_token_deployed = "0x917CE069ccc79A289C6b4599101cE223C4E00cE8"
 
 [base-sepolia.uint]
 chain_id = 84532
@@ -87,7 +87,7 @@ exp_mint_amount = "5000000000000000000000"
 layerzero_destination_chain_ids = [11155420]
 
 [base-sepolia.bytes32]
-salt = "0x9491f887cd2d3aacccb3be113c3a63dcd988af4d8b4eb8c428ab8569ffc3574a"
+salt = "0xd17737422a2eb563ef36030950461c59082d300f8d81da677c41194149381d47"
 
 [base-sepolia.string]
 name = "Base Sepolia"
@@ -116,16 +116,16 @@ dvn_layerzero_labs = "0x28B6140ead70cb2Fb669705b3598ffB4BEaA060b"
 dvn_google_cloud = "0x28b8B8Ea5C695EFa657B6b86a4a8E90ccbA93E9e"
 exp_minter_address = "0xB6918DaaB07e31556B45d7Fd2a33021Bc829adf4"
 supported_orchestrators = ["0xEd7c1e839381c489Dcd1ED3CE1B0e79DaE714f77"]
-orchestrator_deployed = "0x861D297E9218833F88ac0910e95B4f98CD8A67AA"
-ithaca_account_deployed = "0xBe3E3c9029420FDa524AF1106b381A778A213d4A"
-account_proxy_deployed = "0xaEAb66C3a36aAa8348253BfFdcBd4015699Eb4c1"
-simulator_deployed = "0x2d1770d2F908160486cCA5b0cE8569a69AD984fa"
-simple_funder_deployed = "0xb8eA10cb97395ca633bC7A2E6871F0961E1fFA19"
-escrow_deployed = "0xe99e5205A8474544BD559F8f1E97a423A1e8181D"
-simple_settler_deployed = "0xf2eB9BDdC76edBDe6150E4fC11617a02AcdAE083"
-layerzero_settler_deployed = "0x6422fcbfaE0D9e22BF90EA969749E269439685FB"
-exp_token_deployed = "0x91bE1d7FF3C0E86ce729f70b7A394d6Cc314BE43"
-exp2_token_deployed = "0xF91E3E83E60f012c36099cd154E3dD5F67d1A935"
+orchestrator_deployed = "0x4baE7D66054848F93B038133c2CD457aefF2d55A"
+ithaca_account_deployed = "0xc38D2bD96605419315b58D2FA8F58764c96A9A9A"
+account_proxy_deployed = "0x2346254d61657a4712cb2D6132dbD71849B497fc"
+simulator_deployed = "0x4657cE4Fa25556BF6559a1B4B341f220FfdDEDB0"
+simple_funder_deployed = "0xa49C0353062C13517a245163e943EaFb6EEf6751"
+escrow_deployed = "0x3F2AD935a7d5960c3495B9A960Fd9B54442AAd8e"
+simple_settler_deployed = "0xed5ed877e5EA67Fd10ae43E0A68949ed14D184c4"
+layerzero_settler_deployed = "0x5f9020277349261607EA2011EF0714EdC4DF668b"
+exp_token_deployed = "0xD2EC54990016a9F8Ef7C7FDeEf58b0cb8F40e0Ee"
+exp2_token_deployed = "0x917CE069ccc79A289C6b4599101cE223C4E00cE8"
 
 [optimism-sepolia.uint]
 chain_id = 11155420
@@ -139,7 +139,7 @@ exp_mint_amount = "2000000000000000000000"
 layerzero_destination_chain_ids = [84532]
 
 [optimism-sepolia.bytes32]
-salt = "0x9491f887cd2d3aacccb3be113c3a63dcd988af4d8b4eb8c428ab8569ffc3574a"
+salt = "0xd17737422a2eb563ef36030950461c59082d300f8d81da677c41194149381d47"
 
 [optimism-sepolia.string]
 name = "Optimism Sepolia"

@@ -130,9 +130,11 @@ if [ ! -z "$ORCHESTRATOR_BASE" ]; then
         log_info "✓ Orchestrator deployed at $ORCHESTRATOR_BASE"
     else
         log_error "✗ Orchestrator NOT found at $ORCHESTRATOR_BASE"
+        exit 1
     fi
 else
-    log_warning "⚠ Orchestrator address not found in config.toml"
+    log_error "⚠ Orchestrator address not found in config.toml"
+    exit 1
 fi
 
 log_info "IthacaAccount address from config: '$ITHACA_ACCOUNT_BASE'"
@@ -142,9 +144,11 @@ if [ ! -z "$ITHACA_ACCOUNT_BASE" ]; then
         log_info "✓ IthacaAccount deployed at $ITHACA_ACCOUNT_BASE"
     else
         log_error "✗ IthacaAccount NOT found at $ITHACA_ACCOUNT_BASE"
+        exit 1
     fi
 else
-    log_warning "⚠ IthacaAccount address not found in config.toml"
+    log_error "⚠ IthacaAccount address not found in config.toml"
+    exit 1
 fi
 
 log_info "SimpleFunder address from config: '$SIMPLE_FUNDER_BASE'"
@@ -154,9 +158,11 @@ if [ ! -z "$SIMPLE_FUNDER_BASE" ]; then
         log_info "✓ SimpleFunder deployed at $SIMPLE_FUNDER_BASE"
     else
         log_error "✗ SimpleFunder NOT found at $SIMPLE_FUNDER_BASE"
+        exit 1
     fi
 else
-    log_warning "⚠ SimpleFunder address not found in config.toml"
+    log_error "⚠ SimpleFunder address not found in config.toml"
+    exit 1
 fi
 
 log_info "LayerZeroSettler address from config: '$LAYERZERO_SETTLER_BASE'"
@@ -166,18 +172,21 @@ if [ ! -z "$LAYERZERO_SETTLER_BASE" ]; then
         log_info "✓ LayerZeroSettler deployed at $LAYERZERO_SETTLER_BASE"
     else
         log_error "✗ LayerZeroSettler NOT found at $LAYERZERO_SETTLER_BASE"
+        exit 1
     fi
 else
-    log_warning "⚠ LayerZeroSettler address not found in config.toml"
+    log_error "⚠ LayerZeroSettler address not found in config.toml"
+    exit 1
 fi
 
 log_info "Checking deployed contracts on Optimism Sepolia (11155420)..."
 
 # Read addresses from config.toml for Optimism Sepolia
-ORCHESTRATOR_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "orchestrator_deployed" | cut -d'"' -f2)
-ITHACA_ACCOUNT_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "ithaca_account_deployed" | cut -d'"' -f2)
-SIMPLE_FUNDER_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "simple_funder_deployed" | cut -d'"' -f2)
-LAYERZERO_SETTLER_OP=$(awk '/^\[optimism-sepolia\]/,/^\[.*\]/' deploy/config.toml | grep "layerzero_settler_deployed" | cut -d'"' -f2)
+# The section goes until end of file, so we need to be more specific
+ORCHESTRATOR_OP=$(grep "^orchestrator_deployed" deploy/config.toml | tail -1 | cut -d'"' -f2)
+ITHACA_ACCOUNT_OP=$(grep "^ithaca_account_deployed" deploy/config.toml | tail -1 | cut -d'"' -f2)
+SIMPLE_FUNDER_OP=$(grep "^simple_funder_deployed" deploy/config.toml | tail -1 | cut -d'"' -f2)
+LAYERZERO_SETTLER_OP=$(grep "^layerzero_settler_deployed" deploy/config.toml | tail -1 | cut -d'"' -f2)
 
 log_info "Orchestrator address from config: '$ORCHESTRATOR_OP'"
 if [ ! -z "$ORCHESTRATOR_OP" ]; then
@@ -186,9 +195,11 @@ if [ ! -z "$ORCHESTRATOR_OP" ]; then
         log_info "✓ Orchestrator deployed at $ORCHESTRATOR_OP"
     else
         log_error "✗ Orchestrator NOT found at $ORCHESTRATOR_OP"
+        exit 1
     fi
 else
-    log_warning "⚠ Orchestrator address not found in config.toml"
+    log_error "⚠ Orchestrator address not found in config.toml"
+    exit 1
 fi
 
 log_info "IthacaAccount address from config: '$ITHACA_ACCOUNT_OP'"
@@ -198,9 +209,11 @@ if [ ! -z "$ITHACA_ACCOUNT_OP" ]; then
         log_info "✓ IthacaAccount deployed at $ITHACA_ACCOUNT_OP"
     else
         log_error "✗ IthacaAccount NOT found at $ITHACA_ACCOUNT_OP"
+        exit 1
     fi
 else
-    log_warning "⚠ IthacaAccount address not found in config.toml"
+    log_error "⚠ IthacaAccount address not found in config.toml"
+    exit 1
 fi
 
 log_info "SimpleFunder address from config: '$SIMPLE_FUNDER_OP'"
@@ -210,9 +223,11 @@ if [ ! -z "$SIMPLE_FUNDER_OP" ]; then
         log_info "✓ SimpleFunder deployed at $SIMPLE_FUNDER_OP"
     else
         log_error "✗ SimpleFunder NOT found at $SIMPLE_FUNDER_OP"
+        exit 1
     fi
 else
-    log_warning "⚠ SimpleFunder address not found in config.toml"
+    log_error "⚠ SimpleFunder address not found in config.toml"
+    exit 1
 fi
 
 log_info "LayerZeroSettler address from config: '$LAYERZERO_SETTLER_OP'"
@@ -222,9 +237,11 @@ if [ ! -z "$LAYERZERO_SETTLER_OP" ]; then
         log_info "✓ LayerZeroSettler deployed at $LAYERZERO_SETTLER_OP"
     else
         log_error "✗ LayerZeroSettler NOT found at $LAYERZERO_SETTLER_OP"
+        exit 1
     fi
 else
-    log_warning "⚠ LayerZeroSettler address not found in config.toml"
+    log_error "⚠ LayerZeroSettler address not found in config.toml"
+    exit 1
 fi
 
 echo ""
