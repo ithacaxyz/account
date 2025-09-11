@@ -303,7 +303,7 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
     /// @dev Executes a single encoded intent.
     /// @dev If flags is non-zero, then all errors are bubbled up.
     /// Currently there can only be 2 modes - simulation mode, and execution mode.
-    /// But we use a uint256 for efficient stack operations, and more flexiblity in the future.
+    /// But we use a uint256 for efficient stack operations, and more flexibility in the future.
     /// Note: We keep the flags in the stack/memory (TSTORE doesn't work) to make sure they are reset in each new call context,
     /// to provide protection against attacks which could spoof the execute function to believe it is in simulation mode.
     function _execute(bytes calldata encodedIntent, uint256 combinedGasOverride, uint256 flags)
