@@ -76,17 +76,23 @@ jobs:
           chmod +x deploy/test_deployment.sh
 
       - name: Prepare for deployment tests
-        if: github.event.inputs.test_type == 'full' || github.event.inputs.test_type == 'deploy-only'
         run: |
-          echo "Preparing for deployment test..."
-          # For 'full' mode: test_deployment.sh will generate its own salt
-          # For 'deploy-only' mode: we generate the salt in the test script itself
-          # This ensures consistency with how the script works locally
+          # Determine test type - default to 'full' for automatic/push triggers
+          TEST_TYPE="${{ github.event.inputs.test_type || 'full' }}"
+          
+          if [ "$TEST_TYPE" == "full" ] || [ "$TEST_TYPE" == "deploy-only" ]; then
+            echo "Preparing for deployment test (type: $TEST_TYPE)..."
+            # For 'full' mode: test_deployment.sh will generate its own salt
+            # For 'deploy-only' mode: we generate the salt in the test script itself
+            # This ensures consistency with how the script works locally
+          else
+            echo "No special preparation needed for $TEST_TYPE test"
+          fi
           
       - name: Run deployment test
         run: |
-          # Use config-only as default for push triggers (safe, read-only)
-          TEST_TYPE="${{ github.event.inputs.test_type || 'config-only' }}"
+          # Use full as default for push triggers (runs complete test)
+          TEST_TYPE="${{ github.event.inputs.test_type || 'full' }}"
           echo "Running test type: $TEST_TYPE"
           
           case "$TEST_TYPE" in
