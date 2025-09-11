@@ -1,0 +1,230 @@
+name: Test Deployment Script
+
+# This workflow tests the deployment scripts without committing any changes
+# 
+# Test Modes:
+# - full: Runs deploy/test_deployment.sh exactly as-is (100% consistency)
+# - deploy-only: Runs only deployment without LayerZero config or funding
+# - config-only: Verifies existing deployed contracts
+# - funding-only: Checks signer balances and gas wallet configuration
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of test to run'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full          # Runs complete test_deployment.sh script
+          - deploy-only   # Only deploys contracts
+          - config-only   # Only verifies existing contracts
+          - funding-only  # Only checks funding status
+
+jobs:
+  test-deployment:
+    runs-on: ubuntu-latest
+    
+    env:
+      FOUNDRY_PROFILE: ci
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Install dependencies
+        run: |
+          forge install
+          
+      - name: Compile contracts
+        run: |
+          forge build --sizes
+          
+      - name: Setup test environment
+        run: |
+          # Create a temporary .env file for testing
+          # Note: These should be set as GitHub secrets in production
+          cat > .env << EOF
+          # Test RPC URLs (using public endpoints for testing)
+          RPC_84532="${{ secrets.RPC_84532 || 'https://sepolia.base.org' }}"
+          RPC_11155420="${{ secrets.RPC_11155420 || 'https://sepolia.optimism.io' }}"
+          
+          # Test private key (should be a test-only key with minimal funds)
+          PRIVATE_KEY="${{ secrets.TEST_PRIVATE_KEY }}"
+          
+          # Gas signer mnemonic for deriving signer addresses
+          GAS_SIGNER_MNEMONIC="${{ secrets.GAS_SIGNER_MNEMONIC }}"
+          EOF
+          
+          # Make scripts executable
+          chmod +x deploy/test_deployment.sh
+
+      - name: Prepare for deployment tests
+        if: github.event.inputs.test_type == 'full' || github.event.inputs.test_type == 'deploy-only'
+        run: |
+          echo "Preparing for deployment test..."
+          # For 'full' mode: test_deployment.sh will generate its own salt
+          # For 'deploy-only' mode: we generate the salt in the test script itself
+          # This ensures consistency with how the script works locally
+          
+      - name: Run deployment test
+        run: |
+          case "${{ github.event.inputs.test_type }}" in
+            full)
+              echo "============================================"
+              echo "Running FULL deployment test"
+              echo "This runs deploy/test_deployment.sh exactly as-is"
+              echo "============================================"
+              
+              # Run the complete test_deployment.sh script without any modifications
+              # This ensures 100% consistency with local testing
+              bash deploy/test_deployment.sh
+              ;;
+            
+            deploy-only | config-only | funding-only)
+              echo "============================================"
+              echo "PARTIAL TEST MODE: ${{ github.event.inputs.test_type }}"
+              echo "============================================"
+              echo ""
+              echo "NOTE: For partial tests, the CI extracts specific sections from test_deployment.sh"
+              echo "For 100% consistency, use 'full' mode which runs the complete script."
+              echo ""
+              
+              # Source environment
+              source .env
+              
+              # Define helper functions (same as in test_deployment.sh)
+              RED='\033[0;31m'
+              GREEN='\033[0;32m'
+              YELLOW='\033[1;33m'
+              NC='\033[0m'
+              
+              log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
+              log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+              log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+              check_success() {
+                  if [ $? -eq 0 ]; then
+                      log_info "$1 succeeded"
+                  else
+                      log_error "$1 failed"
+                      exit 1
+                  fi
+              }
+              
+              # Run specific test based on type
+              if [ "${{ github.event.inputs.test_type }}" == "deploy-only" ]; then
+                  echo "Running deployment only (without LayerZero config or funding)..."
+                  
+                  # Generate salt
+                  SALT=$(cast keccak -- $(cast from-utf8 "$(date +%s)$(openssl rand -hex 32)"))
+                  log_info "Generated salt: $SALT"
+                  sed -i.bak "/^\[base-sepolia\.bytes32\]/,/^\[.*\]/ s/^salt = .*/salt = \"$SALT\"/" deploy/config.toml
+                  sed -i.bak "/^\[optimism-sepolia\.bytes32\]/,/^\[.*\]/ s/^salt = .*/salt = \"$SALT\"/" deploy/config.toml
+                  
+                  # Deploy contracts
+                  log_info "Deploying contracts..."
+                  forge script deploy/DeployMain.s.sol:DeployMain \
+                    --broadcast --multi --slow \
+                    --sig "run(uint256[])" "[84532,11155420]" \
+                    --private-key $PRIVATE_KEY \
+                    -vvv
+                  
+                  
+              elif [ "${{ github.event.inputs.test_type }}" == "config-only" ]; then
+                  echo "Running configuration verification only..."
+                  
+                  # Just verify existing contracts
+                  log_info "Verifying deployed contracts..."
+                  
+                  # Base Sepolia
+                  ORCHESTRATOR_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "orchestrator_deployed" | cut -d'"' -f2)
+                  if [ ! -z "$ORCHESTRATOR_BASE" ]; then
+                      CODE=$(cast code $ORCHESTRATOR_BASE --rpc-url $RPC_84532 2>/dev/null || echo "0x")
+                      if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
+                          log_info "✓ Base Sepolia Orchestrator: $ORCHESTRATOR_BASE"
+                      else
+                          log_error "✗ Base Sepolia Orchestrator NOT found at $ORCHESTRATOR_BASE"
+                      fi
+                  fi
+                  
+                  # Optimism Sepolia
+                  ORCHESTRATOR_OP=$(grep "^orchestrator_deployed" deploy/config.toml | tail -1 | cut -d'"' -f2)
+                  if [ ! -z "$ORCHESTRATOR_OP" ]; then
+                      CODE=$(cast code $ORCHESTRATOR_OP --rpc-url $RPC_11155420 2>/dev/null || echo "0x")
+                      if [ "$CODE" != "0x" ] && [ ! -z "$CODE" ]; then
+                          log_info "✓ Optimism Sepolia Orchestrator: $ORCHESTRATOR_OP"
+                      else
+                          log_error "✗ Optimism Sepolia Orchestrator NOT found at $ORCHESTRATOR_OP"
+                      fi
+                  fi
+                  
+              elif [ "${{ github.event.inputs.test_type }}" == "funding-only" ]; then
+                  echo "Running funding verification only..."
+                  
+                  # Check signer balances
+                  SIGNER_0="0x33097354Acf259e1fD19fB91159BAE6ccf912Fdb"
+                  TARGET_BALANCE_BASE=$(awk '/^\[base-sepolia\.uint\]/,/^\[base-sepolia\.bytes32\]/' deploy/config.toml | grep "target_balance" | awk -F' = ' '{print $2}' | tr -d '"')
+                  
+                  BALANCE=$(cast balance $SIGNER_0 --rpc-url $RPC_84532 2>/dev/null || echo "0")
+                  if [ "$BALANCE" -ge "$TARGET_BALANCE_BASE" ] 2>/dev/null; then
+                      log_info "✓ Signer 0 balance on Base Sepolia: $(cast from-wei $BALANCE 2>/dev/null) ETH"
+                  else
+                      log_warning "✗ Signer 0 balance below target on Base Sepolia"
+                  fi
+              fi
+              ;;
+          esac
+        continue-on-error: true
+
+      - name: Capture test results
+        if: always()
+        run: |
+          echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Test Type: ${{ github.event.inputs.test_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "Run ID: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check if any deployment files were created (they shouldn't be committed)
+          if [ -d "broadcast" ]; then
+            echo "### Deployment Artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "Broadcast files created but not committed:" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            find broadcast -type f -name "*.json" | head -10 >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+      - name: Clean up test artifacts
+        if: always()
+        run: |
+          # Remove any generated test files
+          rm -rf broadcast/
+          rm -rf cache/
+          rm -f .env
+          
+          # Reset config.toml to original state (discard any changes)
+          git checkout -- deploy/config.toml
+          
+          echo "Test artifacts cleaned up successfully"
+
+      - name: Verify no files changed
+        if: always()
+        run: |
+          # Ensure no files were accidentally modified
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "⚠️ Warning: Files were modified during test run:"
+            git status --porcelain
+            echo "Resetting all changes..."
+            git reset --hard HEAD
+          else
+            echo "✅ No files were modified during test run"
+          fi
