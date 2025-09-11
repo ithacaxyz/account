@@ -79,13 +79,19 @@ log_info "Generating random salt for new contract addresses"
 RANDOM_SALT="0x$(openssl rand -hex 32)"
 log_info "Generated salt: $RANDOM_SALT"
 
-# Update salt in config.toml for Base Sepolia
-log_info "Updating salt for Base Sepolia in config.toml"
-sed -i.bak "/^\[base-sepolia\.bytes32\]/,/^\[/ s/^salt = .*/salt = \"$RANDOM_SALT\"/" deploy/config.toml
+# Update salt in config.toml for Base Sepolia (chain ID 84532)
+log_info "Updating salt for Base Sepolia (84532) in config.toml"
+sed -i.bak "/^\[84532\.bytes32\]/,/^\[/ s/^salt = .*/salt = \"$RANDOM_SALT\"/" deploy/config.toml
 
-# Update salt in config.toml for Optimism Sepolia  
-log_info "Updating salt for Optimism Sepolia in config.toml"
-sed -i.bak "/^\[optimism-sepolia\.bytes32\]/,/^\[/ s/^salt = .*/salt = \"$RANDOM_SALT\"/" deploy/config.toml
+# Update salt in config.toml for Optimism Sepolia (chain ID 11155420)
+log_info "Updating salt for Optimism Sepolia (11155420) in config.toml"
+sed -i.bak "/^\[11155420\.bytes32\]/,/^\[/ s/^salt = .*/salt = \"$RANDOM_SALT\"/" deploy/config.toml
+
+# Update salt for Sepolia too if needed (chain ID 11155111)
+if grep -q "^\[11155111\.bytes32\]" deploy/config.toml; then
+    log_info "Updating salt for Sepolia (11155111) in config.toml"
+    sed -i.bak "/^\[11155111\.bytes32\]/,/^\[/ s/^salt = .*/salt = \"$RANDOM_SALT\"/" deploy/config.toml
+fi
 
 # Clean up backup files
 rm -f deploy/config.toml.bak
@@ -117,11 +123,11 @@ echo "========================================================================"
 # Extract deployed addresses from the deployment output or config
 log_info "Checking deployed contracts on Base Sepolia (84532)..."
 
-# Read addresses from config.toml for Base Sepolia
-ORCHESTRATOR_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "orchestrator_deployed" | cut -d'"' -f2)
-ITHACA_ACCOUNT_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "ithaca_account_deployed" | cut -d'"' -f2)
-SIMPLE_FUNDER_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "simple_funder_deployed" | cut -d'"' -f2)
-LAYERZERO_SETTLER_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_settler_deployed" | cut -d'"' -f2)
+# Read addresses from config.toml for Base Sepolia (chain ID 84532)
+ORCHESTRATOR_BASE=$(sed -n "/^\[84532\.address\]/,/^\[/p" deploy/config.toml | grep "orchestrator_deployed" | cut -d'"' -f2)
+ITHACA_ACCOUNT_BASE=$(sed -n "/^\[84532\.address\]/,/^\[/p" deploy/config.toml | grep "ithaca_account_deployed" | cut -d'"' -f2)
+SIMPLE_FUNDER_BASE=$(sed -n "/^\[84532\.address\]/,/^\[/p" deploy/config.toml | grep "simple_funder_deployed" | cut -d'"' -f2)
+LAYERZERO_SETTLER_BASE=$(sed -n "/^\[84532\.address\]/,/^\[/p" deploy/config.toml | grep "layerzero_settler_deployed" | cut -d'"' -f2)
 
 log_info "Orchestrator address from config: '$ORCHESTRATOR_BASE'"
 if [ ! -z "$ORCHESTRATOR_BASE" ]; then
@@ -181,12 +187,11 @@ fi
 
 log_info "Checking deployed contracts on Optimism Sepolia (11155420)..."
 
-# Read addresses from config.toml for Optimism Sepolia
-# The section goes until end of file, so we need to be more specific
-ORCHESTRATOR_OP=$(grep "^orchestrator_deployed" deploy/config.toml | tail -1 | cut -d'"' -f2)
-ITHACA_ACCOUNT_OP=$(grep "^ithaca_account_deployed" deploy/config.toml | tail -1 | cut -d'"' -f2)
-SIMPLE_FUNDER_OP=$(grep "^simple_funder_deployed" deploy/config.toml | tail -1 | cut -d'"' -f2)
-LAYERZERO_SETTLER_OP=$(grep "^layerzero_settler_deployed" deploy/config.toml | tail -1 | cut -d'"' -f2)
+# Read addresses from config.toml for Optimism Sepolia (chain ID 11155420)
+ORCHESTRATOR_OP=$(sed -n "/^\[11155420\.address\]/,/^\[/p" deploy/config.toml | grep "orchestrator_deployed" | cut -d'"' -f2)
+ITHACA_ACCOUNT_OP=$(sed -n "/^\[11155420\.address\]/,/^\[/p" deploy/config.toml | grep "ithaca_account_deployed" | cut -d'"' -f2)
+SIMPLE_FUNDER_OP=$(sed -n "/^\[11155420\.address\]/,/^\[/p" deploy/config.toml | grep "simple_funder_deployed" | cut -d'"' -f2)
+LAYERZERO_SETTLER_OP=$(sed -n "/^\[11155420\.address\]/,/^\[/p" deploy/config.toml | grep "layerzero_settler_deployed" | cut -d'"' -f2)
 
 log_info "Orchestrator address from config: '$ORCHESTRATOR_OP'"
 if [ ! -z "$ORCHESTRATOR_OP" ]; then
@@ -274,10 +279,10 @@ if [ ! -z "$LAYERZERO_SETTLER_BASE" ]; then
     log_info "Base Sepolia LayerZero configuration:"
     
     # Get LayerZero endpoint from config
-    LZ_ENDPOINT_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_endpoint" | cut -d'"' -f2)
-    LZ_EID_BASE=$(awk '/^\[base-sepolia\.uint\]/,/^\[base-sepolia\.bytes32\]/' deploy/config.toml | grep "layerzero_eid" | awk -F' = ' '{print $2}')
-    LZ_SEND_ULN_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_send_uln302" | cut -d'"' -f2)
-    LZ_RECEIVE_ULN_BASE=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "layerzero_receive_uln302" | cut -d'"' -f2)
+    LZ_ENDPOINT_BASE=$(sed -n "/^\[84532\.address\]/,/^\[/p" deploy/config.toml | grep "layerzero_endpoint" | cut -d'"' -f2)
+    LZ_EID_BASE=$(sed -n "/^\[84532\.uint\]/,/^\[/p" deploy/config.toml | grep "layerzero_eid" | awk -F' = ' '{print $2}')
+    LZ_SEND_ULN_BASE=$(sed -n "/^\[84532\.address\]/,/^\[/p" deploy/config.toml | grep "layerzero_send_uln302" | cut -d'"' -f2)
+    LZ_RECEIVE_ULN_BASE=$(sed -n "/^\[84532\.address\]/,/^\[/p" deploy/config.toml | grep "layerzero_receive_uln302" | cut -d'"' -f2)
     
     # Check if endpoint is set on LayerZeroSettler
     CURRENT_ENDPOINT=$(cast call $LAYERZERO_SETTLER_BASE "endpoint()(address)" --rpc-url $RPC_84532 2>/dev/null || echo "0x0000000000000000000000000000000000000000")
@@ -298,10 +303,10 @@ if [ ! -z "$LAYERZERO_SETTLER_OP" ]; then
     log_info "Optimism Sepolia LayerZero configuration:"
     
     # Get LayerZero endpoint from config - these are in the address section
-    LZ_ENDPOINT_OP=$(grep "^layerzero_endpoint" deploy/config.toml | tail -1 | cut -d'"' -f2)
-    LZ_EID_OP=$(awk '/^\[optimism-sepolia\.uint\]/,/^\[optimism-sepolia\.bytes32\]/' deploy/config.toml | grep "layerzero_eid" | awk -F' = ' '{print $2}')
-    LZ_SEND_ULN_OP=$(grep "^layerzero_send_uln302" deploy/config.toml | tail -1 | cut -d'"' -f2)
-    LZ_RECEIVE_ULN_OP=$(grep "^layerzero_receive_uln302" deploy/config.toml | tail -1 | cut -d'"' -f2)
+    LZ_ENDPOINT_OP=$(sed -n "/^\[11155420\.address\]/,/^\[/p" deploy/config.toml | grep "layerzero_endpoint" | cut -d'"' -f2)
+    LZ_EID_OP=$(sed -n "/^\[11155420\.uint\]/,/^\[/p" deploy/config.toml | grep "layerzero_eid" | awk -F' = ' '{print $2}')
+    LZ_SEND_ULN_OP=$(sed -n "/^\[11155420\.address\]/,/^\[/p" deploy/config.toml | grep "layerzero_send_uln302" | cut -d'"' -f2)
+    LZ_RECEIVE_ULN_OP=$(sed -n "/^\[11155420\.address\]/,/^\[/p" deploy/config.toml | grep "layerzero_receive_uln302" | cut -d'"' -f2)
     
     # Check if endpoint is set on LayerZeroSettler
     CURRENT_ENDPOINT=$(cast call $LAYERZERO_SETTLER_OP "endpoint()(address)" --rpc-url $RPC_11155420 2>/dev/null || echo "0x0000000000000000000000000000000000000000")
@@ -321,8 +326,8 @@ fi
 log_info "Cross-chain pathway verification:"
 
 # Get EIDs for both chains - they are in the uint sections
-LZ_EID_BASE=$(awk '/^\[base-sepolia\.uint\]/,/^\[base-sepolia\.bytes32\]/' deploy/config.toml | grep "layerzero_eid" | awk -F' = ' '{print $2}')
-LZ_EID_OP=$(awk '/^\[optimism-sepolia\.uint\]/,/^\[optimism-sepolia\.bytes32\]/' deploy/config.toml | grep "layerzero_eid" | awk -F' = ' '{print $2}')
+LZ_EID_BASE=$(sed -n "/^\[84532\.uint\]/,/^\[/p" deploy/config.toml | grep "layerzero_eid" | awk -F' = ' '{print $2}')
+LZ_EID_OP=$(sed -n "/^\[11155420\.uint\]/,/^\[/p" deploy/config.toml | grep "layerzero_eid" | awk -F' = ' '{print $2}')
 
 # Check Base Sepolia -> Optimism Sepolia pathway
 if [ ! -z "$LAYERZERO_SETTLER_BASE" ] && [ ! -z "$LZ_EID_OP" ] && [ ! -z "$LZ_ENDPOINT_BASE" ] && [ ! -z "$LZ_SEND_ULN_BASE" ]; then
@@ -436,7 +441,7 @@ SIGNER_1="0x49e1f963ddb4122BD3ccC786eB8F9983dABa8658"
 SIGNER_2="0x46C66f82B32f04bf04D05ED92e10b57188BF408A"
 
 # Get target balance from config
-TARGET_BALANCE_BASE=$(awk '/^\[base-sepolia\.uint\]/,/^\[base-sepolia\.bytes32\]/' deploy/config.toml | grep "target_balance" | awk -F' = ' '{print $2}' | tr -d '"')
+TARGET_BALANCE_BASE=$(sed -n "/^\[84532\.uint\]/,/^\[/p" deploy/config.toml | grep "target_balance" | awk -F' = ' '{print $2}' | tr -d '"')
 
 # Check balances on Base Sepolia
 log_info "Base Sepolia (84532) signer balances (target: $TARGET_BALANCE_BASE wei):"
@@ -464,7 +469,7 @@ else
 fi
 
 # Get target balance from config
-TARGET_BALANCE_OP=$(awk '/^\[optimism-sepolia\.uint\]/,/^\[optimism-sepolia\.bytes32\]/' deploy/config.toml | grep "target_balance" | awk -F' = ' '{print $2}' | tr -d '"')
+TARGET_BALANCE_OP=$(sed -n "/^\[11155420\.uint\]/,/^\[/p" deploy/config.toml | grep "target_balance" | awk -F' = ' '{print $2}' | tr -d '"')
 
 # Check balances on Optimism Sepolia
 log_info "Optimism Sepolia (11155420) signer balances (target: $TARGET_BALANCE_OP wei):"
@@ -497,8 +502,8 @@ log_info "Checking SimpleFunder configuration..."
 # Read orchestrator addresses from config.toml
 # supported_orchestrators is an array like ["0xAddr1", "0xAddr2"]
 # For simplicity, we'll extract the first orchestrator address
-ORCHESTRATOR_BASE_CONFIG=$(awk '/^\[base-sepolia\]/,/^\[optimism-sepolia\]/' deploy/config.toml | grep "supported_orchestrators" | sed 's/.*\["\([^"]*\)".*/\1/')
-ORCHESTRATOR_OP_CONFIG=$(grep "^supported_orchestrators" deploy/config.toml | tail -1 | sed 's/.*\["\([^"]*\)".*/\1/')
+ORCHESTRATOR_BASE_CONFIG=$(sed -n "/^\[84532\.address\]/,/^\[/p" deploy/config.toml | grep "supported_orchestrators" | sed 's/.*\["\([^"]*\)".*/\1/')
+ORCHESTRATOR_OP_CONFIG=$(sed -n "/^\[11155420\.address\]/,/^\[/p" deploy/config.toml | grep "supported_orchestrators" | sed 's/.*\["\([^"]*\)".*/\1/')
 
 # For Base Sepolia
 if [ ! -z "$SIMPLE_FUNDER_BASE" ]; then

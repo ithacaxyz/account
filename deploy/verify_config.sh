@@ -3,6 +3,14 @@
 # Verification script for deployed contracts and configuration
 # This script performs all verification checks from test_deployment.sh
 # without running any deployments or modifications
+#
+# Usage: bash deploy/verify_config.sh [chain_id1] [chain_id2] ...
+#
+# Examples:
+#   bash deploy/verify_config.sh                    # Verify all chains in config.toml
+#   bash deploy/verify_config.sh 84532              # Verify only Base Sepolia
+#   bash deploy/verify_config.sh 84532 11155420     # Verify Base Sepolia and Optimism Sepolia
+#   bash deploy/verify_config.sh 11155111           # Verify only Sepolia
 
 set -e  # Exit on any error
 
@@ -25,10 +33,25 @@ log_warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
 }
 
+# Parse command-line arguments
+REQUESTED_CHAINS=()
+if [ $# -gt 0 ]; then
+    # User provided specific chain IDs to check
+    REQUESTED_CHAINS=("$@")
+    log_info "Requested verification for chain IDs: ${REQUESTED_CHAINS[*]}"
+else
+    log_info "No specific chains requested, will verify all chains in config.toml"
+fi
+
 # Start verification process
 echo "========================================================================"
 log_info "Configuration and Deployment Verification Script"
 log_info "This script verifies the current state without making any changes"
+if [ ${#REQUESTED_CHAINS[@]} -gt 0 ]; then
+    log_info "Verifying chains: ${REQUESTED_CHAINS[*]}"
+else
+    log_info "Verifying all chains in config.toml"
+fi
 echo "========================================================================"
 
 # Load environment variables
@@ -83,22 +106,33 @@ extract_uint_value() {
     local key=$2
     local config_file=$3
     
-    # Get the next section after the chain.uint section
-    local section="[$chain.uint]"
-    local next_section=$(awk "/^\[$chain\.uint\]/,0" "$config_file" | grep '^\[' | grep -v "^\[$chain\.uint" | head -1)
-    
-    if [ -z "$next_section" ]; then
-        # This is the last section
-        awk "/^\[$chain\.uint\]/,0" "$config_file" | grep "^$key" | head -1 | awk -F' = ' '{print $2}' | tr -d '"'
-    else
-        # Get content between this section and the next
-        awk "/^\[$chain\.uint\]/,/^${next_section//[/\\[}/ { if (/^$key/) print }" "$config_file" | head -1 | awk -F' = ' '{print $2}' | tr -d '"'
-    fi
+    # Use sed to extract the section and grep for the key
+    sed -n "/^\[$chain\.uint\]/,/^\[/p" "$config_file" | grep "^$key" | head -1 | awk -F' = ' '{print $2}' | tr -d '"'
 }
 
 # Get all chain sections from config.toml (excluding .uint, .bytes32, .address, .bool, .string subsections)
 get_chains() {
     grep '^\[' deploy/config.toml | grep -v '\.' | sed 's/\[//g' | sed 's/\]//g'
+}
+
+# Function to extract address value from TOML for a specific chain section
+extract_address_value() {
+    local chain=$1
+    local key=$2
+    local config_file=$3
+    
+    # Use sed to extract the section and grep for the key
+    sed -n "/^\[$chain\.address\]/,/^\[/p" "$config_file" | grep "^$key" | head -1 | cut -d'"' -f2
+}
+
+# Function to extract string value from TOML for a specific chain section
+extract_string_value() {
+    local chain=$1
+    local key=$2
+    local config_file=$3
+    
+    # Use sed to extract the section and grep for the key
+    sed -n "/^\[$chain\.string\]/,/^\[/p" "$config_file" | grep "^$key" | head -1 | cut -d'"' -f2
 }
 
 # ========================================================================
@@ -114,24 +148,37 @@ log_info "Reading deployed contract addresses from config.toml..."
 # Contract types to verify
 CONTRACT_TYPES=("orchestrator_deployed:Orchestrator" "ithaca_account_deployed:IthacaAccount" "account_proxy_deployed:AccountProxy" "simulator_deployed:Simulator" "simple_funder_deployed:SimpleFunder" "escrow_deployed:Escrow" "simple_settler_deployed:SimpleSettler" "layerzero_settler_deployed:LayerZeroSettler" "exp_token_deployed:ExpToken" "exp2_token_deployed:Exp2Token")
 
-# Get all chains
-CHAINS=($(get_chains))
-log_info "Found ${#CHAINS[@]} chain(s): ${CHAINS[*]}"
+# Get chains to verify
+if [ ${#REQUESTED_CHAINS[@]} -gt 0 ]; then
+    # Use the chains requested by the user
+    CHAINS=("${REQUESTED_CHAINS[@]}")
+    log_info "Verifying ${#CHAINS[@]} requested chain(s): ${CHAINS[*]}"
+else
+    # Get all chains from config.toml
+    CHAINS=($(get_chains))
+    log_info "Found ${#CHAINS[@]} chain(s) in config: ${CHAINS[*]}"
+fi
 echo ""
 
 TOTAL_FAILED=0
 
 # Iterate over each chain
 for chain in "${CHAINS[@]}"; do
-    log_info "Checking deployed contracts on $chain..."
-    
-    # Get chain ID from config
-    CHAIN_ID=$(extract_uint_value "$chain" "chain_id" "deploy/config.toml")
-    
-    if [ -z "$CHAIN_ID" ]; then
-        log_warning "  Chain ID not found for $chain, skipping..."
+    # Verify this chain exists in config
+    if ! grep -q "^\[$chain\]" deploy/config.toml; then
+        log_error "Chain ID $chain not found in config.toml"
         continue
     fi
+    # The chain variable IS the chain ID now
+    CHAIN_ID=$chain
+    
+    # Get chain name for display purposes
+    CHAIN_NAME=$(extract_string_value "$chain" "name" "deploy/config.toml")
+    if [ -z "$CHAIN_NAME" ]; then
+        CHAIN_NAME="Chain $CHAIN_ID"
+    fi
+    
+    log_info "Checking deployed contracts on $CHAIN_NAME (ID: $CHAIN_ID)..."
     
     # Get RPC URL from environment variable
     RPC_VAR="RPC_${CHAIN_ID}"
@@ -144,7 +191,6 @@ for chain in "${CHAINS[@]}"; do
     fi
     
     log_info "  Chain ID: $CHAIN_ID"
-    log_info "  RPC URL: $RPC_URL"
     
     CHAIN_FAILED=0
     
@@ -152,8 +198,8 @@ for chain in "${CHAINS[@]}"; do
     for contract_type in "${CONTRACT_TYPES[@]}"; do
         IFS=":" read -r key name <<< "$contract_type"
         
-        # Extract address for this contract on this chain
-        addr=$(extract_value "$chain" "$key" "deploy/config.toml")
+        # Extract address for this contract on this chain from the .address section
+        addr=$(extract_address_value "$chain" "$key" "deploy/config.toml")
         
         if [ ! -z "$addr" ]; then
             CODE=$(cast code $addr --rpc-url $RPC_URL 2>/dev/null || echo "0x")
@@ -169,9 +215,9 @@ for chain in "${CHAINS[@]}"; do
     done
     
     if [ $CHAIN_FAILED -eq 0 ]; then
-        log_info "  ✅ All contracts verified on $chain"
+        log_info "  ✅ All contracts verified on $CHAIN_NAME"
     else
-        log_error "  ❌ $CHAIN_FAILED contract(s) failed verification on $chain"
+        log_error "  ❌ $CHAIN_FAILED contract(s) failed verification on $CHAIN_NAME"
         TOTAL_FAILED=$((TOTAL_FAILED + CHAIN_FAILED))
     fi
     echo ""
@@ -207,35 +253,48 @@ LZ_RPC_URLS=()
 # Collect LayerZero configuration for each chain
 LZ_INDEX=0
 for chain in "${CHAINS[@]}"; do
+    # Skip if chain doesn't exist in config
+    if ! grep -q "^\[$chain\]" deploy/config.toml; then
+        continue
+    fi
+    # Chain variable IS the chain ID now
+    CHAIN_ID=$chain
+    
     # Get LayerZero settler address
-    settler=$(extract_value "$chain" "layerzero_settler_deployed" "deploy/config.toml")
+    settler=$(extract_address_value "$chain" "layerzero_settler_deployed" "deploy/config.toml")
     
     if [ -z "$settler" ]; then
-        log_info "  No LayerZero settler deployed on $chain, skipping LayerZero checks..."
+        CHAIN_NAME=$(extract_string_value "$chain" "name" "deploy/config.toml")
+        log_info "  No LayerZero settler deployed on $CHAIN_NAME (ID: $CHAIN_ID), skipping LayerZero checks..."
         continue
     fi
     
     LZ_CHAINS+=("$chain")
     LZ_SETTLERS+=("$settler")
     
-    # Get other LayerZero config
-    LZ_ENDPOINTS+=($(extract_value "$chain" "layerzero_endpoint" "deploy/config.toml"))
-    LZ_EIDS+=($(extract_uint_value "$chain" "layerzero_eid" "deploy/config.toml"))
-    LZ_SEND_ULNS+=($(extract_value "$chain" "layerzero_send_uln302" "deploy/config.toml"))
-    LZ_RECEIVE_ULNS+=($(extract_value "$chain" "layerzero_receive_uln302" "deploy/config.toml"))
+    # Get other LayerZero config from .address section
+    LZ_ENDPOINTS+=($(extract_address_value "$chain" "layerzero_endpoint" "deploy/config.toml"))
+    LZ_SEND_ULNS+=($(extract_address_value "$chain" "layerzero_send_uln302" "deploy/config.toml"))
+    LZ_RECEIVE_ULNS+=($(extract_address_value "$chain" "layerzero_receive_uln302" "deploy/config.toml"))
     
-    chain_id=$(extract_uint_value "$chain" "chain_id" "deploy/config.toml")
-    LZ_CHAIN_IDS+=("$chain_id")
+    # Get EID from .uint section
+    LZ_EIDS+=($(extract_uint_value "$chain" "layerzero_eid" "deploy/config.toml"))
+    
+    LZ_CHAIN_IDS+=("$CHAIN_ID")
     
     # Get RPC URL
-    RPC_VAR="RPC_${chain_id}"
+    RPC_VAR="RPC_${CHAIN_ID}"
     LZ_RPC_URLS+=(${!RPC_VAR})
 done
 
 # Verify LayerZero configuration for each chain
 for i in "${!LZ_CHAINS[@]}"; do
     chain=${LZ_CHAINS[$i]}
-    log_info "$chain LayerZero configuration:"
+    CHAIN_NAME=$(extract_string_value "$chain" "name" "deploy/config.toml")
+    if [ -z "$CHAIN_NAME" ]; then
+        CHAIN_NAME="Chain $chain"
+    fi
+    log_info "$CHAIN_NAME LayerZero configuration:"
     
     settler=${LZ_SETTLERS[$i]}
     endpoint=${LZ_ENDPOINTS[$i]}
@@ -243,7 +302,7 @@ for i in "${!LZ_CHAINS[@]}"; do
     rpc_url=${LZ_RPC_URLS[$i]}
     
     if [ -z "$rpc_url" ]; then
-        log_warning "  RPC URL not available for $chain, skipping checks..."
+        log_warning "  RPC URL not available for $CHAIN_NAME, skipping checks..."
         continue
     fi
     
@@ -276,8 +335,17 @@ for i in "${!LZ_CHAINS[@]}"; do
             continue
         fi
         
-        source_chain=${LZ_CHAINS[$i]}
-        dest_chain=${LZ_CHAINS[$j]}
+        source_chain_id=${LZ_CHAINS[$i]}
+        dest_chain_id=${LZ_CHAINS[$j]}
+        
+        source_chain=$(extract_string_value "$source_chain_id" "name" "deploy/config.toml")
+        dest_chain=$(extract_string_value "$dest_chain_id" "name" "deploy/config.toml")
+        if [ -z "$source_chain" ]; then
+            source_chain="Chain $source_chain_id"
+        fi
+        if [ -z "$dest_chain" ]; then
+            dest_chain="Chain $dest_chain_id"
+        fi
         
         source_settler=${LZ_SETTLERS[$i]}
         source_endpoint=${LZ_ENDPOINTS[$i]}
@@ -343,13 +411,23 @@ SIGNER_2="0x46C66f82B32f04bf04D05ED92e10b57188BF408A"
 
 # Check balances on all chains
 for chain in "${CHAINS[@]}"; do
-    # Get chain ID and RPC URL
-    CHAIN_ID=$(extract_uint_value "$chain" "chain_id" "deploy/config.toml")
+    # Skip if chain doesn't exist in config
+    if ! grep -q "^\[$chain\]" deploy/config.toml; then
+        continue
+    fi
+    # Chain variable IS the chain ID now
+    CHAIN_ID=$chain
     RPC_VAR="RPC_${CHAIN_ID}"
     RPC_URL=${!RPC_VAR}
     
+    # Get chain name for display
+    CHAIN_NAME=$(extract_string_value "$chain" "name" "deploy/config.toml")
+    if [ -z "$CHAIN_NAME" ]; then
+        CHAIN_NAME="Chain $CHAIN_ID"
+    fi
+    
     if [ -z "$RPC_URL" ]; then
-        log_warning "  RPC URL not set for $chain, skipping signer balance checks..."
+        log_warning "  RPC URL not set for $CHAIN_NAME, skipping signer balance checks..."
         continue
     fi
     
@@ -357,11 +435,11 @@ for chain in "${CHAINS[@]}"; do
     TARGET_BALANCE=$(extract_uint_value "$chain" "target_balance" "deploy/config.toml")
     
     if [ -z "$TARGET_BALANCE" ]; then
-        log_error "  Target balance not set for $chain"
+        log_error "  Target balance not set for $CHAIN_NAME"
         continue
     fi
     
-    log_info "$chain (Chain ID: $CHAIN_ID) signer balances (target: $TARGET_BALANCE wei):"
+    log_info "$CHAIN_NAME (Chain ID: $CHAIN_ID) signer balances (target: $TARGET_BALANCE wei):"
     
     # Check each signer's balance
     for i in 0 1 2; do
@@ -383,25 +461,36 @@ done
 log_info "Checking SimpleFunder configuration..."
 
 for chain in "${CHAINS[@]}"; do
-    # Get SimpleFunder address
-    SIMPLE_FUNDER=$(extract_value "$chain" "simple_funder_deployed" "deploy/config.toml")
-    
-    if [ -z "$SIMPLE_FUNDER" ]; then
-        log_info "  No SimpleFunder deployed on $chain, skipping..."
+    # Skip if chain doesn't exist in config
+    if ! grep -q "^\[$chain\]" deploy/config.toml; then
         continue
     fi
     
-    # Get chain ID and RPC URL
-    CHAIN_ID=$(extract_uint_value "$chain" "chain_id" "deploy/config.toml")
+    # Get SimpleFunder address
+    SIMPLE_FUNDER=$(extract_address_value "$chain" "simple_funder_deployed" "deploy/config.toml")
+    
+    # Get chain name for display
+    CHAIN_NAME=$(extract_string_value "$chain" "name" "deploy/config.toml")
+    if [ -z "$CHAIN_NAME" ]; then
+        CHAIN_NAME="Chain $chain"
+    fi
+    
+    if [ -z "$SIMPLE_FUNDER" ]; then
+        log_info "  No SimpleFunder deployed on $CHAIN_NAME, skipping..."
+        continue
+    fi
+    
+    # Chain variable IS the chain ID now
+    CHAIN_ID=$chain
     RPC_VAR="RPC_${CHAIN_ID}"
     RPC_URL=${!RPC_VAR}
     
     if [ -z "$RPC_URL" ]; then
-        log_warning "  RPC URL not set for $chain, skipping SimpleFunder checks..."
+        log_warning "  RPC URL not set for $CHAIN_NAME, skipping SimpleFunder checks..."
         continue
     fi
     
-    log_info "$chain SimpleFunder ($SIMPLE_FUNDER):"
+    log_info "$CHAIN_NAME SimpleFunder ($SIMPLE_FUNDER):"
     
     # Check if signers are gas wallets
     GAS_WALLET_OK=0
@@ -419,8 +508,8 @@ for chain in "${CHAINS[@]}"; do
     done
     
     # Check orchestrator configuration
-    # Extract orchestrator from supported_orchestrators array
-    ORCHESTRATOR_CONFIG=$(extract_value "$chain" "supported_orchestrators" "deploy/config.toml" | sed 's/.*\["\([^"]*\)".*/\1/')
+    # Extract orchestrator from supported_orchestrators array in .address section
+    ORCHESTRATOR_CONFIG=$(extract_address_value "$chain" "supported_orchestrators" "deploy/config.toml" | sed 's/.*\["\([^"]*\)".*/\1/')
     
     if [ ! -z "$ORCHESTRATOR_CONFIG" ]; then
         IS_SUPPORTED=$(cast call $SIMPLE_FUNDER "orchestrators(address)(bool)" $ORCHESTRATOR_CONFIG --rpc-url $RPC_URL 2>/dev/null || echo "false")
