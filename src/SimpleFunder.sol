@@ -27,6 +27,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
     error InvalidWithdrawalSignature();
     error InvalidNonce();
     error DeadlineExpired();
+    error DigestUsed();
 
     address public immutable ORCHESTRATOR;
 
@@ -34,6 +35,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
 
     mapping(address => bool) public gasWallets;
     mapping(uint256 => bool) public nonces;
+    mapping(bytes32 => bool) public usedDigests;
 
     bytes32 constant WITHDRAWAL_TYPE_HASH = keccak256(
         "Withdrawal(address token,address recipient,uint256 amount,uint256 deadline,uint256 nonce)"
@@ -58,7 +60,7 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
         returns (string memory name, string memory version)
     {
         name = "SimpleFunder";
-        version = "0.1.4";
+        version = "0.1.4-patch";
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -124,6 +126,10 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
         if (msg.sender != ORCHESTRATOR) {
             revert OnlyOrchestrator();
         }
+        if (usedDigests[digest]) {
+            revert DigestUsed();
+        }
+        usedDigests[digest] = true;
 
         bool isValid = SignatureCheckerLib.isValidSignatureNow(funder, digest, funderSignature);
 
