@@ -1,6 +1,6 @@
 # Deployment System
 
-Unified deployment and configuration system for the Ithaca Account Abstraction System. 
+Unified deployment and configuration system for the Ithaca Account Abstraction System.
 We use a single TOML config for fast and easy scripting.
 
 ## Available Scripts
@@ -126,19 +126,19 @@ layerzero_optional_dvns = []
 ### Available Contracts
 
 - **Orchestrator**
-- **IthacaAccount** 
-- **AccountProxy** 
-- **Simulator** 
-- **SimpleFunder** 
+- **IthacaAccount**
+- **AccountProxy**
+- **Simulator**
+- **SimpleFunder**
 - **Escrow** (Only needed for Interop Chains)
 - **SimpleSettler** (Only needed for Interop testing)
 - **LayerZeroSettler** (Only needed for Interop Chains)
 - **ExpToken** - Test ERC20 tokens (Testnet only, automatically included with "ALL")
 - **ALL** - Deploys all contracts (+ ExpToken on testnets)
 
-**Dependencies**: 
-IthacaAccount requires Orchestrator; 
-AccountProxy requires IthacaAccount; 
+**Dependencies**:
+IthacaAccount requires Orchestrator;
+AccountProxy requires IthacaAccount;
 SimpleFunder requires Orchestrator.
 
 ## Quick Start - Complete Workflow
@@ -170,8 +170,7 @@ forge script deploy/FundSigners.s.sol:FundSigners \
   --private-key $PRIVATE_KEY \
   "[84532,11155420]"
 
-# 5. Fund SimpleFunder contract 
-SIMPLE_FUNDER=$(cat deploy/registry/deployment_84532_*.json | jq -r .SimpleFunder)
+# 5. Fund SimpleFunder contract
 
 forge script deploy/FundSimpleFunder.s.sol:FundSimpleFunder \
   --broadcast --multi --slow \
@@ -195,7 +194,7 @@ forge script deploy/FundSimpleFunder.s.sol:FundSimpleFunder \
 forge script deploy/DeployMain.s.sol:DeployMain \
   --broadcast  --verify --multi --slow \
   --sig "run()" \
-  --private-key $PRIVATE_KEY 
+  --private-key $PRIVATE_KEY
 
 # Deploy to specific chains
 forge script deploy/DeployMain.s.sol:DeployMain \
@@ -228,7 +227,8 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 
 **Purpose**: Configure LayerZero messaging pathways between chains.
 
-**Prerequisites**: 
+**Prerequisites**:
+
 - LayerZeroSettler deployed on source and destination chains
 - Caller must be l0_settler_owner
 
@@ -251,12 +251,14 @@ forge script deploy/ConfigureLayerZeroSettler.s.sol:ConfigureLayerZeroSettler \
 
 **Purpose**: Fund signers and register them as gas wallets in SimpleFunder.
 
-**Prerequisites**: 
+**Prerequisites**:
+
 - SimpleFunder deployed
 - Caller must be funder_owner
 - GAS_SIGNER_MNEMONIC environment variable set
 
 **What it does**:
+
 1. Derives signer addresses from mnemonic
 2. Tops up signers below target_balance
 3. Registers signers as gas wallets in SimpleFunder
@@ -303,6 +305,7 @@ forge script deploy/FundSimpleFunder.s.sol:FundSimpleFunder \
 ```
 
 **Parameters**:
+
 - SimpleFunder address (same across chains if using CREATE2)
 - Array of (chainId, tokenAddress, amount)
   - Use `0x0000000000000000000000000000000000000000` for native ETH
@@ -319,6 +322,7 @@ forge script deploy/FundSimpleFunder.s.sol:FundSimpleFunder \
 All contracts deploy via Safe Singleton Factory (`0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`) for deterministic addresses.
 
 **Key Points**:
+
 - Same salt + same bytecode = same address on every chain
 - Addresses can be predicted before deployment
 - **⚠️ SAVE YOUR SALT VALUES** - Required for deploying to same addresses on new chains
@@ -372,18 +376,22 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 ### Common Issues
 
 **"No chains found in configuration"**
+
 - Verify config.toml has properly configured chains
 - Check RPC URLs are set for target chains
 
 **"Safe Singleton Factory not deployed"**
+
 - Factory must exist at `0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7`
 - Most major chains have this deployed
 
 **Contract already deployed**
+
 - Normal for CREATE2 - existing contracts are skipped
 - Change salt value to deploy to new addresses
 
 **RPC errors**
+
 - Verify RPC URLs are correct and accessible
 - Check rate limits on public RPCs
 - Consider paid RPC services for production
@@ -398,25 +406,24 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 6. **Verify while deploying** - Use `--verify` flag
 7. **Large numbers must be quoted in TOML** - Use `"1000000000000000000"` not `1000000000000000000`
 
-
 ## Configuration Field Reference
 
-| Field | Used By | Purpose |
-|-------|---------|---------|
-| `chain_id`, `name`, `is_testnet` | All scripts | Chain identification |
-| `pause_authority` | DeployMain | Contract pause permissions |
-| `funder_owner`, `funder_signer` | DeployMain, FundSigners | SimpleFunder control |
-| `settler_owner` | DeployMain | SimpleSettler ownership |
-| `l0_settler_owner` | DeployMain, ConfigureLayerZero | LayerZeroSettler ownership |
-| `salt` | DeployMain | CREATE2 deployment salt |
-| `contracts` | DeployMain | Which contracts to deploy |
-| `target_balance` | FundSigners | Minimum signer balance |
-| `simple_funder_address` | FundSigners, FundSimpleFunder | SimpleFunder location |
-| `default_num_signers` | FundSigners | Number of signers |
-| `supported_orchestrators` | FundSigners | Orchestrator addresses to enable in SimpleFunder |
-| `layerzero_*` fields | ConfigureLayerZeroSettler | LayerZero configuration |
-| `exp_minter_address`, `exp_mint_amount` | DeployMain (testnet) | ExpToken deployment |
-| `*_deployed` fields | All scripts | Auto-written deployed contract addresses |
+| Field                                   | Used By                        | Purpose                                          |
+| --------------------------------------- | ------------------------------ | ------------------------------------------------ |
+| `chain_id`, `name`, `is_testnet`        | All scripts                    | Chain identification                             |
+| `pause_authority`                       | DeployMain                     | Contract pause permissions                       |
+| `funder_owner`, `funder_signer`         | DeployMain, FundSigners        | SimpleFunder control                             |
+| `settler_owner`                         | DeployMain                     | SimpleSettler ownership                          |
+| `l0_settler_owner`                      | DeployMain, ConfigureLayerZero | LayerZeroSettler ownership                       |
+| `salt`                                  | DeployMain                     | CREATE2 deployment salt                          |
+| `contracts`                             | DeployMain                     | Which contracts to deploy                        |
+| `target_balance`                        | FundSigners                    | Minimum signer balance                           |
+| `simple_funder_address`                 | FundSigners, FundSimpleFunder  | SimpleFunder location                            |
+| `default_num_signers`                   | FundSigners                    | Number of signers                                |
+| `supported_orchestrators`               | FundSigners                    | Orchestrator addresses to enable in SimpleFunder |
+| `layerzero_*` fields                    | ConfigureLayerZeroSettler      | LayerZero configuration                          |
+| `exp_minter_address`, `exp_mint_amount` | DeployMain (testnet)           | ExpToken deployment                              |
+| `*_deployed` fields                     | All scripts                    | Auto-written deployed contract addresses         |
 
 ## ExpToken Deployment (Testnets Only)
 
@@ -425,6 +432,7 @@ forge script deploy/DeployMain.s.sol:DeployMain \
 **Purpose**: Deploy EXP and EXP2 test tokens automatically on testnet chains.
 
 **Behavior**:
+
 - **Testnets** (`is_testnet = true`): ExpToken automatically included when using `["ALL"]` contracts
 - **Production** (`is_testnet = false`): ExpToken never deployed, regardless of configuration
 - **Two tokens deployed**: "EXP" and "EXP2" with hardcoded names
@@ -451,10 +459,12 @@ contracts = ["ALL"]  # ExpToken automatically included for testnets
 ### Deployment Details
 
 **Two tokens are deployed**:
+
 1. **EXP Token**: Name and symbol "EXP"
 2. **EXP2 Token**: Name and symbol "EXP2"
 
 **Both tokens**:
+
 - Use CREATE2 for deterministic addresses
 - Mint `exp_mint_amount` tokens to `exp_minter_address`
 - Are deployed at the end of the contract deployment sequence
@@ -463,6 +473,7 @@ contracts = ["ALL"]  # ExpToken automatically included for testnets
 ### Examples
 
 **Base Sepolia (Testnet)**:
+
 ```toml
 [base-sepolia.bool]
 is_testnet = true
@@ -476,3 +487,62 @@ exp_mint_amount = "5000000000000000000000"
 [base-sepolia.string]
 contracts = ["ALL"]  # Deploys 8 core contracts + ExpToken
 ```
+
+## Supporting Bash Scripts
+
+### Overview
+
+There are two main scripts that handle multi-chain deployments and configuration verification:
+
+- **`deploy/execute_config.sh`** - Brings up the whole environment, by calling all scripts correctly.
+- **`deploy/verify_config.sh`** - Verifies that the values in the config.toml are all set and configured correctly.
+
+### Usage
+
+#### Execute Deployment
+
+```bash
+# Deploy to specific chains
+./deploy/execute_config.sh 84532 11155420
+
+# Deploy to all chains in config.toml
+./deploy/execute_config.sh
+```
+
+The script performs these steps:
+1. Validates configuration for selected chains
+2. Deploys core contracts (IthacaAccount, SimpleFunder, SimpleSettler, etc.)
+3. Configures LayerZero cross-chain messaging
+4. Funds signer accounts with gas tokens
+5. Verifies all deployments match configuration
+
+#### Verify Configuration
+
+```bash
+# Verify specific chains
+./deploy/verify_config.sh 84532 11155420
+
+# Verify all chains in config.toml
+./deploy/verify_config.sh
+```
+
+The script checks:
+- Required environment variables (RPC URLs, private keys)
+- Contract deployment addresses match config.toml
+- Signer accounts have sufficient gas balances
+- LayerZero endpoints and DVN configurations
+- Cross-chain pathway configurations
+
+### Configuration
+
+Both scripts read from `deploy/config.toml` which defines per-chain:
+- RPC endpoints and chain metadata
+- Contract addresses and owners
+- LayerZero endpoint configurations
+- Cross-chain destination mappings
+- Gas funding amounts
+
+Environment variables required:
+- `PRIVATE_KEY` - Deployer private key
+- `GAS_SIGNER_MNEMONIC` - Mnemonic for signer accounts
+- `RPC_<chainId>` - RPC URL for each chain (e.g., `RPC_84532`)
