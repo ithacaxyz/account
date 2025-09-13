@@ -408,6 +408,27 @@ contract BaseTest is SoladyTest {
         );
     }
 
+    function _setPaySpendLimitCall(
+        PassKey memory k,
+        address token,
+        GuardedExecutor.SpendPeriod period,
+        uint256 amount
+    ) internal pure returns (ERC7821.Call memory c) {
+        c.data = abi.encodeWithSelector(
+            GuardedExecutor.setPaySpendLimit.selector, k.keyHash, token, period, amount
+        );
+    }
+
+    function _removePaySpendLimitCall(
+        PassKey memory k,
+        address token,
+        GuardedExecutor.SpendPeriod period
+    ) internal pure returns (ERC7821.Call memory c) {
+        c.data = abi.encodeWithSelector(
+            GuardedExecutor.removePaySpendLimit.selector, k.keyHash, token, period
+        );
+    }
+
     function _transferExecutionData(address token, address to, uint256 amount)
         internal
         pure

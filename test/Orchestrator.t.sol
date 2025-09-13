@@ -636,7 +636,7 @@ contract OrchestratorTest is BaseTest {
 
         // Prepare session passkey authorization Intent.
         {
-            ERC7821.Call[] memory calls = new ERC7821.Call[](5);
+            ERC7821.Call[] memory calls = new ERC7821.Call[](6);
             calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, kSession.k);
             calls[1].data = abi.encodeWithSelector(
                 GuardedExecutor.setCanExecute.selector,
@@ -647,12 +647,15 @@ contract OrchestratorTest is BaseTest {
                     : _ANY_FN_SEL,
                 true
             );
-            calls[2] = _setSpendLimitCall(
+            calls[2] = _setPaySpendLimitCall(
                 kSession, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
             );
-            calls[3] =
+            calls[3] = _setSpendLimitCall(
+                kSession, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
+            );
+            calls[4] =
                 _setSpendLimitCall(kSession, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether);
-            calls[4] = _setSpendLimitCall(
+            calls[5] = _setSpendLimitCall(
                 kSession, tokenToTransfer, GuardedExecutor.SpendPeriod.Hour, 1 ether
             );
             if (_randomChance(2)) {
@@ -781,7 +784,7 @@ contract OrchestratorTest is BaseTest {
 
         // Prepare session passkey authorization Intent.
         {
-            ERC7821.Call[] memory calls = new ERC7821.Call[](3);
+            ERC7821.Call[] memory calls = new ERC7821.Call[](4);
             calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, kSession.k);
             // As it's not a superAdmin, we shall just make it able to execute anything for testing sake.
             calls[1].data = abi.encodeWithSelector(
@@ -792,7 +795,10 @@ contract OrchestratorTest is BaseTest {
                 true
             );
             // Set some spend limits.
-            calls[2] = _setSpendLimitCall(
+            calls[2] = _setPaySpendLimitCall(
+                kSession, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
+            );
+            calls[3] = _setSpendLimitCall(
                 kSession, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
             );
 
