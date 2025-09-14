@@ -668,7 +668,6 @@ contract AccountTest is BaseTest {
         d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
             abi.encode(timelockCalls, abi.encodePacked(timelockNonce, timelockSig)));
         
-        bytes32 digest = d.d.computeDigest(timelockCalls, timelockNonce);
         
         // Wait for timelock to be ready and execute once
         vm.warp(block.timestamp + 2);

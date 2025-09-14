@@ -120,6 +120,12 @@ abstract contract GuardedExecutor is ERC7821 {
     /// @dev Emitted when a spend limit is removed.
     event SpendLimitRemoved(bytes32 keyHash, address token, SpendPeriod period);
 
+    /// @dev Emitted when a payment spend limit is set.
+    event PaySpendLimitSet(bytes32 keyHash, address token, SpendPeriod period, uint256 limit);
+
+    /// @dev Emitted when a payment spend limit is removed.
+    event PaySpendLimitRemoved(bytes32 keyHash, address token, SpendPeriod period);
+
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
@@ -171,6 +177,8 @@ abstract contract GuardedExecutor is ERC7821 {
         EnumerableSetLib.AddressSet tokens;
         /// @dev Mapping of `token` to `TokenSpendStorage`.
         mapping(address => TokenSpendStorage) spends;
+        /// @dev Mapping of `token` to `TokenSpendStorage`.
+        mapping(address => TokenSpendStorage) paySpends;
     }
 
     /// @dev Holds the storage for a single `keyHash`.
@@ -459,6 +467,50 @@ abstract contract GuardedExecutor is ERC7821 {
         emit SpendLimitRemoved(keyHash, token, period);
     }
 
+    /// @dev Sets the payment spend limit of `token` for `keyHash` for `period`.
+    function setPaySpendLimit(bytes32 keyHash, address token, SpendPeriod period, uint256 limit)
+        public
+        virtual
+        onlyThis
+        checkKeyHashIsNonZero(keyHash)
+    {
+        if (_isSuperAdmin(keyHash)) revert SuperAdminCanSpendAnything();
+
+        SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
+        spends.tokens.add(token, 64); // Max capacity of 64.
+
+        TokenSpendStorage storage tokenSpends = spends.paySpends[token];
+        tokenSpends.periods.add(uint8(period));
+
+        LibBytes.BytesStorage storage $ = tokenSpends.spends[uint8(period)];
+        TokenPeriodSpend memory tokenPeriodSpend = _loadSpend($);
+        tokenPeriodSpend.limit = limit;
+        _storeSpend($, tokenPeriodSpend);
+
+        emit PaySpendLimitSet(keyHash, token, period, limit);
+    }
+
+    /// @dev Removes the payment spend limit of `token` for `keyHash` for `period`.
+    function removePaySpendLimit(bytes32 keyHash, address token, SpendPeriod period)
+        public
+        virtual
+        onlyThis
+        checkKeyHashIsNonZero(keyHash)
+    {
+        if (_isSuperAdmin(keyHash)) revert SuperAdminCanSpendAnything();
+
+        SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
+
+        TokenSpendStorage storage tokenSpends = spends.paySpends[token];
+        if (tokenSpends.periods.remove(uint8(period))) {
+            if (tokenSpends.periods.length() == uint256(0)) spends.tokens.remove(token);
+        }
+
+        LibBytes.clear(tokenSpends.spends[uint8(period)]);
+
+        emit PaySpendLimitRemoved(keyHash, token, period);
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Public View Functions
     ////////////////////////////////////////////////////////////////////////
@@ -533,6 +585,38 @@ abstract contract GuardedExecutor is ERC7821 {
         for (uint256 i; i < n; ++i) {
             address token = spends.tokens.at(i);
             TokenSpendStorage storage tokenSpends = spends.spends[token];
+            uint8[] memory periods = tokenSpends.periods.values();
+            for (uint256 j; j < periods.length; ++j) {
+                uint8 period = periods[j];
+                TokenPeriodSpend memory tokenPeriodSpend = _loadSpend(tokenSpends.spends[period]);
+                SpendInfo memory info;
+                info.period = SpendPeriod(period);
+                info.token = token;
+                info.limit = tokenPeriodSpend.limit;
+                info.lastUpdated = tokenPeriodSpend.lastUpdated;
+                info.spent = tokenPeriodSpend.spent;
+                info.current = startOfSpendPeriod(block.timestamp, SpendPeriod(period));
+                info.currentSpent = Math.ternary(info.lastUpdated < info.current, 0, info.spent);
+                uint256 pointer;
+                assembly ("memory-safe") {
+                    pointer := info // Use assembly to reinterpret cast.
+                }
+                a.p(pointer);
+            }
+        }
+        assembly ("memory-safe") {
+            results := mload(a)
+        }
+    }
+
+    /// @dev Returns an array containing information on all the payment spends for `keyHash`.
+    function paySpendInfos(bytes32 keyHash) public view virtual returns (SpendInfo[] memory results) {
+        SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
+        DynamicArrayLib.DynamicArray memory a;
+        uint256 n = spends.tokens.length();
+        for (uint256 i; i < n; ++i) {
+            address token = spends.tokens.at(i);
+            TokenSpendStorage storage tokenSpends = spends.paySpends[token];
             uint8[] memory periods = tokenSpends.periods.values();
             for (uint256 j; j < periods.length; ++j) {
                 uint8 period = periods[j];

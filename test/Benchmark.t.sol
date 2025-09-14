@@ -1742,7 +1742,13 @@ contract BenchmarkTest is BaseTest {
         d.d.setSpendLimit(
             k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
         );
+        d.d.setPaySpendLimit(
+            k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
+        );
         d.d.setSpendLimit(k.keyHash, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether);
+        d.d.setPaySpendLimit(
+            k.keyHash, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether
+        );
         vm.stopPrank();
 
         Orchestrator.Intent memory u;
