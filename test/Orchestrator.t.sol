@@ -74,6 +74,7 @@ contract OrchestratorTest is BaseTest {
         vm.deal(alice.eoa, 10 ether);
         vm.deal(bob.eoa, 10 ether);
         paymentToken.mint(alice.eoa, 50 ether);
+        paymentToken.mint(bob.eoa, 50 ether);
 
         bytes memory executionData =
             _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
@@ -88,11 +89,9 @@ contract OrchestratorTest is BaseTest {
         u.paymentAmount = 0.1 ether;
         u.paymentMaxAmount = 0.5 ether;
         u.combinedGas = 10000000;
-        u.signature = "";
-
         u.signature = _sig(alice, u);
 
-        assertEq(oc.execute(encodeIntent(u)), bytes4(keccak256("PaymentError()")));
+        assertEq(oc.execute(encodeIntent(u)), bytes4(keccak256("Unauthorized()")));
     }
 
     function testExecuteWithSecp256k1PassKey() public {
