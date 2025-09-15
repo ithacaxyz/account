@@ -55,7 +55,9 @@ jobs:
             --main snapshots-main.json \
             --pr snapshots-pr.json \
             --output comparison-report.md \
-            --json comparison-data.json
+            --json comparison-data.json \
+            --repo-url "https://github.com/${{ github.repository }}" \
+            --run-id "${{ github.run_id }}"
 
           # Generate visualization charts
           python3 .github/scripts/generate_charts.py \
