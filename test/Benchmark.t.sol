@@ -1792,7 +1792,7 @@ contract BenchmarkTest is BaseTest {
         u.signature = _sig(k, u);
 
         bytes[] memory encodedIntents = new bytes[](1);
-        encodedIntents[0] = abi.encode(u);
+        encodedIntents[0] = encodeIntent(u);
 
         oc.execute(encodedIntents);
         vm.snapshotGasLastCall("testERC20Transfer_IthacaAccountWithSpendLimits");

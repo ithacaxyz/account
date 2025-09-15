@@ -23,8 +23,9 @@ import {GuardedExecutor} from "../src/IthacaAccount.sol";
 import {IOrchestrator} from "../src/interfaces/IOrchestrator.sol";
 import {Simulator} from "../src/Simulator.sol";
 import {ICommon} from "../src/interfaces/ICommon.sol";
+import {IntentHelpers} from "../src/libraries/IntentHelpers.sol";
 
-contract BaseTest is SoladyTest {
+contract BaseTest is SoladyTest, IntentHelpers {
     using LibRLP for LibRLP.List;
 
     MockOrchestrator oc;
@@ -102,6 +103,8 @@ contract BaseTest is SoladyTest {
     }
 
     function computeDigest(Intent memory i) internal view returns (bytes32) {
+        bool isMultichain = i.nonce >> 240 == oc.MULTICHAIN_NONCE_PREFIX();
+
         bytes32 structHash = keccak256(
             abi.encode(
                 oc.INTENT_TYPEHASH(),
@@ -117,27 +120,22 @@ contract BaseTest is SoladyTest {
         );
 
         // Apply EIP712 domain separator
-        return i.nonce >> 240 == oc.MULTICHAIN_NONCE_PREFIX()
+        bytes32 result = i.nonce >> 240 == oc.MULTICHAIN_NONCE_PREFIX()
             ? oc.hashTypedDataSansChainId(structHash)
             : oc.hashTypedData(structHash);
+
+        return result;
     }
 
-    function encodeIntent(Intent memory i) internal view returns (bytes memory) {
-        console.log("=== Intent Encoding Parameters (in packed order) ===");
-        console.log("supportedAccountImplementation:", i.supportedAccountImplementation);
-        console.log("eoa:", i.eoa);
-        console.log("nonce:", i.nonce);
-        console.log("payer:", i.payer);
-        console.log("paymentToken:", i.paymentToken);
-        console.log("paymentMaxAmount:", i.paymentMaxAmount);
-        console.log("combinedGas:", i.combinedGas);
-        console.log("expiry:", i.expiry);
-        console.log("paymentAmount:", i.paymentAmount);
-        console.log("paymentRecipient:", i.paymentRecipient);
-        console.log("keyHash: (will be determined during signature verification)");
-        console.logBytes32(computeDigest(i));
-        console.log("=== End Intent Encoding Parameters ===");
+    function encodeIntent(Intent memory i, bool isStateOverride, uint256 combinedGasOverride)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodePacked(encodeIntent(i), isStateOverride, combinedGasOverride);
+    }
 
+    function encodeIntent(Intent memory i) internal pure returns (bytes memory) {
         bytes memory returnData = abi.encodePacked(
             i.supportedAccountImplementation,
             abi.encode(i.eoa), // pad the fields that go into 712 digest to 32b so we can do a calldatacopy
@@ -158,23 +156,6 @@ contract BaseTest is SoladyTest {
                 ? abi.encode(i.funder, i.funderSignature, i.encodedFundTransfers)
                 : bytes("");
 
-            console.log("=== Dynamic Data Section Logging ===");
-            console.log("execution data length:", i.executionData.length);
-            console.log("execution data:");
-            console.logBytes(i.executionData);
-
-            console.log("funder:", i.funder);
-            console.log("funder signature length:", i.funderSignature.length);
-            console.log("fund data bytes length:", fundDataBytes.length);
-            console.log("fund data bytes:");
-            console.logBytes(fundDataBytes);
-
-            console.log("encoded pre-calls length:", i.encodedPreCalls.length);
-            console.log("encoded pre-calls bytes length:", encodedPreCallsBytes.length);
-            console.log("encoded pre-calls bytes:");
-            console.logBytes(encodedPreCallsBytes);
-            console.log("=== End Dynamic Data Section ===");
-
             returnData = abi.encodePacked(
                 returnData,
                 uint256(i.executionData.length),
@@ -188,36 +169,15 @@ contract BaseTest is SoladyTest {
             );
         }
 
-        bytes memory settlerBytes =
-            i.settler != address(0) ? abi.encode(i.settler, i.settlerContext) : bytes("");
-
         if (i.nonce >> 240 == 0x6D76) {
+            bytes memory settlerBytes =
+                i.settler != address(0) ? abi.encode(i.settler, i.settlerContext) : bytes("");
+
             returnData = abi.encodePacked(returnData, uint256(settlerBytes.length), settlerBytes);
         }
 
-        console.log("=== Final Data Section Logging ===");
-        console.log("signature length:", i.signature.length);
-        console.log("signature:");
-        console.logBytes(i.signature);
-
-        console.log("settler:", i.settler);
-        console.log("settler context length:", i.settlerContext.length);
-        console.log("settler bytes length:", settlerBytes.length);
-        console.log("settler bytes:");
-        console.logBytes(settlerBytes);
-
-        console.log("payment signature length:", i.paymentSignature.length);
-        console.log("payment signature:");
-        console.logBytes(i.paymentSignature);
-        console.log("=== End Final Data Section ===");
-
         returnData =
-            abi.encodePacked(returnData, i.paymentSignature, uint256(i.paymentSignature.length));
-
-        console.log("=== Complete Encoded Intent ===");
-        console.log("Total encoded length:", returnData.length);
-        console.logBytes(returnData);
-        console.log("=== End Complete Encoded Intent ===");
+            abi.encodePacked(returnData, uint256(i.paymentSignature.length), i.paymentSignature);
         return returnData;
     }
 
@@ -281,8 +241,6 @@ contract BaseTest is SoladyTest {
     }
 
     function _eoaSig(uint256 privateKey, Intent memory i) internal view returns (bytes memory) {
-        console.log("in signing operation:");
-        console.logBytes32(computeDigest(i));
         return _eoaSig(privateKey, computeDigest(i));
     }
 
@@ -442,7 +400,7 @@ contract BaseTest is SoladyTest {
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (gUsed, gCombined) =
-            simulator.simulateV1Logs(address(oc), 0, 1, 11_000, 10_000, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), 0, 1, 11_000, 10_000, encodeIntent(i));
 
         // gExecute > (100k + combinedGas) * 64/63
         gExecute = Math.mulDiv(gCombined + 110_000, 64, 63);
@@ -477,7 +435,7 @@ contract BaseTest is SoladyTest {
                 p.paymentPerGas,
                 p.combinedGasIncrement,
                 p.combinedGasVerificationOffset,
-                abi.encode(p.u)
+                encodeIntent(p.u)
             );
             vm.revertToStateAndDelete(snapshot);
         }
@@ -623,7 +581,191 @@ contract BaseTest is SoladyTest {
     function _computeDigest(Intent memory m, uint256 chainId) internal returns (bytes32 digest) {
         uint256 currChain = block.chainid;
         vm.chainId(chainId);
+
         digest = computeDigest(m);
+
         vm.chainId(currChain);
+    }
+
+    uint256 ij = 0;
+
+    /// @dev Helper function to parse and print all fields from intent calldata
+    function checkIntent(bytes calldata intent) external {
+        ij++;
+
+        uint256 offset = 0;
+        uint256 nonce; // Need this outside scoped blocks for settler check
+
+        {
+            // Extract supportedAccountImplementation (20 bytes)
+            address supportedAccountImplementation;
+            assembly ("memory-safe") {
+                supportedAccountImplementation := shr(96, calldataload(add(intent.offset, offset)))
+            }
+            offset += 20;
+        }
+
+        {
+            // Extract eoa (32 bytes, padded)
+            address eoa;
+            assembly ("memory-safe") {
+                eoa := calldataload(add(intent.offset, offset))
+            }
+            offset += 32;
+        }
+
+        {
+            // Extract nonce (32 bytes)
+            assembly ("memory-safe") {
+                nonce := calldataload(add(intent.offset, offset))
+            }
+            offset += 32;
+        }
+
+        {
+            // Extract payer (32 bytes, padded)
+            address payer;
+            assembly ("memory-safe") {
+                payer := calldataload(add(intent.offset, offset))
+            }
+            offset += 32;
+        }
+
+        {
+            // Extract paymentToken (32 bytes, padded)
+            address paymentToken2;
+            assembly ("memory-safe") {
+                paymentToken2 := calldataload(add(intent.offset, offset))
+            }
+            offset += 32;
+        }
+
+        {
+            // Extract paymentMaxAmount (32 bytes)
+            uint256 paymentMaxAmount;
+            assembly ("memory-safe") {
+                paymentMaxAmount := calldataload(add(intent.offset, offset))
+            }
+            offset += 32;
+        }
+
+        {
+            // Extract combinedGas (32 bytes)
+            uint256 combinedGas;
+            assembly ("memory-safe") {
+                combinedGas := calldataload(add(intent.offset, offset))
+            }
+            offset += 32;
+        }
+
+        {
+            // Extract expiry (32 bytes)
+            uint256 expiry;
+            assembly ("memory-safe") {
+                expiry := calldataload(add(intent.offset, offset))
+            }
+            offset += 32;
+        }
+
+        {
+            // Extract paymentAmount (32 bytes)
+            uint256 paymentAmount;
+            assembly ("memory-safe") {
+                paymentAmount := calldataload(add(intent.offset, offset))
+            }
+            offset += 32;
+        }
+
+        {
+            // Extract paymentRecipient (20 bytes)
+            address paymentRecipient;
+            assembly ("memory-safe") {
+                paymentRecipient := shr(96, calldataload(add(intent.offset, offset)))
+            }
+            offset += 20;
+        }
+
+        {
+            // Extract executionData length and data
+            uint256 executionDataLength;
+            assembly ("memory-safe") {
+                executionDataLength := calldataload(add(intent.offset, offset))
+            }
+            offset += 32;
+
+            offset += executionDataLength;
+        }
+
+        {
+            // Extract fundData length and data
+            uint256 fundDataLength;
+            assembly ("memory-safe") {
+                fundDataLength := calldataload(add(intent.offset, offset))
+            }
+            offset += 32;
+
+            if (fundDataLength > 0) {
+                // Parse fundData if present
+                bytes calldata fundData = intent[offset:offset + fundDataLength];
+                address funder;
+                assembly ("memory-safe") {
+                    funder := shr(96, calldataload(fundData.offset))
+                }
+            }
+            offset += fundDataLength;
+        }
+
+        {
+            // Extract encodedPreCalls length and data
+            uint256 preCallsLength;
+            assembly ("memory-safe") {
+                preCallsLength := calldataload(add(intent.offset, offset))
+            }
+            offset += 32;
+
+            if (preCallsLength > 0) {}
+            offset += preCallsLength;
+        }
+
+        {
+            // Extract signature length and data
+            uint256 signatureLength;
+            assembly ("memory-safe") {
+                signatureLength := calldataload(add(intent.offset, offset))
+            }
+            offset += 32;
+
+            offset += signatureLength;
+        }
+
+        {
+            // Check if we have settler data (for merkle verification nonce)
+            if (nonce >> 240 == 0x6D76 && offset < intent.length) {
+                uint256 settlerDataLength;
+                assembly ("memory-safe") {
+                    settlerDataLength := calldataload(add(intent.offset, offset))
+                }
+                offset += 32;
+
+                if (settlerDataLength > 0) {
+                    // Parse settler data
+                    address settler;
+                    assembly ("memory-safe") {
+                        settler := shr(96, calldataload(add(intent.offset, offset)))
+                    }
+                }
+                offset += settlerDataLength;
+            }
+        }
+
+        {
+            // Extract paymentSignature (remaining data except last 32 bytes)
+            uint256 paymentSignatureLength;
+            assembly ("memory-safe") {
+                paymentSignatureLength := calldataload(sub(add(intent.offset, intent.length), 0x20))
+            }
+
+            if (paymentSignatureLength > 0) {}
+        }
     }
 }

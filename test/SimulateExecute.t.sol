@@ -74,19 +74,19 @@ contract SimulateExecuteTest is BaseTest {
         // If the caller does not have max balance, then the simulation should revert.
         vm.expectRevert(bytes4(keccak256("StateOverrideError()")));
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(oc), 0, 1, 11_000, 10_000, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), 0, 1, 11_000, 10_000, encodeIntent(i));
 
         vm.expectRevert(bytes4(keccak256("StateOverrideError()")));
-        oc.simulateExecute(true, type(uint256).max, abi.encode(i));
+        oc.simulateExecute(encodeIntent(i, true, type(uint256).max));
 
         vm.expectPartialRevert(bytes4(keccak256("SimulationPassed(uint256)")));
-        oc.simulateExecute(false, type(uint256).max, abi.encode(i));
+        oc.simulateExecute(encodeIntent(i, false, type(uint256).max));
 
         uint256 snapshot = vm.snapshotState();
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(oc), 2, 1e11, 11_000, 0, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), 2, 1e11, 11_000, 0, encodeIntent(i));
 
         vm.revertToStateAndDelete(snapshot);
         i.combinedGas = t.gCombined;
@@ -96,11 +96,11 @@ contract SimulateExecuteTest is BaseTest {
         i.signature = _sig(d, i);
 
         vm.expectRevert(bytes4(keccak256("InsufficientGas()")));
-        oc.execute{gas: t.gExecute}(abi.encode(i));
+        oc.execute{gas: t.gExecute}(encodeIntent(i));
 
         t.gExecute = Math.mulDiv(t.gCombined + 110_000, 64, 63);
 
-        assertEq(oc.execute{gas: t.gExecute}(abi.encode(i)), 0);
+        assertEq(oc.execute{gas: t.gExecute}(encodeIntent(i)), 0);
     }
 
     function testSimulateExecuteNoRevertUnderfundedReverts() public {
@@ -141,11 +141,11 @@ contract SimulateExecuteTest is BaseTest {
         }
 
         vm.expectRevert(bytes4(keccak256("PaymentError()")));
-        simulator.simulateV1Logs(address(oc), 0, 1, 11_000, 0, abi.encode(i));
+        simulator.simulateV1Logs(address(oc), 0, 1, 11_000, 0, encodeIntent(i));
 
         deal(i.paymentToken, address(i.eoa), 0x112233112233112233112233);
         vm.expectRevert(bytes4(keccak256("PaymentError()")));
-        simulator.simulateCombinedGas(address(oc), 0, 1, 11_000, abi.encode(i));
+        simulator.simulateCombinedGas(address(oc), 0, 1, 11_000, encodeIntent(i));
     }
 
     function testSimulateExecuteNoRevert() public {
@@ -190,7 +190,7 @@ contract SimulateExecuteTest is BaseTest {
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(oc), 2, 1e11, 11_000, 0, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), 2, 1e11, 11_000, 0, encodeIntent(i));
 
         vm.revertToStateAndDelete(snapshot);
 
@@ -200,7 +200,7 @@ contract SimulateExecuteTest is BaseTest {
 
         i.signature = _sig(d, i);
 
-        assertEq(oc.execute{gas: t.gExecute}(abi.encode(i)), 0);
+        assertEq(oc.execute{gas: t.gExecute}(encodeIntent(i)), 0);
         assertEq(gasBurner.randomness(), t.randomness);
     }
 
@@ -246,7 +246,7 @@ contract SimulateExecuteTest is BaseTest {
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(oc), 2, 1e11, 10_800, 0, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), 2, 1e11, 10_800, 0, encodeIntent(i));
 
         vm.revertToStateAndDelete(snapshot);
 
@@ -256,7 +256,7 @@ contract SimulateExecuteTest is BaseTest {
 
         i.signature = _sig(d, i);
 
-        assertEq(oc.execute{gas: t.gExecute}(abi.encode(i)), 0);
+        assertEq(oc.execute{gas: t.gExecute}(encodeIntent(i)), 0);
         assertEq(gasBurner.randomness(), t.randomness);
     }
 
@@ -306,7 +306,7 @@ contract SimulateExecuteTest is BaseTest {
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
         (t.gUsed, t.gCombined) =
-            simulator.simulateV1Logs(address(oc), 2, 1e11, 12_000, 10_000, abi.encode(i));
+            simulator.simulateV1Logs(address(oc), 2, 1e11, 12_000, 10_000, encodeIntent(i));
 
         vm.revertToStateAndDelete(snapshot);
 
@@ -315,7 +315,7 @@ contract SimulateExecuteTest is BaseTest {
 
         i.signature = _sig(k, i);
 
-        assertEq(oc.execute{gas: t.gExecute}(abi.encode(i)), 0);
+        assertEq(oc.execute{gas: t.gExecute}(encodeIntent(i)), 0);
         assertEq(gasBurner.randomness(), t.randomness);
     }
 }

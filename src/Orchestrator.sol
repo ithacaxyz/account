@@ -243,11 +243,16 @@ contract Orchestrator is
     /// But the balance of tx.origin has to be greater than or equal to type(uint192).max, to prove that a state override has been made offchain,
     /// and this is not an onchain call. This mode has been added so that receipt logs can be generated for `eth_simulateV1`
     /// @return gasUsed The amount of gas used by the execution. (Only returned if `isStateOverride` is true)
-    function simulateExecute(
-        bool isStateOverride,
-        uint256 combinedGasOverride,
-        bytes calldata encodedIntent
-    ) external payable returns (uint256) {
+    function simulateExecute(bytes calldata encodedIntent) external payable returns (uint256) {
+        bool isStateOverride;
+        uint256 combinedGasOverride;
+        assembly ("memory-safe") {
+            let endOfBytes := add(encodedIntent.offset, encodedIntent.length)
+            isStateOverride := calldataload(sub(endOfBytes, 0x40))
+            combinedGasOverride := calldataload(sub(endOfBytes, 0x20))
+            encodedIntent.length := sub(encodedIntent.length, 0x40)
+        }
+
         // If Simulation Fails, then it will revert here.
         (uint256 gUsed, bytes4 err) =
             _execute(encodedIntent, combinedGasOverride, _SIMULATION_MODE_FLAG);
@@ -301,20 +306,22 @@ contract Orchestrator is
 
         address eoa = _getEoa();
 
-        if (_getPaymentAmount() > _getPaymentMaxAmount()) {
-            err = PaymentError.selector;
+        {
+            if (_getPaymentAmount() > _getPaymentMaxAmount()) {
+                err = PaymentError.selector;
 
-            if (flags == _SIMULATION_MODE_FLAG) {
-                revert PaymentError();
+                if (flags == _SIMULATION_MODE_FLAG) {
+                    revert PaymentError();
+                }
             }
         }
-
         unchecked {
             // Check if there's sufficient gas left for the gas-limited self calls
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
             uint256 gasAvailable = (gasleft() * 63) >> 6;
             uint256 gasRequired = Math.saturatingAdd(g, _INNER_GAS_OVERHEAD);
+
             if (gasAvailable < gasRequired) {
                 if (flags != _SIMULATION_MODE_FLAG) {
                     revert InsufficientGas();
@@ -322,13 +329,15 @@ contract Orchestrator is
             }
         }
 
-        address accountImpl = _getSupportedAccountImplementation();
-        if (accountImpl != address(0)) {
-            address currentImpl = accountImplementationOf(eoa);
-            if (currentImpl != accountImpl) {
-                err = UnsupportedAccountImplementation.selector;
-                if (flags == _SIMULATION_MODE_FLAG) {
-                    revert UnsupportedAccountImplementation();
+        {
+            address accountImpl = _getSupportedAccountImplementation();
+            if (accountImpl != address(0)) {
+                address currentImpl = accountImplementationOf(eoa);
+                if (currentImpl != accountImpl) {
+                    err = UnsupportedAccountImplementation.selector;
+                    if (flags == _SIMULATION_MODE_FLAG) {
+                        revert UnsupportedAccountImplementation();
+                    }
                 }
             }
         }
@@ -344,9 +353,8 @@ contract Orchestrator is
                 // Copy the encoded user op to the memory to be ready to pass to the self call.
                 // We skip adding the calldata offset and length since we don't read that, but
                 // add `flags` in the first slot.
-                calldatacopy(
-                    add(m, 0x80), add(encodedIntent.offset, 0x20), sub(encodedIntent.length, 0x20)
-                )
+                calldatacopy(add(m, 0x60), encodedIntent.offset, encodedIntent.length)
+
                 mstore(0x00, 0) // Zeroize the return slot.
 
                 // To prevent griefing, we need to do a non-reverting gas-limited self call.
@@ -424,14 +432,15 @@ contract Orchestrator is
         CalldataPointer memory ptr;
         bytes32 digest = _computeDigest(ptr);
 
-        bytes calldata fundData = _getNextBytes(ptr);
+        {
+            bytes calldata fundData = _getNextBytes(ptr);
 
-        if (fundData.length > 0) {
-            (address funder, bytes calldata sig, bytes[] calldata transfers) =
-                _parseFundData(fundData);
-            _fund(_getEoa(), funder, digest, transfers, sig);
-        } else {}
-
+            if (fundData.length > 0) {
+                (address funder, bytes calldata sig, bytes[] calldata transfers) =
+                    _parseFundData(fundData);
+                _fund(_getEoa(), funder, digest, transfers, sig);
+            }
+        }
         // The chicken and egg problem:
         // A off-chain simulation of a successful Intent may not guarantee on-chain success.
         // The state may change in the window between simulation and actual on-chain execution.
@@ -447,11 +456,12 @@ contract Orchestrator is
         // simulation, and suggests banning users that intentionally grief the simulation.
 
         // Handle the sub Intents after initialize (if any), and before the `_verify`.
-        bytes calldata preCallsBytes = _getNextBytes(ptr);
-        if (preCallsBytes.length > 0) {
-            _handlePreCalls(eoa, flags, preCallsBytes);
-        } else {}
-
+        {
+            bytes calldata preCallsBytes = _getNextBytes(ptr);
+            if (preCallsBytes.length > 0) {
+                _handlePreCalls(eoa, flags, preCallsBytes);
+            }
+        }
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the account logic.
         // Off-chain simulation of `_verify` should suffice, provided that the eoa's
@@ -467,12 +477,13 @@ contract Orchestrator is
             if (nonce >> 240 == MERKLE_VERIFICATION) {
                 // For multi chain intents, we have to verify using merkle sigs.
                 (isValid, keyHash) = _verifyMerkleSig(digest, eoa, signature);
+
                 bytes calldata settlerData = _getNextBytes(ptr);
 
                 // If this is an output intent, then send the digest as the settlementId
                 // on all input chains.
                 if (settlerData.length > 0) {
-                    // Output intent - first 20 bytes of settler data is the settler addr
+                    // Output intent - first 32 bytes of settler data contains the settler addr
                     ISettler(address(bytes20(bytes32(settlerData[:32])))).send(
                         digest, settlerData[32:]
                     );
@@ -499,6 +510,7 @@ contract Orchestrator is
         // off-chain simulation and on-chain execution.
         {
             uint256 paymentAmount = _getPaymentAmount();
+            bytes calldata paymentSignature = _getNextBytes(ptr);
             if (paymentAmount != 0) {
                 _pay(
                     paymentAmount,
@@ -508,10 +520,11 @@ contract Orchestrator is
                     _getPayer(),
                     _getPaymentToken(),
                     _getPaymentRecipient(),
-                    _getPaymentSignature()
+                    paymentSignature
                 );
-            } else {}
+            }
         }
+
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
         // We expect that the account supports ERC7821
         // (an extension of ERC7579 tailored for 7702 accounts).
@@ -776,6 +789,7 @@ contract Orchestrator is
     /// @dev Computes the EIP712 digest for the PreCall.
     function _computeDigest(SignedCall calldata p) internal view virtual returns (bytes32) {
         bool isMultichain = p.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
+
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
         bytes32[] memory f = EfficientHashLib.malloc(4);
         f.set(0, SIGNED_CALL_TYPEHASH);
@@ -789,6 +803,7 @@ contract Orchestrator is
     /// @dev Computes the EIP712 digest for the Intent and returns the offset after.
     function _computeDigest(CalldataPointer memory p) internal view virtual returns (bytes32) {
         bytes32 digest = INTENT_TYPEHASH;
+
         assembly ("memory-safe") {
             let fmp := mload(0x40)
             mstore(fmp, digest)
