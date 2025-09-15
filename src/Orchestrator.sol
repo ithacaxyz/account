@@ -306,15 +306,14 @@ contract Orchestrator is
 
         address eoa = _getEoa();
 
-        {
-            if (_getPaymentAmount() > _getPaymentMaxAmount()) {
-                err = PaymentError.selector;
+        if (_getPaymentAmount() > _getPaymentMaxAmount()) {
+            err = PaymentError.selector;
 
-                if (flags == _SIMULATION_MODE_FLAG) {
-                    revert PaymentError();
-                }
+            if (flags == _SIMULATION_MODE_FLAG) {
+                revert PaymentError();
             }
         }
+
         unchecked {
             // Check if there's sufficient gas left for the gas-limited self calls
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
@@ -329,16 +328,27 @@ contract Orchestrator is
             }
         }
 
-        {
-            address accountImpl = _getSupportedAccountImplementation();
-            if (accountImpl != address(0)) {
-                address currentImpl = accountImplementationOf(eoa);
-                if (currentImpl != accountImpl) {
-                    err = UnsupportedAccountImplementation.selector;
-                    if (flags == _SIMULATION_MODE_FLAG) {
-                        revert UnsupportedAccountImplementation();
-                    }
+        address accountImpl = _getSupportedAccountImplementation();
+        if (accountImpl != address(0)) {
+            address currentImpl = accountImplementationOf(eoa);
+            if (currentImpl != accountImpl) {
+                err = UnsupportedAccountImplementation.selector;
+                if (flags == _SIMULATION_MODE_FLAG) {
+                    revert UnsupportedAccountImplementation();
                 }
+            }
+        }
+
+        address payer = Math.coalesce(_getPayer(), eoa);
+
+        // Early skip the entire pay-verify-call workflow if the payer lacks tokens,
+        // so that less gas is wasted when the Intent fails.
+        // For multi chain mode, we skip this check, as the funding happens inside the self call.
+        if (TokenTransferLib.balanceOf(_getPaymentToken(), payer) < _getPaymentAmount()) {
+            err = PaymentError.selector;
+
+            if (flags == _SIMULATION_MODE_FLAG) {
+                revert PaymentError();
             }
         }
 
