@@ -1,0 +1,125 @@
+name: Benchmark Comparison
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  benchmark:
+    name: Run Benchmarks and Compare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Build contracts
+        run: forge build
+
+      - name: Run PR benchmarks
+        run: |
+          forge snapshot --match-contract Benchmark --snap snapshots-pr.json
+          echo "PR_SNAPSHOT=$(cat snapshots-pr.json)" >> $GITHUB_ENV
+
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main-branch
+          submodules: true
+
+      - name: Run main benchmarks
+        run: |
+          cd main-branch
+          forge build
+          forge snapshot --match-contract Benchmark --snap ../snapshots-main.json
+          cd ..
+          echo "MAIN_SNAPSHOT=$(cat snapshots-main.json)" >> $GITHUB_ENV
+
+      - name: Generate comparison report
+        id: comparison
+        run: |
+          # Run comparison script
+          python3 .github/scripts/benchmark_comparison.py \
+            --main snapshots-main.json \
+            --pr snapshots-pr.json \
+            --output comparison-report.md \
+            --json comparison-data.json
+
+          # Generate visualization charts
+          python3 .github/scripts/generate_charts.py \
+            --data comparison-data.json \
+            --output-dir charts
+
+          # Save outputs
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat comparison-report.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Comment PR with results
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('comparison-report.md', 'utf8');
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('## 📊 Benchmark Comparison Report')
+            );
+
+            const commentBody = report;
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+
+      - name: Upload comparison artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-comparison
+          path: |
+            snapshots-main.json
+            snapshots-pr.json
+            comparison-report.md
+            comparison-data.json
+            charts/*.svg
+
+      - name: Check for gas regressions
+        run: |
+          python3 .github/scripts/check_regressions.py \
+            --data comparison-data.json \
+            --threshold 5
