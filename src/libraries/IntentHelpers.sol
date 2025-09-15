@@ -24,8 +24,8 @@ import {ICommon} from "../interfaces/ICommon.sol";
  * bytes signature;
  * uint256 settlerData.length
  * bytes settlerData; // abi.encode(settler, settlerContext). To use settler, nonce needs to have `MERKLE_VERIFICATION` prefix
+ * uint256 paymentSignature.length
  * bytes paymentSignature;
- * uint256 paymentSignature.length // Instead of prefixed length for paymentSignature, we do a suffix length
  */
 contract IntentHelpers {
     uint256 internal constant _SUPPORTED_ACCOUNT_IMPLEMENTATION_OFFSET = 68;
@@ -112,13 +112,6 @@ contract IntentHelpers {
         assembly ("memory-safe") {
             data.length := calldataload(_EXECUTION_DATA_OFFSET)
             data.offset := add(_EXECUTION_DATA_OFFSET, 0x20)
-        }
-    }
-
-    function _getPaymentSignature() internal pure returns (bytes calldata b) {
-        assembly ("memory-safe") {
-            b.length := calldataload(sub(calldatasize(), 0x20))
-            b.offset := sub(calldatasize(), b.length)
         }
     }
 
