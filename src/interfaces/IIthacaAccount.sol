@@ -6,10 +6,12 @@ import {ICommon} from "../interfaces/ICommon.sol";
 /// @title IIthacaAccount
 /// @notice Interface for the Account contract
 interface IIthacaAccount is ICommon {
-    /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
-    /// @param keyHash The hash of the key used to authorize the operation
-    /// @param encodedIntent The encoded user operation
-    /// @param intentDigest The digest of the user operation
+    /// @dev Pays `paymentAmount` of the Intent's `paymentToken` to the Intent's `paymentRecipient`.
+    /// `paymentToken` and `paymentRecipient` are read from `encodedIntent` (ABI-encoded `ICommon.Intent`).
+    /// @param paymentAmount The amount to pay.
+    /// @param keyHash The hash of the key used to authorize the operation.
+    /// @param intentDigest The digest of the user operation.
+    /// @param encodedIntent ABI-encoded `ICommon.Intent`.
     function pay(
         uint256 paymentAmount,
         bytes32 keyHash,
