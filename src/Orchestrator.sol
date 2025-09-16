@@ -26,7 +26,7 @@ import {IntentHelpers} from "./libraries/IntentHelpers.sol";
 /// @notice Enables atomic verification, gas compensation and execution across eoas.
 /// @dev
 /// The Orchestrator allows relayers to submit payloads on one or more eoas,
-/// and get compensated for the gas spenst in an atomic transaction.
+/// and get compensated for the gas spent in an atomic transaction.
 /// It serves the following purposes:
 /// - Facilitate fair gas compensation to the relayer.
 ///   This means capping the amount of gas consumed,
