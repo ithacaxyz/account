@@ -135,12 +135,22 @@ contract IntentHelpers {
         pure
         returns (address funder, bytes calldata sig, bytes[] calldata transfers)
     {
-        funder = address(bytes20(bytes32(data[:32])));
+        /**
+         * fundData = abi.encode(funder, funderSignature, encodedFundTransfers)
+         * This gives a calldata layout of:
+         * 0x00: funder (20 bytes, left padded to 32 bytes)
+         * 0x20: offset to funderSignature (32 bytes) - we skip this and assume its location at 0x60
+         * 0x40: offset to encodedFundTransfers (32 bytes) - we skip this and assume its location at 0x60 + funderSignature.length + 0x20
+         * 0x60: funderSignature length (32 bytes)
+         */
         assembly ("memory-safe") {
-            sig.offset := add(data.offset, 0x20)
-            sig.length := calldataload(add(data.offset, 0x20))
-            transfers.offset := add(add(sig.offset, sig.length), 0x20)
-            transfers.length := calldataload(add(sig.offset, sig.length))
+            funder := calldataload(data.offset)
+            sig.offset := add(data.offset, 0x80)
+            sig.length := calldataload(add(data.offset, 0x60))
+            // transfers array starts after sig, but needs to account for padding
+            let sigLenWords := mul(div(add(sig.length, 31), 32), 32)
+            transfers.length := calldataload(add(sig.offset, sigLenWords))
+            transfers.offset := add(add(sig.offset, sigLenWords), 0x20)
         }
 
         // update data offset to after the transfers array

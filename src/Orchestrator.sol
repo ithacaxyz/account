@@ -21,6 +21,7 @@ import {IFunder} from "./interfaces/IFunder.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 import {IntentHelpers} from "./libraries/IntentHelpers.sol";
+import {console} from "forge-std/console.sol";
 
 /// @title Orchestrator
 /// @notice Enables atomic verification, gas compensation and execution across eoas.
@@ -301,10 +302,13 @@ contract Orchestrator is
         virtual
         returns (uint256 gUsed, bytes4 err)
     {
+        console.log("=== _execute called ===");
         uint256 g = Math.coalesce(uint96(combinedGasOverride), _getCombinedGas());
+        console.log("Combined gas:", g);
         uint256 gStart = gasleft();
 
         address eoa = _getEoa();
+        console.log("EOA address:", eoa);
 
         if (_getPaymentAmount() > _getPaymentMaxAmount()) {
             err = PaymentError.selector;
@@ -352,6 +356,12 @@ contract Orchestrator is
             }
         }
 
+        console.log("About to perform self-call verification");
+        console.log("Payment amount:", _getPaymentAmount());
+        console.log("Payment max amount:", _getPaymentMaxAmount());
+        console.log("Payment token:", _getPaymentToken());
+        console.log("Payer:", payer);
+
         bool selfCallSuccess;
         // We'll use assembly for frequently used call related stuff to save massive memory gas.
         assembly ("memory-safe") {
@@ -374,23 +384,29 @@ contract Orchestrator is
                 selfCallSuccess :=
                     call(g, address(), 0, add(m, 0x1c), add(encodedIntent.length, 0x44), 0x00, 0x20)
                 err := mload(0x00) // The self call will do another self call to execute.
-
-                if iszero(selfCallSuccess) {
-                    // If it is a simulation, we simply revert with the full error.
-                    if eq(flags, _SIMULATION_MODE_FLAG) {
-                        returndatacopy(mload(0x40), 0x00, returndatasize())
-                        revert(mload(0x40), returndatasize())
-                    }
-
-                    // If we don't get an error selector, then we set this one.
-                    if iszero(err) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
+            }
+        }
+        console.log("Self-call completed, success:", selfCallSuccess);
+        console.log("Error code from self-call:", uint256(bytes32(err)));
+        assembly ("memory-safe") {
+            if iszero(selfCallSuccess) {
+                // If it is a simulation, we simply revert with the full error.
+                if eq(flags, _SIMULATION_MODE_FLAG) {
+                    returndatacopy(mload(0x40), 0x00, returndatasize())
+                    revert(mload(0x40), returndatasize())
                 }
+
+                // If we don't get an error selector, then we set this one.
+                if iszero(err) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
             }
         }
 
         emit IntentExecuted(_getEoa(), _getNonce(), selfCallSuccess, err);
         if (selfCallSuccess) {
             gUsed = Math.rawSub(gStart, gasleft());
+            console.log("Self-call successful, gas used:", gUsed);
+        } else {
+            console.log("Self-call FAILED");
         }
     }
 
@@ -419,21 +435,27 @@ contract Orchestrator is
     /// This function reverts if the PREP initialization or the Intent validation fails.
     /// This is to prevent incorrect compensation (the Intent's signature defines what is correct).
     function selfCallPayVerifyCall537021665() public payable {
+        console.log("=== selfCallPayVerifyCall537021665 called ===");
         require(msg.sender == address(this));
 
         uint256 flags;
         assembly ("memory-safe") {
             flags := calldataload(0x04)
         }
+        console.log("Flags:", flags);
 
         // Check if intent has expired (only if expiry is set)
         // If expiry timestamp is set to 0, then expiry is considered to be infinite.
         {
             uint256 expiry = _getExpiry();
+            console.log("Intent expiry:", expiry);
+            console.log("Current timestamp:", block.timestamp);
             if (expiry != 0 && block.timestamp > expiry) {
+                console.log("Intent EXPIRED!");
                 revert IntentExpired();
             }
         }
+        console.log("Expiry check passed");
 
         address eoa = _getEoa();
 
@@ -441,16 +463,25 @@ contract Orchestrator is
         // Using memory might be slightly less efficient, but lets us modify in-place, resulting in cleaner top-level code.
         CalldataPointer memory ptr;
         bytes32 digest = _computeDigest(ptr);
+        console.log("Digest computed");
 
         {
             bytes calldata fundData = _getNextBytes(ptr);
+            console.logBytes(fundData);
 
             if (fundData.length > 0) {
                 (address funder, bytes calldata sig, bytes[] calldata transfers) =
                     _parseFundData(fundData);
+                console.logAddress(funder);
+                console.logBytes(sig);
+                console.log("Number of transfers:", transfers.length);
+                for (uint256 i; i < transfers.length; ++i) {
+                    console.logBytes(transfers[i]);
+                }
                 _fund(_getEoa(), funder, digest, transfers, sig);
             }
         }
+        console.log("Funding (if any) handled");
         // The chicken and egg problem:
         // A off-chain simulation of a successful Intent may not guarantee on-chain success.
         // The state may change in the window between simulation and actual on-chain execution.
@@ -472,6 +503,7 @@ contract Orchestrator is
                 _handlePreCalls(eoa, flags, preCallsBytes);
             }
         }
+        console.log("Pre-calls (if any) handled");
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the account logic.
         // Off-chain simulation of `_verify` should suffice, provided that the eoa's
@@ -489,15 +521,18 @@ contract Orchestrator is
                 (isValid, keyHash) = _verifyMerkleSig(digest, eoa, signature);
 
                 bytes calldata settlerData = _getNextBytes(ptr);
-
+                console.log("test merkle verification");
                 // If this is an output intent, then send the digest as the settlementId
                 // on all input chains.
                 if (settlerData.length > 0) {
-                    // Output intent - first 32 bytes of settler data contains the settler addr
-                    ISettler(address(bytes20(bytes32(settlerData[:32])))).send(
-                        digest, settlerData[32:]
+                    console.logBytes(settlerData);
+                    // Output intent - first 32 bytes of settler data contains the settler address
+                    // Then, it contains 2 offsets then the real data
+                    ISettler(address(uint160(uint256(bytes32(settlerData[:32]))))).send(
+                        digest, settlerData[96:]
                     );
                 }
+                console.log("test merkle verification done");
             } else {
                 (isValid, keyHash) = _verify(digest, eoa, signature);
             }
@@ -512,6 +547,7 @@ contract Orchestrator is
 
             _checkAndIncrementNonce(eoa, nonce);
         }
+        console.log("Signature verified, nonce checked and incremented");
 
         // Payment
         // If `_pay` fails, just revert.
@@ -534,6 +570,7 @@ contract Orchestrator is
                 );
             }
         }
+        console.log("Payment (if any) handled");
 
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
         // We expect that the account supports ERC7821
@@ -641,11 +678,18 @@ contract Orchestrator is
         view
         returns (bool isValid, bytes32 keyHash)
     {
+        console.log("=== _verifyMerkleSig called ===");
+        console.log("Digest:", uint256(digest));
+        console.log("EOA:", eoa);
         (bytes32[] memory proof, bytes32 root, bytes memory rootSig) =
             abi.decode(signature, (bytes32[], bytes32, bytes));
+        console.log("Root:", uint256(root));
 
-        if (MerkleProofLib.verify(proof, root, digest)) {
+        bool merkleValid = MerkleProofLib.verify(proof, root, digest);
+        console.log("Merkle proof valid:", merkleValid);
+        if (merkleValid) {
             (isValid, keyHash) = IIthacaAccount(eoa).unwrapAndValidateSignature(root, rootSig);
+            console.log("Signature valid:", isValid);
 
             return (isValid, keyHash);
         }
