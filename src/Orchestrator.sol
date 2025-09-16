@@ -437,8 +437,10 @@ contract Orchestrator is
 
         address eoa = _getEoa();
 
-        // Start a calldata pointer, each operation points the calldata pointer to the next dynamic bytes.
-        // Using memory might be slightly less efficient, but lets us modify in-place, resulting in cleaner top-level code.
+        // Start a calldata pointer to traverse all the inner dynamic bytes within. Every time we get the next bytes,
+        // the pointer is advanced. Using memory might be less efficient than calldata directly, but calldata values
+        //are pass-by-reference so we cannot modify the offset within a helper function. A memory pointer results in
+        // cleaner top-level code.
         CalldataPointer memory ptr;
         bytes32 digest = _computeDigest(ptr);
 

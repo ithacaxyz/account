@@ -1150,7 +1150,6 @@ contract OrchestratorTest is BaseTest {
             assertEq(t.d.d.getNonce(0), u.nonce);
             assertEq(_balanceOf(address(0), address(0xabcd)), 0);
         } else {
-            MockOrchestrator(oc).checkIntent(encodeIntent(u));
             assertEq(oc.execute(encodeIntent(u)), 0);
             assertEq(t.d.d.getNonce(0), u.nonce + 1);
             assertEq(_balanceOf(address(0), address(0xabcd)), 1 ether);

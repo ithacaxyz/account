@@ -135,14 +135,13 @@ contract IntentHelpers {
         pure
         returns (address funder, bytes calldata sig, bytes[] calldata transfers)
     {
-        /**
-         * fundData = abi.encode(funder, funderSignature, encodedFundTransfers)
-         * This gives a calldata layout of:
-         * 0x00: funder (20 bytes, left padded to 32 bytes)
-         * 0x20: offset to funderSignature (32 bytes) - we skip this and assume its location at 0x60
-         * 0x40: offset to encodedFundTransfers (32 bytes) - we skip this and assume its location at 0x60 + funderSignature.length + 0x20
-         * 0x60: funderSignature length (32 bytes)
-         */
+        // fundData = abi.encode(funder, funderSignature, encodedFundTransfers)
+        // This gives a calldata layout of:
+        // 0x00: funder (20 bytes, left padded to 32 bytes)
+        // 0x20: offset to funderSignature (32 bytes) - we skip this and assume its starts at 0x60
+        // 0x40: offset to encodedFundTransfers (32 bytes) - we skip this and assume it starts at 0x60+funderSignature.length+0x20
+        // 0x60: funderSignature length (32 bytes)
+        // ...
         assembly ("memory-safe") {
             funder := calldataload(data.offset)
             sig.offset := add(data.offset, 0x80)
