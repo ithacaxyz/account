@@ -62,6 +62,7 @@ contract Simulator is IntentHelpers {
     ) internal pure {
         uint256 paymentAmount = Math.fullMulDiv(gas, paymentPerGas, 10 ** paymentPerGasPrecision);
 
+        // 36 because we don't have the calldata offset, or the function selector
         uint256 paymentOffset = _PAYMENT_AMOUNT_OFFSET - 36;
         uint256 paymentMaxOffset = _PAYMENT_MAX_AMOUNT_OFFSET - 36;
         assembly ("memory-safe") {
@@ -194,7 +195,7 @@ contract Simulator is IntentHelpers {
 
         bytes memory memoryIntent = calldataIntent;
 
-        // Update combinedGas using assembly - offset 248 - 68 + 32
+        // 36 because we don't have the calldata offset, or the function selector
         uint256 offset = _COMBINED_GAS_OFFSET - 36;
         assembly ("memory-safe") {
             let currentCombinedGas := mload(add(memoryIntent, offset))
@@ -270,7 +271,7 @@ contract Simulator is IntentHelpers {
 
         _updatePaymentAmounts(encodedIntentCopy, combinedGas, paymentPerGasPrecision, paymentPerGas);
 
-        // Update combinedGas in the bytes using assembly
+        // 36 because we don't have the calldata offset, or the function selector
         uint256 offset = _COMBINED_GAS_OFFSET - 36;
         assembly ("memory-safe") {
             mstore(add(encodedIntentCopy, offset), combinedGas)
