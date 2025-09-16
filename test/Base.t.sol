@@ -581,7 +581,6 @@ contract BaseTest is SoladyTest, IntentHelpers {
     function _computeDigest(Intent memory m, uint256 chainId) internal returns (bytes32 digest) {
         uint256 currChain = block.chainid;
         vm.chainId(chainId);
-
         digest = computeDigest(m);
 
         vm.chainId(currChain);
