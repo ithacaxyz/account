@@ -3,33 +3,36 @@ pragma solidity ^0.8.23;
 
 import {ICommon} from "../interfaces/ICommon.sol";
 
-/**
- * address supportedAccountImplementation;
- * address eoa;
- * uint256 nonce;
- * address payer;
- * address paymentToken;
- * uint256 paymentMaxAmount;
- * uint256 combinedGas;
- * uint256 expiry;
- * uint256 paymentAmount;
- * address paymentRecipient;
- * uint256 executionData.length
- * bytes executionData;
- * uint256 fundData.length
- * bytes fundData; // abi.encode(funder, funderSignature, encodedFundTransfers)
- * uint256 encodedPreCalls.length
- * bytes encodedPreCalls; // abi.encode(bytes[])
- * uint256 signature.length
- * bytes signature;
- * uint256 settlerData.length
- * bytes settlerData; // abi.encode(settler, settlerContext). To use settler, nonce needs to have `MERKLE_VERIFICATION` prefix
- * uint256 paymentSignature.length
- * bytes paymentSignature;
- */
 contract IntentHelpers {
+    /**
+     * The intent's layout in calldata:
+     * bytes4 fnSel // [0:4]
+     * uint256 offset; // [4:36]
+     * uint256 length; // [36:68]
+     * address supportedAccountImplementation;
+     * address eoa;
+     * uint256 nonce;
+     * address payer;
+     * address paymentToken;
+     * uint256 paymentMaxAmount;
+     * uint256 combinedGas;
+     * uint256 expiry;
+     * uint256 paymentAmount;
+     * address paymentRecipient;
+     * uint256 executionData.length
+     * bytes executionData;
+     * uint256 fundData.length
+     * bytes fundData; // abi.encode(funder, funderSignature, encodedFundTransfers)
+     * uint256 encodedPreCalls.length
+     * bytes encodedPreCalls; // abi.encode(bytes[])
+     * uint256 signature.length
+     * bytes signature;
+     * uint256 settlerData.length
+     * bytes settlerData; // abi.encode(settler, settlerContext). To use settler, nonce needs to have `MERKLE_VERIFICATION` prefix
+     * uint256 paymentSignature.length
+     * bytes paymentSignature;
+     */
     uint256 internal constant _SUPPORTED_ACCOUNT_IMPLEMENTATION_OFFSET = 68;
-    /// 4 bytes fn_sel, 32 bytes offset, 32 bytes length
     uint256 internal constant _EOA_OFFSET = 88;
     uint256 internal constant _NONCE_OFFSET = 120;
     uint256 internal constant _PAYER_OFFSET = 152;
@@ -150,12 +153,6 @@ contract IntentHelpers {
             let sigLenWords := mul(div(add(sig.length, 31), 32), 32)
             transfers.length := calldataload(add(sig.offset, sigLenWords))
             transfers.offset := add(add(sig.offset, sigLenWords), 0x20)
-        }
-
-        // update data offset to after the transfers array
-        bytes calldata a = transfers[transfers.length - 1];
-        assembly ("memory-safe") {
-            data.offset := add(add(a.offset, a.length), 0x20)
         }
     }
 }

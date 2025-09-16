@@ -3,7 +3,6 @@ pragma solidity ^0.8.4;
 
 import {Orchestrator} from "../../../src/Orchestrator.sol";
 import {Brutalizer} from "../Brutalizer.sol";
-import {IntentHelpers} from "../../../src/libraries/IntentHelpers.sol";
 
 /// @dev WARNING! This mock is strictly intended for testing purposes only.
 /// Do NOT copy anything here into production code unless you really know what you are doing.

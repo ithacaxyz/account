@@ -116,14 +116,13 @@ contract Orchestrator is
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
-    // TODO: change intent typehash
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers,address settler,uint256 expiry)Call(address to,uint256 value,bytes data)"
+        "Intent(Call[] calls,address eoa,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 combinedGas,uint256 expiry)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for SignedCalls
     bytes32 public constant SIGNED_CALL_TYPEHASH = keccak256(
-        "SignedCall(bool multichain,address eoa,Call[] calls,uint256 nonce)Call(address to,uint256 value,bytes data)"
+        "SignedCall(address eoa,Call[] calls,uint256 nonce)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
@@ -437,10 +436,8 @@ contract Orchestrator is
 
         address eoa = _getEoa();
 
-        // Start a calldata pointer to traverse all the inner dynamic bytes within. Every time we get the next bytes,
-        // the pointer is advanced. Using memory might be less efficient than calldata directly, but calldata values
-        //are pass-by-reference so we cannot modify the offset within a helper function. A memory pointer results in
-        // cleaner top-level code.
+        // Start a calldata pointer to traverse all the inner dynamic bytes within. Every time we get the next dynamic bytes,
+        // the pointer is advanced. A memory pointer gives some efficiency and will produce relatively clean top-level code.
         CalldataPointer memory ptr;
         bytes32 digest = _computeDigest(ptr);
 
@@ -737,26 +734,22 @@ contract Orchestrator is
             mstore(add(m, 0x120), paymentSignature.length)
             calldatacopy(add(m, 0x140), paymentSignature.offset, paymentSignature.length)
 
-            let totalSize := add(0x124, paymentSignature.length)
-
             // We revert here, so that if the payment fails, the execution is also reverted.
             // The revert for payment is caught inside the selfCallPayVerify function.
-            payCallSuccess :=
+            if iszero(
                 call(
                     gas(), // gas
                     callee, // address
                     0, // value
                     add(m, 0x1c), // input memory offset
-                    totalSize, // input size
+                    add(0x124, paymentSignature.length), // input size
                     0x00, // output memory offset
                     0x20 // output size
                 )
-            if iszero(payCallSuccess) { revert(0x00, 0x20) }
+            ) { revert(0x00, 0x20) }
         }
 
-        uint256 actualBalanceAfter = TokenTransferLib.balanceOf(paymentToken, paymentRecipient);
-
-        if (actualBalanceAfter < requiredBalanceAfter) {
+        if (TokenTransferLib.balanceOf(paymentToken, paymentRecipient) < requiredBalanceAfter) {
             revert PaymentError();
         }
     }
@@ -800,8 +793,6 @@ contract Orchestrator is
 
     /// @dev Computes the EIP712 digest for the PreCall.
     function _computeDigest(SignedCall calldata p) internal view virtual returns (bytes32) {
-        bool isMultichain = p.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
-
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
         bytes32[] memory f = EfficientHashLib.malloc(4);
         f.set(0, SIGNED_CALL_TYPEHASH);
@@ -809,10 +800,13 @@ contract Orchestrator is
         f.set(2, _executionDataHash(p.executionData));
         f.set(3, p.nonce);
 
-        return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
+        return p.nonce >> 240 == MULTICHAIN_NONCE_PREFIX
+            ? _hashTypedDataSansChainId(f.hash())
+            : _hashTypedData(f.hash());
     }
 
-    /// @dev Computes the EIP712 digest for the Intent and returns the offset after.
+    /// @dev Computes the EIP712 digest for the Intent
+    /// @dev Also updates the passed in CalldataPointer to point to the start of the next dynamic bytes.
     function _computeDigest(CalldataPointer memory p) internal view virtual returns (bytes32) {
         bytes32 digest = INTENT_TYPEHASH;
 
