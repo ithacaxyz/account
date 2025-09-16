@@ -3,7 +3,6 @@ pragma solidity ^0.8.4;
 
 import "./utils/SoladyTest.sol";
 import "./Base.t.sol";
-import "forge-std/console.sol";
 import {LibClone} from "solady/utils/LibClone.sol";
 import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCallTarget.sol";
 import {MockPayerWithState} from "./utils/mocks/MockPayerWithState.sol";
@@ -1359,12 +1358,10 @@ contract OrchestratorTest is BaseTest {
     }
 
     function testMultiChainIntent() public {
-        console.log("=== Starting testMultiChainIntent ===");
         _TestMultiChainIntentTemps memory t;
 
         address[] memory ocs = new address[](1);
         ocs[0] = address(oc);
-        console.log("Orchestrator address:", address(oc));
 
         // Initialize core test data
         t.funderPrivateKey = _randomPrivateKey();
@@ -1535,58 +1532,36 @@ contract OrchestratorTest is BaseTest {
         t.encodedIntents = new bytes[](1);
 
         // Setup complete.
-        console.log("=== Setup complete, starting Base chain test ===");
         t.snapshot = vm.snapshotState();
         // 3. Actions on Base
         vm.chainId(8453);
-        console.log("Chain ID set to Base (8453)");
         // User has 600 USDC on base
         t.usdcBase.mint(t.d.eoa, 600);
-        console.log("Minted 600 USDC on Base to EOA:", t.d.eoa);
 
         t.encodedIntents[0] = encodeIntent(t.baseIntent);
-        console.log("Encoded intent for Base chain");
         // User escrows funds on Base
         vm.expectEmit(true, false, false, false, address(t.escrowBase));
         emit Escrow.EscrowCreated(t.escrowIdBase);
-        console.log("About to execute Base intent with gas wallet:", t.gasWallet);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(t.encodedIntents);
-        console.log("Base intent execution result:", uint256(bytes32(t.errs[0])));
-        if (t.errs[0] != 0) {
-            console.log("Base intent FAILED with error:", uint256(bytes32(t.errs[0])));
-        }
         assertEq(uint256(bytes32(t.errs[0])), 0);
-        console.log("=== Base intent execution successful ===");
 
         // Verify funds are escrowed, not transferred yet
-        console.log("Checking Base escrow balances...");
-        uint256 escrowBalance = t.usdcBase.balanceOf(address(t.escrowBase));
-        uint256 relayBalance = t.usdcBase.balanceOf(t.relay);
-        console.log("Escrow balance:", escrowBalance);
-        console.log("Relay balance:", relayBalance);
         vm.assertEq(t.usdcBase.balanceOf(address(t.escrowBase)), 600);
         vm.assertEq(t.usdcBase.balanceOf(t.relay), 0);
-        console.log("Base escrow verification passed");
 
         // 4. Action on Arb
-        console.log("=== Starting Arbitrum chain test ===");
         vm.revertToState(t.snapshot);
         vm.chainId(42161);
-        console.log("Chain ID set to Arbitrum (42161)");
         // User has 500 USDC on arb
         t.usdcArb.mint(t.d.eoa, 500);
-        console.log("Minted 500 USDC on Arbitrum to EOA:", t.d.eoa);
         // Unhappy case, try to send base intent to arb
-        console.log("Testing negative case: sending Base intent to Arbitrum");
         t.encodedIntents[0] = encodeIntent(t.baseIntent);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(t.encodedIntents);
-        console.log("Base intent on Arb result:", uint256(bytes32(t.errs[0])));
         assertEq(
             uint256(bytes32(t.errs[0])), uint256(bytes32(bytes4(keccak256("VerificationError()"))))
         );
-        console.log("Negative case passed - Base intent correctly failed on Arbitrum");
 
         // Try to send wrong proof
         {
@@ -1614,41 +1589,24 @@ contract OrchestratorTest is BaseTest {
         }
 
         // User escrows funds on Arb
-        console.log("=== Executing correct Arbitrum intent ===");
         t.encodedIntents[0] = encodeIntent(t.arbIntent);
         vm.expectEmit(true, false, false, false, address(t.escrowArb));
         emit Escrow.EscrowCreated(t.escrowIdArb);
-        console.log("About to execute Arbitrum intent with gas wallet:", t.gasWallet);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(t.encodedIntents);
-        console.log("Arbitrum intent execution result:", uint256(bytes32(t.errs[0])));
-        if (t.errs[0] != 0) {
-            console.log("Arbitrum intent FAILED with error:", uint256(bytes32(t.errs[0])));
-        }
         assertEq(uint256(bytes32(t.errs[0])), 0);
-        console.log("=== Arbitrum intent execution successful ===");
         // Verify funds are escrowed, not transferred yet
-        console.log("Checking Arbitrum escrow balances...");
-        uint256 arbEscrowBalance = t.usdcArb.balanceOf(address(t.escrowArb));
-        uint256 arbRelayBalance = t.usdcArb.balanceOf(t.relay);
-        console.log("Arb Escrow balance:", arbEscrowBalance);
-        console.log("Arb Relay balance:", arbRelayBalance);
         vm.assertEq(t.usdcArb.balanceOf(address(t.escrowArb)), 500);
         vm.assertEq(t.usdcArb.balanceOf(t.relay), 0);
-        console.log("Arbitrum escrow verification passed");
 
         // 5. Action on Mainnet (Destination Chain)
-        console.log("=== Starting Mainnet (output) chain test ===");
         vm.revertToState(t.snapshot);
         vm.chainId(1);
-        console.log("Chain ID set to Mainnet (1)");
         // Relay has funds on mainnet for settlement. User has no funds.
         t.usdcMainnet.mint(t.relay, 1000);
-        console.log("Minted 1000 USDC on Mainnet to relay:", t.relay);
 
         vm.prank(makeAddr("RANDOM_RELAY_ADDRESS"));
         t.usdcMainnet.mint(address(t.funder), 1000);
-        console.log("Minted 1000 USDC to funder:", address(t.funder));
 
         // Expect settler.send to be called during outputIntent execution
         vm.expectEmit(true, true, true, false, address(t.settler));
@@ -1657,21 +1615,11 @@ contract OrchestratorTest is BaseTest {
         emit SimpleSettler.Sent(address(oc), t.settlementId, 42161); // Arbitrum
 
         // Relay funds the user account, and the intended execution happens.
-        console.log("=== Executing output intent on Mainnet ===");
         t.encodedIntents[0] = encodeIntent(t.outputIntent);
-        console.log("About to execute output intent with gas wallet:", t.gasWallet);
         vm.prank(t.gasWallet);
         t.errs = oc.execute(t.encodedIntents);
-        console.log("Output intent execution result:", uint256(bytes32(t.errs[0])));
-        if (t.errs[0] != 0) {
-            console.log("Output intent FAILED with error:", uint256(bytes32(t.errs[0])));
-        }
         assertEq(uint256(bytes32(t.errs[0])), 0);
-        console.log("=== Output intent execution successful ===");
-        uint256 friendBalance = t.usdcMainnet.balanceOf(t.friend);
-        console.log("Friend balance after output intent:", friendBalance);
         vm.assertEq(t.usdcMainnet.balanceOf(t.friend), 1000);
-        console.log("Output intent verification passed");
 
         // 6. Settlement Phase - After outputIntent is executed successfully
         // The orchestrator emits Sent events using the output intent digest as settlementId

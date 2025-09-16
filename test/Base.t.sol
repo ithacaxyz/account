@@ -172,8 +172,6 @@ contract BaseTest is SoladyTest, IntentHelpers {
         if (i.nonce >> 240 == 0x6D76) {
             bytes memory settlerBytes =
                 i.settler != address(0) ? abi.encode(i.settler, i.settlerContext) : bytes("");
-            console.log("settler bytes");
-            console.logBytes(settlerBytes);
 
             returnData = abi.encodePacked(returnData, uint256(settlerBytes.length), settlerBytes);
         }
