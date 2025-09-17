@@ -1,5 +1,8 @@
 # porto-account
 
+> Note: After v0.5.5, all changelogs will be published along with the release notes.   
+> From here on, this file is deprecated.
+
 ## 0.5.5
 
 ### Patch Changes
