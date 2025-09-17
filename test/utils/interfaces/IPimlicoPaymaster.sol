@@ -19,7 +19,7 @@ library PimlicoHelpers {
     /// @notice The length of the mode and allowAllBundlers bytes.
     uint8 constant MODE_AND_ALLOW_ALL_BUNDLERS_LENGTH = 1;
 
-    /// @notice The length of the ERC-20 config without singature.
+    /// @notice The length of the ERC-20 config without signature.
     uint8 constant ERC20_PAYMASTER_DATA_LENGTH = 117;
 
     /// @notice The length of the verfiying config without singature.
