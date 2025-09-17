@@ -120,6 +120,9 @@ abstract contract GuardedExecutor is ERC7821 {
     /// @dev Emitted when a spend limit is removed.
     event SpendLimitRemoved(bytes32 keyHash, address token, SpendPeriod period);
 
+    /// @dev Emitted when spend limits are enabled or disabled for a key.
+    event SpendLimitsEnabledSet(bytes32 keyHash, bool enabled);
+
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
@@ -167,6 +170,8 @@ abstract contract GuardedExecutor is ERC7821 {
 
     /// @dev Holds the storage for spend permissions and the current spend state.
     struct SpendStorage {
+        /// @dev Whether spend limits are disabled for this key. Defaults to false (limits enabled).
+        bool disabled;
         /// @dev An enumerable set of the tokens.
         EnumerableSetLib.AddressSet tokens;
         /// @dev Mapping of `token` to `TokenSpendStorage`.
@@ -226,6 +231,11 @@ abstract contract GuardedExecutor is ERC7821 {
     function _execute(Call[] calldata calls, bytes32 keyHash) internal virtual override {
         // If self-execute or super admin, don't care about the spend permissions.
         if (keyHash == bytes32(0) || _isSuperAdmin(keyHash)) {
+            return ERC7821._execute(calls, keyHash);
+        }
+
+        // If spend limits are disabled for this key, execute without spend checks
+        if (!spendLimitsEnabled(keyHash)) {
             return ERC7821._execute(calls, keyHash);
         }
 
@@ -459,6 +469,22 @@ abstract contract GuardedExecutor is ERC7821 {
         emit SpendLimitRemoved(keyHash, token, period);
     }
 
+    /// @dev Sets whether spend limits are enabled or disabled for a specific key.
+    /// By default, spend limits are enabled for all keys.
+    function setSpendLimitsEnabled(bytes32 keyHash, bool enabled)
+        public
+        virtual
+        onlyThis
+        checkKeyHashIsNonZero(keyHash)
+    {
+        if (_isSuperAdmin(keyHash)) revert SuperAdminCanSpendAnything();
+
+        SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
+        spends.disabled = !enabled;
+
+        emit SpendLimitsEnabledSet(keyHash, enabled);
+    }
+
     ////////////////////////////////////////////////////////////////////////
     // Public View Functions
     ////////////////////////////////////////////////////////////////////////
@@ -587,6 +613,14 @@ abstract contract GuardedExecutor is ERC7821 {
             spends[i] = spendInfos(keyHashes[i]);
             executes[i] = canExecutePackedInfos(keyHashes[i]);
         }
+    }
+
+    /// @dev Returns whether spend limits are enabled for a specific key.
+    /// Defaults to true if never set.
+    function spendLimitsEnabled(bytes32 keyHash) public view virtual returns (bool) {
+        SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
+        // disabled defaults to false, so !false = true (enabled by default)
+        return !spends.disabled;
     }
 
     /// @dev Rounds the unix timestamp down to the period.

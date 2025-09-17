@@ -654,6 +654,127 @@ contract GuardedExecutorTest is BaseTest {
         }
     }
 
+    function testSetSpendLimitsEnabled() public {
+        Orchestrator.Intent memory u;
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+
+        u.eoa = d.eoa;
+        u.combinedGas = 1000000;
+        u.nonce = d.d.getNonce(0);
+
+        PassKey memory k = _randomSecp256k1PassKey();
+
+        address token = LibClone.clone(address(paymentToken));
+        _mint(token, u.eoa, type(uint192).max);
+
+        // Test that spend limits are enabled by default for the key
+        assertTrue(d.d.spendLimitsEnabled(k.keyHash), "Spend limits should be enabled by default");
+
+        // Authorize the key and set up spend limit
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](3);
+            calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, k.k);
+            // Only allow the key to execute on the token, not on the account itself
+            calls[1].data = abi.encodeWithSelector(
+                GuardedExecutor.setCanExecute.selector, k.keyHash, token, _ANY_FN_SEL, true
+            );
+            calls[2] = _setSpendLimitCall(k, token, GuardedExecutor.SpendPeriod.Day, 1 ether);
+
+            u.executionData = abi.encode(calls);
+            u.nonce = 0xc1d0 << 240;
+            u.signature = _eoaSig(d.privateKey, u);
+
+            assertEq(oc.execute(abi.encode(u)), 0);
+        }
+
+        // Test that non-EOA cannot call setSpendLimitsEnabled
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            calls[0].to = address(0);
+            calls[0].data = abi.encodeWithSelector(
+                GuardedExecutor.setSpendLimitsEnabled.selector, k.keyHash, false
+            );
+
+            u.nonce = d.d.getNonce(0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+
+            // This should fail because setSpendLimitsEnabled requires msg.sender == address(this)
+            // and the key is not authorized to self-execute
+            assertEq(
+                oc.execute(abi.encode(u)),
+                bytes4(keccak256("UnauthorizedCall(bytes32,address,bytes)"))
+            );
+        }
+
+        // Test that EOA can disable spend limits with event
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            calls[0].to = address(0);
+            calls[0].data = abi.encodeWithSelector(
+                GuardedExecutor.setSpendLimitsEnabled.selector, k.keyHash, false
+            );
+
+            u.nonce = d.d.getNonce(0);
+            u.executionData = abi.encode(calls);
+            u.signature = _eoaSig(d.privateKey, u);
+
+            vm.expectEmit(true, true, true, true);
+            emit GuardedExecutor.SpendLimitsEnabledSet(k.keyHash, false);
+
+            assertEq(oc.execute(abi.encode(u)), 0);
+            assertFalse(d.d.spendLimitsEnabled(k.keyHash), "Spend limits should be disabled");
+        }
+
+        // Test that when disabled, spend limits are not enforced (can spend beyond limit)
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            // Try to transfer 2 ether (exceeds the 1 ether daily limit)
+            calls[0] = _transferCall2(token, address(0xb0b), 2 ether);
+
+            u.nonce = d.d.getNonce(0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+
+            // Should succeed even though it exceeds the limit
+            assertEq(oc.execute(abi.encode(u)), 0);
+            assertEq(_balanceOf(token, address(0xb0b)), 2 ether);
+        }
+
+        // Test that EOA can re-enable spend limits with event
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            calls[0].to = address(0);
+            calls[0].data = abi.encodeWithSelector(
+                GuardedExecutor.setSpendLimitsEnabled.selector, k.keyHash, true
+            );
+
+            u.nonce = d.d.getNonce(0);
+            u.executionData = abi.encode(calls);
+            u.signature = _eoaSig(d.privateKey, u);
+
+            vm.expectEmit(true, true, true, true);
+            emit GuardedExecutor.SpendLimitsEnabledSet(k.keyHash, true);
+
+            assertEq(oc.execute(abi.encode(u)), 0);
+            assertTrue(d.d.spendLimitsEnabled(k.keyHash), "Spend limits should be enabled again");
+        }
+
+        // Test that when re-enabled, spend limits are enforced again
+        {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            // Try to transfer 2 ether again (exceeds the 1 ether daily limit)
+            calls[0] = _transferCall2(token, address(0xb0b), 2 ether);
+
+            u.nonce = d.d.getNonce(0);
+            u.executionData = abi.encode(calls);
+            u.signature = _sig(k, u);
+
+            // Should fail now that limits are enforced
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("ExceededSpendLimit(address)")));
+        }
+    }
+
     function testSpends(bytes32) public {
         Orchestrator.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
