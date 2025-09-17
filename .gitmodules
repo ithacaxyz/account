@@ -1,6 +1,3 @@
-[submodule "lib/forge-std"]
-	path = lib/forge-std
-	url = https://github.com/foundry-rs/forge-std
 [submodule "lib/murky"]
 	path = lib/murky
 	url = https://github.com/dmfxyz/murky
@@ -17,3 +14,6 @@
 	path = lib/solady
 	url = https://github.com/vectorized/solady
 	branch = main
+[submodule "lib/account_v0_5_5"]
+	path = lib/account_v0_5_5
+	url = https://github.com/ithacaxyz/account
