@@ -570,6 +570,69 @@ contract OrchestratorTest is BaseTest {
         assertTrue(MockAccount(payable(eoa)).keyCount() > 0);
     }
 
+    function testExecutePreCallsFromFeePayer() public {
+        uint256 ephemeralPK = _randomPrivateKey();
+        address eoa = vm.addr(ephemeralPK);
+
+        vm.etch(eoa, abi.encodePacked(hex"ef0100", account));
+
+        // Create a fee payer
+        DelegatedEOA memory payer = _randomEIP7702DelegatedEOA();
+        paymentToken.mint(address(payer.d), 10 ether);
+
+        PassKey memory kSession = _randomSecp256r1PassKey();
+
+        // Create the pre-call to authorize the session key
+        Orchestrator.SignedCall memory preCall;
+        preCall.eoa = payer.eoa;
+
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, kSession.k);
+        preCall.executionData = abi.encode(calls);
+        preCall.nonce = (0xc1d0 << 240);
+        preCall.signature = _eoaSig(payer.privateKey, oc.computeDigest(preCall));
+
+        // Create an Intent with the pre-call and fee payer
+        ICommon.Intent memory u;
+        u.eoa = eoa;
+        u.payer = address(payer.d);
+        u.nonce = 0;
+        u.paymentToken = address(paymentToken);
+        u.paymentAmount = 0.1 ether;
+        u.paymentMaxAmount = 0.5 ether;
+        u.paymentRecipient = address(oc);
+        u.combinedGas = 1000000;
+
+        // Simple execution data (no-op)
+        ERC7821.Call[] memory executionCalls = new ERC7821.Call[](1);
+        executionCalls[0].to = address(0);
+        executionCalls[0].value = 0;
+        executionCalls[0].data = "";
+        u.executionData = abi.encode(executionCalls);
+
+        // Add the pre-call
+        u.encodedPreCalls = new bytes[](1);
+        u.encodedPreCalls[0] = abi.encode(preCall);
+
+        // Sign the intent with the ephemeral key and the payment with the payer
+        bytes32 digest = oc.computeDigest(u);
+        u.signature = _eoaSig(ephemeralPK, digest);
+        u.paymentSignature = _eoaSig(payer.privateKey, digest);
+
+        // Execute the intent
+        uint256 payerBalanceBefore = paymentToken.balanceOf(address(payer.d));
+        assertFalse(MockAccount(payable(payer.eoa)).keyCount() > 0);
+
+        assertEq(oc.execute(abi.encode(u)), 0);
+
+        // Verify the session key was authorized in the payer's account
+        assertTrue(MockAccount(payable(payer.eoa)).keyCount() > 0);
+
+        // Verify payment was made by the fee payer
+        assertEq(paymentToken.balanceOf(address(payer.d)), payerBalanceBefore - u.paymentAmount);
+        assertEq(paymentToken.balanceOf(u.paymentRecipient), u.paymentAmount);
+    }
+
     struct _TestAuthorizeWithPreCallsAndTransferTemps {
         uint256 gExecute;
         uint256 gCombined;
