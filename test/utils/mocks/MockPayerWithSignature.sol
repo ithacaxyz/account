@@ -11,10 +11,15 @@ import {IOrchestrator} from "../../../src/interfaces/IOrchestrator.sol";
 
 contract MockPayerWithSignature is Ownable {
     error InvalidSignature();
+    /// @dev The paymaster nonce has already been used.
+    error PaymasterNonceError();
 
     address public signer;
 
     mapping(address => bool) public isApprovedOrchestrator;
+
+    /// @dev Nonce management when acting as paymaster.
+    mapping(bytes32 => bool) public paymasterNonces;
 
     event Compensated(
         address indexed paymentToken,
@@ -47,11 +52,11 @@ contract MockPayerWithSignature is Ownable {
 
     /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
     /// The EOA and token details are extracted from the `encodedIntent`.
-    /// Reverts if the specified Orchestrator (`msg.sender`) is not approved.
-    /// NOTE: This mock no longer verifies signatures within the pay function itself,
-    /// aligning with the Account/Orchestrator pattern where verification happens before payment.
+    /// Reverts if the specified Orchestrator (`msg.sender`) is not approved,
+    /// if the signature is invalid, or if the nonce has already been used.
     /// @param paymentAmount The amount to pay.
     /// @param keyHash The key hash associated with the operation (not used in this mock's logic but kept for signature compatibility).
+    /// @param digest The digest of the intent (used for nonce tracking).
     /// @param encodedIntent ABI encoded Intent struct.
     function pay(
         uint256 paymentAmount,
@@ -60,6 +65,12 @@ contract MockPayerWithSignature is Ownable {
         bytes calldata encodedIntent
     ) public virtual {
         if (!isApprovedOrchestrator[msg.sender]) revert Unauthorized();
+
+        // Check and set nonce to prevent replay attacks
+        if (paymasterNonces[digest]) {
+            revert PaymasterNonceError();
+        }
+        paymasterNonces[digest] = true;
 
         ICommon.Intent memory u = abi.decode(encodedIntent, (ICommon.Intent));
 
