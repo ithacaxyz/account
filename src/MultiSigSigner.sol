@@ -12,7 +12,7 @@ contract MultiSigSigner is ISigner {
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev The magic value returned by `isValidSignatureWithKeyHash` when the signature is valid.
-    /// - Calcualated as: bytes4(keccak256("isValidSignatureWithKeyHash(bytes32,bytes32,bytes)")
+    /// - Calculated as: bytes4(keccak256("isValidSignatureWithKeyHash(bytes32,bytes32,bytes)")
     bytes4 internal constant _MAGIC_VALUE = 0x8afc93b4;
 
     /// @dev The magic value returned by `isValidSignatureWithKeyHash` when the signature is invalid.
