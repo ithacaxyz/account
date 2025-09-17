@@ -170,8 +170,6 @@ abstract contract GuardedExecutor is ERC7821 {
 
     /// @dev Holds the storage for spend permissions and the current spend state.
     struct SpendStorage {
-        /// @dev Whether spend limits are disabled for this key. Defaults to false (limits enabled).
-        bool disabled;
         /// @dev An enumerable set of the tokens.
         EnumerableSetLib.AddressSet tokens;
         /// @dev Mapping of `token` to `TokenSpendStorage`.
@@ -186,6 +184,8 @@ abstract contract GuardedExecutor is ERC7821 {
         SpendStorage spends;
         /// @dev Mapping of 3rd-party checkers for determining if an address can execute a function.
         EnumerableMapLib.AddressToAddressMap callCheckers;
+        /// @dev Whether spend limits are disabled for this key. Defaults to false (limits enabled).
+        bool spendLimitsDisabled;
     }
 
     /// @dev Returns the storage pointer.
@@ -479,8 +479,7 @@ abstract contract GuardedExecutor is ERC7821 {
     {
         if (_isSuperAdmin(keyHash)) revert SuperAdminCanSpendAnything();
 
-        SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
-        spends.disabled = !enabled;
+        _getGuardedExecutorKeyStorage(keyHash).spendLimitsDisabled = !enabled;
 
         emit SpendLimitsEnabledSet(keyHash, enabled);
     }
@@ -618,9 +617,8 @@ abstract contract GuardedExecutor is ERC7821 {
     /// @dev Returns whether spend limits are enabled for a specific key.
     /// Defaults to true if never set.
     function spendLimitsEnabled(bytes32 keyHash) public view virtual returns (bool) {
-        SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
         // disabled defaults to false, so !false = true (enabled by default)
-        return !spends.disabled;
+        return !_getGuardedExecutorKeyStorage(keyHash).spendLimitsDisabled;
     }
 
     /// @dev Rounds the unix timestamp down to the period.
