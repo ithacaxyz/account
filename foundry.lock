@@ -5,9 +5,6 @@
   "lib/account_v0_5_5": {
     "rev": "57195b8996676d0a0b7cd9de877416caf25701f1"
   },
-  "lib/devtools": {
-    "rev": "01c1eaeb123e4364fbe96cdddf875640edf2566c"
-  },
   "lib/forge-std": {
     "branch": {
       "name": "master",
