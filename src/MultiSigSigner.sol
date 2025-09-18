@@ -175,7 +175,8 @@ contract MultiSigSigner is ISigner {
     ///   for each owner key hash in the config.
     /// - Signature of a multi-sig should be encoded as abi.encode(bytes[] memory ownerSignatures)
     /// - For efficiency, place the signatures in the same order as the ownerKeyHashes in the config.
-    /// - Failing owner signatures are ignored, as long as valid signaturs > threshold.
+    /// - Failing owner signatures are ignored, as long as valid signatures > threshold.
+    /// - Duplicate signatures from the same owner are ignored to prevent multisig bypass.
     function isValidSignatureWithKeyHash(bytes32 digest, bytes32 keyHash, bytes memory signature)
         public
         view
@@ -185,6 +186,9 @@ contract MultiSigSigner is ISigner {
         Config memory config = _configs[msg.sender][keyHash];
 
         uint256 validKeyNum;
+        // Track used owners to prevent duplicate signatures from the same owner
+        bytes32[] memory usedOwners = new bytes32[](config.ownerKeyHashes.length);
+        uint256 usedCount = 0;
 
         // Iterate over signatures, until threshold is met.
         for (uint256 i; i < signatures.length; ++i) {
@@ -196,29 +200,40 @@ contract MultiSigSigner is ISigner {
                 continue;
             }
 
-            uint256 j;
-            while (j < config.ownerKeyHashes.length) {
-                if (config.ownerKeyHashes[j] == ownerKeyHash) {
-                    // Incrementing validKeyNum
-                    validKeyNum++;
-                    // Mark the ownerKeyHash as used.
-                    config.ownerKeyHashes[j] = bytes32(0);
-
-                    // If threshold is met, return success.
-                    if (validKeyNum == config.threshold) {
-                        return _MAGIC_VALUE;
-                    }
-
+            // Check if this owner has already been used
+            bool alreadyUsed = false;
+            for (uint256 k = 0; k < usedCount; k++) {
+                if (usedOwners[k] == ownerKeyHash) {
+                    alreadyUsed = true;
                     break;
                 }
+            }
+            
+            if (alreadyUsed) {
+                continue; // Ignore duplicate signature from the same owner
+            }
 
-                unchecked {
-                    j++;
+            // Check if the owner is authorized
+            bool isAuthorized = false;
+            for (uint256 j = 0; j < config.ownerKeyHashes.length; j++) {
+                if (config.ownerKeyHashes[j] == ownerKeyHash) {
+                    isAuthorized = true;
+                    break;
                 }
             }
 
-            // This means that the keyHash was not found
-            if (j == config.ownerKeyHashes.length) {
+            if (isAuthorized) {
+                // Mark owner as used and increment valid count
+                usedOwners[usedCount] = ownerKeyHash;
+                usedCount++;
+                validKeyNum++;
+
+                // If threshold is met, return success.
+                if (validKeyNum == config.threshold) {
+                    return _MAGIC_VALUE;
+                }
+            } else {
+                // This means that the keyHash was not found in authorized owners
                 return _FAIL_VALUE;
             }
         }
