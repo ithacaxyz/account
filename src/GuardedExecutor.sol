@@ -229,13 +229,8 @@ abstract contract GuardedExecutor is ERC7821 {
     ///    `keyHash` in order for it to spend tokens.
     /// Note: Called internally in ERC7821, which coalesce zero-address `target`s to `address(this)`.
     function _execute(Call[] calldata calls, bytes32 keyHash) internal virtual override {
-        // If self-execute or super admin, don't care about the spend permissions.
-        if (keyHash == bytes32(0) || _isSuperAdmin(keyHash)) {
-            return ERC7821._execute(calls, keyHash);
-        }
-
-        // If spend limits are disabled for this key, execute without spend checks
-        if (!spendLimitsEnabled(keyHash)) {
+        // If self-execute, super admin or has disabled spend limits, don't care about the spend permissions.
+        if (keyHash == bytes32(0) || _isSuperAdmin(keyHash) || !spendLimitsEnabled(keyHash)) {
             return ERC7821._execute(calls, keyHash);
         }
 

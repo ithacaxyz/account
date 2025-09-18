@@ -672,7 +672,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
         TokenTransferLib.safeTransfer(intent.paymentToken, intent.paymentRecipient, paymentAmount);
         // Increase spend.
-        if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
+        if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash) || !spendLimitsEnabled(keyHash))) {
             SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
             _incrementSpent(spends.spends[intent.paymentToken], intent.paymentToken, paymentAmount);
         }
