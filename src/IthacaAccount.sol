@@ -575,9 +575,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
     /// @dev Adds the key. If the key already exist, its expiry will be updated.
     function _addKey(Key memory key) internal virtual returns (bytes32 keyHash) {
-        if (key.isSuperAdmin) {
-            if (!_keyTypeCanBeSuperAdmin(key.keyType)) revert KeyTypeCannotBeSuperAdmin();
-        }
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         keyHash = hash(key);
         AccountStorage storage $ = _getAccountStorage();
@@ -585,11 +582,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin)
         );
         $.keyHashes.add(keyHash);
-    }
-
-    /// @dev Returns if the `keyType` can be a super admin.
-    function _keyTypeCanBeSuperAdmin(KeyType keyType) internal view virtual returns (bool) {
-        return keyType != KeyType.P256;
     }
 
     /// @dev Removes the key corresponding to the `keyHash`. Reverts if the key does not exist.

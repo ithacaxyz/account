@@ -260,29 +260,6 @@ contract AccountTest is BaseTest {
         assert(keys[1].expiry == 5);
     }
 
-    function testAddDisallowedSuperAdminKeyTypeReverts() public {
-        address orchestrator = address(new Orchestrator());
-        address accountImplementation = address(new IthacaAccount(address(orchestrator)));
-        address accountProxy = address(LibEIP7702.deployProxy(accountImplementation, address(0)));
-        account = MockAccount(payable(accountProxy));
-
-        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-
-        PassKey memory k = _randomSecp256k1PassKey();
-        k.k.isSuperAdmin = true;
-
-        vm.startPrank(d.eoa);
-
-        d.d.authorize(k.k);
-
-        k = _randomSecp256r1PassKey();
-        k.k.isSuperAdmin = true;
-        vm.expectRevert(bytes4(keccak256("KeyTypeCannotBeSuperAdmin()")));
-        d.d.authorize(k.k);
-
-        vm.stopPrank();
-    }
-
     function testCrossChainKeyPreCallsAuthorization() public {
         // Setup Keys
         PassKey memory adminKey = _randomSecp256k1PassKey();

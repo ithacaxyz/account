@@ -11,10 +11,6 @@ contract MockAccount is IthacaAccount, Brutalizer {
 
     constructor(address orchestrator) payable IthacaAccount(orchestrator) {}
 
-    function _keyTypeCanBeSuperAdmin(KeyType) internal pure override returns (bool) {
-        return true;
-    }
-
     function setX(uint256 newX) public onlyThis {
         x = newX;
     }
