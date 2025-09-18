@@ -2,20 +2,29 @@
 
 pragma solidity ^0.8.20;
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 // @dev oz4/5 breaking change... Ownable constructor
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-import { MessagingFee, MessagingParams, MessagingReceipt, Origin, ILayerZeroEndpointV2 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
-import { ISendLib, Packet } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ISendLib.sol";
-import { ILayerZeroReceiver } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
-import { Errors } from "@layerzerolabs/lz-evm-protocol-v2/contracts/libs/Errors.sol";
-import { GUID } from "@layerzerolabs/lz-evm-protocol-v2/contracts/libs/GUID.sol";
-import { Transfer } from "@layerzerolabs/lz-evm-protocol-v2/contracts/libs/Transfer.sol";
-import { MessagingChannel } from "@layerzerolabs/lz-evm-protocol-v2/contracts/MessagingChannel.sol";
-import { MessagingComposer } from "@layerzerolabs/lz-evm-protocol-v2/contracts/MessagingComposer.sol";
-import { MessageLibManager } from "@layerzerolabs/lz-evm-protocol-v2/contracts/MessageLibManager.sol";
-import { MessagingContext } from "@layerzerolabs/lz-evm-protocol-v2/contracts/MessagingContext.sol";
+import {
+    MessagingFee,
+    MessagingParams,
+    MessagingReceipt,
+    Origin,
+    ILayerZeroEndpointV2
+} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {
+    ISendLib, Packet
+} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ISendLib.sol";
+import {ILayerZeroReceiver} from
+    "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
+import {Errors} from "@layerzerolabs/lz-evm-protocol-v2/contracts/libs/Errors.sol";
+import {GUID} from "@layerzerolabs/lz-evm-protocol-v2/contracts/libs/GUID.sol";
+import {Transfer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/libs/Transfer.sol";
+import {MessagingChannel} from "@layerzerolabs/lz-evm-protocol-v2/contracts/MessagingChannel.sol";
+import {MessagingComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/MessagingComposer.sol";
+import {MessageLibManager} from "@layerzerolabs/lz-evm-protocol-v2/contracts/MessageLibManager.sol";
+import {MessagingContext} from "@layerzerolabs/lz-evm-protocol-v2/contracts/MessagingContext.sol";
 
 // LayerZero EndpointV2 is fully backward compatible with LayerZero Endpoint(V1), but it also supports additional
 // features that Endpoint(V1) does not support now and may not in the future. We have also changed some terminology
@@ -59,7 +68,11 @@ contract EndpointV2Mock is
     /// if the price goes down the _refundAddress provided by the app will be refunded the difference.
     /// @param _params the messaging parameters
     /// @param _sender the sender of the message
-    function quote(MessagingParams calldata _params, address _sender) external view returns (MessagingFee memory) {
+    function quote(MessagingParams calldata _params, address _sender)
+        external
+        view
+        returns (MessagingFee memory)
+    {
         // lzToken must be set to support payInLzToken
         if (_params.payInLzToken && lzToken == address(0x0)) revert Errors.LZ_LzTokenUnavailable();
 
@@ -87,10 +100,12 @@ contract EndpointV2Mock is
     /// @dev MESSAGING STEP 1 - OApp need to transfer the fees to the endpoint before sending the message
     /// @param _params the messaging parameters
     /// @param _refundAddress the address to refund both the native and lzToken
-    function send(
-        MessagingParams calldata _params,
-        address _refundAddress
-    ) external payable sendContext(_params.dstEid, msg.sender) returns (MessagingReceipt memory) {
+    function send(MessagingParams calldata _params, address _refundAddress)
+        external
+        payable
+        sendContext(_params.dstEid, msg.sender)
+        returns (MessagingReceipt memory)
+    {
         if (_params.payInLzToken && lzToken == address(0x0)) revert Errors.LZ_LzTokenUnavailable();
 
         // send message
@@ -115,10 +130,10 @@ contract EndpointV2Mock is
     /// @dev internal function for sending the messages used by all external send methods
     /// @param _sender the address of the application sending the message to the destination chain
     /// @param _params the messaging parameters
-    function _send(
-        address _sender,
-        MessagingParams calldata _params
-    ) internal returns (MessagingReceipt memory, address) {
+    function _send(address _sender, MessagingParams calldata _params)
+        internal
+        returns (MessagingReceipt memory, address)
+    {
         // get the correct outbound nonce
         uint64 latestNonce = _outbound(_sender, _params.dstEid, _params.receiver);
 
@@ -137,11 +152,8 @@ contract EndpointV2Mock is
         address _sendLibrary = getSendLibrary(_sender, _params.dstEid);
 
         // messageLib always returns encodedPacket with guid
-        (MessagingFee memory fee, bytes memory encodedPacket) = ISendLib(_sendLibrary).send(
-            packet,
-            _params.options,
-            _params.payInLzToken
-        );
+        (MessagingFee memory fee, bytes memory encodedPacket) =
+            ISendLib(_sendLibrary).send(packet, _params.options, _params.payInLzToken);
 
         // Emit packet information for DVNs, Executors, and any other offchain infrastructure to only listen
         // for this one event to perform their actions.
@@ -156,7 +168,9 @@ contract EndpointV2Mock is
     /// @param _receiver the receiver of the message
     /// @param _payloadHash the payload hash of the message
     function verify(Origin calldata _origin, address _receiver, bytes32 _payloadHash) external {
-        if (!isValidReceiveLibrary(_receiver, _origin.srcEid, msg.sender)) revert Errors.LZ_InvalidReceiveLibrary();
+        if (!isValidReceiveLibrary(_receiver, _origin.srcEid, msg.sender)) {
+            revert Errors.LZ_InvalidReceiveLibrary();
+        }
 
         uint64 lazyNonce = lazyInboundNonce[_receiver][_origin.srcEid][_origin.sender];
         if (!_initializable(_origin, _receiver, lazyNonce)) revert Errors.LZ_PathNotInitializable();
@@ -184,8 +198,16 @@ contract EndpointV2Mock is
         bytes calldata _extraData
     ) external payable {
         // clear the payload first to prevent reentrancy, and then execute the message
-        _clearPayload(_receiver, _origin.srcEid, _origin.sender, _origin.nonce, abi.encodePacked(_guid, _message));
-        ILayerZeroReceiver(_receiver).lzReceive{ value: msg.value }(_origin, _guid, _message, msg.sender, _extraData);
+        _clearPayload(
+            _receiver,
+            _origin.srcEid,
+            _origin.sender,
+            _origin.nonce,
+            abi.encodePacked(_guid, _message)
+        );
+        ILayerZeroReceiver(_receiver).lzReceive{value: msg.value}(
+            _origin, _guid, _message, msg.sender, _extraData
+        );
         emit PacketDelivered(_origin, _receiver);
     }
 
@@ -205,7 +227,9 @@ contract EndpointV2Mock is
         bytes calldata _extraData,
         bytes calldata _reason
     ) external {
-        emit LzReceiveAlert(_receiver, msg.sender, _origin, _guid, _gas, _value, _message, _extraData, _reason);
+        emit LzReceiveAlert(
+            _receiver, msg.sender, _origin, _guid, _gas, _value, _message, _extraData, _reason
+        );
     }
 
     /// @dev Oapp uses this interface to clear a message.
@@ -215,7 +239,9 @@ contract EndpointV2Mock is
     /// @param _origin the origin of the message
     /// @param _guid the guid of the message
     /// @param _message the message
-    function clear(address _oapp, Origin calldata _origin, bytes32 _guid, bytes calldata _message) external {
+    function clear(address _oapp, Origin calldata _origin, bytes32 _guid, bytes calldata _message)
+        external
+    {
         _assertAuthorized(_oapp);
 
         bytes memory payload = abi.encodePacked(_guid, _message);
@@ -314,12 +340,10 @@ contract EndpointV2Mock is
         uint256 _suppliedNativeFee,
         uint256 _suppliedLzTokenFee
     ) internal pure {
-        if (_required.nativeFee > _suppliedNativeFee || _required.lzTokenFee > _suppliedLzTokenFee) {
+        if (_required.nativeFee > _suppliedNativeFee || _required.lzTokenFee > _suppliedLzTokenFee)
+        {
             revert Errors.LZ_InsufficientFee(
-                _required.nativeFee,
-                _suppliedNativeFee,
-                _required.lzTokenFee,
-                _suppliedLzTokenFee
+                _required.nativeFee, _suppliedNativeFee, _required.lzTokenFee, _suppliedLzTokenFee
             );
         }
     }
@@ -337,40 +361,51 @@ contract EndpointV2Mock is
     }
 
     // ========================= Internal =========================
-    function _initializable(
-        Origin calldata _origin,
-        address _receiver,
-        uint64 _lazyInboundNonce
-    ) internal view returns (bool) {
-        return
-            _lazyInboundNonce > 0 || // allowInitializePath already checked
-            ILayerZeroReceiver(_receiver).allowInitializePath(_origin);
+    function _initializable(Origin calldata _origin, address _receiver, uint64 _lazyInboundNonce)
+        internal
+        view
+        returns (bool)
+    {
+        return _lazyInboundNonce > 0 // allowInitializePath already checked
+            || ILayerZeroReceiver(_receiver).allowInitializePath(_origin);
     }
 
     /// @dev bytes(0) payloadHash can never be submitted
-    function _verifiable(
-        Origin calldata _origin,
-        address _receiver,
-        uint64 _lazyInboundNonce
-    ) internal view returns (bool) {
-        return
-            _origin.nonce > _lazyInboundNonce || // either initializing an empty slot or reverifying
-            inboundPayloadHash[_receiver][_origin.srcEid][_origin.sender][_origin.nonce] != EMPTY_PAYLOAD_HASH; // only allow reverifying if it hasn't been executed
+    function _verifiable(Origin calldata _origin, address _receiver, uint64 _lazyInboundNonce)
+        internal
+        view
+        returns (bool)
+    {
+        return _origin.nonce > _lazyInboundNonce // either initializing an empty slot or reverifying
+            || inboundPayloadHash[_receiver][_origin.srcEid][_origin.sender][_origin.nonce]
+                != EMPTY_PAYLOAD_HASH; // only allow reverifying if it hasn't been executed
     }
 
     /// @dev assert the caller to either be the oapp or the delegate
-    function _assertAuthorized(address _oapp) internal view override(MessagingChannel, MessageLibManager) {
+    function _assertAuthorized(address _oapp)
+        internal
+        view
+        override(MessagingChannel, MessageLibManager)
+    {
         if (msg.sender != _oapp && msg.sender != delegates[_oapp]) revert Errors.LZ_Unauthorized();
     }
 
     // ========================= VIEW FUNCTIONS FOR OFFCHAIN ONLY =========================
     // Not involved in any state transition function.
     // ====================================================================================
-    function initializable(Origin calldata _origin, address _receiver) external view returns (bool) {
-        return _initializable(_origin, _receiver, lazyInboundNonce[_receiver][_origin.srcEid][_origin.sender]);
+    function initializable(Origin calldata _origin, address _receiver)
+        external
+        view
+        returns (bool)
+    {
+        return _initializable(
+            _origin, _receiver, lazyInboundNonce[_receiver][_origin.srcEid][_origin.sender]
+        );
     }
 
     function verifiable(Origin calldata _origin, address _receiver) external view returns (bool) {
-        return _verifiable(_origin, _receiver, lazyInboundNonce[_receiver][_origin.srcEid][_origin.sender]);
+        return _verifiable(
+            _origin, _receiver, lazyInboundNonce[_receiver][_origin.srcEid][_origin.sender]
+        );
     }
 }
