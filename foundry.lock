@@ -2,12 +2,6 @@
   "lib/LayerZero-v2": {
     "rev": "88428755be6caa71cb1d2926141d73c8989296b5"
   },
-  "lib/account_v0_5_5": {
-    "rev": "35bda33c3f06d6552f6f6cde829d35d3c3137a7f"
-  },
-  "lib/devtools": {
-    "rev": "01c1eaeb123e4364fbe96cdddf875640edf2566c"
-  },
   "lib/forge-std": {
     "rev": "a3dca253700f19f15b1837c57c67b9388f5cc3fb"
   },
