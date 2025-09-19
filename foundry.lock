@@ -2,9 +2,6 @@
   "lib/LayerZero-v2": {
     "rev": "88428755be6caa71cb1d2926141d73c8989296b5"
   },
-  "lib/devtools": {
-    "rev": "01c1eaeb123e4364fbe96cdddf875640edf2566c"
-  },
   "lib/forge-std": {
     "branch": {
       "name": "master",
