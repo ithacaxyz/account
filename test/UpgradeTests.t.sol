@@ -46,6 +46,8 @@ contract UpgradeTest is BaseTest {
     uint256 preToken1Balance;
     uint256 preToken2Balance;
     uint256 preNonce;
+    // Get expected old version from environment variable
+    string public expectedOldVersion = vm.envString("UPGRADE_TEST_OLD_VERSION");
 
     // Post-upgrade state
     bytes32[] postKeyHashes;
@@ -127,12 +129,8 @@ contract UpgradeTest is BaseTest {
         // Step 3: Capture pre-upgrade state
         _capturePreUpgradeState();
 
-        bytes memory upgradeCalldata =
-            abi.encodeWithSelector(IthacaAccount.upgradeProxyAccount.selector, newImplementation);
-
-        vm.prank(userEOA);
-        (bool success,) = userEOA.call(upgradeCalldata);
-        require(success, "Upgrade failed");
+        // Step 4: Perform upgrade
+        _performUpgrade();
 
         // Step 5: Capture post-upgrade state
         _capturePostUpgradeState();
@@ -142,6 +140,38 @@ contract UpgradeTest is BaseTest {
 
         // Step 7: Test post-upgrade functionality
         _testPostUpgradeFunctionality();
+    }
+
+    function _performUpgrade() internal {
+        // Get the version from the new implementation for comparison
+        IthacaAccount newImpl = IthacaAccount(payable(newImplementation));
+        (,, string memory expectedNewVersion,,,,) = newImpl.eip712Domain();
+
+        // Check version before upgrade matches expected old version
+        (,, string memory versionBefore,,,,) = userAccount.eip712Domain();
+        assertEq(
+            keccak256(bytes(versionBefore)),
+            keccak256(bytes(expectedOldVersion)),
+            string.concat("Version before upgrade should be ", expectedOldVersion)
+        );
+
+        // Perform the upgrade
+        bytes memory upgradeCalldata =
+            abi.encodeWithSelector(IthacaAccount.upgradeProxyAccount.selector, newImplementation);
+
+        vm.prank(userEOA);
+        (bool success,) = userEOA.call(upgradeCalldata);
+        require(success, "Upgrade failed");
+
+        // Check version after upgrade
+        (,, string memory versionAfter,,,,) = userAccount.eip712Domain();
+
+        // Verify the version matches the new implementation version after upgrade
+        assertEq(
+            keccak256(bytes(versionAfter)),
+            keccak256(bytes(expectedNewVersion)),
+            string.concat("Version after upgrade should be ", expectedNewVersion)
+        );
     }
 
     function _setupOldAccountState() internal {
@@ -433,14 +463,10 @@ contract UpgradeTest is BaseTest {
         // Fund account
         vm.deal(address(userAccount), 5 ether);
 
-        // Deploy and upgrade
-        bytes memory upgradeCalldata =
-            abi.encodeWithSelector(IthacaAccount.upgradeProxyAccount.selector, newImplementation);
-
         vm.stopPrank();
-        vm.prank(userEOA);
-        (bool success,) = userEOA.call(upgradeCalldata);
-        require(success, "Upgrade failed");
+
+        // Perform upgrade
+        _performUpgrade();
 
         // Verify spending limits still work after upgrade
         GuardedExecutor.SpendInfo[] memory spendInfos = userAccount.spendInfos(keyHash);
@@ -479,14 +505,10 @@ contract UpgradeTest is BaseTest {
         (, bytes32[] memory keyHashesBefore) = userAccount.getKeys();
         uint256 authorizedCountBefore = keyHashesBefore.length;
 
-        // Upgrade
-        bytes memory upgradeCalldata =
-            abi.encodeWithSelector(IthacaAccount.upgradeProxyAccount.selector, newImplementation);
-
         vm.stopPrank();
-        vm.prank(userEOA);
-        (bool success,) = userEOA.call(upgradeCalldata);
-        require(success, "Upgrade failed");
+
+        // Perform upgrade
+        _performUpgrade();
 
         // Verify all keys preserved
         (, bytes32[] memory keyHashesAfter) = userAccount.getKeys();
@@ -529,13 +551,8 @@ contract UpgradeTest is BaseTest {
         }
         assertEq(limitsCount, 3, "Should have 3 ETH spending limits");
 
-        // Upgrade
-        bytes memory upgradeCalldata =
-            abi.encodeWithSelector(IthacaAccount.upgradeProxyAccount.selector, newImplementation);
-
-        vm.prank(userEOA);
-        (bool success,) = userEOA.call(upgradeCalldata);
-        require(success, "Upgrade failed");
+        // Perform upgrade
+        _performUpgrade();
 
         // Verify spending state preserved
         GuardedExecutor.SpendInfo[] memory spendsAfter = userAccount.spendInfos(keyHash);
