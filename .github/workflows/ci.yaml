@@ -28,6 +28,10 @@ jobs:
           forge fmt --check
 
       - name: Run tests
+        env:
+          UPGRADE_TEST_RPC_URL: ${{ secrets.UPGRADE_TEST_RPC_URL }}
+          UPGRADE_TEST_OLD_PROXY: ${{ secrets.UPGRADE_TEST_OLD_PROXY }}
+          UPGRADE_TEST_OLD_VERSION: ${{ secrets.UPGRADE_TEST_OLD_VERSION }}
         run: |
           forge test -vvv
 
