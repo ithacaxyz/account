@@ -198,8 +198,8 @@ contract UpgradeTest is BaseTest {
         // Setup execution permissions
         _setupExecutionPermissions();
 
-        // Fund the account and perform transactions
-        _fundAccountAndExecuteTransactions();
+        // Fund the account
+        _fundAccount();
 
         vm.stopPrank();
     }
@@ -250,8 +250,6 @@ contract UpgradeTest is BaseTest {
                 p256Key.keyHash, address(0), GuardedExecutor.SpendPeriod.Forever, 10 ether
             );
         }
-
-        // Note: We skip setting limits for secp256k1SuperAdminKey as super admins can't have spending limits
     }
 
     function _setupExecutionPermissions() internal {
@@ -290,18 +288,13 @@ contract UpgradeTest is BaseTest {
         }
     }
 
-    function _fundAccountAndExecuteTransactions() internal {
+    function _fundAccount() internal {
         // Fund with ETH
         vm.deal(address(userAccount), 10 ether);
 
         // Fund with tokens
         mockToken1.mint(address(userAccount), 10000e18);
         mockToken2.mint(address(userAccount), 5000e18);
-
-        // Note: We skip actual transaction execution since signature verification
-        // would fail with randomly generated keys on a forked network.
-        // The important part is that the account state (keys, limits, balances)
-        // is properly set up for the upgrade test.
     }
 
     function _capturePreUpgradeState() internal {
@@ -535,9 +528,6 @@ contract UpgradeTest is BaseTest {
         // Fund account
         vm.deal(address(userAccount), 20 ether);
         vm.stopPrank();
-
-        // Note: We skip actual spending execution to avoid signature verification issues
-        // Instead we'll just test that the spending limits are preserved through upgrade
 
         // Capture spending state before upgrade
         GuardedExecutor.SpendInfo[] memory spendsBefore = userAccount.spendInfos(keyHash);
