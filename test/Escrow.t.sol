@@ -723,6 +723,80 @@ contract EscrowTest is BaseTest {
         assertEq(uint8(escrow.statuses(escrowId3)), uint8(IEscrow.EscrowStatus.CREATED));
     }
 
+    // ========== Early Refund Functionality Tests ==========
+
+    function testEarlyRefundFunctionality() public {
+        // Test 1: Recipient can trigger early refund for both parties
+        IEscrow.Escrow memory escrowData = _createEscrowData(1000, 800);
+        bytes32 escrowId = _createAndFundEscrow(escrowData);
+        bytes32[] memory escrowIds = new bytes32[](1);
+        escrowIds[0] = escrowId;
+
+        uint256 depositorBalanceBefore = token.balanceOf(depositor);
+        uint256 recipientBalanceBefore = token.balanceOf(recipient);
+
+        vm.prank(recipient);
+        escrow.refund(escrowIds);
+
+        assertEq(token.balanceOf(depositor) - depositorBalanceBefore, 800); // Depositor gets refundAmount
+        assertEq(token.balanceOf(recipient) - recipientBalanceBefore, 200); // Recipient gets escrowAmount - refundAmount
+        assertEq(uint256(escrow.statuses(escrowId)), uint256(IEscrow.EscrowStatus.FINALIZED));
+
+        // Test 2: Recipient can trigger early refund for themselves only
+        escrowData.salt = bytes12(uint96(2));
+        escrowId = _createAndFundEscrow(escrowData);
+        escrowIds[0] = escrowId;
+
+        recipientBalanceBefore = token.balanceOf(recipient);
+
+        vm.prank(recipient);
+        escrow.refundRecipient(escrowIds);
+
+        assertEq(token.balanceOf(recipient) - recipientBalanceBefore, 200); // Recipient gets escrowAmount - refundAmount
+        assertEq(uint256(escrow.statuses(escrowId)), uint256(IEscrow.EscrowStatus.REFUND_RECIPIENT));
+
+        // Test 3: Depositor can trigger early refund for themselves only
+        escrowData.salt = bytes12(uint96(3));
+        escrowId = _createAndFundEscrow(escrowData);
+        escrowIds[0] = escrowId;
+
+        depositorBalanceBefore = token.balanceOf(depositor);
+
+        vm.prank(depositor);
+        escrow.refundDepositor(escrowIds);
+
+        assertEq(token.balanceOf(depositor) - depositorBalanceBefore, 800); // Depositor gets refundAmount
+        assertEq(uint256(escrow.statuses(escrowId)), uint256(IEscrow.EscrowStatus.REFUND_DEPOSIT));
+
+        // Test 4: Unauthorized users cannot trigger early refunds
+        escrowData.salt = bytes12(uint96(4));
+        escrowId = _createAndFundEscrow(escrowData);
+        escrowIds[0] = escrowId;
+
+        vm.expectRevert(bytes4(keccak256("RefundInvalid()")));
+        vm.prank(randomUser);
+        escrow.refund(escrowIds);
+
+        vm.expectRevert(bytes4(keccak256("RefundInvalid()")));
+        vm.prank(attacker);
+        escrow.refundDepositor(escrowIds);
+
+        vm.expectRevert(bytes4(keccak256("RefundInvalid()")));
+        vm.prank(randomUser);
+        escrow.refundRecipient(escrowIds);
+
+        // Test 5: Normal timeout refunds still work after early refunds
+        depositorBalanceBefore = token.balanceOf(depositor);
+        recipientBalanceBefore = token.balanceOf(recipient);
+
+        vm.warp(block.timestamp + 2 hours);
+        vm.prank(randomUser);
+        escrow.refund(escrowIds);
+
+        assertEq(token.balanceOf(depositor) - depositorBalanceBefore, 800); // Depositor gets refundAmount
+        assertEq(token.balanceOf(recipient) - recipientBalanceBefore, 200); // Recipient gets escrowAmount - refundAmount
+    }
+
     // ========== Helper Functions ==========
 
     function _createEscrowData(uint256 escrowAmount, uint256 refundAmount)
