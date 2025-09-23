@@ -92,6 +92,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         mapping(bytes32 => LibStorage.Bump) keyExtraStorage;
         /// @dev Nonce management when porto account acts as paymaster.
         mapping(bytes32 => bool) paymasterNonces;
+        /// @dev Mapping of approved spends to their IDs
+        mapping(uint256 => Spend) spends;
     }
 
     /// @dev Returns the storage pointer.
@@ -138,6 +140,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
     /// @dev The paymaster nonce has already been used.
     error PaymasterNonceError();
+
+    /// @dev The spend has expired.
+    error Expired();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -590,6 +595,80 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         $.keyStorage[keyHash].clear();
         $.keyExtraStorage[keyHash].invalidate();
         if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // Spend/SubAccount Functions
+    ////////////////////////////////////////////////////////////////////////
+
+    struct Spend {
+        /// @dev If the spender is a parent, then it can sweep ALL funds from the account.
+        bool isParent;
+        /// @dev The expiry of the spend.
+        uint32 expiry;
+        /// @dev The `msg.sender` which is calling spend.
+        address spender;
+        /// @dev Mapping of tokens to their spending limits.
+        mapping(address token => uint256 limit) limits;
+    }
+
+    /// @dev This function can be used to give safe spending permissions to any entity.
+    /// In the `parentAccount` <> `subAccount` architecture, this function is used for -
+    /// * In the parent account, subaccounts can use this function to JIT pull funds.
+    /// * In the sub account, parent accounts can use this function to sweep back leftover funds.
+    /// Note: This spend function only supports ERC20 tokens.
+    /// We will have to create a spend function for all types of tokens we want to support.
+    function spend(
+        uint256 spendId,
+        address[] calldata tokens,
+        uint256[] calldata amounts,
+        address recipient
+    ) public payable virtual {
+        Spend storage _spend = _getAccountStorage().spends[spendId];
+
+        // Spend can only be called by the authorized spender
+        if (msg.sender != _spend.spender) {
+            revert Unauthorized();
+        }
+
+        // If the spender is a parent, then it can sweep any amount of funds from the account.
+        if (_spend.isParent) {
+            for (uint256 i = 0; i < tokens.length; i++) {
+                TokenTransferLib.safeTransfer(tokens[i], recipient, amounts[i]);
+            }
+        } else {
+            if (block.timestamp > _spend.expiry) {
+                revert Expired();
+            }
+
+            for (uint256 i = 0; i < tokens.length; i++) {
+                address token = tokens[i];
+                // Ensure that the spending is within the specified limits
+                _spend.limits[token] -= amounts[i];
+
+                TokenTransferLib.safeTransfer(token, recipient, amounts[i]);
+            }
+        }
+    }
+
+    /// @dev Sets the spend for the `spendId`.
+    /// Note: Values are overridden for existing spends, instead of adding.
+    function setSpend(
+        uint256 spendId,
+        bool isParent,
+        uint32 expiry,
+        address spender,
+        address[] calldata tokens,
+        uint256[] calldata limits
+    ) public virtual onlyThis {
+        Spend storage _spend = _getAccountStorage().spends[spendId];
+
+        _spend.isParent = isParent;
+        _spend.expiry = expiry;
+        _spend.spender = spender;
+        for (uint256 i = 0; i < tokens.length; i++) {
+            _spend.limits[tokens[i]] = limits[i];
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////
