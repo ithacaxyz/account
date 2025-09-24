@@ -6,6 +6,8 @@ import "./Base.t.sol";
 import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCallTarget.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 
+import {Merkle} from "murky/Merkle.sol";
+
 contract AccountTest is BaseTest {
     struct _TestExecuteWithSignatureTemps {
         TargetFunctionPayload[] targetFunctionPayloads;
@@ -68,6 +70,41 @@ contract AccountTest is BaseTest {
         }
     }
 
+    function testMerkleSignature(bytes32 randomDigest) public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        PassKey memory k = _randomSecp256k1PassKey();
+
+        k.k.isSuperAdmin = true;
+
+        vm.prank(d.eoa);
+        d.d.authorize(k.k);
+
+        bytes32 actualDigest = keccak256("actualDigest");
+
+        Merkle merkle = new Merkle();
+
+        bytes32[] memory leaves = new bytes32[](2);
+        leaves[0] = actualDigest;
+        leaves[1] = randomDigest;
+        bytes32 root = merkle.getRoot(leaves);
+
+        bytes32[] memory proof = merkle.getProof(leaves, 0);
+
+        bytes memory rootSig = abi.encode(proof, root, _sig(k, root));
+        bytes memory sig = abi.encodePacked(rootSig, bytes32(0), uint8(0), uint8(1));
+
+        (bool isValid, bytes32 keyHash) = d.d.unwrapAndValidateSignature(actualDigest, sig);
+
+        assertEq(isValid, true);
+        assertEq(keyHash, k.keyHash);
+
+        // Test some random digest
+        bytes32 randomDigest2 = keccak256("randomDigest2");
+        (isValid, keyHash) = d.d.unwrapAndValidateSignature(randomDigest2, sig);
+        assertEq(isValid, false);
+        assertEq(keyHash, bytes32(0));
+    }
+
     function testSignatureCheckerApproval(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256k1PassKey();
@@ -93,8 +130,7 @@ contract AccountTest is BaseTest {
 
         bytes32 replaySafeDigest = keccak256(abi.encode(d.d.SIGN_TYPEHASH(), digest));
 
-        (, string memory name, string memory version,, address verifyingContract,,) =
-            d.d.eip712Domain();
+        (,,,, address verifyingContract,,) = d.d.eip712Domain();
         bytes32 domain = keccak256(
             abi.encode(
                 0x035aff83d86937d35b32e04f0ddc6ff469290eef2f1b692d8a815c89404d4749, // DOMAIN_TYPEHASH with only verifyingContract

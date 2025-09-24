@@ -491,10 +491,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
 
-    /// @dev Verifies the merkle sig for the multi chain intents.
-    /// - Note: Each leaf of the merkle tree should be a standard intent digest, computed with chainId.
-    /// - Leaf intents do NOT need to have the multichain nonce prefix.
-    /// - The signature for multi chain intents using merkle verification is encoded as:
+    /// @dev Verifies the merkle sig
+    /// - Note: Each leaf of the merkle tree should be a standard digest.
+    /// - The signature for using merkle verification is encoded as:
     /// - bytes signature = abi.encode(bytes32[] proof, bytes32 root, bytes rootSig)
     function _verifyMerkleSig(bytes32 digest, bytes calldata signature)
         internal
@@ -517,17 +516,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             rootSig.offset := add(rootSigOffset, 0x20)
         }
 
-        console.logBytes32(root);
-
-        console.log("Proof length: ", proof.length);
-        console.logBytes32(proof[0]);
-
         if (MerkleProofLib.verifyCalldata(proof, root, digest)) {
-            console.log("Entered here");
             (isValid, keyHash) = unwrapAndValidateSignature(root, rootSig);
 
-            console.logBytes32(keyHash);
-            console.log(isValid);
             return (isValid, keyHash);
         }
 
@@ -558,17 +549,12 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             signature = LibBytes.truncatedCalldata(signature, n);
             // Do the prehash if last byte is non-zero.
             if (uint256(LibBytes.loadCalldata(signature, n + 1)) & 0xff != 0) {
-                console.log("prehash");
                 digest = EfficientHashLib.sha2(digest); // `sha256(abi.encode(digest))`.
             }
             merkle = uint256(LibBytes.loadCalldata(signature, n + 2)) & 0xff != 0;
         }
 
-        console.logBytes(signature);
-
-        console.log("Reached here", merkle);
         if (merkle) {
-            console.log("merkle");
             return _verifyMerkleSig(digest, signature);
         }
 
