@@ -23,6 +23,7 @@ import {LibNonce} from "./libraries/LibNonce.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
+import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 
 /// @title Account
 /// @notice A account contract for EOAs with EIP7702.
@@ -490,9 +491,52 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
 
+    /// @dev Verifies the merkle sig for the multi chain intents.
+    /// - Note: Each leaf of the merkle tree should be a standard intent digest, computed with chainId.
+    /// - Leaf intents do NOT need to have the multichain nonce prefix.
+    /// - The signature for multi chain intents using merkle verification is encoded as:
+    /// - bytes signature = abi.encode(bytes32[] proof, bytes32 root, bytes rootSig)
+    function _verifyMerkleSig(bytes32 digest, bytes calldata signature)
+        internal
+        view
+        returns (bool isValid, bytes32 keyHash)
+    {
+        bytes32[] calldata proof;
+        bytes32 root;
+        bytes calldata rootSig;
+
+        assembly ("memory-safe") {
+            let proofOffset := add(signature.offset, calldataload(signature.offset))
+            proof.length := calldataload(proofOffset)
+            proof.offset := add(proofOffset, 0x20)
+
+            root := calldataload(add(signature.offset, 0x20))
+
+            let rootSigOffset := add(signature.offset, calldataload(add(signature.offset, 0x40)))
+            rootSig.length := calldataload(rootSigOffset)
+            rootSig.offset := add(rootSigOffset, 0x20)
+        }
+
+        console.logBytes32(root);
+
+        console.log("Proof length: ", proof.length);
+        console.logBytes32(proof[0]);
+
+        if (MerkleProofLib.verifyCalldata(proof, root, digest)) {
+            console.log("Entered here");
+            (isValid, keyHash) = unwrapAndValidateSignature(root, rootSig);
+
+            console.logBytes32(keyHash);
+            console.log(isValid);
+            return (isValid, keyHash);
+        }
+
+        return (false, bytes32(0));
+    }
+
     /// @dev Returns if the signature is valid, along with its `keyHash`.
     /// The `signature` is a wrapped signature, given by
-    /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
+    /// `abi.encode(bytes(innerSignature), bytes32(keyHash), bool(prehash), bool(merkle))`.
     function unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
         public
         view
@@ -507,14 +551,25 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             return (ECDSA.recoverCalldata(digest, signature) == address(this), 0);
         }
 
+        bool merkle;
         unchecked {
-            uint256 n = signature.length - 0x21;
+            uint256 n = signature.length - 0x22;
             keyHash = LibBytes.loadCalldata(signature, n);
             signature = LibBytes.truncatedCalldata(signature, n);
             // Do the prehash if last byte is non-zero.
             if (uint256(LibBytes.loadCalldata(signature, n + 1)) & 0xff != 0) {
+                console.log("prehash");
                 digest = EfficientHashLib.sha2(digest); // `sha256(abi.encode(digest))`.
             }
+            merkle = uint256(LibBytes.loadCalldata(signature, n + 2)) & 0xff != 0;
+        }
+
+        console.logBytes(signature);
+
+        console.log("Reached here", merkle);
+        if (merkle) {
+            console.log("merkle");
+            return _verifyMerkleSig(digest, signature);
         }
 
         Key memory key = getKey(keyHash);
