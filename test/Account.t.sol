@@ -6,6 +6,8 @@ import "./Base.t.sol";
 import {MockSampleDelegateCallTarget} from "./utils/mocks/MockSampleDelegateCallTarget.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
 
+import {Merkle} from "murky/Merkle.sol";
+
 contract AccountTest is BaseTest {
     struct _TestExecuteWithSignatureTemps {
         TargetFunctionPayload[] targetFunctionPayloads;
@@ -68,6 +70,70 @@ contract AccountTest is BaseTest {
         }
     }
 
+    function testMerkleSignature(uint256 seed) public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        PassKey memory k = _randomSecp256k1PassKey();
+        k.k.isSuperAdmin = true;
+
+        vm.prank(d.eoa);
+        d.d.authorize(k.k);
+
+        // Fuzz number of leaves (2 to 256)
+        uint256 numLeaves = bound(seed, 2, 256);
+        bytes32[] memory leaves = new bytes32[](numLeaves);
+
+        // Generate random leaves
+        for (uint256 i = 0; i < numLeaves; i++) {
+            leaves[i] = keccak256(abi.encodePacked("leaf", i, seed));
+        }
+
+        // Pick a random valid index
+        uint256 validIndex = seed % numLeaves;
+        bytes32 validDigest = leaves[validIndex];
+
+        Merkle merkle = new Merkle();
+        bytes32 root = merkle.getRoot(leaves);
+        bytes32[] memory proof = merkle.getProof(leaves, validIndex);
+
+        // Test valid merkle proof
+        {
+            bytes memory rootSig = abi.encode(proof, root, _sig(k, root));
+            bytes memory sig = abi.encodePacked(rootSig, bytes32(0), uint8(0), uint8(1));
+
+            (bool isValid, bytes32 keyHash) = d.d.unwrapAndValidateSignature(validDigest, sig);
+            assertEq(isValid, true);
+            assertEq(keyHash, k.keyHash);
+
+            // Test invalid digest not in tree
+            bytes32 invalidDigest = keccak256(abi.encodePacked("not_in_tree", seed));
+            (isValid, keyHash) = d.d.unwrapAndValidateSignature(invalidDigest, sig);
+            assertEq(isValid, false);
+            assertEq(keyHash, bytes32(0));
+        }
+
+        // Test tampered proof (only if proof has elements to tamper)
+        if (proof.length > 0) {
+            bytes32[] memory tamperedProof = new bytes32[](proof.length);
+            for (uint256 i = 0; i < proof.length; i++) {
+                tamperedProof[i] = i == 0 ? bytes32(uint256(proof[i]) ^ 1) : proof[i];
+            }
+            bytes memory tamperedRootSig = abi.encode(tamperedProof, root, _sig(k, root));
+            bytes memory tamperedSig =
+                abi.encodePacked(tamperedRootSig, bytes32(0), uint8(0), uint8(1));
+            (bool isValid,) = d.d.unwrapAndValidateSignature(validDigest, tamperedSig);
+            assertEq(isValid, false);
+        }
+
+        // Test wrong root (tampered root should fail verification)
+        {
+            bytes32 wrongRoot = bytes32(uint256(root) ^ 1);
+            bytes memory wrongRootSig = abi.encode(proof, wrongRoot, _sig(k, wrongRoot));
+            bytes memory wrongSig = abi.encodePacked(wrongRootSig, bytes32(0), uint8(0), uint8(1));
+            (bool isValid,) = d.d.unwrapAndValidateSignature(validDigest, wrongSig);
+            assertEq(isValid, false);
+        }
+    }
+
     function testSignatureCheckerApproval(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256k1PassKey();
@@ -93,8 +159,7 @@ contract AccountTest is BaseTest {
 
         bytes32 replaySafeDigest = keccak256(abi.encode(d.d.SIGN_TYPEHASH(), digest));
 
-        (, string memory name, string memory version,, address verifyingContract,,) =
-            d.d.eip712Domain();
+        (,,,, address verifyingContract,,) = d.d.eip712Domain();
         bytes32 domain = keccak256(
             abi.encode(
                 0x035aff83d86937d35b32e04f0ddc6ff469290eef2f1b692d8a815c89404d4749, // DOMAIN_TYPEHASH with only verifyingContract
