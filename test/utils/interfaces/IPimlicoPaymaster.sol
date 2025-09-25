@@ -91,9 +91,10 @@ library PimlicoHelpers {
 
     function getHashV6(uint8 _mode, UserOperation calldata _userOp) public view returns (bytes32) {
         if (_mode == VERIFYING_MODE) {
-            return _getHashV6(
-                _userOp, VERIFYING_PAYMASTER_DATA_LENGTH + MODE_AND_ALLOW_ALL_BUNDLERS_LENGTH
-            );
+            return
+                _getHashV6(
+                    _userOp, VERIFYING_PAYMASTER_DATA_LENGTH + MODE_AND_ALLOW_ALL_BUNDLERS_LENGTH
+                );
         } else {
             uint8 paymasterDataLength =
                 ERC20_PAYMASTER_DATA_LENGTH + MODE_AND_ALLOW_ALL_BUNDLERS_LENGTH;

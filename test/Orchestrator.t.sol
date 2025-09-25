@@ -324,8 +324,9 @@ contract OrchestratorTest is BaseTest {
         {
             Orchestrator.Intent memory u = baseIntent;
             u.nonce = d.d.getNonce(0);
-            u.executionData =
-                _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
+            u.executionData = _transferExecutionData(
+                address(paymentToken), address(0xabcd), 1 ether
+            );
             u.expiry = 0; // No expiry
             u.signature = _sig(d, u);
 
@@ -337,8 +338,9 @@ contract OrchestratorTest is BaseTest {
         {
             Orchestrator.Intent memory u = baseIntent;
             u.nonce = d.d.getNonce(0);
-            u.executionData =
-                _transferExecutionData(address(paymentToken), address(0xbcde), 1 ether);
+            u.executionData = _transferExecutionData(
+                address(paymentToken), address(0xbcde), 1 ether
+            );
             u.expiry = block.timestamp + 1 hours; // Future expiry
             u.signature = _sig(d, u);
 
@@ -350,8 +352,9 @@ contract OrchestratorTest is BaseTest {
         {
             Orchestrator.Intent memory u = baseIntent;
             u.nonce = d.d.getNonce(0); // This will be 2 after the previous two intents
-            u.executionData =
-                _transferExecutionData(address(paymentToken), address(0xcdef), 1 ether);
+            u.executionData = _transferExecutionData(
+                address(paymentToken), address(0xcdef), 1 ether
+            );
             u.expiry = block.timestamp - 1; // Past expiry
             u.signature = _sig(d, u);
 
@@ -427,8 +430,9 @@ contract OrchestratorTest is BaseTest {
             Orchestrator.Intent memory u;
             u.eoa = ds[i].eoa;
             u.nonce = 0;
-            u.executionData =
-                _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
+            u.executionData = _transferExecutionData(
+                address(paymentToken), address(0xabcd), 1 ether
+            );
             u.payer = address(0x00);
             u.paymentToken = address(0x00);
             u.paymentRecipient = address(0xbcde);
@@ -775,8 +779,9 @@ contract OrchestratorTest is BaseTest {
                 t.kInit.k.isSuperAdmin = true;
 
                 ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
-                initCalls[0].data =
-                    abi.encodeWithSelector(IthacaAccount.authorize.selector, t.kInit.k);
+                initCalls[0].data = abi.encodeWithSelector(
+                    IthacaAccount.authorize.selector, t.kInit.k
+                );
                 pInit.eoa = t.eoa;
 
                 pInit.executionData = abi.encode(initCalls);
@@ -924,8 +929,9 @@ contract OrchestratorTest is BaseTest {
         if (_randomChance(16)) {
             u.combinedGas += 10_000;
             // Fill with some junk signature, but with the session `keyHash`.
-            u.signature =
-                abi.encodePacked(keccak256("a"), keccak256("b"), kSession.keyHash, uint8(0));
+            u.signature = abi.encodePacked(
+                keccak256("a"), keccak256("b"), kSession.keyHash, uint8(0)
+            );
 
             (t.gExecute, t.gCombined, t.gUsed) = _estimateGas(u);
 
@@ -1481,7 +1487,9 @@ contract OrchestratorTest is BaseTest {
             calls[0] = ERC7821.Call({
                 to: address(t.usdcBase),
                 value: 0,
-                data: abi.encodeWithSignature("approve(address,uint256)", address(t.escrowBase), 600)
+                data: abi.encodeWithSignature(
+                    "approve(address,uint256)", address(t.escrowBase), 600
+                )
             });
             // Then call escrow function
             calls[1] = ERC7821.Call({

@@ -66,8 +66,9 @@ contract SimpleFunderTest is Test {
             )
         );
 
-        bytes32 structHash =
-            keccak256(abi.encode(WITHDRAWAL_TYPE_HASH, _token, _recipient, amount, deadline, nonce));
+        bytes32 structHash = keccak256(
+            abi.encode(WITHDRAWAL_TYPE_HASH, _token, _recipient, amount, deadline, nonce)
+        );
 
         return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
     }
@@ -158,10 +159,11 @@ contract SimpleFunderTest is Test {
 
     function test_fund_nativeToken() public {
         ICommon.Transfer[] memory transfers = new ICommon.Transfer[](1);
-        transfers[0] = ICommon.Transfer({
-            token: address(0), // Native token (ETH)
-            amount: 1 ether
-        });
+        transfers[0] =
+            ICommon.Transfer({
+                token: address(0), // Native token (ETH)
+                amount: 1 ether
+            });
 
         bytes32 digest = keccak256("test digest");
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(funderPrivateKey, digest);

@@ -9,7 +9,6 @@ interface IOrchestrator is ICommon {
     /// @dev Executes a single encoded intent.
     /// @param encodedIntent The encoded intent
     /// @return err The error selector (non-zero if there is an error)
-
     function execute(bytes calldata encodedIntent) external payable returns (bytes4 err);
 
     /// @dev Executes an array of encoded intents.
