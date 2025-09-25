@@ -324,9 +324,8 @@ contract OrchestratorTest is BaseTest {
         {
             Orchestrator.Intent memory u = baseIntent;
             u.nonce = d.d.getNonce(0);
-            u.executionData = _transferExecutionData(
-                address(paymentToken), address(0xabcd), 1 ether
-            );
+            u.executionData =
+                _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
             u.expiry = 0; // No expiry
             u.signature = _sig(d, u);
 
@@ -338,9 +337,8 @@ contract OrchestratorTest is BaseTest {
         {
             Orchestrator.Intent memory u = baseIntent;
             u.nonce = d.d.getNonce(0);
-            u.executionData = _transferExecutionData(
-                address(paymentToken), address(0xbcde), 1 ether
-            );
+            u.executionData =
+                _transferExecutionData(address(paymentToken), address(0xbcde), 1 ether);
             u.expiry = block.timestamp + 1 hours; // Future expiry
             u.signature = _sig(d, u);
 
@@ -352,9 +350,8 @@ contract OrchestratorTest is BaseTest {
         {
             Orchestrator.Intent memory u = baseIntent;
             u.nonce = d.d.getNonce(0); // This will be 2 after the previous two intents
-            u.executionData = _transferExecutionData(
-                address(paymentToken), address(0xcdef), 1 ether
-            );
+            u.executionData =
+                _transferExecutionData(address(paymentToken), address(0xcdef), 1 ether);
             u.expiry = block.timestamp - 1; // Past expiry
             u.signature = _sig(d, u);
 
@@ -430,9 +427,8 @@ contract OrchestratorTest is BaseTest {
             Orchestrator.Intent memory u;
             u.eoa = ds[i].eoa;
             u.nonce = 0;
-            u.executionData = _transferExecutionData(
-                address(paymentToken), address(0xabcd), 1 ether
-            );
+            u.executionData =
+                _transferExecutionData(address(paymentToken), address(0xabcd), 1 ether);
             u.payer = address(0x00);
             u.paymentToken = address(0x00);
             u.paymentRecipient = address(0xbcde);
@@ -929,9 +925,8 @@ contract OrchestratorTest is BaseTest {
         if (_randomChance(16)) {
             u.combinedGas += 10_000;
             // Fill with some junk signature, but with the session `keyHash`.
-            u.signature = abi.encodePacked(
-                keccak256("a"), keccak256("b"), kSession.keyHash, uint8(0)
-            );
+            u.signature =
+                abi.encodePacked(keccak256("a"), keccak256("b"), kSession.keyHash, uint8(0));
 
             (t.gExecute, t.gCombined, t.gUsed) = _estimateGas(u);
 

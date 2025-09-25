@@ -1222,9 +1222,8 @@ contract BenchmarkTest is BaseTest {
         privateKeys = new uint256[](numAccounts);
 
         for (uint256 i = 0; i < numAccounts; i++) {
-            (eoas[i], privateKeys[i]) = makeAddrAndKey(
-                string(abi.encodePacked("zerodev-kernel", i))
-            );
+            (eoas[i], privateKeys[i]) =
+                makeAddrAndKey(string(abi.encodePacked("zerodev-kernel", i)));
             accounts[i] = IKernelFactory(_ZERODEV_KERNEL_FACTORY_ADDR)
                 .createAccount(
                     abi.encodeWithSelector(
