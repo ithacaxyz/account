@@ -490,6 +490,15 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             : _hashTypedData(structHash);
     }
 
+    function validateSignatureAndNonce(bytes32 digest, uint256 nonce, bytes calldata signature)
+        external
+        override
+        returns (bool, bytes32)
+    {
+        LibNonce.checkAndIncrement(_getAccountStorage().nonceSeqs, nonce);
+        return unwrapAndValidateSignature(digest, signature);
+    }
+
     /// @dev Returns if the signature is valid, along with its `keyHash`.
     /// The `signature` is a wrapped signature, given by
     /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
@@ -740,6 +749,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         returns (string memory name, string memory version)
     {
         name = "IthacaAccount";
-        version = "0.5.10";
+        version = "0.5.11";
     }
 }

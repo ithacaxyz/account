@@ -43,4 +43,9 @@ interface IIthacaAccount is ICommon {
 
     /// @dev Check and increment the nonce.
     function checkAndIncrementNonce(uint256 nonce) external payable;
+
+    /// @dev Single call combining `unwrapAndValidateSignature` and `checkAndIncrementNonce`.
+    function validateSignatureAndNonce(bytes32 digest, uint256 nonce, bytes calldata signature)
+        external
+        returns (bool isValid, bytes32 keyHash);
 }
