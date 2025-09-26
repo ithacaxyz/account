@@ -267,7 +267,7 @@ contract BenchmarkTest is BaseTest {
         }
     }
 
-    function testERC20Transfer_ERC4337MinimalAccount() public {
+    function testERC20Transfer_MaximumCost_ERC4337MinimalAccount() public {
         ERC4337.Call[] memory calls = new ERC4337.Call[](1);
         calls[0].target = address(paymentToken);
         calls[0].data =
@@ -284,12 +284,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(u, relayer);
-        vm.snapshotGasLastCall("testERC20Transfer_ERC4337MinimalAccount");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_ERC4337MinimalAccount");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_ERC4337MinimalAccount_ERC20SelfPay() public {
+    function testERC20Transfer_MaximumCost_ERC4337MinimalAccount_ERC20SelfPay() public {
         ERC4337.Call[] memory calls = new ERC4337.Call[](1);
         calls[0].target = address(paymentToken);
         calls[0].data =
@@ -306,12 +306,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(u, relayer);
-        vm.snapshotGasLastCall("testERC20Transfer_ERC4337MinimalAccount_ERC20SelfPay");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_ERC4337MinimalAccount_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_ERC4337MinimalAccount_AppSponsor() public {
+    function testERC20Transfer_MaximumCost_ERC4337MinimalAccount_AppSponsor() public {
         ERC4337.Call[] memory calls = new ERC4337.Call[](1);
         calls[0].target = address(paymentToken);
         calls[0].data =
@@ -328,7 +328,7 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(u, relayer);
-        vm.snapshotGasLastCall("testERC20Transfer_ERC4337MinimalAccount_AppSponsor");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_ERC4337MinimalAccount_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
@@ -446,7 +446,7 @@ contract BenchmarkTest is BaseTest {
         }
     }
 
-    function testERC20Transfer_CoinbaseSmartWallet() public {
+    function testERC20Transfer_MaximumCost_CoinbaseSmartWallet() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -463,12 +463,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(u, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_CoinbaseSmartWallet");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_CoinbaseSmartWallet");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_CoinbaseSmartWallet_ERC20SelfPay() public {
+    function testERC20Transfer_MaximumCost_CoinbaseSmartWallet_ERC20SelfPay() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -485,12 +485,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(u, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_CoinbaseSmartWallet_ERC20SelfPay");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_CoinbaseSmartWallet_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch10_CoinbaseSmartWallet_ERC20SelfPay() public {
+    function testERC20Transfer_AverageCost_CoinbaseSmartWallet_ERC20SelfPay() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -518,12 +518,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(u2, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_CoinbaseSmartWallet_ERC20SelfPay");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_CoinbaseSmartWallet_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testERC20Transfer_CoinbaseSmartWallet_AppSponsor() public {
+    function testERC20Transfer_MaximumCost_CoinbaseSmartWallet_AppSponsor() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -540,12 +540,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(u, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_CoinbaseSmartWallet_AppSponsor");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_CoinbaseSmartWallet_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch10_CoinbaseSmartWallet_AppSponsor() public {
+    function testERC20Transfer_AverageCost_CoinbaseSmartWallet_AppSponsor() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -573,12 +573,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(u2, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_CoinbaseSmartWallet_AppSponsor");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_CoinbaseSmartWallet_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testERC20Transfer_batch10_CoinbaseSmartWallet() public {
+    function testERC20Transfer_AverageCost_CoinbaseSmartWallet() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -606,7 +606,7 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(u2, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_CoinbaseSmartWallet");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_CoinbaseSmartWallet");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
@@ -738,7 +738,7 @@ contract BenchmarkTest is BaseTest {
         }
     }
 
-    function testERC20Transfer_AlchemyModularAccount() public {
+    function testERC20Transfer_MaximumCost_AlchemyModularAccount() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -755,12 +755,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOps, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_AlchemyModularAccount");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_AlchemyModularAccount");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_AlchemyModularAccount_ERC20SelfPay() public {
+    function testERC20Transfer_MaximumCost_AlchemyModularAccount_ERC20SelfPay() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -777,12 +777,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOpsEth, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_AlchemyModularAccount_ERC20SelfPay");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_AlchemyModularAccount_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch10_AlchemyModularAccount_ERC20SelfPay() public {
+    function testERC20Transfer_AverageCost_AlchemyModularAccount_ERC20SelfPay() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -810,12 +810,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOps2, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_AlchemyModularAccount_ERC20SelfPay");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_AlchemyModularAccount_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testERC20Transfer_AlchemyModularAccount_AppSponsor() public {
+    function testERC20Transfer_MaximumCost_AlchemyModularAccount_AppSponsor() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -832,12 +832,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOpsErc20, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_AlchemyModularAccount_AppSponsor");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_AlchemyModularAccount_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch10_AlchemyModularAccount_AppSponsor() public {
+    function testERC20Transfer_AverageCost_AlchemyModularAccount_AppSponsor() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -865,12 +865,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOpsErc202, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_AlchemyModularAccount_AppSponsor");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_AlchemyModularAccount_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testERC20Transfer_batch10_AlchemyModularAccount() public {
+    function testERC20Transfer_AverageCost_AlchemyModularAccount() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
@@ -898,7 +898,7 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOps2, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_AlchemyModularAccount");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_AlchemyModularAccount");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
@@ -1136,7 +1136,7 @@ contract BenchmarkTest is BaseTest {
         }
     }
 
-    function testERC20Transfer_Safe4337() public {
+    function testERC20Transfer_MaximumCost_Safe4337() public {
         bytes memory payload = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
             paymentToken, // to
@@ -1150,11 +1150,11 @@ contract BenchmarkTest is BaseTest {
             _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_Safe4337");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_Safe4337");
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_Safe4337_ERC20SelfPay() public {
+    function testERC20Transfer_MaximumCost_Safe4337_ERC20SelfPay() public {
         bytes memory payload = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
             paymentToken, // to
@@ -1168,11 +1168,11 @@ contract BenchmarkTest is BaseTest {
             _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_Safe4337_ERC20SelfPay");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_Safe4337_ERC20SelfPay");
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch10_Safe4337_ERC20SelfPay() public {
+    function testERC20Transfer_AverageCost_Safe4337_ERC20SelfPay() public {
         bytes memory payload = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
             paymentToken, // to
@@ -1195,12 +1195,12 @@ contract BenchmarkTest is BaseTest {
             _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_Safe4337_ERC20SelfPay");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_Safe4337_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testERC20Transfer_Safe4337_AppSponsor() public {
+    function testERC20Transfer_MaximumCost_Safe4337_AppSponsor() public {
         bytes memory payload = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
             paymentToken, // to
@@ -1214,11 +1214,11 @@ contract BenchmarkTest is BaseTest {
             _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_Safe4337_AppSponsor");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_Safe4337_AppSponsor");
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch10_Safe4337_AppSponsor() public {
+    function testERC20Transfer_AverageCost_Safe4337_AppSponsor() public {
         bytes memory payload = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
             paymentToken, // to
@@ -1241,11 +1241,11 @@ contract BenchmarkTest is BaseTest {
             _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_Safe4337_AppSponsor");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_Safe4337_AppSponsor");
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testERC20Transfer_batch10_Safe4337() public {
+    function testERC20Transfer_AverageCost_Safe4337() public {
         bytes memory payload = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
             paymentToken, // to
@@ -1268,7 +1268,7 @@ contract BenchmarkTest is BaseTest {
             _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_Safe4337");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_Safe4337");
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
@@ -1336,7 +1336,7 @@ contract BenchmarkTest is BaseTest {
         }
     }
 
-    function testERC20Transfer_ZerodevKernel() public {
+    function testERC20Transfer_MaximumCost_ZerodevKernel() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
@@ -1356,12 +1356,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOps, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_ZerodevKernel");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_ZerodevKernel");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_ZerodevKernel_ERC20SelfPay() public {
+    function testERC20Transfer_MaximumCost_ZerodevKernel_ERC20SelfPay() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
@@ -1381,12 +1381,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOpsEth, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_ZerodevKernel_ERC20SelfPay");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_ZerodevKernel_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch10_ZerodevKernel_ERC20SelfPay() public {
+    function testERC20Transfer_AverageCost_ZerodevKernel_ERC20SelfPay() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
@@ -1417,12 +1417,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOps2, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_ZerodevKernel_ERC20SelfPay");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_ZerodevKernel_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testERC20Transfer_ZerodevKernel_AppSponsor() public {
+    function testERC20Transfer_MaximumCost_ZerodevKernel_AppSponsor() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
@@ -1442,12 +1442,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOpsErc20, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_ZerodevKernel_AppSponsor");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_ZerodevKernel_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch10_ZerodevKernel_AppSponsor() public {
+    function testERC20Transfer_AverageCost_ZerodevKernel_AppSponsor() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
@@ -1478,12 +1478,12 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOpsErc202, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_ZerodevKernel_AppSponsor");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_ZerodevKernel_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testERC20Transfer_batch10_ZerodevKernel() public {
+    function testERC20Transfer_AverageCost_ZerodevKernel() public {
         bytes memory payload = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
@@ -1514,7 +1514,7 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOps2, payable(relayer));
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_ZerodevKernel");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_ZerodevKernel");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
@@ -1647,7 +1647,7 @@ contract BenchmarkTest is BaseTest {
         }
     }
 
-    function testERC20Transfer_IthacaAccount1() public {
+    function testERC20Transfer_MaximumCost_IthacaAccount1() public {
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
@@ -1655,12 +1655,12 @@ contract BenchmarkTest is BaseTest {
             _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents[0]);
-        vm.snapshotGasLastCall("testERC20Transfer_IthacaAccount");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_IthacaAccount");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch10_IthacaAccount() public {
+    function testERC20Transfer_AverageCost_IthacaAccount() public {
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
 
@@ -1676,12 +1676,12 @@ contract BenchmarkTest is BaseTest {
             _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents2);
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_IthacaAccount");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_IthacaAccount");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testERC20Transfer_IthacaAccount_ERC20SelfPay() public {
+    function testERC20Transfer_MaximumCost_IthacaAccount_ERC20SelfPay() public {
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
@@ -1689,12 +1689,12 @@ contract BenchmarkTest is BaseTest {
             _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
 
         oc.execute(encodedIntents[0]);
-        vm.snapshotGasLastCall("testERC20Transfer_IthacaAccount_ERC20SelfPay");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_IthacaAccount_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch10_IthacaAccount_ERC20SelfPay() public {
+    function testERC20Transfer_AverageCost_IthacaAccount_ERC20SelfPay() public {
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
 
@@ -1710,7 +1710,7 @@ contract BenchmarkTest is BaseTest {
             _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
 
         oc.execute(encodedIntents2);
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_IthacaAccount_ERC20SelfPay");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_IthacaAccount_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
@@ -1770,7 +1770,7 @@ contract BenchmarkTest is BaseTest {
     }
 
     // App Sponsor tests - app pays for user transactions
-    function testERC20Transfer_IthacaAccount_AppSponsor() public {
+    function testERC20Transfer_MaximumCost_IthacaAccount_AppSponsor() public {
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
@@ -1778,12 +1778,12 @@ contract BenchmarkTest is BaseTest {
             _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
 
         oc.execute(encodedIntents[0]);
-        vm.snapshotGasLastCall("testERC20Transfer_IthacaAccount_AppSponsor");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_IthacaAccount_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch10_IthacaAccount_AppSponsor() public {
+    function testERC20Transfer_AverageCost_IthacaAccount_AppSponsor() public {
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
 
@@ -1799,7 +1799,7 @@ contract BenchmarkTest is BaseTest {
             _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
 
         oc.execute(encodedIntents2);
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_IthacaAccount_AppSponsor");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_IthacaAccount_AppSponsor");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
@@ -1817,7 +1817,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(address(0xbabe).balance, 1 ether);
     }
 
-    function testERC20Transfer_IthacaAccount_AppSponsor_ERC20() public {
+    function testERC20Transfer_MaximumCost_IthacaAccount_AppSponsor_ERC20() public {
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
@@ -1826,12 +1826,12 @@ contract BenchmarkTest is BaseTest {
             _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR_ERC20);
 
         oc.execute(encodedIntents[0]);
-        vm.snapshotGasLastCall("testERC20Transfer_IthacaAccount_AppSponsor_ERC20");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_IthacaAccount_AppSponsor_ERC20");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20Transfer_batch10_IthacaAccount_AppSponsor_ERC20() public {
+    function testERC20Transfer_AverageCost_IthacaAccount_AppSponsor_ERC20() public {
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
 
@@ -1847,7 +1847,7 @@ contract BenchmarkTest is BaseTest {
             _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR_ERC20);
 
         oc.execute(encodedIntents2);
-        vm.snapshotGasLastCall("testERC20Transfer_batch10_IthacaAccount_AppSponsor_ERC20");
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_IthacaAccount_AppSponsor_ERC20");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
@@ -1924,7 +1924,7 @@ contract BenchmarkTest is BaseTest {
         return encodedIntents;
     }
 
-    function testERC20Transfer_IthacaAccountWithSpendLimits() public {
+    function testERC20Transfer_MaximumCost_IthacaAccountWithSpendLimits() public {
         PassKey memory k = _randomSecp256k1PassKey();
 
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
@@ -1956,7 +1956,7 @@ contract BenchmarkTest is BaseTest {
         encodedIntents[0] = encodeIntent(u);
 
         oc.execute(encodedIntents);
-        vm.snapshotGasLastCall("testERC20Transfer_IthacaAccountWithSpendLimits");
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_IthacaAccountWithSpendLimits");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
