@@ -274,8 +274,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
-            isValid = _isSuperAdmin(keyHash)
-                || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
+            isValid =
+                _isSuperAdmin(keyHash) || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
         }
         // `bytes4(keccak256("isValidSignature(bytes32,bytes)")) = 0x1626ba7e`.
         // We use `0xffffffff` for invalid, in convention with the reference implementation.
@@ -399,7 +399,12 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     }
 
     /// @dev Returns arrays of all (non-expired) authorized keys and their hashes.
-    function getKeys() public view virtual returns (Key[] memory keys, bytes32[] memory keyHashes) {
+    function getKeys()
+        public
+        view
+        virtual
+        returns (Key[] memory keys, bytes32[] memory keyHashes)
+    {
         uint256 totalCount = keyCount();
 
         keys = new Key[](totalCount);
@@ -573,8 +578,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         keyHash = hash(key);
         AccountStorage storage $ = _getAccountStorage();
-        $.keyStorage[keyHash]
-        .set(abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin));
+        $.keyStorage[keyHash].set(
+            abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin)
+        );
         $.keyHashes.add(keyHash);
     }
 
@@ -603,41 +609,28 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         uint256 paymentAmount,
         bytes32 keyHash,
         bytes32 intentDigest,
-        bytes calldata encodedIntent
+        address eoa,
+        address payer,
+        address paymentToken,
+        address paymentRecipient,
+        bytes calldata paymentSignature
     ) public virtual {
-        Intent calldata intent;
-        // Equivalent Solidity Code: (In the assembly intent is stored in calldata, instead of memory)
-        // Intent memory intent = abi.decode(encodedIntent, (Intent));
-        // Gas Savings:
-        // ~2.5-3k gas for general cases, by avoiding duplicated bounds checks, and avoiding writing the intent to memory.
-        // Extracts the Intent from the calldata bytes, with minimal checks.
-        // NOTE: Only use this implementation if you are sure that the encodedIntent is coming from a trusted source.
-        // We can avoid standard bound checks here, because the Orchestrator already does these checks when it interacts with ALL the fields in the intent using solidity.
-        assembly ("memory-safe") {
-            let t := calldataload(encodedIntent.offset)
-            intent := add(t, encodedIntent.offset)
-            // Bounds check. We don't need to explicitly check the fields here.
-            // In the self call functions, we will use regular Solidity to access the
-            // dynamic fields like `signature`, which generate the implicit bounds checks.
-            if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
-        }
-
-        if (!LibBit.and(
-                msg.sender == ORCHESTRATOR,
-                LibBit.or(intent.eoa == address(this), intent.payer == address(this))
-            )) {
+        if (
+            !LibBit.and(
+                msg.sender == ORCHESTRATOR, LibBit.or(eoa == address(this), payer == address(this))
+            )
+        ) {
             revert Unauthorized();
         }
 
         // If this account is the paymaster, validate the paymaster signature.
-        if (intent.payer == address(this)) {
+        if (payer == address(this)) {
             if (_getAccountStorage().paymasterNonces[intentDigest]) {
                 revert PaymasterNonceError();
             }
             _getAccountStorage().paymasterNonces[intentDigest] = true;
 
-            (bool isValid, bytes32 k) =
-                unwrapAndValidateSignature(intentDigest, intent.paymentSignature);
+            (bool isValid, bytes32 k) = unwrapAndValidateSignature(intentDigest, paymentSignature);
 
             // Set the target key hash to the payer's.
             keyHash = k;
@@ -654,13 +647,13 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             }
         }
 
-        TokenTransferLib.safeTransfer(intent.paymentToken, intent.paymentRecipient, paymentAmount);
+        TokenTransferLib.safeTransfer(paymentToken, paymentRecipient, paymentAmount);
+
         // Increase spend.
         if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
             SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
-            _incrementSpent(spends.spends[intent.paymentToken], intent.paymentToken, paymentAmount);
+            _incrementSpent(spends.spends[paymentToken], paymentToken, paymentAmount);
         }
-
         // Done to avoid compiler warnings.
         intentDigest = intentDigest;
     }
