@@ -1104,8 +1104,7 @@ contract BenchmarkTest is BaseTest {
         ISafeProxyFactory safeFactory = ISafeProxyFactory(_SAFE_PROXY_FACTORY);
 
         for (uint256 i = 0; i < numAccounts; i++) {
-            (eoas[i], privateKeys[i]) =
-                makeAddrAndKey(string(abi.encodePacked("safe-4337", i)));
+            (eoas[i], privateKeys[i]) = makeAddrAndKey(string(abi.encodePacked("safe-4337", i)));
 
             // Create owners array with single owner
             address[] memory owners = new address[](1);
@@ -1192,9 +1191,8 @@ contract BenchmarkTest is BaseTest {
         vm.stopPrank();
 
         // Second execution (for benchmarking)
-        UserOperation[] memory userOps2 = _getPayload_Safe4337(
-            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
-        );
+        UserOperation[] memory userOps2 =
+            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
         vm.snapshotGasLastCall("testERC20Transfer_batch10_Safe4337_ERC20SelfPay");
@@ -1239,9 +1237,8 @@ contract BenchmarkTest is BaseTest {
         vm.stopPrank();
 
         // Second execution (for benchmarking)
-        UserOperation[] memory userOps2 = _getPayload_Safe4337(
-            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
-        );
+        UserOperation[] memory userOps2 =
+            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
         vm.snapshotGasLastCall("testERC20Transfer_batch10_Safe4337_AppSponsor");
