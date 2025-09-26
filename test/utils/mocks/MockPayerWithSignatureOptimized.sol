@@ -74,7 +74,6 @@ contract MockPayerWithSignatureOptimized is Ownable {
         }
         paymasterNonces[intentDigest] = true;
 
-
         bytes32 signatureDigest = computeSignatureDigest(intentDigest);
 
         if (ECDSA.recover(signatureDigest, paymentSignature) != signer) {
