@@ -30,8 +30,15 @@ We believe that unstoppable crypto-powered accounts should be excellent througho
 ## Benchmarks
 
 ![Benchmarks](docs/benchmarks.jpeg)
+Gas benchmark implementations are in the [test repository](test/Benchmark.t.sol). We currently benchmark against leading ERC-4337 accounts. We use `forge snapshot --isolate` to generate the benchmarks.
 
-Gas benchmark implementations are in the [test repository](test/Benchmark.t.sol). We currently benchmark against leading ERC-4337 accounts. To generate the benchmarks, use `forge snapshot --isolate`. 
+The benchmarks here measure the cost of common operations - an ERC20 token transfer, a native token transfer, and a Uni V2 swap. We bench across different payment modes (self-paying in native tokens, paying in ERC-20 tokens, and using a paymaster).
+
+For each of the above benchmarks, we further generate 2 sets of benchmarks:
+1. Maximum cost - this benchmark uses a fresh account, and sends an unbatched user operation or intent transaction.
+2. Average cost - this benchmark uses an account that sent a user operation or intent previously, and the uo/intent is relayed in a batch of 10.
+
+Across all benchmarks, the Porto smart account is the cheapest account.
 
 ## Security
 Contracts were audited in a 2 week engagement by @MiloTruck @rholterhus @kadenzipfel
