@@ -468,7 +468,7 @@ contract Orchestrator is
         {
             bytes calldata preCallsBytes = _getNextBytes(ptr);
             if (preCallsBytes.length > 0) {
-                _handlePreCalls(eoa, flags, preCallsBytes);
+                _handlePreCalls(eoa, _getPayer(), flags, preCallsBytes);
             }
         }
         // If `_verify` is invalid, just revert.
@@ -564,10 +564,12 @@ contract Orchestrator is
     /// - Call the Account with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
     /// - Emit an {IntentExecuted} event.
-    function _handlePreCalls(address parentEOA, uint256 flags, bytes calldata encodedPreCalls)
-        internal
-        virtual
-    {
+    function _handlePreCalls(
+        address parentEOA,
+        address payer,
+        uint256 flags,
+        bytes calldata encodedPreCalls
+    ) internal virtual {
         bytes[] calldata calls;
         assembly ("memory-safe") {
             calls.length := calldataload(add(encodedPreCalls.offset, 0x20))
@@ -717,7 +719,6 @@ contract Orchestrator is
         // Saves ~2k gas for normal use cases, by avoiding abi.encode and solidity external call overhead
         address callee = Math.coalesce(payer, eoa);
 
-        bool payCallSuccess;
         assembly ("memory-safe") {
             let m := mload(0x40) // Load the free memory pointer
             mstore(m, 0x38e11b2a) // `pay(uint256,bytes32,bytes32,address,address,address,address,bytes)`

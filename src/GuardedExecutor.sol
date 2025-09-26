@@ -384,8 +384,9 @@ abstract contract GuardedExecutor is ERC7821 {
         if (_isSelfExecute(target, fnSel)) revert CannotSelfExecute();
 
         // Impose a max capacity of 2048 for set enumeration, which should be more than enough.
-        _getGuardedExecutorKeyStorage(keyHash).canExecute
-            .update(_packCanExecute(target, fnSel), can, 2048);
+        _getGuardedExecutorKeyStorage(keyHash).canExecute.update(
+            _packCanExecute(target, fnSel), can, 2048
+        );
         emit CanExecuteSet(keyHash, target, fnSel, can);
     }
 
@@ -408,7 +409,7 @@ abstract contract GuardedExecutor is ERC7821 {
         // check it in `canExecute` before any custom call checker.
 
         EnumerableMapLib.AddressToAddressMap storage checkers =
-        _getGuardedExecutorKeyStorage(keyHash).callCheckers;
+            _getGuardedExecutorKeyStorage(keyHash).callCheckers;
 
         // Impose a max capacity of 2048 for map enumeration, which should be more than enough.
         checkers.update(target, checker, checker != address(0), 2048);
@@ -517,7 +518,12 @@ abstract contract GuardedExecutor is ERC7821 {
     /// @dev Returns an array of packed (`target`, `fnSel`) that `keyHash` is authorized to execute on.
     /// - `target` is in the upper 20 bytes.
     /// - `fnSel` is in the lower 4 bytes.
-    function canExecutePackedInfos(bytes32 keyHash) public view virtual returns (bytes32[] memory) {
+    function canExecutePackedInfos(bytes32 keyHash)
+        public
+        view
+        virtual
+        returns (bytes32[] memory)
+    {
         return _getGuardedExecutorKeyStorage(keyHash).canExecute.values();
     }
 
@@ -561,7 +567,7 @@ abstract contract GuardedExecutor is ERC7821 {
         returns (CallCheckerInfo[] memory results)
     {
         EnumerableMapLib.AddressToAddressMap storage checkers =
-        _getGuardedExecutorKeyStorage(keyHash).callCheckers;
+            _getGuardedExecutorKeyStorage(keyHash).callCheckers;
         results = new CallCheckerInfo[](checkers.length());
         for (uint256 i; i < results.length; ++i) {
             (results[i].target, results[i].checker) = checkers.at(i);

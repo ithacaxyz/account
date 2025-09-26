@@ -274,8 +274,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
-            isValid = _isSuperAdmin(keyHash)
-                || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
+            isValid =
+                _isSuperAdmin(keyHash) || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
         }
         // `bytes4(keccak256("isValidSignature(bytes32,bytes)")) = 0x1626ba7e`.
         // We use `0xffffffff` for invalid, in convention with the reference implementation.
@@ -399,7 +399,12 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     }
 
     /// @dev Returns arrays of all (non-expired) authorized keys and their hashes.
-    function getKeys() public view virtual returns (Key[] memory keys, bytes32[] memory keyHashes) {
+    function getKeys()
+        public
+        view
+        virtual
+        returns (Key[] memory keys, bytes32[] memory keyHashes)
+    {
         uint256 totalCount = keyCount();
 
         keys = new Key[](totalCount);
@@ -573,8 +578,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         keyHash = hash(key);
         AccountStorage storage $ = _getAccountStorage();
-        $.keyStorage[keyHash]
-        .set(abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin));
+        $.keyStorage[keyHash].set(
+            abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin)
+        );
         $.keyHashes.add(keyHash);
     }
 
@@ -618,14 +624,13 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         }
 
         // If this account is the paymaster, validate the paymaster signature.
-        if (intent.payer == address(this)) {
+        if (payer == address(this)) {
             if (_getAccountStorage().paymasterNonces[intentDigest]) {
                 revert PaymasterNonceError();
             }
             _getAccountStorage().paymasterNonces[intentDigest] = true;
 
-            (bool isValid, bytes32 k) =
-                unwrapAndValidateSignature(intentDigest, intent.paymentSignature);
+            (bool isValid, bytes32 k) = unwrapAndValidateSignature(intentDigest, paymentSignature);
 
             // Set the target key hash to the payer's.
             keyHash = k;

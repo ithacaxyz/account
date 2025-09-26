@@ -591,7 +591,7 @@ contract OrchestratorTest is BaseTest {
         preCall.signature = _eoaSig(payer.privateKey, oc.computeDigest(preCall));
 
         // Create an Intent with the pre-call and fee payer
-        ICommon.Intent memory u;
+        Intent memory u;
         u.eoa = eoa;
         u.payer = address(payer.d);
         u.nonce = 0;
@@ -613,7 +613,7 @@ contract OrchestratorTest is BaseTest {
         u.encodedPreCalls[0] = abi.encode(preCall);
 
         // Sign the intent with the ephemeral key and the payment with the payer
-        bytes32 digest = oc.computeDigest(u);
+        bytes32 digest = computeDigest(u);
         u.signature = _eoaSig(ephemeralPK, digest);
         u.paymentSignature = _eoaSig(payer.privateKey, digest);
 
@@ -621,7 +621,7 @@ contract OrchestratorTest is BaseTest {
         uint256 payerBalanceBefore = paymentToken.balanceOf(address(payer.d));
         assertFalse(MockAccount(payable(payer.eoa)).keyCount() > 0);
 
-        assertEq(oc.execute(abi.encode(u)), 0);
+        assertEq(oc.execute(encodeIntent(u)), 0);
 
         // Verify the session key was authorized in the payer's account
         assertTrue(MockAccount(payable(payer.eoa)).keyCount() > 0);
@@ -1474,9 +1474,7 @@ contract OrchestratorTest is BaseTest {
             calls[0] = ERC7821.Call({
                 to: address(t.usdcBase),
                 value: 0,
-                data: abi.encodeWithSignature(
-                    "approve(address,uint256)", address(t.escrowBase), 600
-                )
+                data: abi.encodeWithSignature("approve(address,uint256)", address(t.escrowBase), 600)
             });
             // Then call escrow function
             calls[1] = ERC7821.Call({

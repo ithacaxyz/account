@@ -75,10 +75,10 @@ contract MockPayerWithState is Ownable {
         if (!isApprovedOrchestrator[msg.sender]) revert Unauthorized();
 
         // Check and set nonce to prevent replay attacks
-        if (paymasterNonces[digest]) {
+        if (paymasterNonces[intentDigest]) {
             revert PaymasterNonceError();
         }
-        paymasterNonces[digest] = true;
+        paymasterNonces[intentDigest] = true;
 
         // We shall rely on arithmetic underflow error to revert if there's insufficient funds.
         funds[paymentToken][eoa] -= paymentAmount;
@@ -88,7 +88,6 @@ contract MockPayerWithState is Ownable {
         emit Compensated(paymentToken, paymentRecipient, paymentAmount, eoa, keyHash);
 
         // Unused parameters
-        intentDigest;
         payer;
         paymentSignature;
     }
