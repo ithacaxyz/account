@@ -775,9 +775,8 @@ contract OrchestratorTest is BaseTest {
                 t.kInit.k.isSuperAdmin = true;
 
                 ERC7821.Call[] memory initCalls = new ERC7821.Call[](1);
-                initCalls[0].data = abi.encodeWithSelector(
-                    IthacaAccount.authorize.selector, t.kInit.k
-                );
+                initCalls[0].data =
+                    abi.encodeWithSelector(IthacaAccount.authorize.selector, t.kInit.k);
                 pInit.eoa = t.eoa;
 
                 pInit.executionData = abi.encode(initCalls);

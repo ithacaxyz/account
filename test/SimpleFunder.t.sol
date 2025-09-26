@@ -159,11 +159,10 @@ contract SimpleFunderTest is Test {
 
     function test_fund_nativeToken() public {
         ICommon.Transfer[] memory transfers = new ICommon.Transfer[](1);
-        transfers[0] =
-            ICommon.Transfer({
-                token: address(0), // Native token (ETH)
-                amount: 1 ether
-            });
+        transfers[0] = ICommon.Transfer({
+            token: address(0), // Native token (ETH)
+            amount: 1 ether
+        });
 
         bytes32 digest = keccak256("test digest");
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(funderPrivateKey, digest);

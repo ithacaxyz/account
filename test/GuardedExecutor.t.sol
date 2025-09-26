@@ -725,10 +725,9 @@ contract GuardedExecutorTest is BaseTest {
                 if (token != address(0) && _randomChance(4)) {
                     uint256 approveAmount = _bound(_randomUniform(), 0, 0.000001 ether);
                     calls[i].to = token;
-                    calls[i].data =
-                        abi.encodeWithSignature(
-                            "approve(address,uint256)", address(0xb0b), approveAmount
-                        );
+                    calls[i].data = abi.encodeWithSignature(
+                        "approve(address,uint256)", address(0xb0b), approveAmount
+                    );
                     hasApproval[0][token] = true;
                     expectedSpents[0][token] += approveAmount;
                     continue;
