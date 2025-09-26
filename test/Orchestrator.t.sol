@@ -516,7 +516,7 @@ contract OrchestratorTest is BaseTest {
         u.signature = _sig(d, u);
 
         if (seq > type(uint64).max - 2) {
-            assertEq(oc.execute(encodeIntent(u)), bytes4(keccak256("InvalidNonce()")));
+            assertEq(oc.execute(encodeIntent(u)), bytes4(keccak256("VerificationError()")));
         } else {
             assertEq(oc.execute(encodeIntent(u)), 0);
         }

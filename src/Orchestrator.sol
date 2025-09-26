@@ -485,7 +485,7 @@ contract Orchestrator is
 
             if (nonce >> 240 == MERKLE_VERIFICATION) {
                 // For multi chain intents, we have to verify using merkle sigs.
-                (isValid, keyHash) = _verifyMerkleSig(digest, eoa, signature);
+                (isValid, keyHash) = _verifyMerkleSigAndNonce(digest, eoa, signature, nonce);
 
                 bytes calldata settlerData = _getNextBytes(ptr);
                 // If this is an output intent, then send the digest as the settlementId
@@ -498,7 +498,7 @@ contract Orchestrator is
                     );
                 }
             } else {
-                (isValid, keyHash) = _verify(digest, eoa, signature);
+                (isValid, keyHash) = _verifySignatureAndNonce(digest, eoa, signature, nonce);
             }
 
             if (flags == _SIMULATION_MODE_FLAG) {
@@ -508,8 +508,6 @@ contract Orchestrator is
             if (!isValid) {
                 revert VerificationError();
             }
-
-            _checkAndIncrementNonce(eoa, nonce);
         }
 
         // Payment
@@ -637,16 +635,17 @@ contract Orchestrator is
     /// - Leaf intents do NOT need to have the multichain nonce prefix.
     /// - The signature for multi chain intents using merkle verification is encoded as:
     /// - bytes signature = abi.encode(bytes32[] memory proof, bytes32 root, bytes memory rootSig)
-    function _verifyMerkleSig(bytes32 digest, address eoa, bytes memory signature)
-        internal
-        view
-        returns (bool isValid, bytes32 keyHash)
-    {
+    function _verifyMerkleSigAndNonce(
+        bytes32 digest,
+        address eoa,
+        bytes memory signature,
+        uint256 nonce
+    ) internal returns (bool isValid, bytes32 keyHash) {
         (bytes32[] memory proof, bytes32 root, bytes memory rootSig) =
             abi.decode(signature, (bytes32[], bytes32, bytes));
 
         if (MerkleProofLib.verify(proof, root, digest)) {
-            (isValid, keyHash) = IIthacaAccount(eoa).unwrapAndValidateSignature(root, rootSig);
+            (isValid, keyHash) = IIthacaAccount(eoa).validateSignatureAndNonce(root, nonce, rootSig);
 
             return (isValid, keyHash);
         }
@@ -752,6 +751,27 @@ contract Orchestrator is
 
         if (TokenTransferLib.balanceOf(paymentToken, paymentRecipient) < requiredBalanceAfter) {
             revert PaymentError();
+        }
+    }
+
+    /// @dev Calls `validateSignatureAndNonce` on the `eoa`.
+    function _verifySignatureAndNonce(
+        bytes32 digest,
+        address eoa,
+        bytes calldata sig,
+        uint256 nonce
+    ) internal returns (bool isValid, bytes32 keyHash) {
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, 0x29dd69f3) // `validateSignatureAndNonce(bytes32,uint256,bytes)`.
+            mstore(add(m, 0x20), digest)
+            mstore(add(m, 0x40), nonce)
+            mstore(add(m, 0x60), 0x60)
+            mstore(add(m, 0x80), sig.length)
+            calldatacopy(add(m, 0xa0), sig.offset, sig.length)
+            isValid := call(gas(), eoa, 0, add(m, 0x1c), add(sig.length, 0x84), 0x00, 0x40)
+            isValid := and(eq(mload(0x00), 1), and(gt(returndatasize(), 0x3f), isValid))
+            keyHash := mload(0x20)
         }
     }
 
