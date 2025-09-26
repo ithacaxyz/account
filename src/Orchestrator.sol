@@ -20,6 +20,7 @@ import {ICommon} from "./interfaces/ICommon.sol";
 import {IFunder} from "./interfaces/IFunder.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
+import {IntentHelpers} from "./libraries/IntentHelpers.sol";
 
 /// @title Orchestrator
 /// @notice Enables atomic verification, gas compensation and execution across eoas.
@@ -41,7 +42,13 @@ import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 ///   This means once an Intent is signed, it is infeasible to
 ///   alter or rearrange it to force it to fail.
 
-contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGuardTransient {
+contract Orchestrator is
+    IOrchestrator,
+    EIP712,
+    CallContextChecker,
+    ReentrancyGuardTransient,
+    IntentHelpers
+{
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
@@ -110,12 +117,12 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant INTENT_TYPEHASH = keccak256(
-        "Intent(bool multichain,address eoa,Call[] calls,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 combinedGas,bytes[] encodedPreCalls,bytes[] encodedFundTransfers,address settler,uint256 expiry)Call(address to,uint256 value,bytes data)"
+        "Intent(Call[] calls,address eoa,uint256 nonce,address payer,address paymentToken,uint256 paymentMaxAmount,uint256 combinedGas,uint256 expiry)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for SignedCalls
     bytes32 public constant SIGNED_CALL_TYPEHASH = keccak256(
-        "SignedCall(bool multichain,address eoa,Call[] calls,uint256 nonce)Call(address to,uint256 value,bytes data)"
+        "SignedCall(address eoa,Call[] calls,uint256 nonce)Call(address to,uint256 value,bytes data)"
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
@@ -199,7 +206,7 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
     /// If sufficient gas is provided, returns an error selector that is non-zero
     /// if there is an error during the payment, verification, and call execution.
     function execute(bytes calldata encodedIntent)
-        public
+        external
         payable
         virtual
         nonReentrant
@@ -215,7 +222,6 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
         public
         payable
         virtual
-        nonReentrant
         returns (bytes4[] memory errs)
     {
         // This allocation and loop was initially in assembly, but I've normified it for now.
@@ -224,7 +230,7 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
             // We reluctantly use regular Solidity to access `encodedIntents[i]`.
             // This generates an unnecessary check for `i < encodedIntents.length`, but helps
             // generate all the implicit calldata bound checks on `encodedIntents[i]`.
-            (, errs[i]) = _execute(encodedIntents[i], 0, _NORMAL_MODE_FLAG);
+            errs[i] = this.execute(encodedIntents[i]);
         }
     }
 
@@ -236,11 +242,16 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
     /// But the balance of tx.origin has to be greater than or equal to type(uint192).max, to prove that a state override has been made offchain,
     /// and this is not an onchain call. This mode has been added so that receipt logs can be generated for `eth_simulateV1`
     /// @return gasUsed The amount of gas used by the execution. (Only returned if `isStateOverride` is true)
-    function simulateExecute(
-        bool isStateOverride,
-        uint256 combinedGasOverride,
-        bytes calldata encodedIntent
-    ) external payable returns (uint256) {
+    function simulateExecute(bytes calldata encodedIntent) external payable returns (uint256) {
+        bool isStateOverride;
+        uint256 combinedGasOverride;
+        assembly ("memory-safe") {
+            let endOfBytes := add(encodedIntent.offset, encodedIntent.length)
+            isStateOverride := calldataload(sub(endOfBytes, 0x40))
+            combinedGasOverride := calldataload(sub(endOfBytes, 0x20))
+            encodedIntent.length := sub(encodedIntent.length, 0x40)
+        }
+
         // If Simulation Fails, then it will revert here.
         (uint256 gUsed, bytes4 err) =
             _execute(encodedIntent, combinedGasOverride, _SIMULATION_MODE_FLAG);
@@ -264,33 +275,7 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
         }
     }
 
-    /// @dev Extracts the Intent from the calldata bytes, with minimal checks.
-    function _extractIntent(bytes calldata encodedIntent)
-        internal
-        view
-        virtual
-        returns (Intent calldata i)
-    {
-        // This function does NOT allocate memory to avoid quadratic memory expansion costs.
-        // Otherwise, it will be unfair to the Intents at the back of the batch.
-
-        // `dynamicStructInCalldata` internally performs out-of-bounds checks.
-        bytes calldata intentCalldata = LibBytes.dynamicStructInCalldata(encodedIntent, 0x00);
-        assembly ("memory-safe") {
-            i := intentCalldata.offset
-        }
-        // These checks are included for more safety: Swiss Cheese Model.
-        // Ensures that all the dynamic children in `encodedIntent` are contained.
-        LibBytes.checkInCalldata(i.executionData, intentCalldata);
-        LibBytes.checkInCalldata(i.encodedPreCalls, intentCalldata);
-        LibBytes.checkInCalldata(i.encodedFundTransfers, intentCalldata);
-        LibBytes.checkInCalldata(i.funderSignature, intentCalldata);
-        LibBytes.checkInCalldata(i.settlerContext, intentCalldata);
-        LibBytes.checkInCalldata(i.signature, intentCalldata);
-        LibBytes.checkInCalldata(i.paymentSignature, intentCalldata);
-    }
     /// @dev Extracts the PreCall from the calldata bytes, with minimal checks.
-
     function _extractPreCall(bytes calldata encodedPreCall)
         internal
         virtual
@@ -315,12 +300,11 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
         virtual
         returns (uint256 gUsed, bytes4 err)
     {
-        Intent calldata i = _extractIntent(encodedIntent);
-
-        uint256 g = Math.coalesce(uint96(combinedGasOverride), i.combinedGas);
+        uint256 g = Math.coalesce(uint96(combinedGasOverride), _getCombinedGas());
         uint256 gStart = gasleft();
+        address eoa = _getEoa();
 
-        if (i.paymentAmount > i.paymentMaxAmount) {
+        if (_getPaymentAmount() > _getPaymentMaxAmount()) {
             err = PaymentError.selector;
 
             if (flags == _SIMULATION_MODE_FLAG) {
@@ -332,15 +316,20 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
             // Check if there's sufficient gas left for the gas-limited self calls
             // via the 63/64 rule. This is for gas estimation. If the total amount of gas
             // for the whole transaction is insufficient, revert.
-            if (((gasleft() * 63) >> 6) < Math.saturatingAdd(g, _INNER_GAS_OVERHEAD)) {
+            uint256 gasAvailable = (gasleft() * 63) >> 6;
+            uint256 gasRequired = Math.saturatingAdd(g, _INNER_GAS_OVERHEAD);
+
+            if (gasAvailable < gasRequired) {
                 if (flags != _SIMULATION_MODE_FLAG) {
                     revert InsufficientGas();
                 }
             }
         }
 
-        if (i.supportedAccountImplementation != address(0)) {
-            if (accountImplementationOf(i.eoa) != i.supportedAccountImplementation) {
+        address accountImpl = _getSupportedAccountImplementation();
+        if (accountImpl != address(0)) {
+            address currentImpl = accountImplementationOf(eoa);
+            if (currentImpl != accountImpl) {
                 err = UnsupportedAccountImplementation.selector;
                 if (flags == _SIMULATION_MODE_FLAG) {
                     revert UnsupportedAccountImplementation();
@@ -348,12 +337,12 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
             }
         }
 
-        address payer = Math.coalesce(i.payer, i.eoa);
+        address payer = Math.coalesce(_getPayer(), eoa);
 
         // Early skip the entire pay-verify-call workflow if the payer lacks tokens,
         // so that less gas is wasted when the Intent fails.
         // For multi chain mode, we skip this check, as the funding happens inside the self call.
-        if (TokenTransferLib.balanceOf(i.paymentToken, payer) < i.paymentAmount) {
+        if (TokenTransferLib.balanceOf(_getPaymentToken(), payer) < _getPaymentAmount()) {
             err = PaymentError.selector;
 
             if (flags == _SIMULATION_MODE_FLAG) {
@@ -366,42 +355,39 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
         assembly ("memory-safe") {
             let m := mload(0x40) // Grab the free memory pointer.
             if iszero(err) {
-                // Copy the encoded user op to the memory to be ready to pass to the self call.
-                calldatacopy(add(m, 0x40), encodedIntent.offset, encodedIntent.length)
                 mstore(m, 0x00000000) // `selfCallPayVerifyCall537021665()`.
                 // The word after the function selector contains the simulation flags.
                 mstore(add(m, 0x20), flags)
+                // Copy the encoded user op to the memory to be ready to pass to the self call.
+                // We skip adding the calldata offset and length since we don't read that, but
+                // add `flags` in the first slot.
+                calldatacopy(add(m, 0x60), encodedIntent.offset, encodedIntent.length)
+
                 mstore(0x00, 0) // Zeroize the return slot.
 
                 // To prevent griefing, we need to do a non-reverting gas-limited self call.
                 // If the self call is successful, we know that the payment has been made,
                 // and the sequence for `nonce` has been incremented.
                 // For more information, see `selfCallPayVerifyCall537021665()`.
-                selfCallSuccess := call(
-                    g,
-                    address(),
-                    0,
-                    add(m, 0x1c),
-                    add(encodedIntent.length, 0x24),
-                    0x00,
-                    0x20
-                )
+                selfCallSuccess :=
+                    call(g, address(), 0, add(m, 0x1c), add(encodedIntent.length, 0x44), 0x00, 0x20)
                 err := mload(0x00) // The self call will do another self call to execute.
-
-                if iszero(selfCallSuccess) {
-                    // If it is a simulation, we simply revert with the full error.
-                    if eq(flags, _SIMULATION_MODE_FLAG) {
-                        returndatacopy(mload(0x40), 0x00, returndatasize())
-                        revert(mload(0x40), returndatasize())
-                    }
-
-                    // If we don't get an error selector, then we set this one.
-                    if iszero(err) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
+            }
+        }
+        assembly ("memory-safe") {
+            if iszero(selfCallSuccess) {
+                // If it is a simulation, we simply revert with the full error.
+                if eq(flags, _SIMULATION_MODE_FLAG) {
+                    returndatacopy(mload(0x40), 0x00, returndatasize())
+                    revert(mload(0x40), returndatasize())
                 }
+
+                // If we don't get an error selector, then we set this one.
+                if iszero(err) { err := shl(224, 0xad4db224) } // `VerifiedCallError()`.
             }
         }
 
-        emit IntentExecuted(i.eoa, i.nonce, selfCallSuccess, err);
+        emit IntentExecuted(_getEoa(), _getNonce(), selfCallSuccess, err);
         if (selfCallSuccess) {
             gUsed = Math.rawSub(gStart, gasleft());
         }
@@ -434,25 +420,36 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
     function selfCallPayVerifyCall537021665() public payable {
         require(msg.sender == address(this));
 
-        Intent calldata i;
         uint256 flags;
         assembly ("memory-safe") {
-            i := add(0x24, calldataload(0x24))
             flags := calldataload(0x04)
         }
 
         // Check if intent has expired (only if expiry is set)
         // If expiry timestamp is set to 0, then expiry is considered to be infinite.
-        if (i.expiry != 0 && block.timestamp > i.expiry) {
-            revert IntentExpired();
+        {
+            uint256 expiry = _getExpiry();
+            if (expiry != 0 && block.timestamp > expiry) {
+                revert IntentExpired();
+            }
         }
 
-        address eoa = i.eoa;
-        uint256 nonce = i.nonce;
-        bytes32 digest = _computeDigest(i);
+        address eoa = _getEoa();
 
-        _fund(eoa, i.funder, digest, i.encodedFundTransfers, i.funderSignature);
+        // Start a calldata pointer to traverse all the inner dynamic bytes within. Every time we get the next dynamic bytes,
+        // the pointer is advanced. A memory pointer gives some efficiency and will produce relatively clean top-level code.
+        CalldataPointer memory ptr;
+        bytes32 digest = _computeDigest(ptr);
 
+        {
+            bytes calldata fundData = _getNextBytes(ptr);
+
+            if (fundData.length > 0) {
+                (address funder, bytes calldata sig, bytes[] calldata transfers) =
+                    _parseFundData(fundData);
+                _fund(_getEoa(), funder, digest, transfers, sig);
+            }
+        }
         // The chicken and egg problem:
         // A off-chain simulation of a successful Intent may not guarantee on-chain success.
         // The state may change in the window between simulation and actual on-chain execution.
@@ -468,58 +465,87 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
         // simulation, and suggests banning users that intentionally grief the simulation.
 
         // Handle the sub Intents after initialize (if any), and before the `_verify`.
-        if (i.encodedPreCalls.length != 0) _handlePreCalls(eoa, i.payer, flags, i.encodedPreCalls);
-
+        {
+            bytes calldata preCallsBytes = _getNextBytes(ptr);
+            if (preCallsBytes.length > 0) {
+                _handlePreCalls(eoa, _getPayer(), flags, preCallsBytes);
+            }
+        }
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the account logic.
         // Off-chain simulation of `_verify` should suffice, provided that the eoa's
         // account is not changed, and the `keyHash` is not revoked
         // in the window between off-chain simulation and on-chain execution.
-
-        bool isValid;
         bytes32 keyHash;
+        {
+            bool isValid;
+            bytes calldata signature = _getNextBytes(ptr);
 
-        if (i.nonce >> 240 == MERKLE_VERIFICATION) {
-            // For multi chain intents, we have to verify using merkle sigs.
-            (isValid, keyHash) = _verifyMerkleSig(digest, eoa, i.signature);
+            uint256 nonce = _getNonce();
 
-            // If this is an output intent, then send the digest as the settlementId
-            // on all input chains.
-            if (i.encodedFundTransfers.length > 0) {
-                // Output intent
-                ISettler(i.settler).send(digest, i.settlerContext);
+            if (nonce >> 240 == MERKLE_VERIFICATION) {
+                // For multi chain intents, we have to verify using merkle sigs.
+                (isValid, keyHash) = _verifyMerkleSig(digest, eoa, signature);
+
+                bytes calldata settlerData = _getNextBytes(ptr);
+                // If this is an output intent, then send the digest as the settlementId
+                // on all input chains.
+                if (settlerData.length > 0) {
+                    // Output intent - first 32 bytes of settler data contains the settler address
+                    // Then, it contains 2 offsets then the real data
+                    ISettler(address(uint160(uint256(bytes32(settlerData[:32]))))).send(
+                        digest, settlerData[96:]
+                    );
+                }
+            } else {
+                (isValid, keyHash) = _verify(digest, eoa, signature);
             }
-        } else {
-            (isValid, keyHash) = _verify(digest, eoa, i.signature);
+
+            if (flags == _SIMULATION_MODE_FLAG) {
+                isValid = true;
+            }
+
+            if (!isValid) {
+                revert VerificationError();
+            }
+
+            _checkAndIncrementNonce(eoa, nonce);
         }
-
-        if (flags == _SIMULATION_MODE_FLAG) {
-            isValid = true;
-        }
-
-        if (!isValid) revert VerificationError();
-
-        _checkAndIncrementNonce(eoa, nonce);
 
         // Payment
         // If `_pay` fails, just revert.
         // Off-chain simulation of `_pay` should suffice,
         // provided that the token balance does not decrease in the window between
         // off-chain simulation and on-chain execution.
-        if (i.paymentAmount != 0) _pay(keyHash, digest, i);
+        {
+            uint256 paymentAmount = _getPaymentAmount();
+            bytes calldata paymentSignature = _getNextBytes(ptr);
+            if (paymentAmount != 0) {
+                _pay(
+                    paymentAmount,
+                    keyHash,
+                    digest,
+                    eoa,
+                    _getPayer(),
+                    _getPaymentToken(),
+                    _getPaymentRecipient(),
+                    paymentSignature
+                );
+            }
+        }
 
         // This re-encodes the ERC7579 `executionData` with the optional `opData`.
         // We expect that the account supports ERC7821
         // (an extension of ERC7579 tailored for 7702 accounts).
-        bytes memory data = LibERC7579.reencodeBatchAsExecuteCalldata(
+        bytes memory executeData = LibERC7579.reencodeBatchAsExecuteCalldata(
             hex"01000000000078210001", // ERC7821 batch execution mode.
-            i.executionData,
+            _getExecutionData(),
             abi.encode(keyHash) // `opData`.
         );
 
         assembly ("memory-safe") {
             mstore(0x00, 0) // Zeroize the return slot.
-            if iszero(call(gas(), eoa, 0, add(0x20, data), mload(data), 0x00, 0x20)) {
+            if iszero(call(gas(), eoa, 0, add(0x20, executeData), mload(executeData), 0x00, 0x20)) {
                 if eq(flags, _SIMULATION_MODE_FLAG) {
                     returndatacopy(mload(0x40), 0x00, returndatasize())
                     revert(mload(0x40), returndatasize())
@@ -542,10 +568,15 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
         address parentEOA,
         address payer,
         uint256 flags,
-        bytes[] calldata encodedPreCalls
+        bytes calldata encodedPreCalls
     ) internal virtual {
-        for (uint256 j; j < encodedPreCalls.length; ++j) {
-            SignedCall calldata p = _extractPreCall(encodedPreCalls[j]);
+        bytes[] calldata calls;
+        assembly ("memory-safe") {
+            calls.length := calldataload(add(encodedPreCalls.offset, 0x20))
+            calls.offset := add(encodedPreCalls.offset, 0x40)
+        }
+        for (uint256 j; j < calls.length; ++j) {
+            SignedCall calldata p = _extractPreCall(calls[j]);
             address eoa = Math.coalesce(p.eoa, parentEOA);
             uint256 nonce = p.nonce;
 
@@ -632,7 +663,7 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
         address eoa,
         address funder,
         bytes32 digest,
-        bytes[] memory encodedFundTransfers,
+        bytes[] calldata encodedFundTransfers,
         bytes memory funderSignature
     ) internal virtual {
         // Note: The fund function is mostly only used in the multi chain mode.
@@ -667,51 +698,59 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
 
     /// @dev Makes the `eoa` perform a payment to the `paymentRecipient` directly.
     /// This reverts if the payment is insufficient or fails. Otherwise returns nothing.
-    function _pay(bytes32 keyHash, bytes32 digest, Intent calldata i) internal virtual {
-        uint256 paymentAmount = i.paymentAmount;
-        uint256 requiredBalanceAfter = Math.saturatingAdd(
-            TokenTransferLib.balanceOf(i.paymentToken, i.paymentRecipient), paymentAmount
-        );
+    function _pay(
+        uint256 paymentAmount,
+        bytes32 keyHash,
+        bytes32 intentDigest,
+        address eoa,
+        address payer,
+        address paymentToken,
+        address paymentRecipient,
+        bytes calldata paymentSignature
+    ) internal virtual {
+        uint256 currentBalance = TokenTransferLib.balanceOf(paymentToken, paymentRecipient);
 
-        address payer = Math.coalesce(i.payer, i.eoa);
+        uint256 requiredBalanceAfter = Math.saturatingAdd(currentBalance, paymentAmount);
 
         // Call the pay function on the account contract
         // Equivalent Solidity code:
         // IIthacaAccount(payer).pay(paymentAmount, keyHash, digest, abi.encode(i));
         // Gas Savings:
         // Saves ~2k gas for normal use cases, by avoiding abi.encode and solidity external call overhead
+        address callee = Math.coalesce(payer, eoa);
+
         assembly ("memory-safe") {
             let m := mload(0x40) // Load the free memory pointer
-            mstore(m, 0xf81d87a7) // `pay(uint256,bytes32,bytes32,bytes)`
-            mstore(add(m, 0x20), paymentAmount) // Add payment amount as first param
+            mstore(m, 0x38e11b2a) // `pay(uint256,bytes32,bytes32,address,address,address,address,bytes)`
+            mstore(add(m, 0x20), paymentAmount) // Add paymentAmount as first param
             mstore(add(m, 0x40), keyHash) // Add keyHash as second param
-            mstore(add(m, 0x60), digest) // Add digest as third param
-            mstore(add(m, 0x80), 0x80) // Add offset of encoded Intent as third param
+            mstore(add(m, 0x60), intentDigest) // Add intentDigest as third param
+            mstore(add(m, 0x80), eoa) // Add eoa as fourth param
+            mstore(add(m, 0xa0), payer) // Add payer as fifth param
+            mstore(add(m, 0xc0), paymentToken) // Add paymentToken as sixth param
+            mstore(add(m, 0xe0), paymentRecipient) // Add paymentRecipient as seventh param
+            mstore(add(m, 0x100), 0x100) // Add offset for paymentSignature as eighth param
 
-            let encodedSize := sub(calldatasize(), i)
-
-            mstore(add(m, 0xa0), add(encodedSize, 0x20)) // Store length of encoded Intent at offset.
-            mstore(add(m, 0xc0), 0x20) // Offset at which the Intent struct starts in encoded Intent.
-
-            // Copy the intent data to memory
-            calldatacopy(add(m, 0xe0), i, encodedSize)
+            // Store paymentSignature length and data
+            mstore(add(m, 0x120), paymentSignature.length)
+            calldatacopy(add(m, 0x140), paymentSignature.offset, paymentSignature.length)
 
             // We revert here, so that if the payment fails, the execution is also reverted.
             // The revert for payment is caught inside the selfCallPayVerify function.
             if iszero(
                 call(
                     gas(), // gas
-                    payer, // address
+                    callee, // address
                     0, // value
                     add(m, 0x1c), // input memory offset
-                    add(0xc4, encodedSize), // input size
+                    add(0x124, paymentSignature.length), // input size
                     0x00, // output memory offset
                     0x20 // output size
                 )
             ) { revert(0x00, 0x20) }
         }
 
-        if (TokenTransferLib.balanceOf(i.paymentToken, i.paymentRecipient) < requiredBalanceAfter) {
+        if (TokenTransferLib.balanceOf(paymentToken, paymentRecipient) < requiredBalanceAfter) {
             revert PaymentError();
         }
     }
@@ -755,7 +794,6 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
 
     /// @dev Computes the EIP712 digest for the PreCall.
     function _computeDigest(SignedCall calldata p) internal view virtual returns (bytes32) {
-        bool isMultichain = p.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
         bytes32[] memory f = EfficientHashLib.malloc(4);
         f.set(0, SIGNED_CALL_TYPEHASH);
@@ -763,29 +801,32 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
         f.set(2, _executionDataHash(p.executionData));
         f.set(3, p.nonce);
 
-        return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
-    }
-
-    /// @dev Computes the EIP712 digest for the Intent.
-    function _computeDigest(Intent calldata i) internal view virtual returns (bytes32) {
-        // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(12);
-        f.set(0, INTENT_TYPEHASH);
-        f.set(1, uint160(i.eoa));
-        f.set(2, _executionDataHash(i.executionData));
-        f.set(3, i.nonce);
-        f.set(4, uint160(i.payer));
-        f.set(5, uint160(i.paymentToken));
-        f.set(6, i.paymentMaxAmount);
-        f.set(7, i.combinedGas);
-        f.set(8, _encodedArrHash(i.encodedPreCalls));
-        f.set(9, _encodedArrHash(i.encodedFundTransfers));
-        f.set(10, uint160(i.settler));
-        f.set(11, i.expiry);
-
-        return i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX
+        return p.nonce >> 240 == MULTICHAIN_NONCE_PREFIX
             ? _hashTypedDataSansChainId(f.hash())
             : _hashTypedData(f.hash());
+    }
+
+    /// @dev Computes the EIP712 digest for the Intent
+    /// @dev Also updates the passed in CalldataPointer to point to the start of the next dynamic bytes.
+    function _computeDigest(CalldataPointer memory p) internal view virtual returns (bytes32) {
+        bytes32 digest = INTENT_TYPEHASH;
+
+        assembly ("memory-safe") {
+            let fmp := mload(0x40)
+            mstore(fmp, digest)
+            let length := calldataload(_EXECUTION_DATA_OFFSET)
+            calldatacopy(add(fmp, 0x20), add(_EXECUTION_DATA_OFFSET, 0x20), length)
+            mstore(add(fmp, 0x20), keccak256(add(fmp, 0x20), length))
+            calldatacopy(add(fmp, 0x40), _EOA_OFFSET, 224) // copy 7 words
+            digest := keccak256(fmp, 288) // hash 9 words, inc typehash
+
+            // update the offset for the memory ptr
+            mstore(p, add(add(_EXECUTION_DATA_OFFSET, 0x20), length))
+        }
+
+        return _getNonce() >> 240 == MULTICHAIN_NONCE_PREFIX
+            ? _hashTypedDataSansChainId(digest)
+            : _hashTypedData(digest);
     }
 
     /// @dev Helper function to return the hash of the `execuctionData`.

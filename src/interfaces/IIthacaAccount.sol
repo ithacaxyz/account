@@ -7,14 +7,23 @@ import {ICommon} from "../interfaces/ICommon.sol";
 /// @notice Interface for the Account contract
 interface IIthacaAccount is ICommon {
     /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
+    /// @param paymentAmount The amount to pay
     /// @param keyHash The hash of the key used to authorize the operation
-    /// @param encodedIntent The encoded user operation
     /// @param intentDigest The digest of the user operation
+    /// @param eoa The EOA address
+    /// @param payer The payer address
+    /// @param paymentToken The token to pay with
+    /// @param paymentRecipient The recipient of the payment
+    /// @param paymentSignature The payment signature
     function pay(
         uint256 paymentAmount,
         bytes32 keyHash,
         bytes32 intentDigest,
-        bytes calldata encodedIntent
+        address eoa,
+        address payer,
+        address paymentToken,
+        address paymentRecipient,
+        bytes calldata paymentSignature
     ) external;
 
     /// @dev Returns if the signature is valid, along with its `keyHash`.

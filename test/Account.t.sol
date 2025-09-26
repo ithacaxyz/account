@@ -93,12 +93,10 @@ contract AccountTest is BaseTest {
 
         bytes32 replaySafeDigest = keccak256(abi.encode(d.d.SIGN_TYPEHASH(), digest));
 
-        (, string memory name, string memory version,, address verifyingContract,,) =
-            d.d.eip712Domain();
         bytes32 domain = keccak256(
             abi.encode(
                 0x035aff83d86937d35b32e04f0ddc6ff469290eef2f1b692d8a815c89404d4749, // DOMAIN_TYPEHASH with only verifyingContract
-                verifyingContract
+                d.eoa
             )
         );
         replaySafeDigest = keccak256(abi.encodePacked("\x19\x01", domain, replaySafeDigest));
@@ -303,7 +301,7 @@ contract AccountTest is BaseTest {
         }
 
         // Prepare main Intent structure (will be reused with same pre-calls)
-        ICommon.Intent memory baseIntent;
+        Intent memory baseIntent;
         baseIntent.eoa = eoaAddress;
         baseIntent.paymentToken = address(paymentToken);
         baseIntent.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
@@ -328,10 +326,10 @@ contract AccountTest is BaseTest {
 
         // Use the prepared pre-calls on chain 1
         baseIntent.nonce = (0xc1d0 << 240) | 0; // Multichain nonce for main intent
-        baseIntent.signature = _sig(adminKey, oc.computeDigest(baseIntent));
+        baseIntent.signature = _sig(adminKey, computeDigest(baseIntent));
 
         // Execute on chain 1 - should succeed
-        assertEq(oc.execute(abi.encode(baseIntent)), 0, "Execution should succeed on chain 1");
+        assertEq(oc.execute(encodeIntent(baseIntent)), 0, "Execution should succeed on chain 1");
 
         // Verify keys were added on chain 1
         uint256 keysCount1 = IthacaAccount(eoaAddress).keyCount();
@@ -347,7 +345,7 @@ contract AccountTest is BaseTest {
         vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
 
         // Execution should succeed due to multichain nonce in pre-calls
-        assertEq(oc.execute(abi.encode(baseIntent)), 0, "Should succeed due to multichain nonce");
+        assertEq(oc.execute(encodeIntent(baseIntent)), 0, "Should succeed due to multichain nonce");
 
         // Verify keys were added on chain 137
         uint256 keysCount137 = IthacaAccount(eoaAddress).keyCount();

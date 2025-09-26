@@ -56,8 +56,7 @@ contract BenchmarkTest is BaseTest {
     address constant _ZERODEV_KERNEL_FACTORY_ADDR = 0x2577507b78c2008Ff367261CB6285d44ba5eF2E9;
     address constant _ZERODEV_KERNEL_ECDSA_VALIDATION = 0x845ADb2C711129d4f3966735eD98a9F09fC4cE57;
 
-    address constant _ALCHEMY_MODULAR_ACCOUNT_IMPL_ADDR =
-        0x000000000000c5A9089039570Dd36455b5C07383;
+    address constant _ALCHEMY_MODULAR_ACCOUNT_IMPL_ADDR = 0x000000000000c5A9089039570Dd36455b5C07383;
     address constant _ALCHEMY_MODULAR_ACCOUNT_FACTORY_ADDR =
         0x00000000000017c61b5bEe81050EC8eFc9c6fecd;
 
@@ -93,6 +92,7 @@ contract BenchmarkTest is BaseTest {
         SELF_ERC20,
         APP_SPONSOR, // App sponsoring transaction cost (in native tokens)
         APP_SPONSOR_ERC20 // App sponsoring transaction cost (in ERC20 tokens)
+
     }
 
     function setUp() public override {
@@ -120,17 +120,20 @@ contract BenchmarkTest is BaseTest {
             token0, token1, 1 ether, 1 ether, 1, 1, address(this), block.timestamp + 999
         );
 
-        IStakeManager(_ERC4337_ENTRYPOINT_V06_ADDR)
-        .depositTo{value: 1 ether}(_PIMLICO_PAYMASTER_V06);
+        IStakeManager(_ERC4337_ENTRYPOINT_V06_ADDR).depositTo{value: 1 ether}(
+            _PIMLICO_PAYMASTER_V06
+        );
         IStakeManager(_ERC4337_ENTRYPOINT_ADDR).depositTo{value: 1 ether}(_PIMLICO_PAYMASTER_V07);
 
         (paymasterSigner, paymasterPrivateKey) = makeAddrAndKey("");
 
-        stdstore.target(_PIMLICO_PAYMASTER_V06).sig(IPimlicoPaymaster.signers.selector)
-            .with_key(paymasterSigner).checked_write(true);
+        stdstore.target(_PIMLICO_PAYMASTER_V06).sig(IPimlicoPaymaster.signers.selector).with_key(
+            paymasterSigner
+        ).checked_write(true);
 
-        stdstore.target(_PIMLICO_PAYMASTER_V07).sig(IPimlicoPaymaster.signers.selector)
-            .with_key(paymasterSigner).checked_write(true);
+        stdstore.target(_PIMLICO_PAYMASTER_V07).sig(IPimlicoPaymaster.signers.selector).with_key(
+            paymasterSigner
+        ).checked_write(true);
 
         _giveAccountSomeTokens(relayer);
 
@@ -1224,18 +1227,17 @@ contract BenchmarkTest is BaseTest {
         for (uint256 i = 0; i < numAccounts; i++) {
             (eoas[i], privateKeys[i]) =
                 makeAddrAndKey(string(abi.encodePacked("zerodev-kernel", i)));
-            accounts[i] = IKernelFactory(_ZERODEV_KERNEL_FACTORY_ADDR)
-                .createAccount(
-                    abi.encodeWithSelector(
-                        IKernel.initialize.selector,
-                        validatorToIdentifier(_ZERODEV_KERNEL_ECDSA_VALIDATION),
-                        address(0), // no hooks
-                        abi.encodePacked(eoas[i]), // owner
-                        hex"", // no hookData
-                        new bytes[](0) // no init datas
-                    ),
-                    bytes32(uint256(i))
-                );
+            accounts[i] = IKernelFactory(_ZERODEV_KERNEL_FACTORY_ADDR).createAccount(
+                abi.encodeWithSelector(
+                    IKernel.initialize.selector,
+                    validatorToIdentifier(_ZERODEV_KERNEL_ECDSA_VALIDATION),
+                    address(0), // no hooks
+                    abi.encodePacked(eoas[i]), // owner
+                    hex"", // no hookData
+                    new bytes[](0) // no init datas
+                ),
+                bytes32(uint256(i))
+            );
             _giveAccountSomeTokens(accounts[i]);
         }
     }
@@ -1518,7 +1520,7 @@ contract BenchmarkTest is BaseTest {
         }
     }
 
-    function testERC20Transfer_IthacaAccount() public {
+    function testERC20Transfer_IthacaAccount1() public {
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
@@ -1714,7 +1716,7 @@ contract BenchmarkTest is BaseTest {
     ) internal view returns (bytes[] memory) {
         bytes[] memory encodedIntents = new bytes[](delegatedEOAs.length);
         for (uint256 i = 0; i < delegatedEOAs.length; i++) {
-            ICommon.Intent memory u;
+            Intent memory u;
             u.eoa = delegatedEOAs[i].eoa;
             u.nonce = 0;
             u.combinedGas = 1000000;
@@ -1750,14 +1752,14 @@ contract BenchmarkTest is BaseTest {
                 _paymentType == PaymentType.APP_SPONSOR
                     || _paymentType == PaymentType.APP_SPONSOR_ERC20
             ) {
-                bytes32 digest = oc.computeDigest(u);
+                bytes32 digest = computeDigest(u);
                 bytes32 signatureDigest = appSponsor.computeSignatureDigest(digest);
                 u.paymentSignature = _eoaSig(paymasterPrivateKey, signatureDigest);
             }
 
             u.signature = _sig(delegatedEOAs[i], u);
 
-            encodedIntents[i] = abi.encodePacked(abi.encode(u), junk);
+            encodedIntents[i] = abi.encodePacked(encodeIntent(u), junk);
         }
 
         return encodedIntents;
@@ -1771,16 +1773,16 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(d.eoa);
         d.d.authorize(k.k);
-        d.d
-        .setCanExecute(
+        d.d.setCanExecute(
             k.keyHash, address(paymentToken), bytes4(keccak256("transfer(address,uint256)")), true
         );
-        d.d
-        .setSpendLimit(k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether);
+        d.d.setSpendLimit(
+            k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
+        );
         d.d.setSpendLimit(k.keyHash, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether);
         vm.stopPrank();
 
-        ICommon.Intent memory u;
+        Intent memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.combinedGas = 1000000;
@@ -1792,7 +1794,7 @@ contract BenchmarkTest is BaseTest {
         u.signature = _sig(k, u);
 
         bytes[] memory encodedIntents = new bytes[](1);
-        encodedIntents[0] = abi.encode(u);
+        encodedIntents[0] = encodeIntent(u);
 
         oc.execute(encodedIntents);
         vm.snapshotGasLastCall("testERC20Transfer_IthacaAccountWithSpendLimits");
