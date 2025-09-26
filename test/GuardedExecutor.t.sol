@@ -25,7 +25,7 @@ contract GuardedExecutorTest is BaseTest {
         vm.prank(d.eoa);
         d.d.authorize(k.k);
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         u.eoa = d.eoa;
         u.combinedGas = 10000000;
 
@@ -94,7 +94,7 @@ contract GuardedExecutorTest is BaseTest {
         d.d.setCanExecute(k.keyHash, address(paymentToken), _ANY_FN_SEL, true);
         vm.stopPrank();
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         u.eoa = d.eoa;
         u.combinedGas = 10000000;
 
@@ -230,7 +230,7 @@ contract GuardedExecutorTest is BaseTest {
         vm.prank(address(0xb0b));
         paymentToken.approve(d.eoa, 1 ether);
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         u.eoa = d.eoa;
         u.combinedGas = 10000000;
 
@@ -281,7 +281,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function testOnlySuperAdminAndEOACanSelfExecute() public {
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         u.eoa = d.eoa;
         u.combinedGas = 10000000;
@@ -349,7 +349,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function testSetAndRemoveSpendLimitRevertsForSuperAdmin() public {
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
@@ -367,7 +367,7 @@ contract GuardedExecutorTest is BaseTest {
             calls[0].data = abi.encodeWithSelector(IthacaAccount.authorize.selector, k.k);
 
             u.executionData = abi.encode(calls);
-            u.nonce = 0xc1d0 << 240;
+            u.nonce = d.d.getNonce(0);
 
             u.signature = _sig(d, u);
 
@@ -400,7 +400,7 @@ contract GuardedExecutorTest is BaseTest {
     function testSetAndRemoveSpendLimit(uint256 amount) public {
         vm.warp(86400 * 100);
 
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
@@ -438,7 +438,7 @@ contract GuardedExecutorTest is BaseTest {
             calls[3] = _setSpendLimitCall(k, token, periods[1], 1 ether);
 
             u.executionData = abi.encode(calls);
-            u.nonce = 0xc1d0 << 240;
+            u.nonce = d.d.getNonce(0);
 
             u.signature = _eoaSig(d.privateKey, u);
 
@@ -593,7 +593,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function testSetSpendLimitWithTwoPeriods() public {
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
@@ -624,7 +624,7 @@ contract GuardedExecutorTest is BaseTest {
             calls[5] = _setSpendLimitCall(k, token1, GuardedExecutor.SpendPeriod.Year, 1 ether);
 
             u.executionData = abi.encode(calls);
-            u.nonce = 0xc1d0 << 240;
+            u.nonce = d.d.getNonce(0);
 
             u.signature = _eoaSig(d.privateKey, u);
 
@@ -638,7 +638,7 @@ contract GuardedExecutorTest is BaseTest {
         calls[0] = _transferCall2(token0, address(0xb0b), amount0);
         calls[1] = _transferCall2(token1, address(0xb0b), amount1);
 
-        u.nonce = 0;
+        u.nonce = d.d.getNonce(0);
         u.executionData = abi.encode(calls);
         u.signature = _sig(k, u);
 
@@ -651,7 +651,7 @@ contract GuardedExecutorTest is BaseTest {
     }
 
     function testSpends(bytes32) public {
-        Orchestrator.Intent memory u;
+        ICommon.Intent memory u;
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
 
         u.eoa = d.eoa;
@@ -686,7 +686,7 @@ contract GuardedExecutorTest is BaseTest {
             }
 
             u.executionData = abi.encode(calls);
-            u.nonce = 0xc1d0 << 240;
+            u.nonce = d.d.getNonce(0);
 
             u.signature = _eoaSig(d.privateKey, u);
 
@@ -696,7 +696,7 @@ contract GuardedExecutorTest is BaseTest {
 
         // Test spends.
         {
-            u.nonce = 0;
+            u.nonce = d.d.getNonce(0);
 
             _deployPermit2();
             if (_randomChance(2)) {
@@ -835,9 +835,9 @@ contract GuardedExecutorTest is BaseTest {
             );
 
             u.executionData = abi.encode(calls);
-            u.nonce = 0xc1d0 << 240;
 
             (gExecute, u.combinedGas,) = _estimateGasForEOAKey(u);
+
             u.signature = _eoaSig(d.privateKey, u);
 
             assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
@@ -850,7 +850,7 @@ contract GuardedExecutorTest is BaseTest {
 
         // Prep Intent, and submit it. This Intent should pass.
         {
-            u.nonce = 0;
+            u.nonce++;
 
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
             calls[0] = _transferCall2(tokenToSpend, address(0xb0b), 0.6 ether);

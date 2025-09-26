@@ -127,6 +127,10 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
     /// This constant is a pun for "chain ID 0".
     uint16 public constant MULTICHAIN_NONCE_PREFIX = 0xc1d0;
 
+    /// @dev Nonce prefix to signal that the payload should use merkle verification.
+    /// This constant is "mv" in hex.
+    uint16 public constant MERKLE_VERIFICATION = 0x6D76;
+
     /// @dev For ensuring that the remaining gas is sufficient for a self-call with
     /// overhead for cleaning up after the self-call. This also has an added benefit
     /// of preventing the censorship vector of calling `execute` in a very deep call-stack.
@@ -349,13 +353,11 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
         // Early skip the entire pay-verify-call workflow if the payer lacks tokens,
         // so that less gas is wasted when the Intent fails.
         // For multi chain mode, we skip this check, as the funding happens inside the self call.
-        if (!i.isMultichain && LibBit.and(i.paymentAmount != 0, err == 0)) {
-            if (TokenTransferLib.balanceOf(i.paymentToken, payer) < i.paymentAmount) {
-                err = PaymentError.selector;
+        if (TokenTransferLib.balanceOf(i.paymentToken, payer) < i.paymentAmount) {
+            err = PaymentError.selector;
 
-                if (flags == _SIMULATION_MODE_FLAG) {
-                    revert PaymentError();
-                }
+            if (flags == _SIMULATION_MODE_FLAG) {
+                revert PaymentError();
             }
         }
 
@@ -476,7 +478,8 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
 
         bool isValid;
         bytes32 keyHash;
-        if (i.isMultichain) {
+
+        if (i.nonce >> 240 == MERKLE_VERIFICATION) {
             // For multi chain intents, we have to verify using merkle sigs.
             (isValid, keyHash) = _verifyMerkleSig(digest, eoa, i.signature);
 
@@ -754,40 +757,35 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
     function _computeDigest(SignedCall calldata p) internal view virtual returns (bytes32) {
         bool isMultichain = p.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(5);
+        bytes32[] memory f = EfficientHashLib.malloc(4);
         f.set(0, SIGNED_CALL_TYPEHASH);
-        f.set(1, LibBit.toUint(isMultichain));
-        f.set(2, uint160(p.eoa));
-        f.set(3, _executionDataHash(p.executionData));
-        f.set(4, p.nonce);
+        f.set(1, uint160(p.eoa));
+        f.set(2, _executionDataHash(p.executionData));
+        f.set(3, p.nonce);
 
         return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
     }
 
     /// @dev Computes the EIP712 digest for the Intent.
-    /// If the the nonce starts with `MULTICHAIN_NONCE_PREFIX`,
-    /// the digest will be computed without the chain ID.
-    /// Otherwise, the digest will be computed with the chain ID.
     function _computeDigest(Intent calldata i) internal view virtual returns (bytes32) {
-        bool isMultichain = i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
-
         // To avoid stack-too-deep. Faster than a regular Solidity array anyways.
-        bytes32[] memory f = EfficientHashLib.malloc(13);
+        bytes32[] memory f = EfficientHashLib.malloc(12);
         f.set(0, INTENT_TYPEHASH);
-        f.set(1, LibBit.toUint(isMultichain));
-        f.set(2, uint160(i.eoa));
-        f.set(3, _executionDataHash(i.executionData));
-        f.set(4, i.nonce);
-        f.set(5, uint160(i.payer));
-        f.set(6, uint160(i.paymentToken));
-        f.set(7, i.paymentMaxAmount);
-        f.set(8, i.combinedGas);
-        f.set(9, _encodedArrHash(i.encodedPreCalls));
-        f.set(10, _encodedArrHash(i.encodedFundTransfers));
-        f.set(11, uint160(i.settler));
-        f.set(12, i.expiry);
+        f.set(1, uint160(i.eoa));
+        f.set(2, _executionDataHash(i.executionData));
+        f.set(3, i.nonce);
+        f.set(4, uint160(i.payer));
+        f.set(5, uint160(i.paymentToken));
+        f.set(6, i.paymentMaxAmount);
+        f.set(7, i.combinedGas);
+        f.set(8, _encodedArrHash(i.encodedPreCalls));
+        f.set(9, _encodedArrHash(i.encodedFundTransfers));
+        f.set(10, uint160(i.settler));
+        f.set(11, i.expiry);
 
-        return isMultichain ? _hashTypedDataSansChainId(f.hash()) : _hashTypedData(f.hash());
+        return i.nonce >> 240 == MULTICHAIN_NONCE_PREFIX
+            ? _hashTypedDataSansChainId(f.hash())
+            : _hashTypedData(f.hash());
     }
 
     /// @dev Helper function to return the hash of the `execuctionData`.

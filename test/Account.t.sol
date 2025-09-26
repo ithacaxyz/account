@@ -303,7 +303,7 @@ contract AccountTest is BaseTest {
         }
 
         // Prepare main Intent structure (will be reused with same pre-calls)
-        Orchestrator.Intent memory baseIntent;
+        ICommon.Intent memory baseIntent;
         baseIntent.eoa = eoaAddress;
         baseIntent.paymentToken = address(paymentToken);
         baseIntent.paymentAmount = _bound(_random(), 0, 2 ** 32 - 1);
@@ -327,12 +327,11 @@ contract AccountTest is BaseTest {
         vm.etch(eoaAddress, abi.encodePacked(hex"ef0100", impl));
 
         // Use the prepared pre-calls on chain 1
-        Orchestrator.Intent memory u1 = baseIntent;
-        u1.nonce = (0xc1d0 << 240) | 0; // Multichain nonce for main intent
-        u1.signature = _sig(adminKey, u1);
+        baseIntent.nonce = (0xc1d0 << 240) | 0; // Multichain nonce for main intent
+        baseIntent.signature = _sig(adminKey, oc.computeDigest(baseIntent));
 
         // Execute on chain 1 - should succeed
-        assertEq(oc.execute(abi.encode(u1)), 0, "Execution should succeed on chain 1");
+        assertEq(oc.execute(abi.encode(baseIntent)), 0, "Execution should succeed on chain 1");
 
         // Verify keys were added on chain 1
         uint256 keysCount1 = IthacaAccount(eoaAddress).keyCount();
