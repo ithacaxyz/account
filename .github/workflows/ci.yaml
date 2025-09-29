@@ -39,14 +39,15 @@ jobs:
         run: |
           forge test -vvv
 
-      - name: Update snapshots
+      - name: Generate snapshots
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          forge snapshot --isolate --match-contract Benchmark --via-ir
-          if [ -n "$(git status --porcelain snapshots/)" ]; then
-            git config --global user.name "github-actions[bot]"
-            git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git add snapshots/
-            git commit -m "chore: update gas snapshots"
-            git push origin HEAD:${{ github.head_ref }}
-          fi
+        run: forge snapshot --isolate --match-contract Benchmark --via-ir
+
+      - name: Commit snapshot changes
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update gas snapshots"
+          file_pattern: snapshots/
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
