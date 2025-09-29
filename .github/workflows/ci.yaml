@@ -40,6 +40,7 @@ jobs:
           forge test -vvv
 
       - name: Update snapshots
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
           forge snapshot --isolate --match-contract Benchmark --via-ir
           if [ -n "$(git status --porcelain snapshots/)" ]; then
@@ -47,5 +48,5 @@ jobs:
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
             git add snapshots/
             git commit -m "chore: update gas snapshots"
-            git push
+            git push origin HEAD:${{ github.head_ref }}
           fi
