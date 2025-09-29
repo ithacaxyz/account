@@ -33,9 +33,7 @@ library LibNonce {
 
     /// @dev Increments the sequence for the `seqKey` in nonce (i.e. upper 192 bits).
     /// This invalidates the nonces for the `seqKey`, up to (inclusive) `uint64(nonce)`.
-    function invalidate(mapping(uint192 => LibStorage.Ref) storage seqMap, uint256 nonce)
-        internal
-    {
+    function invalidate(mapping(uint192 => LibStorage.Ref) storage seqMap, uint256 nonce) internal {
         LibStorage.Ref storage s = seqMap[uint192(nonce >> 64)];
         if (uint64(nonce) < s.value) revert NewSequenceMustBeLarger();
         s.value = Math.rawAdd(Math.min(uint64(nonce), 2 ** 64 - 2), 1);

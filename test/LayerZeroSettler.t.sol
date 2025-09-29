@@ -555,9 +555,7 @@ contract LayerZeroSettlerTest is Test {
         assertEq(address(settlerA).balance, balanceBefore + 5 ether);
     }
 
-    function testFuzz_send_differentSettlementIds(bytes32 settlementId, uint8 numEndpoints)
-        public
-    {
+    function testFuzz_send_differentSettlementIds(bytes32 settlementId, uint8 numEndpoints) public {
         vm.assume(numEndpoints > 0 && numEndpoints <= 3);
 
         uint32[] memory endpointIds = new uint32[](numEndpoints);
@@ -718,9 +716,9 @@ contract LayerZeroSettlerTest is Test {
 
         // Should revert with InvalidL0SettlerSignature
         vm.expectRevert(abi.encodeWithSelector(LayerZeroSettler.InvalidL0SettlerSignature.selector));
-        settlerA.executeSend{value: fee}(
-            orchestrator, settlementId, settlerContext, invalidSignature
-        );
+        settlerA.executeSend{
+            value: fee
+        }(orchestrator, settlementId, settlerContext, invalidSignature);
     }
 
     function test_executeSend_preventReplay() public {

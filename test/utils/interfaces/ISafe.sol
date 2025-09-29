@@ -47,8 +47,7 @@ interface ISafe4337Module {
         view
         returns (bytes32 operationHash);
 
-    function executeUserOp(address to, uint256 value, bytes calldata data, uint8 operation)
-        external;
+    function executeUserOp(address to, uint256 value, bytes calldata data, uint8 operation) external;
 
     function domainSeparator() external view returns (bytes32);
 }

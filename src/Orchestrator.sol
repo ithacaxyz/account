@@ -369,8 +369,15 @@ contract Orchestrator is
                 // If the self call is successful, we know that the payment has been made,
                 // and the sequence for `nonce` has been incremented.
                 // For more information, see `selfCallPayVerifyCall537021665()`.
-                selfCallSuccess :=
-                    call(g, address(), 0, add(m, 0x1c), add(encodedIntent.length, 0x44), 0x00, 0x20)
+                selfCallSuccess := call(
+                    g,
+                    address(),
+                    0,
+                    add(m, 0x1c),
+                    add(encodedIntent.length, 0x44),
+                    0x00,
+                    0x20
+                )
                 err := mload(0x00) // The self call will do another self call to execute.
             }
         }
@@ -493,9 +500,8 @@ contract Orchestrator is
                 if (settlerData.length > 0) {
                     // Output intent - first 32 bytes of settler data contains the settler address
                     // Then, it contains 2 offsets then the real data
-                    ISettler(address(uint160(uint256(bytes32(settlerData[:32]))))).send(
-                        digest, settlerData[96:]
-                    );
+                    ISettler(address(uint160(uint256(bytes32(settlerData[:32])))))
+                        .send(digest, settlerData[96:]);
                 }
             } else {
                 (isValid, keyHash) = _verify(digest, eoa, signature);
