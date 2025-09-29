@@ -23,6 +23,7 @@ import {LibNonce} from "./libraries/LibNonce.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
+import {console} from "forge-std/console.sol";
 
 /// @title Account
 /// @notice A account contract for EOAs with EIP7702.
@@ -90,8 +91,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         mapping(bytes32 => LibBytes.BytesStorage) keyStorage;
         /// @dev Mapping of key hash to the key's extra storage.
         mapping(bytes32 => LibStorage.Bump) keyExtraStorage;
-        /// @dev Nonce management when porto account acts as paymaster.
-        mapping(bytes32 => bool) paymasterNonces;
     }
 
     /// @dev Returns the storage pointer.
@@ -135,9 +134,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// If you want to upgrade to a bricked implementation,
     /// use `address(0xdeaDDeADDEaDdeaDdEAddEADDEAdDeadDEADDEaD)`.
     error NewImplementationIsZero();
-
-    /// @dev The paymaster nonce has already been used.
-    error PaymasterNonceError();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -387,6 +383,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev Returns the key corresponding to the `keyHash`. Reverts if the key does not exist.
     function getKey(bytes32 keyHash) public view virtual returns (Key memory key) {
         bytes memory data = _getAccountStorage().keyStorage[keyHash].get();
+        console.log("key length is: ");
+        console.log(data.length);
         if (data.length == uint256(0)) revert KeyDoesNotExist();
         unchecked {
             uint256 n = data.length - 7; // 5 + 1 + 1 bytes of fixed length fields.
@@ -617,11 +615,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
         // If this account is the paymaster, validate the paymaster signature.
         if (payer == address(this)) {
-            if (_getAccountStorage().paymasterNonces[intentDigest]) {
-                revert PaymasterNonceError();
-            }
-            _getAccountStorage().paymasterNonces[intentDigest] = true;
-
             (bool isValid, bytes32 k) = unwrapAndValidateSignature(intentDigest, paymentSignature);
 
             // Set the target key hash to the payer's.

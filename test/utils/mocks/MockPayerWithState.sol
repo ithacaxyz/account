@@ -13,12 +13,6 @@ contract MockPayerWithState is Ownable {
 
     mapping(address => bool) public isApprovedOrchestrator;
 
-    /// @dev Nonce management when acting as paymaster.
-    mapping(bytes32 => bool) public paymasterNonces;
-
-    /// @dev The paymaster nonce has already been used.
-    error PaymasterNonceError();
-
     event FundsIncreased(address token, address eoa, uint256 amount);
 
     event Compensated(
@@ -56,7 +50,6 @@ contract MockPayerWithState is Ownable {
     /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
     /// @param paymentAmount The amount to pay
     /// @param keyHash The hash of the key used to authorize the operation
-    /// @param intentDigest The digest of the user operation
     /// @param eoa The EOA address
     /// @param payer The payer address
     /// @param paymentToken The token to pay with
@@ -65,7 +58,7 @@ contract MockPayerWithState is Ownable {
     function pay(
         uint256 paymentAmount,
         bytes32 keyHash,
-        bytes32 intentDigest,
+        bytes32,
         address eoa,
         address payer,
         address paymentToken,
@@ -73,12 +66,6 @@ contract MockPayerWithState is Ownable {
         bytes calldata paymentSignature
     ) public virtual {
         if (!isApprovedOrchestrator[msg.sender]) revert Unauthorized();
-
-        // Check and set nonce to prevent replay attacks
-        if (paymasterNonces[intentDigest]) {
-            revert PaymasterNonceError();
-        }
-        paymasterNonces[intentDigest] = true;
 
         // We shall rely on arithmetic underflow error to revert if there's insufficient funds.
         funds[paymentToken][eoa] -= paymentAmount;

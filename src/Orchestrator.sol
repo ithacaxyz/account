@@ -21,6 +21,7 @@ import {IFunder} from "./interfaces/IFunder.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 import {IntentHelpers} from "./libraries/IntentHelpers.sol";
+import {LibNonce} from "./libraries/LibNonce.sol";
 
 /// @title Orchestrator
 /// @notice Enables atomic verification, gas compensation and execution across eoas.
@@ -52,6 +53,13 @@ contract Orchestrator is
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
+    using LibNonce for mapping(uint192 => LibStorage.Ref);
+
+    ////////////////////////////////////////////////////////////////////////
+    // State
+    ////////////////////////////////////////////////////////////////////////
+
+    mapping(address => mapping(uint192 => LibStorage.Ref)) nonceSeqs;
 
     ////////////////////////////////////////////////////////////////////////
     // Errors
@@ -515,7 +523,7 @@ contract Orchestrator is
                 revert VerificationError();
             }
 
-            _checkAndIncrementNonce(eoa, nonce);
+            nonceSeqs[eoa].checkAndIncrement(nonce);
         }
 
         // Payment
@@ -624,7 +632,7 @@ contract Orchestrator is
     }
 
     ////////////////////////////////////////////////////////////////////////
-    // Account Implementation
+    // Account-Related Helpers
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Returns the implementation of the EOA.
@@ -632,6 +640,11 @@ contract Orchestrator is
     /// This function is provided as a public helper for easier integration.
     function accountImplementationOf(address eoa) public view virtual returns (address result) {
         (, result) = LibEIP7702.delegationAndImplementationOf(eoa);
+    }
+
+    /// @dev Return current nonce with sequence key.
+    function getNonce(address account, uint192 seqKey) public view virtual returns (uint256) {
+        return nonceSeqs[account].get(seqKey);
     }
 
     ////////////////////////////////////////////////////////////////////////
