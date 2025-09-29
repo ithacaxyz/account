@@ -482,22 +482,25 @@ contract OrchestratorTest is BaseTest {
 
         vm.startPrank(u.eoa);
         if (seq == type(uint64).max) {
-            d.d.invalidateNonce(nonce);
+            oc.invalidateNonce(nonce);
             assertEq(oc.getNonce(address(d.d), seqKey), nonce);
             return;
         }
 
-        d.d.invalidateNonce(nonce);
+        oc.invalidateNonce(nonce);
         assertEq(oc.getNonce(address(d.d), seqKey), nonce + 1);
 
         if (_randomChance(2)) {
             uint256 nonce2 = (uint256(seqKey) << 64) | uint256(seq2);
             if (seq2 < uint64(oc.getNonce(address(d.d), seqKey))) {
                 vm.expectRevert(bytes4(keccak256("NewSequenceMustBeLarger()")));
-                d.d.invalidateNonce(nonce2);
+                oc.invalidateNonce(nonce2);
             } else {
-                d.d.invalidateNonce(nonce2);
-                assertEq(uint64(oc.getNonce(address(d.d), seqKey)), Math.min(uint256(seq2) + 1, 2 ** 64 - 1));
+                oc.invalidateNonce(nonce2);
+                assertEq(
+                    uint64(oc.getNonce(address(d.d), seqKey)),
+                    Math.min(uint256(seq2) + 1, 2 ** 64 - 1)
+                );
             }
             if (uint64(oc.getNonce(address(d.d), seqKey)) == type(uint64).max) return;
             seq = seq2;
