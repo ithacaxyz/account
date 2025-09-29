@@ -17,7 +17,7 @@
   "testERC20Transfer_ERC4337MinimalAccount_AppSponsor": "168500",
   "testERC20Transfer_ERC4337MinimalAccount_ERC20SelfPay": "199831",
   "testERC20Transfer_IthacaAccount": "118043",
-  "testERC20Transfer_IthacaAccountWithSpendLimits": "184413",
+  "testERC20Transfer_IthacaAccountWithSpendLimits": "184439",
   "testERC20Transfer_IthacaAccount_AppSponsor": "129038",
   "testERC20Transfer_IthacaAccount_AppSponsor_ERC20": "134327",
   "testERC20Transfer_IthacaAccount_ERC20SelfPay": "118532",
