@@ -1762,8 +1762,23 @@ contract OrchestratorTest is BaseTest {
 
         t.outputIntent.funderSignature = _eoaSig(t.funderPrivateKey, t.leafs[2]);
 
-        t.baseIntent.signature = abi.encode(merkleHelper.getProof(t.leafs, 0), t.root, t.rootSig);
-        t.arbIntent.signature = abi.encode(merkleHelper.getProof(t.leafs, 1), t.root, t.rootSig);
-        t.outputIntent.signature = abi.encode(merkleHelper.getProof(t.leafs, 2), t.root, t.rootSig);
+        t.baseIntent.signature = abi.encodePacked(
+            abi.encode(merkleHelper.getProof(t.leafs, 0), t.root, t.rootSig),
+            bytes32(0),
+            uint8(0),
+            uint8(1)
+        );
+        t.arbIntent.signature = abi.encodePacked(
+            abi.encode(merkleHelper.getProof(t.leafs, 1), t.root, t.rootSig),
+            bytes32(0),
+            uint8(0),
+            uint8(1)
+        );
+        t.outputIntent.signature = abi.encodePacked(
+            abi.encode(merkleHelper.getProof(t.leafs, 2), t.root, t.rootSig),
+            bytes32(0),
+            uint8(0),
+            uint8(1)
+        );
     }
 }

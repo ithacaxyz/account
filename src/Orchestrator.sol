@@ -489,11 +489,9 @@ contract Orchestrator is
             bytes calldata signature = _getNextBytes(ptr);
 
             uint256 nonce = _getNonce();
+            (isValid, keyHash) = _verify(digest, eoa, signature);
 
             if (nonce >> 240 == MERKLE_VERIFICATION) {
-                // For multi chain intents, we have to verify using merkle sigs.
-                (isValid, keyHash) = _verifyMerkleSig(digest, eoa, signature);
-
                 bytes calldata settlerData = _getNextBytes(ptr);
                 // If this is an output intent, then send the digest as the settlementId
                 // on all input chains.
@@ -503,8 +501,6 @@ contract Orchestrator is
                     ISettler(address(uint160(uint256(bytes32(settlerData[:32])))))
                         .send(digest, settlerData[96:]);
                 }
-            } else {
-                (isValid, keyHash) = _verify(digest, eoa, signature);
             }
 
             if (flags == _SIMULATION_MODE_FLAG) {
@@ -637,28 +633,6 @@ contract Orchestrator is
     ////////////////////////////////////////////////////////////////////////
     // Multi Chain Functions
     ////////////////////////////////////////////////////////////////////////
-
-    /// @dev Verifies the merkle sig for the multi chain intents.
-    /// - Note: Each leaf of the merkle tree should be a standard intent digest, computed with chainId.
-    /// - Leaf intents do NOT need to have the multichain nonce prefix.
-    /// - The signature for multi chain intents using merkle verification is encoded as:
-    /// - bytes signature = abi.encode(bytes32[] memory proof, bytes32 root, bytes memory rootSig)
-    function _verifyMerkleSig(bytes32 digest, address eoa, bytes memory signature)
-        internal
-        view
-        returns (bool isValid, bytes32 keyHash)
-    {
-        (bytes32[] memory proof, bytes32 root, bytes memory rootSig) =
-            abi.decode(signature, (bytes32[], bytes32, bytes));
-
-        if (MerkleProofLib.verify(proof, root, digest)) {
-            (isValid, keyHash) = IIthacaAccount(eoa).unwrapAndValidateSignature(root, rootSig);
-
-            return (isValid, keyHash);
-        }
-
-        return (false, bytes32(0));
-    }
 
     /// @dev Funds the eoa with with the encoded fund transfers, before executing the intent.
     /// - For ERC20 tokens, the funder needs to approve the orchestrator to pull funds.
