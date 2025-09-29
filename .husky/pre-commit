@@ -1,1 +1,0 @@
-clear && forge fmt && forge snapshot --isolate --match-contract Benchmark --via-ir && git add snapshots
