@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   test:
     name: Tests
@@ -35,8 +39,13 @@ jobs:
         run: |
           forge test -vvv
 
-      - name: Snapshot main branch
-        run: git fetch origin main && git worktree prune &&rm -rf .snapshot_worktree && git worktree add .snapshot_worktree origin/main && (cd .snapshot_worktree && forge snapshot --match-contract Benchmark --snap .temp-snapshot) && cp .snapshot_worktree/.temp-snapshot gas-snapshots/.gas-snapshot-main && git worktree remove --force .snapshot_worktree && git worktree prune
-
-      - name: Compare gas snapshots
-        run: forge snapshot --match-contract Benchmark --diff gas-snapshots/.gas-snapshot-main
+      - name: Update snapshots
+        run: |
+          forge snapshot --isolate --match-contract Benchmark --via-ir
+          if [ -n "$(git status --porcelain snapshots/)" ]; then
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git add snapshots/
+            git commit -m "chore: update gas snapshots"
+            git push
+          fi
