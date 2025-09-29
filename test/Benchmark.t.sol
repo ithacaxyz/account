@@ -1871,7 +1871,7 @@ contract BenchmarkTest is BaseTest {
         PaymentType _paymentType
     ) internal view returns (bytes[] memory) {
         bytes[] memory encodedIntents = new bytes[](delegatedEOAs.length);
-        uint256 nonce = IthacaAccount(payable(delegatedEOAs[0].eoa)).getNonce(0);
+        uint256 nonce = oc.getNonce(delegatedEOAs[0].eoa, 0);
         for (uint256 i = 0; i < delegatedEOAs.length; i++) {
             Intent memory u;
             u.eoa = delegatedEOAs[i].eoa;

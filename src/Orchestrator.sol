@@ -21,6 +21,7 @@ import {IFunder} from "./interfaces/IFunder.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 import {IntentHelpers} from "./libraries/IntentHelpers.sol";
+import {LibNonce} from "./libraries/LibNonce.sol";
 
 /// @title Orchestrator
 /// @notice Enables atomic verification, gas compensation and execution across eoas.
@@ -52,6 +53,13 @@ contract Orchestrator is
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
+    using LibNonce for mapping(uint192 => LibStorage.Ref);
+
+    ////////////////////////////////////////////////////////////////////////
+    // State
+    ////////////////////////////////////////////////////////////////////////
+
+    mapping(address => mapping(uint192 => LibStorage.Ref)) nonceSeqs;
 
     ////////////////////////////////////////////////////////////////////////
     // Errors
@@ -110,6 +118,13 @@ contract Orchestrator is
     /// If `incremented` is true and `err` is non-zero, the Intent was successful.
     /// For PreCalls where the nonce is skipped, this event will NOT be emitted..
     event IntentExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
+
+    /// @dev The nonce sequence of is invalidated up to (inclusive) of `nonce`.
+    /// The new available nonce will be `nonce + 1`.
+    /// This event is emitted in the `invalidateNonce` function,
+    /// as well as the `execute` function when an execution is performed directly
+    /// on the Account with a `keyHash`, bypassing the Orchestrator.
+    event NonceInvalidated(uint256 nonce);
 
     ////////////////////////////////////////////////////////////////////////
     // Constants
@@ -515,7 +530,7 @@ contract Orchestrator is
                 revert VerificationError();
             }
 
-            _checkAndIncrementNonce(eoa, nonce);
+            nonceSeqs[eoa].checkAndIncrement(nonce);
         }
 
         // Payment
@@ -624,7 +639,7 @@ contract Orchestrator is
     }
 
     ////////////////////////////////////////////////////////////////////////
-    // Account Implementation
+    // Account-Related Helpers
     ////////////////////////////////////////////////////////////////////////
 
     /// @dev Returns the implementation of the EOA.
@@ -632,6 +647,17 @@ contract Orchestrator is
     /// This function is provided as a public helper for easier integration.
     function accountImplementationOf(address eoa) public view virtual returns (address result) {
         (, result) = LibEIP7702.delegationAndImplementationOf(eoa);
+    }
+
+    /// @dev Return current nonce with sequence key.
+    function getNonce(address account, uint192 seqKey) public view virtual returns (uint256) {
+        return nonceSeqs[account].get(seqKey);
+    }
+
+    /// @dev Invalidates current nonce with sequence key.
+    function invalidateNonce(uint256 nonce) public {
+        nonceSeqs[msg.sender].invalidate(nonce);
+        emit NonceInvalidated(nonce);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -885,7 +911,7 @@ contract Orchestrator is
         returns (string memory name, string memory version)
     {
         name = "Orchestrator";
-        version = "0.5.5";
+        version = "0.5.6";
     }
 
     ////////////////////////////////////////////////////////////////////////

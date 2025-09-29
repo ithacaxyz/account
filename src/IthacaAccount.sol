@@ -90,8 +90,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         mapping(bytes32 => LibBytes.BytesStorage) keyStorage;
         /// @dev Mapping of key hash to the key's extra storage.
         mapping(bytes32 => LibStorage.Bump) keyExtraStorage;
-        /// @dev Nonce management when porto account acts as paymaster.
-        mapping(bytes32 => bool) paymasterNonces;
     }
 
     /// @dev Returns the storage pointer.
@@ -135,9 +133,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// If you want to upgrade to a bricked implementation,
     /// use `address(0xdeaDDeADDEaDdeaDdEAddEADDEAdDeadDEADDEaD)`.
     error NewImplementationIsZero();
-
-    /// @dev The paymaster nonce has already been used.
-    error PaymasterNonceError();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -617,11 +612,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
         // If this account is the paymaster, validate the paymaster signature.
         if (payer == address(this)) {
-            if (_getAccountStorage().paymasterNonces[intentDigest]) {
-                revert PaymasterNonceError();
-            }
-            _getAccountStorage().paymasterNonces[intentDigest] = true;
-
             (bool isValid, bytes32 k) = unwrapAndValidateSignature(intentDigest, paymentSignature);
 
             // Set the target key hash to the payer's.
@@ -732,6 +722,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         returns (string memory name, string memory version)
     {
         name = "IthacaAccount";
-        version = "0.5.10";
+        version = "0.5.11";
     }
 }
