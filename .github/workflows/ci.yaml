@@ -21,15 +21,11 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: nightly 
+          version: nightly
 
       - name: Build
         run: |
           forge build
-
-      - name: Check formatting
-        run: |
-          forge fmt --check
 
       - name: Run tests
         env:
@@ -39,15 +35,17 @@ jobs:
         run: |
           forge test -vvv
 
-      - name: Generate snapshots
+      - name: Format contracts and generate snapshots
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        run: forge snapshot --isolate --match-contract Benchmark --via-ir
+        run: |
+          forge fmt
+          forge snapshot --isolate --match-contract Benchmark --via-ir
 
-      - name: Commit snapshot changes
+      - name: Commit formatting and snapshot changes
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: update gas snapshots"
-          file_pattern: snapshots/
+          commit_message: "chore: fmt contracts and update gas snapshots"
+          file_pattern: "*.sol snapshots/"
           commit_user_name: github-actions[bot]
           commit_user_email: github-actions[bot]@users.noreply.github.com
