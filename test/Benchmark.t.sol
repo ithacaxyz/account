@@ -1647,7 +1647,23 @@ contract BenchmarkTest is BaseTest {
         }
     }
 
-    function testERC20Transfer_MaximumCost_IthacaAccount1() public {
+    function _createMockMinimalAccount(uint256 numAccounts)
+        internal
+        returns (DelegatedEOA[] memory delegatedEOAs)
+    {
+        delegatedEOAs = new DelegatedEOA[](numAccounts);
+
+        for (uint256 i = 0; i < numAccounts; i++) {
+            (delegatedEOAs[i].eoa, delegatedEOAs[i].privateKey) =
+                makeAddrAndKey(string(abi.encodePacked("mock", i)));
+            delegatedEOAs[i].d = MockAccount(
+                payable(address(new MockMinimalAccount(delegatedEOAs[i].eoa, address(oc))))
+            );
+            _giveAccountSomeTokens(address(delegatedEOAs[i].d));
+        }
+    }
+
+    function testERC20Transfer_MaximumCost_IthacaAccount() public {
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
@@ -1873,10 +1889,10 @@ contract BenchmarkTest is BaseTest {
         PaymentType _paymentType
     ) internal view returns (bytes[] memory) {
         bytes[] memory encodedIntents = new bytes[](delegatedEOAs.length);
-        uint256 nonce = IthacaAccount(payable(delegatedEOAs[0].eoa)).getNonce(0);
+        uint256 nonce = IthacaAccount(payable(delegatedEOAs[0].d)).getNonce(0);
         for (uint256 i = 0; i < delegatedEOAs.length; i++) {
             Intent memory u;
-            u.eoa = delegatedEOAs[i].eoa;
+            u.eoa = address(delegatedEOAs[i].d);
             u.nonce = nonce;
             u.combinedGas = 1000000;
             u.paymentRecipient = address(0x69);
@@ -1974,27 +1990,223 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
-    function testERC20TransferViaMinimals() public {
-        eip7702Proxy = EIP7702Proxy(
-            payable(LibEIP7702.deployProxy(address(new MockMinimalAccount()), address(0)))
-        );
-        account = MockAccount(payable(eip7702Proxy));
+    /**
+     * Benchmark tests for MockMinimalAccount
+     */
+    function testERC20Transfer_MaximumCost_MockMinimalAccount() public {
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(1);
+        bytes memory payload =
+            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
 
-        MockMinimalOrchestrator ocMinimal = new MockMinimalOrchestrator();
-
-        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        _giveAccountSomeTokens(d.eoa);
-
-        bytes memory data =
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether);
-        bytes32 hash = keccak256(data);
-        bytes memory signature = _eoaSig(d.privateKey, hash);
-
-        MockMinimalAccount(payable(d.eoa)).execute(address(paymentToken), 0, data);
-        MockMinimalAccount(payable(d.eoa)).sendETH(address(ocMinimal), 0.01 ether);
-        ocMinimal.setNonce(1);
-        require(MockMinimalAccount(payable(d.eoa)).isValidSignature(hash, signature) != 0);
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_MockMinimalAccount");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
+    }
+
+    function testERC20Transfer_AverageCost_MockMinimalAccount() public {
+        bytes memory payload =
+            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+
+        // First execution
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(10);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
+
+        oc.execute(encodedIntents);
+
+        // Second execution (for benchmarking) - reuse same accounts
+        bytes[] memory encodedIntents2 =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
+
+        oc.execute(encodedIntents2);
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_MockMinimalAccount");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
+    }
+
+    function testERC20Transfer_MaximumCost_MockMinimalAccount_ERC20SelfPay() public {
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(1);
+        bytes memory payload =
+            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_MockMinimalAccount_ERC20SelfPay");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
+    }
+
+    function testERC20Transfer_AverageCost_MockMinimalAccount_ERC20SelfPay() public {
+        bytes memory payload =
+            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+
+        // First execution
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(10);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents);
+
+        // Second execution (for benchmarking) - reuse same accounts
+        bytes[] memory encodedIntents2 =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents2);
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_MockMinimalAccount_ERC20SelfPay");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
+    }
+
+    function testNativeTransfer_MockMinimalAccount() public {
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(1);
+        bytes memory payload = _transferExecutionData(address(0), address(0xbabe), 1 ether);
+
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testNativeTransfer_MockMinimalAccount");
+
+        assertEq(address(0xbabe).balance, 1 ether);
+    }
+
+    function testNativeTransfer_MockMinimalAccount_ERC20SelfPay() public {
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(1);
+        bytes memory payload = _transferExecutionData(address(0), address(0xbabe), 1 ether);
+
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testNativeTransfer_MockMinimalAccount_ERC20SelfPay");
+
+        assertEq(address(0xbabe).balance, 1 ether);
+    }
+
+    function testUniswapV2Swap_MockMinimalAccount() public {
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
+        calls[0].data = _uniswapV2SwapPayload();
+        bytes memory payload = abi.encode(calls);
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(1);
+
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testUniswapV2Swap_MockMinimalAccount");
+    }
+
+    function testUniswapV2Swap_MockMinimalAccount_ERC20SelfPay() public {
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
+        calls[0].data = _uniswapV2SwapPayload();
+        bytes memory payload = abi.encode(calls);
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(1);
+
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testUniswapV2Swap_MockMinimalAccount_ERC20SelfPay");
+    }
+
+    function testERC20Transfer_MaximumCost_MockMinimalAccount_AppSponsor() public {
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(1);
+        bytes memory payload =
+            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_MockMinimalAccount_AppSponsor");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
+    }
+
+    function testERC20Transfer_AverageCost_MockMinimalAccount_AppSponsor() public {
+        bytes memory payload =
+            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+
+        // First execution
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(10);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents);
+
+        // Second execution (for benchmarking) - reuse same accounts
+        bytes[] memory encodedIntents2 =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents2);
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_MockMinimalAccount_AppSponsor");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
+    }
+
+    function testNativeTransfer_MockMinimalAccount_AppSponsor() public {
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(1);
+        bytes memory payload = _transferExecutionData(address(0), address(0xbabe), 1 ether);
+
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testNativeTransfer_MockMinimalAccount_AppSponsor");
+
+        assertEq(address(0xbabe).balance, 1 ether);
+    }
+
+    function testERC20Transfer_MaximumCost_MockMinimalAccount_AppSponsor_ERC20() public {
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(1);
+        bytes memory payload =
+            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR_ERC20);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_MockMinimalAccount_AppSponsor_ERC20");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
+    }
+
+    function testERC20Transfer_AverageCost_MockMinimalAccount_AppSponsor_ERC20() public {
+        bytes memory payload =
+            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+
+        // First execution
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(10);
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR_ERC20);
+
+        oc.execute(encodedIntents);
+
+        // Second execution (for benchmarking) - reuse same accounts
+        bytes[] memory encodedIntents2 =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR_ERC20);
+
+        oc.execute(encodedIntents2);
+        vm.snapshotGasLastCall("testERC20Transfer_AverageCost_MockMinimalAccount_AppSponsor_ERC20");
+
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
+    }
+
+    function testUniswapV2Swap_MockMinimalAccount_AppSponsor() public {
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
+        calls[0].data = _uniswapV2SwapPayload();
+        bytes memory payload = abi.encode(calls);
+        DelegatedEOA[] memory delegatedEOAs = _createMockMinimalAccount(1);
+
+        bytes[] memory encodedIntents =
+            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testUniswapV2Swap_MockMinimalAccount_AppSponsor");
     }
 }
