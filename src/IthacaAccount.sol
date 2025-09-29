@@ -23,6 +23,7 @@ import {LibNonce} from "./libraries/LibNonce.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
+import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 
 /// @title Account
 /// @notice A account contract for EOAs with EIP7702.
@@ -274,8 +275,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
-            isValid =
-                _isSuperAdmin(keyHash) || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
+            isValid = _isSuperAdmin(keyHash)
+                || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
         }
         // `bytes4(keccak256("isValidSignature(bytes32,bytes)")) = 0x1626ba7e`.
         // We use `0xffffffff` for invalid, in convention with the reference implementation.
@@ -399,12 +400,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     }
 
     /// @dev Returns arrays of all (non-expired) authorized keys and their hashes.
-    function getKeys()
-        public
-        view
-        virtual
-        returns (Key[] memory keys, bytes32[] memory keyHashes)
-    {
+    function getKeys() public view virtual returns (Key[] memory keys, bytes32[] memory keyHashes) {
         uint256 totalCount = keyCount();
 
         keys = new Key[](totalCount);
@@ -490,9 +486,43 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             : _hashTypedData(structHash);
     }
 
+    /// @dev Verifies the merkle sig
+    /// - Note: Each leaf of the merkle tree should be a standard digest.
+    /// - The signature for using merkle verification is encoded as:
+    /// - bytes signature = abi.encodePacked(bytes32[] proof, bytes32 root, bytes rootSig)
+    function _verifyMerkleSig(bytes32 digest, bytes calldata signature)
+        internal
+        view
+        returns (bool isValid, bytes32 keyHash)
+    {
+        bytes32[] calldata proof;
+        bytes32 root;
+        bytes calldata rootSig;
+
+        assembly ("memory-safe") {
+            let proofOffset := add(signature.offset, calldataload(signature.offset))
+            proof.length := calldataload(proofOffset)
+            proof.offset := add(proofOffset, 0x20)
+
+            root := calldataload(add(signature.offset, 0x20))
+
+            let rootSigOffset := add(signature.offset, calldataload(add(signature.offset, 0x40)))
+            rootSig.length := calldataload(rootSigOffset)
+            rootSig.offset := add(rootSigOffset, 0x20)
+        }
+
+        if (MerkleProofLib.verifyCalldata(proof, root, digest)) {
+            (isValid, keyHash) = unwrapAndValidateSignature(root, rootSig);
+
+            return (isValid, keyHash);
+        }
+
+        return (false, bytes32(0));
+    }
+
     /// @dev Returns if the signature is valid, along with its `keyHash`.
     /// The `signature` is a wrapped signature, given by
-    /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash))`.
+    /// `abi.encodePacked(bytes(innerSignature), bytes32(keyHash), bool(prehash), bool(merkle))`.
     function unwrapAndValidateSignature(bytes32 digest, bytes calldata signature)
         public
         view
@@ -500,21 +530,29 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         returns (bool isValid, bytes32 keyHash)
     {
         // Early return if unable to unwrap the signature.
-        if (signature.length < 0x21) return (false, 0);
+        if (signature.length < 0x22) return (false, 0);
 
         // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
             return (ECDSA.recoverCalldata(digest, signature) == address(this), 0);
         }
 
+        bool merkle;
+
         unchecked {
-            uint256 n = signature.length - 0x21;
+            uint256 n = signature.length - 0x22;
             keyHash = LibBytes.loadCalldata(signature, n);
             signature = LibBytes.truncatedCalldata(signature, n);
             // Do the prehash if last byte is non-zero.
             if (uint256(LibBytes.loadCalldata(signature, n + 1)) & 0xff != 0) {
                 digest = EfficientHashLib.sha2(digest); // `sha256(abi.encode(digest))`.
             }
+
+            merkle = uint256(LibBytes.loadCalldata(signature, n + 2)) & 0xff != 0;
+        }
+
+        if (merkle) {
+            return _verifyMerkleSig(digest, signature);
         }
 
         Key memory key = getKey(keyHash);
@@ -578,9 +616,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         keyHash = hash(key);
         AccountStorage storage $ = _getAccountStorage();
-        $.keyStorage[keyHash].set(
-            abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin)
-        );
+        $.keyStorage[keyHash]
+        .set(abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin));
         $.keyHashes.add(keyHash);
     }
 
@@ -615,11 +652,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         address paymentRecipient,
         bytes calldata paymentSignature
     ) public virtual {
-        if (
-            !LibBit.and(
+        if (!LibBit.and(
                 msg.sender == ORCHESTRATOR, LibBit.or(eoa == address(this), payer == address(this))
-            )
-        ) {
+            )) {
             revert Unauthorized();
         }
 
@@ -740,6 +775,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         returns (string memory name, string memory version)
     {
         name = "IthacaAccount";
-        version = "0.5.10";
+        version = "0.5.11";
     }
 }

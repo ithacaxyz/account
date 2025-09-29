@@ -369,8 +369,15 @@ contract Orchestrator is
                 // If the self call is successful, we know that the payment has been made,
                 // and the sequence for `nonce` has been incremented.
                 // For more information, see `selfCallPayVerifyCall537021665()`.
-                selfCallSuccess :=
-                    call(g, address(), 0, add(m, 0x1c), add(encodedIntent.length, 0x44), 0x00, 0x20)
+                selfCallSuccess := call(
+                    g,
+                    address(),
+                    0,
+                    add(m, 0x1c),
+                    add(encodedIntent.length, 0x44),
+                    0x00,
+                    0x20
+                )
                 err := mload(0x00) // The self call will do another self call to execute.
             }
         }
@@ -482,23 +489,18 @@ contract Orchestrator is
             bytes calldata signature = _getNextBytes(ptr);
 
             uint256 nonce = _getNonce();
+            (isValid, keyHash) = _verify(digest, eoa, signature);
 
             if (nonce >> 240 == MERKLE_VERIFICATION) {
-                // For multi chain intents, we have to verify using merkle sigs.
-                (isValid, keyHash) = _verifyMerkleSig(digest, eoa, signature);
-
                 bytes calldata settlerData = _getNextBytes(ptr);
                 // If this is an output intent, then send the digest as the settlementId
                 // on all input chains.
                 if (settlerData.length > 0) {
                     // Output intent - first 32 bytes of settler data contains the settler address
                     // Then, it contains 2 offsets then the real data
-                    ISettler(address(uint160(uint256(bytes32(settlerData[:32]))))).send(
-                        digest, settlerData[96:]
-                    );
+                    ISettler(address(uint160(uint256(bytes32(settlerData[:32])))))
+                        .send(digest, settlerData[96:]);
                 }
-            } else {
-                (isValid, keyHash) = _verify(digest, eoa, signature);
             }
 
             if (flags == _SIMULATION_MODE_FLAG) {
@@ -631,28 +633,6 @@ contract Orchestrator is
     ////////////////////////////////////////////////////////////////////////
     // Multi Chain Functions
     ////////////////////////////////////////////////////////////////////////
-
-    /// @dev Verifies the merkle sig for the multi chain intents.
-    /// - Note: Each leaf of the merkle tree should be a standard intent digest, computed with chainId.
-    /// - Leaf intents do NOT need to have the multichain nonce prefix.
-    /// - The signature for multi chain intents using merkle verification is encoded as:
-    /// - bytes signature = abi.encode(bytes32[] memory proof, bytes32 root, bytes memory rootSig)
-    function _verifyMerkleSig(bytes32 digest, address eoa, bytes memory signature)
-        internal
-        view
-        returns (bool isValid, bytes32 keyHash)
-    {
-        (bytes32[] memory proof, bytes32 root, bytes memory rootSig) =
-            abi.decode(signature, (bytes32[], bytes32, bytes));
-
-        if (MerkleProofLib.verify(proof, root, digest)) {
-            (isValid, keyHash) = IIthacaAccount(eoa).unwrapAndValidateSignature(root, rootSig);
-
-            return (isValid, keyHash);
-        }
-
-        return (false, bytes32(0));
-    }
 
     /// @dev Funds the eoa with with the encoded fund transfers, before executing the intent.
     /// - For ERC20 tokens, the funder needs to approve the orchestrator to pull funds.
@@ -879,7 +859,7 @@ contract Orchestrator is
         returns (string memory name, string memory version)
     {
         name = "Orchestrator";
-        version = "0.5.5";
+        version = "0.5.6";
     }
 
     ////////////////////////////////////////////////////////////////////////

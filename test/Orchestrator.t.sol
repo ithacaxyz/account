@@ -922,8 +922,9 @@ contract OrchestratorTest is BaseTest {
         if (_randomChance(16)) {
             u.combinedGas += 10_000;
             // Fill with some junk signature, but with the session `keyHash`.
-            u.signature =
-                abi.encodePacked(keccak256("a"), keccak256("b"), kSession.keyHash, uint8(0));
+            u.signature = abi.encodePacked(
+                keccak256("a"), keccak256("b"), kSession.keyHash, uint8(0), uint8(0)
+            );
 
             (t.gExecute, t.gCombined, t.gUsed) = _estimateGas(u);
 
@@ -1474,7 +1475,9 @@ contract OrchestratorTest is BaseTest {
             calls[0] = ERC7821.Call({
                 to: address(t.usdcBase),
                 value: 0,
-                data: abi.encodeWithSignature("approve(address,uint256)", address(t.escrowBase), 600)
+                data: abi.encodeWithSignature(
+                    "approve(address,uint256)", address(t.escrowBase), 600
+                )
             });
             // Then call escrow function
             calls[1] = ERC7821.Call({
@@ -1759,8 +1762,23 @@ contract OrchestratorTest is BaseTest {
 
         t.outputIntent.funderSignature = _eoaSig(t.funderPrivateKey, t.leafs[2]);
 
-        t.baseIntent.signature = abi.encode(merkleHelper.getProof(t.leafs, 0), t.root, t.rootSig);
-        t.arbIntent.signature = abi.encode(merkleHelper.getProof(t.leafs, 1), t.root, t.rootSig);
-        t.outputIntent.signature = abi.encode(merkleHelper.getProof(t.leafs, 2), t.root, t.rootSig);
+        t.baseIntent.signature = abi.encodePacked(
+            abi.encode(merkleHelper.getProof(t.leafs, 0), t.root, t.rootSig),
+            bytes32(0),
+            uint8(0),
+            uint8(1)
+        );
+        t.arbIntent.signature = abi.encodePacked(
+            abi.encode(merkleHelper.getProof(t.leafs, 1), t.root, t.rootSig),
+            bytes32(0),
+            uint8(0),
+            uint8(1)
+        );
+        t.outputIntent.signature = abi.encodePacked(
+            abi.encode(merkleHelper.getProof(t.leafs, 2), t.root, t.rootSig),
+            bytes32(0),
+            uint8(0),
+            uint8(1)
+        );
     }
 }
