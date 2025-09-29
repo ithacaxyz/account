@@ -119,6 +119,13 @@ contract Orchestrator is
     /// For PreCalls where the nonce is skipped, this event will NOT be emitted..
     event IntentExecuted(address indexed eoa, uint256 indexed nonce, bool incremented, bytes4 err);
 
+    /// @dev The nonce sequence of is invalidated up to (inclusive) of `nonce`.
+    /// The new available nonce will be `nonce + 1`.
+    /// This event is emitted in the `invalidateNonce` function,
+    /// as well as the `execute` function when an execution is performed directly
+    /// on the Account with a `keyHash`, bypassing the Orchestrator.
+    event NonceInvalidated(uint256 nonce);
+
     ////////////////////////////////////////////////////////////////////////
     // Constants
     ////////////////////////////////////////////////////////////////////////
@@ -645,6 +652,12 @@ contract Orchestrator is
     /// @dev Return current nonce with sequence key.
     function getNonce(address account, uint192 seqKey) public view virtual returns (uint256) {
         return nonceSeqs[account].get(seqKey);
+    }
+
+    /// @dev Invalidates current nonce with sequence key.
+    function invalidateNonce(uint256 nonce) public {
+        nonceSeqs[msg.sender].invalidate(nonce);
+        emit NonceInvalidated(nonce);
     }
 
     ////////////////////////////////////////////////////////////////////////
