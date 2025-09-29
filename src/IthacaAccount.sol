@@ -23,7 +23,6 @@ import {LibNonce} from "./libraries/LibNonce.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {LibTStack} from "./libraries/LibTStack.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
-import {console} from "forge-std/console.sol";
 
 /// @title Account
 /// @notice A account contract for EOAs with EIP7702.
@@ -383,8 +382,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev Returns the key corresponding to the `keyHash`. Reverts if the key does not exist.
     function getKey(bytes32 keyHash) public view virtual returns (Key memory key) {
         bytes memory data = _getAccountStorage().keyStorage[keyHash].get();
-        console.log("key length is: ");
-        console.log(data.length);
         if (data.length == uint256(0)) revert KeyDoesNotExist();
         unchecked {
             uint256 n = data.length - 7; // 5 + 1 + 1 bytes of fixed length fields.
