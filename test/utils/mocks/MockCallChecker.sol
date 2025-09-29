@@ -20,9 +20,7 @@ contract MockCallChecker {
         view
         returns (bool)
     {
-        return (
-            keyHash == authorizedKeyHash && target == authorizedTarget
-                && keccak256(data) == keccak256(authorizedData)
-        );
+        return (keyHash == authorizedKeyHash && target == authorizedTarget
+                && keccak256(data) == keccak256(authorizedData));
     }
 }
