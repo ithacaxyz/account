@@ -17,7 +17,6 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
 import {ICommon} from "./interfaces/ICommon.sol";
-import {PauseAuthority} from "./PauseAuthority.sol";
 import {IFunder} from "./interfaces/IFunder.sol";
 import {ISettler} from "./interfaces/ISettler.sol";
 import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
@@ -42,13 +41,7 @@ import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 ///   This means once an Intent is signed, it is infeasible to
 ///   alter or rearrange it to force it to fail.
 
-contract Orchestrator is
-    IOrchestrator,
-    EIP712,
-    CallContextChecker,
-    ReentrancyGuardTransient,
-    PauseAuthority
-{
+contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGuardTransient {
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
@@ -151,14 +144,6 @@ contract Orchestrator is
 
     /// @dev Flag for simulation mode.
     uint256 internal constant _SIMULATION_MODE_FLAG = 1;
-
-    ////////////////////////////////////////////////////////////////////////
-    // Constructor
-    ////////////////////////////////////////////////////////////////////////
-
-    constructor(address pauseAuthority) {
-        _pauseConfig = uint160(pauseAuthority);
-    }
 
     ////////////////////////////////////////////////////////////////////////
     // Main
@@ -474,7 +459,7 @@ contract Orchestrator is
         // simulation, and suggests banning users that intentionally grief the simulation.
 
         // Handle the sub Intents after initialize (if any), and before the `_verify`.
-        if (i.encodedPreCalls.length != 0) _handlePreCalls(eoa, flags, i.encodedPreCalls);
+        if (i.encodedPreCalls.length != 0) _handlePreCalls(eoa, i.payer, flags, i.encodedPreCalls);
 
         // If `_verify` is invalid, just revert.
         // The verification gas is determined by `executionData` and the account logic.
@@ -543,16 +528,18 @@ contract Orchestrator is
     /// - Call the Account with `executionData`, using the ERC7821 batch-execution mode.
     ///   If the call fails, revert.
     /// - Emit an {IntentExecuted} event.
-    function _handlePreCalls(address parentEOA, uint256 flags, bytes[] calldata encodedPreCalls)
-        internal
-        virtual
-    {
+    function _handlePreCalls(
+        address parentEOA,
+        address payer,
+        uint256 flags,
+        bytes[] calldata encodedPreCalls
+    ) internal virtual {
         for (uint256 j; j < encodedPreCalls.length; ++j) {
             SignedCall calldata p = _extractPreCall(encodedPreCalls[j]);
             address eoa = Math.coalesce(p.eoa, parentEOA);
             uint256 nonce = p.nonce;
 
-            if (eoa != parentEOA) revert InvalidPreCallEOA();
+            if (eoa != parentEOA && eoa != payer) revert InvalidPreCallEOA();
 
             (bool isValid, bytes32 keyHash) = _verify(_computeDigest(p), eoa, p.signature);
 
@@ -846,7 +833,7 @@ contract Orchestrator is
         returns (string memory name, string memory version)
     {
         name = "Orchestrator";
-        version = "0.5.2";
+        version = "0.5.5";
     }
 
     ////////////////////////////////////////////////////////////////////////

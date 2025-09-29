@@ -260,147 +260,6 @@ contract AccountTest is BaseTest {
         assert(keys[1].expiry == 5);
     }
 
-    function testAddDisallowedSuperAdminKeyTypeReverts() public {
-        address orchestrator = address(new Orchestrator(address(this)));
-        address accountImplementation = address(new IthacaAccount(address(orchestrator)));
-        address accountProxy = address(LibEIP7702.deployProxy(accountImplementation, address(0)));
-        account = MockAccount(payable(accountProxy));
-
-        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-
-        PassKey memory k = _randomSecp256k1PassKey();
-        k.k.isSuperAdmin = true;
-
-        vm.startPrank(d.eoa);
-
-        d.d.authorize(k.k);
-
-        k = _randomSecp256r1PassKey();
-        k.k.isSuperAdmin = true;
-        vm.expectRevert(bytes4(keccak256("KeyTypeCannotBeSuperAdmin()")));
-        d.d.authorize(k.k);
-
-        vm.stopPrank();
-    }
-
-    function testPause() public {
-        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        vm.deal(d.eoa, 100 ether);
-        address pauseAuthority = _randomAddress();
-        oc.setPauseAuthority(pauseAuthority);
-
-        (address ocPauseAuthority, uint40 lastPaused) = oc.getPauseConfig();
-        assertEq(ocPauseAuthority, pauseAuthority);
-        assertEq(lastPaused, 0);
-
-        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
-
-        // Pause authority is always the EP
-        calls[0].to = address(d.d);
-        calls[0].data = abi.encodeWithSignature("setPauseAuthority(address)", pauseAuthority);
-        uint256 nonce = d.d.getNonce(0);
-        bytes memory opData = abi.encodePacked(nonce, _sig(d, d.d.computeDigest(calls, nonce)));
-        bytes memory executionData = abi.encode(calls, opData);
-
-        // Setup a mock call
-        calls[0] = _transferCall(address(0), address(0x1234), 1 ether);
-        nonce = d.d.getNonce(0);
-        bytes32 digest = d.d.computeDigest(calls, nonce);
-        bytes memory signature = _sig(d, digest);
-
-        opData = abi.encodePacked(nonce, signature);
-        executionData = abi.encode(calls, opData);
-
-        // Check that execution can pass before pause.
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
-
-        // The block timestamp needs to be realistic
-        vm.warp(6 weeks + 1 days);
-
-        // Only the pause authority can pause.
-        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        oc.setPauseAuthority(pauseAuthority);
-
-        vm.startPrank(pauseAuthority);
-        oc.pause(true);
-
-        assertEq(oc.pauseFlag(), 1);
-        (ocPauseAuthority, lastPaused) = oc.getPauseConfig();
-        assertEq(ocPauseAuthority, pauseAuthority);
-        assertEq(lastPaused, block.timestamp);
-        vm.stopPrank();
-
-        // Check that execute fails
-        nonce = d.d.getNonce(0);
-        digest = d.d.computeDigest(calls, nonce);
-        signature = _sig(d, digest);
-        opData = abi.encodePacked(nonce, signature);
-        executionData = abi.encode(calls, opData);
-
-        vm.expectRevert(bytes4(keccak256("Paused()")));
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
-
-        // Check that intent fails
-        Orchestrator.Intent memory u;
-        u.eoa = d.eoa;
-        u.nonce = d.d.getNonce(0);
-        u.combinedGas = 1000000;
-        u.executionData = _transferExecutionData(address(0), address(0xabcd), 1 ether);
-        u.signature = _eoaSig(d.privateKey, u);
-
-        assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("VerificationError()")));
-
-        vm.startPrank(pauseAuthority);
-        // Try to pause already paused account.
-        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        oc.pause(true);
-
-        oc.pause(false);
-        assertEq(oc.pauseFlag(), 0);
-        (ocPauseAuthority, lastPaused) = oc.getPauseConfig();
-        assertEq(ocPauseAuthority, pauseAuthority);
-        assertEq(lastPaused, block.timestamp);
-
-        // Cannot immediately repause again.
-        vm.warp(lastPaused + 4 weeks + 1 days);
-        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
-        oc.pause(true);
-        vm.stopPrank();
-
-        // Intent should now succeed.
-        assertEq(oc.execute(abi.encode(u)), 0);
-
-        // Can pause again, after the cooldown period.
-        vm.warp(lastPaused + 5 weeks + 1);
-        vm.startPrank(pauseAuthority);
-        oc.pause(true);
-        vm.stopPrank();
-
-        assertEq(oc.pauseFlag(), 1);
-        (ocPauseAuthority, lastPaused) = oc.getPauseConfig();
-        assertEq(ocPauseAuthority, pauseAuthority);
-        assertEq(lastPaused, block.timestamp);
-
-        // Anyone can unpause after 4 weeks.
-        vm.warp(lastPaused + 4 weeks + 1);
-        oc.pause(false);
-        assertEq(oc.pauseFlag(), 0);
-        (ocPauseAuthority, lastPaused) = oc.getPauseConfig();
-        assertEq(ocPauseAuthority, pauseAuthority);
-        assertEq(lastPaused, block.timestamp - 4 weeks - 1);
-
-        address orchestratorAddress = address(oc);
-
-        // Try setting pauseAuthority with dirty bits.
-        assembly ("memory-safe") {
-            mstore(0x00, 0x4b90364f) // `setPauseAuthority(address)`
-            mstore(0x20, 0xffffffffffffffffffffffffffffffffffffffff)
-
-            let success := call(gas(), orchestratorAddress, 0x00, 0x1c, 0x24, 0x00, 0x00)
-            if success { revert(0, 0) }
-        }
-    }
-
     function testCrossChainKeyPreCallsAuthorization() public {
         // Setup Keys
         PassKey memory adminKey = _randomSecp256k1PassKey();
@@ -517,7 +376,7 @@ contract AccountTest is BaseTest {
         vm.deal(d.eoa, 100 ether);
 
         _TestTimelockBasicFlowTemps memory t;
-        
+
         // Create a key with timelock
         t.timelockKey = _randomSecp256r1PassKey();
         // Set the timelock field in the generated key
@@ -533,8 +392,13 @@ contract AccountTest is BaseTest {
         });
 
         t.nonce = d.d.getNonce(0);
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(t.authCalls, abi.encodePacked(t.nonce, _sig(d, d.d.computeDigest(t.authCalls, t.nonce)))));
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(
+                t.authCalls,
+                abi.encodePacked(t.nonce, _sig(d, d.d.computeDigest(t.authCalls, t.nonce)))
+            )
+        );
 
         // Verify key was added
         assertEq(d.d.keyCount(), 1, "Key should be added");
@@ -548,19 +412,31 @@ contract AccountTest is BaseTest {
 
         t.timelockNonce = d.d.getNonce(0);
         t.preTimelockCount = d.d.timelockCount();
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(t.timelockCalls, abi.encodePacked(t.timelockNonce, _sig(t.timelockKey, d.d.computeDigest(t.timelockCalls, t.timelockNonce)))));
-        
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(
+                t.timelockCalls,
+                abi.encodePacked(
+                    t.timelockNonce,
+                    _sig(t.timelockKey, d.d.computeDigest(t.timelockCalls, t.timelockNonce))
+                )
+            )
+        );
+
         // Verify timelock was created
         assertEq(d.d.timelockCount(), t.preTimelockCount + 1, "Timelock should be created");
-        
+
         // Get the created timelock
         bytes32 timelockDigest = d.d.computeDigest(t.timelockCalls, t.timelockNonce);
         t.timelocker = d.d.getTimelock(timelockDigest);
         // The keyHash should be computed based on keyType and publicKey only (not timelock field)
         assertEq(t.timelocker.keyHash, t.keyHash, "Timelock should reference correct key");
         assertEq(t.timelocker.executed, false, "Timelock should not be executed yet");
-        assertEq(t.timelocker.readyTimestamp, block.timestamp + 3600, "Ready timestamp should be set correctly");
+        assertEq(
+            t.timelocker.readyTimestamp,
+            block.timestamp + 3600,
+            "Ready timestamp should be set correctly"
+        );
     }
 
     function testTimelockExecution() public {
@@ -591,32 +467,33 @@ contract AccountTest is BaseTest {
         timelockCalls[0] = _thisTargetFunctionCall(0.1 ether, "timelock execution test");
 
         uint256 timelockNonce = d.d.getNonce(0);
-        bytes memory timelockSignature = _sig(timelockKey, d.d.computeDigest(timelockCalls, timelockNonce));
+        bytes memory timelockSignature =
+            _sig(timelockKey, d.d.computeDigest(timelockCalls, timelockNonce));
         bytes memory timelockOpData = abi.encodePacked(timelockNonce, timelockSignature);
-        
+
         d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, abi.encode(timelockCalls, timelockOpData));
-        
+
         // Verify timelock was created
         assertEq(d.d.timelockCount(), 1, "Timelock should be created");
-        
+
         // Get timelock digest
         bytes32 timelockDigest = d.d.computeDigest(timelockCalls, timelockNonce);
         IthacaAccount.Timelocker memory timelocker = d.d.getTimelock(timelockDigest);
-        
+
         // Try to execute before timelock is ready - should fail
         vm.expectRevert(IthacaAccount.TimelockNotReady.selector);
         d.d.executeTimelock(timelockCalls, timelockNonce);
-        
+
         // Fast forward time to make timelock ready
         vm.warp(block.timestamp + 11);
-        
+
         // Now execution should work
         uint256 preBalance = address(this).balance;
         d.d.executeTimelock(timelockCalls, timelockNonce);
-        
+
         // Verify execution occurred
         assertEq(address(this).balance - preBalance, 0.1 ether, "Execution should transfer value");
-        
+
         // Verify timelock is marked as executed
         timelocker = d.d.getTimelock(timelockDigest);
         assertEq(timelocker.executed, true, "Timelock should be marked as executed");
@@ -624,12 +501,12 @@ contract AccountTest is BaseTest {
 
     function testTimelockErrors() public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-        
+
         // Test: Get non-existent timelock
         bytes32 nonExistentDigest = keccak256("non-existent");
         vm.expectRevert(IthacaAccount.TimelockDoesNotExist.selector);
         d.d.getTimelock(nonExistentDigest);
-        
+
         // Test: Execute non-existent timelock with dummy calls
         ERC7821.Call[] memory dummyCalls = new ERC7821.Call[](1);
         dummyCalls[0] = _thisTargetFunctionCall(0.1 ether, "dummy");
@@ -655,24 +532,30 @@ contract AccountTest is BaseTest {
         });
 
         uint256 nonce = d.d.getNonce(0);
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))));
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(
+                authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))
+            )
+        );
 
         // Create timelock
         ERC7821.Call[] memory timelockCalls = new ERC7821.Call[](1);
         timelockCalls[0] = _thisTargetFunctionCall(0.1 ether, "double execution test");
 
         uint256 timelockNonce = d.d.getNonce(0);
-        bytes memory timelockSig = _sig(timelockKey, d.d.computeDigest(timelockCalls, timelockNonce));
-        
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, timelockSig)));
-        
-        
+        bytes memory timelockSig =
+            _sig(timelockKey, d.d.computeDigest(timelockCalls, timelockNonce));
+
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, timelockSig))
+        );
+
         // Wait for timelock to be ready and execute once
         vm.warp(block.timestamp + 2);
         d.d.executeTimelock(timelockCalls, timelockNonce);
-        
+
         // Try to execute again - should fail
         vm.expectRevert(IthacaAccount.TimelockAlreadyExecuted.selector);
         d.d.executeTimelock(timelockCalls, timelockNonce);
@@ -701,8 +584,12 @@ contract AccountTest is BaseTest {
         });
 
         uint256 nonce = d.d.getNonce(0);
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))));
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(
+                authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))
+            )
+        );
 
         // Create multiple timelocks
         uint256 numTimelocks = 3;
@@ -712,13 +599,16 @@ contract AccountTest is BaseTest {
 
             uint256 tlNonce = d.d.getNonce(0);
             bytes memory tlSig = _sig(timelockKey, d.d.computeDigest(calls, tlNonce));
-            
-            d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-                abi.encode(calls, abi.encodePacked(tlNonce, tlSig)));
+
+            d.d.execute(
+                _ERC7821_BATCH_EXECUTION_MODE, abi.encode(calls, abi.encodePacked(tlNonce, tlSig))
+            );
         }
 
         // Verify timelock count
-        assertEq(d.d.timelockCount(), numTimelocks, "Should have created correct number of timelocks");
+        assertEq(
+            d.d.timelockCount(), numTimelocks, "Should have created correct number of timelocks"
+        );
 
         // Test enumeration
         for (uint256 i = 0; i < numTimelocks; i++) {
@@ -732,7 +622,7 @@ contract AccountTest is BaseTest {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         vm.deal(d.eoa, 100 ether);
 
-        // Create key with zero timelock  
+        // Create key with zero timelock
         PassKey memory key = _randomSecp256k1PassKey();
         key.k.isSuperAdmin = true; // Super admin to bypass call restrictions
         key.k.timelock = 0; // No timelock
@@ -747,8 +637,12 @@ contract AccountTest is BaseTest {
         });
 
         uint256 nonce = d.d.getNonce(0);
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))));
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(
+                authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))
+            )
+        );
 
         // Execute with zero timelock key - should execute immediately
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
@@ -756,13 +650,14 @@ contract AccountTest is BaseTest {
 
         uint256 executionNonce = d.d.getNonce(0);
         bytes memory sig = _sig(key, d.d.computeDigest(calls, executionNonce));
-        
+
         uint256 preBalance = address(this).balance;
         uint256 preTimelockCount = d.d.timelockCount();
-        
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(calls, abi.encodePacked(executionNonce, sig)));
-        
+
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE, abi.encode(calls, abi.encodePacked(executionNonce, sig))
+        );
+
         // Verify immediate execution (no timelock created)
         assertEq(address(this).balance - preBalance, 0.1 ether, "Should execute immediately");
         assertEq(d.d.timelockCount(), preTimelockCount, "No timelock should be created");
@@ -788,29 +683,36 @@ contract AccountTest is BaseTest {
         });
 
         uint256 nonce = d.d.getNonce(0);
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))));
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(
+                authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))
+            )
+        );
 
         // Create timelock before key expires
         ERC7821.Call[] memory timelockCalls = new ERC7821.Call[](1);
         timelockCalls[0] = _thisTargetFunctionCall(0.1 ether, "expired key timelock");
 
         uint256 timelockNonce = d.d.getNonce(0);
-        bytes memory timelockSig = _sig(timelockKey, d.d.computeDigest(timelockCalls, timelockNonce));
-        
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, timelockSig)));
-        
+        bytes memory timelockSig =
+            _sig(timelockKey, d.d.computeDigest(timelockCalls, timelockNonce));
+
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, timelockSig))
+        );
+
         assertEq(d.d.timelockCount(), 1, "Timelock should be created");
-        
+
         bytes32 digest = d.d.computeDigest(timelockCalls, timelockNonce);
-        
+
         // Wait for key to expire but timelock to be ready
         vm.warp(block.timestamp + 12);
-        
+
         // Timelock should still be executable even though key expired after creation
         d.d.executeTimelock(timelockCalls, timelockNonce);
-        
+
         IthacaAccount.Timelocker memory timelocker = d.d.getTimelock(digest);
         assertEq(timelocker.executed, true, "Timelock should execute successfully");
     }
@@ -834,8 +736,12 @@ contract AccountTest is BaseTest {
         });
 
         uint256 nonce = d.d.getNonce(0);
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))));
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(
+                authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))
+            )
+        );
 
         bytes32 expectedKeyHash = d.d.hash(key);
 
@@ -849,16 +755,18 @@ contract AccountTest is BaseTest {
 
         uint256 contextNonce = d.d.getNonce(0);
         bytes memory contextSig = _sig(timelockKey, d.d.computeDigest(contextCalls, contextNonce));
-        
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(contextCalls, abi.encodePacked(contextNonce, contextSig)));
-        
+
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(contextCalls, abi.encodePacked(contextNonce, contextSig))
+        );
+
         bytes32 digest = d.d.computeDigest(contextCalls, contextNonce);
-        
+
         // Wait for timelock and execute
         vm.warp(block.timestamp + 2);
         d.d.executeTimelock(contextCalls, contextNonce);
-        
+
         // Verify timelock execution
         IthacaAccount.Timelocker memory timelocker = d.d.getTimelock(digest);
         assertEq(timelocker.executed, true, "Timelock should be executed");
@@ -867,7 +775,7 @@ contract AccountTest is BaseTest {
 
     function testFuzz_TimelockValues(uint40 timelockSeconds) public {
         vm.assume(timelockSeconds > 0 && timelockSeconds <= 365 days); // Reasonable timelock range
-        
+
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         vm.deal(d.eoa, 100 ether);
 
@@ -886,37 +794,48 @@ contract AccountTest is BaseTest {
         });
 
         uint256 nonce = d.d.getNonce(0);
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))));
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(
+                authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))
+            )
+        );
 
         // Create timelock
         ERC7821.Call[] memory timelockCalls = new ERC7821.Call[](1);
         timelockCalls[0] = _thisTargetFunctionCall(0.01 ether, "fuzz test");
 
         uint256 timelockNonce = d.d.getNonce(0);
-        bytes memory timelockSig = _sig(timelockKey, d.d.computeDigest(timelockCalls, timelockNonce));
-        
+        bytes memory timelockSig =
+            _sig(timelockKey, d.d.computeDigest(timelockCalls, timelockNonce));
+
         uint256 creationTime = block.timestamp;
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, 
-            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, timelockSig)));
-        
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, timelockSig))
+        );
+
         // Verify timelock created with correct ready timestamp
         bytes32 digest = d.d.computeDigest(timelockCalls, timelockNonce);
         IthacaAccount.Timelocker memory timelocker = d.d.getTimelock(digest);
-        
+
         assertEq(timelocker.executed, false, "Timelock should not be executed yet");
-        assertEq(timelocker.readyTimestamp, creationTime + timelockSeconds, "Ready timestamp should match timelock delay");
-        
+        assertEq(
+            timelocker.readyTimestamp,
+            creationTime + timelockSeconds,
+            "Ready timestamp should match timelock delay"
+        );
+
         // Try to execute before ready - should fail
         vm.expectRevert(IthacaAccount.TimelockNotReady.selector);
         d.d.executeTimelock(timelockCalls, timelockNonce);
-        
+
         // Fast forward to exactly ready time
         vm.warp(creationTime + timelockSeconds);
-        
+
         // Should succeed at exact ready time
         d.d.executeTimelock(timelockCalls, timelockNonce);
-        
+
         timelocker = d.d.getTimelock(digest);
         assertEq(timelocker.executed, true, "Timelock should be executed");
     }

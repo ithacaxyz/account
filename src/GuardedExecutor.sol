@@ -362,7 +362,9 @@ abstract contract GuardedExecutor is ERC7821 {
         virtual
         override
     {
-        if (!canExecute(keyHash, target, data)) revert UnauthorizedCall(keyHash, target, data);
+        if (!canExecute(keyHash, target, data)) {
+            revert UnauthorizedCall(keyHash, target, data);
+        }
         ERC7821._execute(target, value, data, keyHash);
     }
 
@@ -610,7 +612,12 @@ abstract contract GuardedExecutor is ERC7821 {
     }
 
     /// @dev Returns an array containing information on all the payment spends for `keyHash`.
-    function paySpendInfos(bytes32 keyHash) public view virtual returns (SpendInfo[] memory results) {
+    function paySpendInfos(bytes32 keyHash)
+        public
+        view
+        virtual
+        returns (SpendInfo[] memory results)
+    {
         SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
         DynamicArrayLib.DynamicArray memory a;
         uint256 n = spends.tokens.length();
@@ -679,9 +686,13 @@ abstract contract GuardedExecutor is ERC7821 {
         pure
         returns (uint256)
     {
-        if (period == SpendPeriod.Minute) return Math.rawMul(Math.rawDiv(unixTimestamp, 60), 60);
+        if (period == SpendPeriod.Minute) {
+            return Math.rawMul(Math.rawDiv(unixTimestamp, 60), 60);
+        }
         if (period == SpendPeriod.Hour) return Math.rawMul(Math.rawDiv(unixTimestamp, 3600), 3600);
-        if (period == SpendPeriod.Day) return Math.rawMul(Math.rawDiv(unixTimestamp, 86400), 86400);
+        if (period == SpendPeriod.Day) {
+            return Math.rawMul(Math.rawDiv(unixTimestamp, 86400), 86400);
+        }
         if (period == SpendPeriod.Week) return DateTimeLib.mondayTimestamp(unixTimestamp);
         (uint256 year, uint256 month,) = DateTimeLib.timestampToDate(unixTimestamp);
         // Note: DateTimeLib's months and month-days start from 1.

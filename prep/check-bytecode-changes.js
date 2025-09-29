@@ -13,7 +13,7 @@ const CONTRACT_CONFIG = {
   },
   "Orchestrator.sol/Orchestrator.json": {
     name: "Orchestrator",
-    bumpsWhenChanged: ["IthacaAccount"], // Orchestrator changes bump Account
+    bumpsWhenChanged: ["IthacaAccount", "SimpleFunder"], 
   },
   "SimpleFunder.sol/SimpleFunder.json": {
     name: "SimpleFunder",

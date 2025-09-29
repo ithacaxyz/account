@@ -5,8 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
 import {ISettler} from "../src/interfaces/ISettler.sol";
 import {MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
-import {EndpointV2Mock} from
-    "lib/devtools/packages/test-devtools-evm-foundry/contracts/mocks/EndpointV2Mock.sol";
+import {EndpointV2Mock} from "../src/vendor/layerzero/mocks/EndpointV2Mock.sol";
 import {Escrow} from "../src/Escrow.sol";
 import {IEscrow} from "../src/interfaces/IEscrow.sol";
 import {
@@ -15,9 +14,13 @@ import {
     MessagingFee
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {SendLibMock} from "./mocks/SendLibMock.sol";
-import {EnforcedOptionParam} from
-    "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppOptionsType3.sol";
 import {UlnOptionsTestHelper} from "./helpers/UlnOptionsTestHelper.sol";
+
+struct EnforcedOptionParam {
+    uint32 eid; // Endpoint ID
+    uint16 msgType; // Message Type
+    bytes options; // Additional options
+}
 
 contract LayerZeroSettlerTest is Test {
     SendLibMock public sendLib;

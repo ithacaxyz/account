@@ -13,6 +13,12 @@ contract MockPayerWithState is Ownable {
 
     mapping(address => bool) public isApprovedOrchestrator;
 
+    /// @dev Nonce management when acting as paymaster.
+    mapping(bytes32 => bool) public paymasterNonces;
+
+    /// @dev The paymaster nonce has already been used.
+    error PaymasterNonceError();
+
     event FundsIncreased(address token, address eoa, uint256 amount);
 
     event Compensated(
@@ -49,10 +55,11 @@ contract MockPayerWithState is Ownable {
 
     /// @dev Pays `paymentAmount` of `paymentToken` to the `paymentRecipient`.
     /// The EOA and token details are extracted from the `encodedIntent`.
-    /// Reverts if the specified Orchestrator (`msg.sender`) is not approved
-    /// or if the EOA lacks sufficient funds.
+    /// Reverts if the specified Orchestrator (`msg.sender`) is not approved,
+    /// if the EOA lacks sufficient funds, or if the nonce has already been used.
     /// @param paymentAmount The amount to pay.
     /// @param keyHash The key hash associated with the operation (not used in this mock's logic but kept for signature compatibility).
+    /// @param digest The digest of the intent (used for nonce tracking).
     /// @param encodedIntent ABI encoded Intent struct.
     function pay(
         uint256 paymentAmount,
@@ -62,6 +69,12 @@ contract MockPayerWithState is Ownable {
     ) public virtual {
         if (!isApprovedOrchestrator[msg.sender]) revert Unauthorized();
 
+        // Check and set nonce to prevent replay attacks
+        if (paymasterNonces[digest]) {
+            revert PaymasterNonceError();
+        }
+        paymasterNonces[digest] = true;
+
         ICommon.Intent memory u = abi.decode(encodedIntent, (ICommon.Intent));
 
         // We shall rely on arithmetic underflow error to revert if there's insufficient funds.
@@ -70,9 +83,6 @@ contract MockPayerWithState is Ownable {
 
         // Emit the event for debugging.
         emit Compensated(u.paymentToken, u.paymentRecipient, paymentAmount, u.eoa, keyHash);
-
-        // Done to avoid compiler warnings.
-        digest = digest;
     }
 
     receive() external payable {}

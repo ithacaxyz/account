@@ -1,7 +1,6 @@
 forge-std/=lib/forge-std/src/
 solady/=lib/solady/src/
 murky/=lib/murky/src/
-@layerzerolabs/oapp-evm/=lib/devtools/packages/oapp-evm/
 @layerzerolabs/lz-evm-protocol-v2/=lib/LayerZero-v2/packages/layerzero-v2/evm/protocol/
 @layerzerolabs/lz-evm-oapp-v2/=lib/LayerZero-v2/packages/layerzero-v2/evm/oapp/
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/

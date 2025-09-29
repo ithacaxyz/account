@@ -2,12 +2,14 @@
 pragma solidity ^0.8.23;
 
 import {Script, console} from "forge-std/Script.sol";
-import {stdToml} from "forge-std/StdToml.sol";
+import {Config} from "forge-std/Config.sol";
 
 // SimpleFunder interface for setting gas wallets
 interface ISimpleFunder {
     function setGasWallet(address[] memory wallets, bool isGasWallet) external;
     function gasWallets(address) external view returns (bool);
+    function setOrchestrators(address[] memory ocs, bool val) external;
+    function orchestrators(address) external view returns (bool);
 }
 
 /**
@@ -46,9 +48,7 @@ interface ISimpleFunder {
  *   --private-key $PRIVATE_KEY \
  *   "[84532]" 5
  */
-contract FundSigners is Script {
-    using stdToml for string;
-
+contract FundSigners is Script, Config {
     /**
      * @notice Configuration for funding on a specific chain
      */
@@ -59,6 +59,7 @@ contract FundSigners is Script {
         uint256 targetBalance;
         address simpleFunderAddress;
         uint256 defaultNumSigners;
+        address[] supportedOrchestrators;
     }
 
     /**
@@ -87,18 +88,18 @@ contract FundSigners is Script {
     uint256 private totalEthDistributed;
     uint256 private chainsProcessed;
 
-    string internal configContent;
     string internal configPath = "/deploy/config.toml";
 
     /**
      * @notice Fund all configured chains with default number of signers
      */
     function run() external {
-        // Default to common testnets
-        uint256[] memory chainIds = new uint256[](3);
-        chainIds[0] = 11155111; // Sepolia
-        chainIds[1] = 84532; // Base Sepolia
-        chainIds[2] = 11155420; // Optimism Sepolia
+        // Load configuration and setup forks
+        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
+        _loadConfigAndForks(fullConfigPath, false);
+
+        // Get all chain IDs from configuration
+        uint256[] memory chainIds = config.getChainIds();
         uint256 numSigners = 10; // Default
         execute(chainIds, numSigners);
     }
@@ -108,6 +109,10 @@ contract FundSigners is Script {
      * @param chainIds Array of chain IDs to fund
      */
     function run(uint256[] memory chainIds) external {
+        // Load configuration and setup forks
+        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
+        _loadConfigAndForks(fullConfigPath, false);
+
         uint256 numSigners = 10; // Default
         execute(chainIds, numSigners);
     }
@@ -118,6 +123,10 @@ contract FundSigners is Script {
      * @param numSigners Number of signers to fund (starting from index 0)
      */
     function run(uint256[] memory chainIds, uint256 numSigners) external {
+        // Load configuration and setup forks
+        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
+        _loadConfigAndForks(fullConfigPath, false);
+
         execute(chainIds, numSigners);
     }
 
@@ -127,9 +136,6 @@ contract FundSigners is Script {
     function execute(uint256[] memory chainIds, uint256 numSigners) internal {
         console.log("=== Signer Funding Script (TOML Config) ===");
         console.log("Number of signers to fund:", numSigners);
-
-        // Load configuration
-        loadConfig();
 
         // Get mnemonic from environment
         string memory mnemonic = vm.envString("GAS_SIGNER_MNEMONIC");
@@ -211,6 +217,9 @@ contract FundSigners is Script {
         if (config.simpleFunderAddress != address(0) && config.simpleFunderAddress.code.length > 0)
         {
             setGasWalletsInSimpleFunder(config.simpleFunderAddress, signers);
+            setOrchestratorsInSimpleFunder(
+                config.simpleFunderAddress, config.supportedOrchestrators
+            );
         }
 
         vm.stopBroadcast();
@@ -413,6 +422,41 @@ contract FundSigners is Script {
     }
 
     /**
+     * @notice Set orchestrators in SimpleFunder contract
+     */
+    function setOrchestratorsInSimpleFunder(address simpleFunder, address[] memory orchestrators)
+        internal
+    {
+        if (orchestrators.length == 0) {
+            console.log("No orchestrators configured, skipping orchestrator setup");
+            return;
+        }
+
+        ISimpleFunder funder = ISimpleFunder(simpleFunder);
+
+        console.log("\nSetting orchestrators in SimpleFunder:");
+        console.log("  SimpleFunder address:", simpleFunder);
+        console.log(
+            string.concat("  Setting ", vm.toString(orchestrators.length), " orchestrators...")
+        );
+
+        for (uint256 i = 0; i < orchestrators.length; i++) {
+            console.log(
+                string.concat(
+                    "  Orchestrator ", vm.toString(i), ": ", vm.toString(orchestrators[i])
+                )
+            );
+        }
+
+        funder.setOrchestrators(orchestrators, true);
+        console.log(
+            string.concat(
+                "  Successfully set all ", vm.toString(orchestrators.length), " orchestrators"
+            )
+        );
+    }
+
+    /**
      * @notice Derive signer addresses from mnemonic
      */
     function deriveSigners(string memory mnemonic, uint256 count)
@@ -432,44 +476,28 @@ contract FundSigners is Script {
     }
 
     /**
-     * @notice Load configuration from TOML
-     */
-    function loadConfig() internal {
-        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
-        configContent = vm.readFile(fullConfigPath);
-    }
-
-    /**
      * @notice Get chain funding configuration
      */
     function getChainFundingConfig(uint256 chainId) internal returns (ChainFundingConfig memory) {
-        // Create fork and read configuration from fork variables
-        string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
-        uint256 forkId = vm.createFork(rpcUrl);
-        vm.selectFork(forkId);
+        // Switch to the fork for this chain (already created by _loadConfigAndForks)
+        vm.selectFork(forkOf[chainId]);
 
-        ChainFundingConfig memory config;
-        config.chainId = chainId;
-        config.name = vm.readForkString("name");
-        config.isTestnet = vm.readForkBool("is_testnet");
-        config.targetBalance = vm.readForkUint("target_balance");
-
-        // Try to read SimpleFunder address - may not be deployed on all chains
-        try vm.readForkAddress("simple_funder_address") returns (address addr) {
-            config.simpleFunderAddress = addr;
-        } catch {
-            // SimpleFunder not configured for this chain
-            config.simpleFunderAddress = address(0);
-        }
+        ChainFundingConfig memory chainConfig;
+        chainConfig.chainId = chainId;
+        chainConfig.name = config.get(chainId, "name").toString();
+        chainConfig.isTestnet = config.get(chainId, "is_testnet").toBool();
+        chainConfig.targetBalance = config.get(chainId, "target_balance").toUint256();
+        chainConfig.simpleFunderAddress = config.get(chainId, "simple_funder_deployed").toAddress();
 
         // Try to read default number of signers
-        try vm.readForkUint("default_num_signers") returns (uint256 num) {
-            config.defaultNumSigners = num;
-        } catch {
-            config.defaultNumSigners = 10; // Default fallback
-        }
+        uint256 numSigners = config.get(chainId, "default_num_signers").toUint256();
+        chainConfig.defaultNumSigners = numSigners == 0 ? 10 : numSigners; // Default fallback
 
-        return config;
+        // Read supported orchestrators - required field
+        chainConfig.supportedOrchestrators =
+            config.get(chainId, "supported_orchestrators").toAddressArray();
+
+        return chainConfig;
     }
 
     /**

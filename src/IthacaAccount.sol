@@ -106,6 +106,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         EnumerableSetLib.Bytes32Set timelockHashes;
         /// @dev Mapping of timelock hash to the timelock in encoded form.
         mapping(bytes32 => LibBytes.BytesStorage) timelockStorage;
+        /// @dev Nonce management when porto account acts as paymaster.
+        mapping(bytes32 => bool) paymasterNonces;
     }
 
     /// @dev Returns the storage pointer.
@@ -158,6 +160,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// If you want to upgrade to a bricked implementation,
     /// use `address(0xdeaDDeADDEaDdeaDdEAddEADDEAdDeadDEADDEaD)`.
     error NewImplementationIsZero();
+
+    /// @dev The paymaster nonce has already been used.
+    error PaymasterNonceError();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -536,27 +541,13 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         virtual
         returns (bool isValid, bytes32 keyHash)
     {
-        address oc = ORCHESTRATOR;
-        // We only have to enforce the pause flag here, because all execution/payment flows
-        // always have to do a signature validation.
-        assembly ("memory-safe") {
-            mstore(0x00, 0x060f052a) // `pauseFlag()`
-
-            let success := staticcall(gas(), oc, 0x1c, 0x04, 0x00, 0x20)
-
-            if or(mload(0x00), iszero(success)) {
-                mstore(0x00, 0x9e87fac8) // `Paused()`
-                revert(0x1c, 0x04)
-            }
-        }
+        // Early return if unable to unwrap the signature.
+        if (signature.length < 0x21) return (false, 0);
 
         // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
             return (ECDSA.recoverCalldata(digest, signature) == address(this), 0);
         }
-
-        // Early return if unable to unwrap the signature.
-        if (signature.length < 0x21) return (false, 0);
 
         unchecked {
             uint256 n = signature.length - 0x21;
@@ -626,9 +617,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
     /// @dev Adds the key. If the key already exist, its expiry will be updated.
     function _addKey(Key memory key) internal virtual returns (bytes32 keyHash) {
-        if (key.isSuperAdmin) {
-            if (!_keyTypeCanBeSuperAdmin(key.keyType)) revert KeyTypeCannotBeSuperAdmin();
-        }
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         keyHash = hash(key);
         AccountStorage storage $ = _getAccountStorage();
@@ -636,11 +624,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin, key.timelock)
         );
         $.keyHashes.add(keyHash);
-    }
-
-    /// @dev Returns if the `keyType` can be a super admin.
-    function _keyTypeCanBeSuperAdmin(KeyType keyType) internal view virtual returns (bool) {
-        return keyType != KeyType.P256;
     }
 
     /// @dev Removes the key corresponding to the `keyHash`. Reverts if the key does not exist.
@@ -652,7 +635,11 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     }
 
     /// @dev Adds the timelock. Returns the timelock hash.
-    function _addTimelock(Timelocker memory timelocker, bytes32 digest) internal virtual returns (bytes32 timelockHash) {
+    function _addTimelock(Timelocker memory timelocker, bytes32 digest)
+        internal
+        virtual
+        returns (bytes32 timelockHash)
+    {
         AccountStorage storage $ = _getAccountStorage();
         $.timelockStorage[digest].set(
             abi.encode(timelocker.executed, timelocker.keyHash, timelocker.readyTimestamp)
@@ -664,32 +651,37 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     function executeTimelock(Call[] calldata calls, uint256 nonce) public virtual {
         // Recalculate digest from calls and nonce
         bytes32 digest = computeDigest(calls, nonce);
-        
+
         // Get timelock using the digest
         Timelocker memory timelocker = getTimelock(digest);
-        
+
         // Check if timelock is ready and not executed
         if (timelocker.readyTimestamp > block.timestamp) revert TimelockNotReady();
         if (timelocker.executed) revert TimelockAlreadyExecuted();
-        
+
         // Set the key context and execute
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(timelocker.keyHash);
         _execute(calls, timelocker.keyHash);
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
-        
+
         // Update storage to mark as executed
         AccountStorage storage $ = _getAccountStorage();
         bytes memory newData = abi.encode(true, timelocker.keyHash, timelocker.readyTimestamp);
         $.timelockStorage[digest].set(newData);
-        
+
         emit TimelockExecuted(digest);
     }
 
     /// @dev Returns the timelock corresponding to the `timelockHash`. Reverts if the timelock does not exist.
-    function getTimelock(bytes32 timelockHash) public view virtual returns (Timelocker memory timelocker) {
+    function getTimelock(bytes32 timelockHash)
+        public
+        view
+        virtual
+        returns (Timelocker memory timelocker)
+    {
         bytes memory data = _getAccountStorage().timelockStorage[timelockHash].get();
         if (data.length == uint256(0)) revert TimelockDoesNotExist();
-        (timelocker.executed, timelocker.keyHash, timelocker.readyTimestamp) = 
+        (timelocker.executed, timelocker.keyHash, timelocker.readyTimestamp) =
             abi.decode(data, (bool, bytes32, uint40));
     }
 
@@ -747,6 +739,11 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
         // If this account is the paymaster, validate the paymaster signature.
         if (intent.payer == address(this)) {
+            if (_getAccountStorage().paymasterNonces[intentDigest]) {
+                revert PaymasterNonceError();
+            }
+            _getAccountStorage().paymasterNonces[intentDigest] = true;
+
             (bool isValid, bytes32 k) =
                 unwrapAndValidateSignature(intentDigest, intent.paymentSignature);
 
@@ -769,7 +766,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         // Increase spend.
         if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
             SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
-            _incrementSpent(spends.paySpends[intent.paymentToken], intent.paymentToken, paymentAmount);
+            _incrementSpent(
+                spends.paySpends[intent.paymentToken], intent.paymentToken, paymentAmount
+            );
         }
 
         // Done to avoid compiler warnings.
@@ -816,7 +815,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
         if (!isValid) revert Unauthorized();
-        if (keyHash!=bytes32(0)&&getKey(keyHash).timelock > 0 ) {
+        if (keyHash != bytes32(0) && getKey(keyHash).timelock > 0) {
             Timelocker memory timelocker = Timelocker({
                 executed: false,
                 keyHash: keyHash,
@@ -868,6 +867,6 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         returns (string memory name, string memory version)
     {
         name = "IthacaAccount";
-        version = "0.5.4";
+        version = "0.5.10";
     }
 }
