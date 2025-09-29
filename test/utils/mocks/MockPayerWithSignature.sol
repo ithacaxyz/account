@@ -11,15 +11,10 @@ import {IOrchestrator} from "../../../src/interfaces/IOrchestrator.sol";
 
 contract MockPayerWithSignature is Ownable {
     error InvalidSignature();
-    /// @dev The paymaster nonce has already been used.
-    error PaymasterNonceError();
 
     address public signer;
 
     mapping(address => bool) public isApprovedOrchestrator;
-
-    /// @dev Nonce management when acting as paymaster.
-    mapping(bytes32 => bool) public paymasterNonces;
 
     event Compensated(
         address indexed paymentToken,
@@ -70,12 +65,6 @@ contract MockPayerWithSignature is Ownable {
         bytes calldata paymentSignature
     ) public virtual {
         if (!isApprovedOrchestrator[msg.sender]) revert Unauthorized();
-
-        // Check and set nonce to prevent replay attacks
-        if (paymasterNonces[intentDigest]) {
-            revert PaymasterNonceError();
-        }
-        paymasterNonces[intentDigest] = true;
 
         bytes32 signatureDigest = computeSignatureDigest(intentDigest);
 
