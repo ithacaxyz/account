@@ -66,8 +66,9 @@ contract SimpleFunderTest is Test {
             )
         );
 
-        bytes32 structHash =
-            keccak256(abi.encode(WITHDRAWAL_TYPE_HASH, _token, _recipient, amount, deadline, nonce));
+        bytes32 structHash = keccak256(
+            abi.encode(WITHDRAWAL_TYPE_HASH, _token, _recipient, amount, deadline, nonce)
+        );
 
         return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
     }

@@ -90,14 +90,16 @@ abstract contract OAppSender is OAppCore {
         uint256 messageValue = _payNative(_fee.nativeFee);
         if (_fee.lzTokenFee > 0) _payLzToken(_fee.lzTokenFee);
 
-        return endpoint
+        return endpoint.
             // solhint-disable-next-line check-send-result
-            .send{value: messageValue}(
-            MessagingParams(
-                _dstEid, _getPeerOrRevert(_dstEid), _message, _options, _fee.lzTokenFee > 0
-            ),
-            _refundAddress
-        );
+            send{
+                value: messageValue
+            }(
+                MessagingParams(
+                    _dstEid, _getPeerOrRevert(_dstEid), _message, _options, _fee.lzTokenFee > 0
+                ),
+                _refundAddress
+            );
     }
 
     /**
