@@ -431,7 +431,7 @@ contract AccountTest is BaseTest {
         t.timelocker = d.d.getTimelock(timelockDigest);
         // The keyHash should be computed based on keyType and publicKey only (not timelock field)
         assertEq(t.timelocker.keyHash, t.keyHash, "Timelock should reference correct key");
-        assertEq(t.timelocker.executed, false, "Timelock should not be executed yet");
+        // Timelock should exist and be ready for execution after the delay
         assertEq(
             t.timelocker.readyTimestamp,
             block.timestamp + 3600,
@@ -494,9 +494,8 @@ contract AccountTest is BaseTest {
         // Verify execution occurred
         assertEq(address(this).balance - preBalance, 0.1 ether, "Execution should transfer value");
 
-        // Verify timelock is marked as executed
-        timelocker = d.d.getTimelock(timelockDigest);
-        assertEq(timelocker.executed, true, "Timelock should be marked as executed");
+        // Verify timelock was cleared after execution (gas optimization)
+        assertEq(d.d.timelockCount(), 0, "Timelock should be cleared after execution");
     }
 
     function testTimelockErrors() public {
@@ -556,8 +555,8 @@ contract AccountTest is BaseTest {
         vm.warp(block.timestamp + 2);
         d.d.executeTimelock(timelockCalls, timelockNonce);
 
-        // Try to execute again - should fail
-        vm.expectRevert(IthacaAccount.TimelockAlreadyExecuted.selector);
+        // Try to execute again - should fail (timelock cleared after execution)
+        vm.expectRevert(IthacaAccount.TimelockDoesNotExist.selector);
         d.d.executeTimelock(timelockCalls, timelockNonce);
     }
 
@@ -613,7 +612,7 @@ contract AccountTest is BaseTest {
         // Test enumeration
         for (uint256 i = 0; i < numTimelocks; i++) {
             IthacaAccount.Timelocker memory timelocker = d.d.timelockAt(i);
-            assertEq(timelocker.executed, false, "All timelocks should be unexecuted");
+            // Timelock should exist before execution
             assertEq(timelocker.keyHash, d.d.hash(key), "All timelocks should reference same key");
         }
     }
@@ -713,8 +712,8 @@ contract AccountTest is BaseTest {
         // Timelock should still be executable even though key expired after creation
         d.d.executeTimelock(timelockCalls, timelockNonce);
 
-        IthacaAccount.Timelocker memory timelocker = d.d.getTimelock(digest);
-        assertEq(timelocker.executed, true, "Timelock should execute successfully");
+        // Verify timelock was cleared after execution
+        assertEq(d.d.timelockCount(), 0, "Timelock should be cleared after execution");
     }
 
     function testTimelockContextKeyHash() public {
@@ -767,10 +766,8 @@ contract AccountTest is BaseTest {
         vm.warp(block.timestamp + 2);
         d.d.executeTimelock(contextCalls, contextNonce);
 
-        // Verify timelock execution
-        IthacaAccount.Timelocker memory timelocker = d.d.getTimelock(digest);
-        assertEq(timelocker.executed, true, "Timelock should be executed");
-        assertEq(timelocker.keyHash, expectedKeyHash, "Timelock should store correct key hash");
+        // Verify timelock was cleared after execution
+        assertEq(d.d.timelockCount(), 0, "Timelock should be cleared after execution");
     }
 
     function testFuzz_TimelockValues(uint40 timelockSeconds) public {
@@ -819,7 +816,7 @@ contract AccountTest is BaseTest {
         bytes32 digest = d.d.computeDigest(timelockCalls, timelockNonce);
         IthacaAccount.Timelocker memory timelocker = d.d.getTimelock(digest);
 
-        assertEq(timelocker.executed, false, "Timelock should not be executed yet");
+        // Verify timelock properties before execution
         assertEq(
             timelocker.readyTimestamp,
             creationTime + timelockSeconds,
@@ -836,7 +833,7 @@ contract AccountTest is BaseTest {
         // Should succeed at exact ready time
         d.d.executeTimelock(timelockCalls, timelockNonce);
 
-        timelocker = d.d.getTimelock(digest);
-        assertEq(timelocker.executed, true, "Timelock should be executed");
+        // Verify timelock was cleared after execution
+        assertEq(d.d.timelockCount(), 0, "Timelock should be cleared after execution");
     }
 }
