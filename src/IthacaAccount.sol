@@ -189,6 +189,11 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     );
 
     /// @dev For EIP712 signature digest calculation for the `execute` function.
+    bytes32 public constant OPTIMIZED_EXECUTE_TYPEHASH = keccak256(
+        "OptimizedExecute(bool multichain,address to,bytes[] datas,uint256 nonce)"
+    );
+
+    /// @dev For EIP712 signature digest calculation for the `execute` function.
     bytes32 public constant CALL_TYPEHASH = keccak256("Call(address to,uint256 value,bytes data)");
 
     /// @dev For EIP712 signature digest calculation.
@@ -485,7 +490,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
 
-    function computeDigest(CallSansTo[] calldata calls, address to, uint256 nonce)
+    function computeDigest(bytes[] calldata datas, address to, uint256 nonce)
         public
         view
         virtual
@@ -497,22 +502,16 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             to := or(mul(address(), iszero(t)), t)
         }
 
-        bytes32[] memory a = EfficientHashLib.malloc(calls.length);
-        for (uint256 i; i < calls.length; ++i) {
-            (uint256 value, bytes calldata data) = _get(calls, i);
+        bytes32[] memory a = EfficientHashLib.malloc(datas.length);
+        for (uint256 i; i < datas.length; ++i) {
             a.set(
                 i,
-                EfficientHashLib.hash(
-                    CALL_TYPEHASH,
-                    bytes32(uint256(uint160(to))),
-                    bytes32(value),
-                    EfficientHashLib.hashCalldata(data)
-                )
+                EfficientHashLib.hashCalldata(datas[i])
             );
         }
         bool isMultichain = nonce >> 240 == MULTICHAIN_NONCE_PREFIX;
         bytes32 structHash = EfficientHashLib.hash(
-            uint256(EXECUTE_TYPEHASH), LibBit.toUint(isMultichain), uint256(a.hash()), nonce
+            uint256(OPTIMIZED_EXECUTE_TYPEHASH), LibBit.toUint(isMultichain), uint256(uint160(to)), uint256(a.hash()), nonce
         );
         return isMultichain ? _hashTypedDataSansChainId(structHash) : _hashTypedData(structHash);
     }
@@ -705,7 +704,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         bytes32,
         bytes calldata,
         address to,
-        CallSansTo[] calldata calls,
+        bytes[] calldata datas,
         bytes calldata opData
     ) internal virtual override {
         // Orchestrator workflow.
@@ -716,7 +715,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             bytes32 _keyHash = LibBytes.loadCalldata(opData, 0x00);
 
             LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(_keyHash);
-            _execute(calls, to, _keyHash);
+            _execute(datas, to, _keyHash);
             LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
 
             return;
@@ -725,7 +724,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         // Simple workflow without `opData`.
         if (opData.length == uint256(0)) {
             if (msg.sender != address(this)) revert Unauthorized();
-            return _execute(calls, to, bytes32(0));
+            return _execute(datas, to, bytes32(0));
         }
 
         // Simple workflow with `opData`.
@@ -735,12 +734,12 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         emit NonceInvalidated(nonce);
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
-            computeDigest(calls, to, nonce), LibBytes.sliceCalldata(opData, 0x20)
+            computeDigest(datas, to, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
 
         if (!isValid) revert Unauthorized();
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
-        _execute(calls, to, keyHash);
+        _execute(datas, to, keyHash);
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
     }
 
