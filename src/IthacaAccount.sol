@@ -101,7 +101,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         /// @dev Mapping of key hash to the key's extra storage.
         mapping(bytes32 => LibStorage.Bump) keyExtraStorage;
         /// @dev Set of timelock hashes for onchain enumeration of timelocks.
-        EnumerableSetLib.Bytes32Set timelockHashes;
+        EnumerableSetLib.Bytes32Set timelockDigests;
         /// @dev Mapping of timelock hash to the timelock in encoded form.
         mapping(bytes32 => LibBytes.BytesStorage) timelockStorage;
         /// @dev Nonce management when porto account acts as paymaster.
@@ -193,11 +193,11 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// on the Account with a `keyHash`, bypassing the Orchestrator.
     event NonceInvalidated(uint256 nonce);
 
-    /// @dev The timelock with a corresponding `timelockHash` has been created.
-    event TimelockCreated(bytes32 indexed timelockHash, Timelocker timelocker);
+    /// @dev The timelock with a corresponding `digest` has been created.
+    event TimelockCreated(bytes32 indexed digest, Timelocker timelocker);
 
-    /// @dev The timelock with a corresponding `timelockHash` has been executed.
-    event TimelockExecuted(bytes32 indexed timelockHash);
+    /// @dev The timelock with a corresponding `digest` has been executed.
+    event TimelockExecuted(bytes32 indexed digest);
 
     ////////////////////////////////////////////////////////////////////////
     // Immutables
@@ -413,12 +413,12 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
     /// @dev Returns the number of timelocks.
     function timelockCount() public view virtual returns (uint256) {
-        return _getAccountStorage().timelockHashes.length();
+        return _getAccountStorage().timelockDigests.length();
     }
 
     /// @dev Returns the timelock at index `i`.
     function timelockAt(uint256 i) public view virtual returns (Timelocker memory) {
-        return getTimelock(_getAccountStorage().timelockHashes.at(i));
+        return getTimelock(_getAccountStorage().timelockDigests.at(i));
     }
 
     /// @dev Returns the key corresponding to the `keyHash`. Reverts if the key does not exist.
@@ -634,14 +634,13 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     function _addTimelock(Timelocker memory timelocker, bytes32 digest)
         internal
         virtual
-        returns (bytes32 timelockHash)
     {
         AccountStorage storage $ = _getAccountStorage();
         $.timelockStorage[digest].set(
             abi.encode(timelocker.keyHash, timelocker.readyTimestamp)
         );
-        $.timelockHashes.add(digest);
-        return digest;
+        $.timelockDigests.add(digest);
+        emit TimelockCreated(digest, timelocker);
     }
 
     function executeTimelock(Call[] calldata calls, uint256 nonce) public virtual {
@@ -659,30 +658,29 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         _execute(calls, timelocker.keyHash);
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
 
-        // Clear timelock storage (replay protection via nonce)
         _removeTimelock(digest);
 
         emit TimelockExecuted(digest);
     }
 
-    /// @dev Returns the timelock corresponding to the `timelockHash`. Reverts if the timelock does not exist.
-    function getTimelock(bytes32 timelockHash)
+    /// @dev Returns the timelock corresponding to the `digest`. Reverts if the timelock does not exist.
+    function getTimelock(bytes32 digest)
         public
         view
         virtual
         returns (Timelocker memory timelocker)
     {
-        bytes memory data = _getAccountStorage().timelockStorage[timelockHash].get();
+        bytes memory data = _getAccountStorage().timelockStorage[digest].get();
         if (data.length == uint256(0)) revert TimelockDoesNotExist();
         (timelocker.keyHash, timelocker.readyTimestamp) =
             abi.decode(data, (bytes32, uint40));
     }
 
-    /// @dev Removes the timelock corresponding to the `timelockHash`. Reverts if the timelock does not exist.
-    function _removeTimelock(bytes32 timelockHash) internal virtual {
+    /// @dev Removes the timelock corresponding to the `digest`. Reverts if the timelock does not exist.
+    function _removeTimelock(bytes32 digest) internal virtual {
         AccountStorage storage $ = _getAccountStorage();
-        $.timelockStorage[timelockHash].clear();
-        if (!$.timelockHashes.remove(timelockHash)) revert TimelockDoesNotExist();
+        $.timelockStorage[digest].clear();
+        if (!$.timelockDigests.remove(digest)) revert TimelockDoesNotExist();
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -813,8 +811,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
                 keyHash: keyHash,
                 readyTimestamp: uint40(block.timestamp + getKey(keyHash).timelock)
             });
-            bytes32 timelockHash = _addTimelock(timelocker, computeDigest(calls, nonce));
-            emit TimelockCreated(timelockHash, timelocker);
+            _addTimelock(timelocker, computeDigest(calls, nonce));
         } else {
             // TODO: Figure out where else to add these operations, after removing delegate call.
             LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
