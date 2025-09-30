@@ -4,7 +4,6 @@ pragma solidity ^0.8.4;
 import "./utils/SoladyTest.sol";
 import {EIP7702Proxy} from "solady/accounts/EIP7702Proxy.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
-import {ERC7821} from "solady/accounts/ERC7821.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
@@ -23,6 +22,8 @@ import {GuardedExecutor} from "../src/IthacaAccount.sol";
 import {IOrchestrator} from "../src/interfaces/IOrchestrator.sol";
 import {Simulator} from "../src/Simulator.sol";
 import {ICommon} from "../src/interfaces/ICommon.sol";
+
+import {ERC7821Ithaca as ERC7821} from "../src/libraries/ERC7821Ithaca.sol";
 
 contract BaseTest is SoladyTest {
     using LibRLP for LibRLP.List;
@@ -54,6 +55,9 @@ contract BaseTest is SoladyTest {
 
     bytes32 internal constant _ERC7821_BATCH_EXECUTION_MODE =
         0x0100000000007821000100000000000000000000000000000000000000000000;
+
+    bytes32 internal constant _ERC7821_BATCH_CALLDATA_OPTIMAL_EXECUTION_MODE =
+        0x0100000000007821000300000000000000000000000000000000000000000000;
 
     bytes32 internal constant _ERC7579_DELEGATE_CALL_MODE =
         0xff00000000000000000000000000000000000000000000000000000000000000;

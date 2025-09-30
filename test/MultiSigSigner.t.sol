@@ -4,7 +4,6 @@ pragma solidity ^0.8.23;
 import "./Base.t.sol";
 import {MultiSigSigner} from "../src/MultiSigSigner.sol";
 import {IthacaAccount} from "../src/IthacaAccount.sol";
-import {ERC7821} from "solady/accounts/ERC7821.sol";
 
 contract MultiSigSignerTest is BaseTest {
     MultiSigSigner multiSigSigner;

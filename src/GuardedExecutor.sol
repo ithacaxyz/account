@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {ERC7821} from "solady/accounts/ERC7821.sol";
 import {LibSort} from "solady/utils/LibSort.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {LibZip} from "solady/utils/LibZip.sol";
@@ -13,6 +12,7 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {DateTimeLib} from "solady/utils/DateTimeLib.sol";
 import {ICallChecker} from "./interfaces/ICallChecker.sol";
+import {ERC7821Ithaca as ERC7821} from "./libraries/ERC7821Ithaca.sol";
 
 /// @title GuardedExecutor
 /// @notice Mixin for spend limits and calldata execution guards.
