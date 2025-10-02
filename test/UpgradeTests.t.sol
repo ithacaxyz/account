@@ -12,7 +12,7 @@ import {LibClone} from "solady/utils/LibClone.sol";
 import {Orchestrator, MockOrchestrator} from "./utils/mocks/MockOrchestrator.sol";
 import {ERC7821} from "solady/accounts/ERC7821.sol";
 
-contract UpgradeTest is BaseTest {
+contract UpgradeTests is BaseTest {
     address payable public oldProxyAddress;
     address public oldImplementation;
     address public newImplementation;

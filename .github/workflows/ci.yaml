@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   test:
     name: Tests
@@ -17,15 +21,11 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: nightly 
+          version: nightly
 
       - name: Build
         run: |
           forge build
-
-      - name: Check formatting
-        run: |
-          forge fmt --check
 
       - name: Run tests
         env:
@@ -35,8 +35,17 @@ jobs:
         run: |
           forge test -vvv
 
-      - name: Snapshot main branch
-        run: git fetch origin main && git worktree prune &&rm -rf .snapshot_worktree && git worktree add .snapshot_worktree origin/main && (cd .snapshot_worktree && forge snapshot --match-contract Benchmark --snap .temp-snapshot) && cp .snapshot_worktree/.temp-snapshot gas-snapshots/.gas-snapshot-main && git worktree remove --force .snapshot_worktree && git worktree prune
+      - name: Format contracts and generate snapshots
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          forge fmt
+          forge snapshot --isolate --match-contract Benchmark --via-ir
 
-      - name: Compare gas snapshots
-        run: forge snapshot --match-contract Benchmark --diff gas-snapshots/.gas-snapshot-main
+      - name: Commit formatting and snapshot changes
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: fmt contracts and update gas snapshots"
+          file_pattern: "*.sol snapshots/"
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
