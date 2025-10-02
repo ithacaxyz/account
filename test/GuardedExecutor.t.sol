@@ -118,8 +118,9 @@ contract GuardedExecutorTest is BaseTest {
         // and moved via `transferFrom`.
 
         vm.startPrank(d.eoa);
-        d.d
-        .setSpendLimit(k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether);
+        d.d.setSpendLimit(
+            k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether
+        );
         vm.stopPrank();
 
         u.nonce = d.d.getNonce(0);
@@ -264,8 +265,9 @@ contract GuardedExecutorTest is BaseTest {
         assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("NoSpendPermissions()")));
 
         vm.startPrank(d.eoa);
-        d.d
-        .setSpendLimit(k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether);
+        d.d.setSpendLimit(
+            k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether
+        );
         vm.stopPrank();
 
         u.nonce = d.d.getNonce(0);
@@ -546,10 +548,12 @@ contract GuardedExecutorTest is BaseTest {
 
             // If first 4bytes are 0xdfc924d5, then it's "anotherTransfer" call, and the spend limit will not catch it.
             if (
-                (calls[0].data[0] == bytes1(uint8(0xdf))
+                (
+                    calls[0].data[0] == bytes1(uint8(0xdf))
                         && calls[0].data[1] == bytes1(uint8(0xc9))
                         && calls[0].data[2] == bytes1(uint8(0x24))
-                        && calls[0].data[3] == bytes1(uint8(0xd5))) || amount == 0
+                        && calls[0].data[3] == bytes1(uint8(0xd5))
+                ) || amount == 0
             ) {
                 assertEq(oc.execute(abi.encode(u)), 0);
             } else {
@@ -801,7 +805,9 @@ contract GuardedExecutorTest is BaseTest {
         _testSpendWithPassKeyViaOrchestrator(_randomSecp256k1PassKey(), address(0));
     }
 
-    function _testSpendWithPassKeyViaOrchestrator(PassKey memory k, address tokenToSpend) internal {
+    function _testSpendWithPassKeyViaOrchestrator(PassKey memory k, address tokenToSpend)
+        internal
+    {
         Orchestrator.Intent memory u;
         GuardedExecutor.SpendInfo memory info;
 
@@ -829,8 +835,8 @@ contract GuardedExecutorTest is BaseTest {
             );
             // Set some spend limit.
             calls[2] = _setSpendLimitCall(k, tokenToSpend, GuardedExecutor.SpendPeriod.Day, 1 ether);
-            // Set some spend limit on the payment token.
-            calls[3] = _setSpendLimitCall(
+            // Set some payment spend limit on the payment token.
+            calls[3] = _setPaySpendLimitCall(
                 k, u.paymentToken, GuardedExecutor.SpendPeriod.Day, type(uint192).max
             );
 
@@ -841,11 +847,13 @@ contract GuardedExecutorTest is BaseTest {
             u.signature = _eoaSig(d.privateKey, u);
 
             assertEq(oc.execute{gas: gExecute}(abi.encode(u)), 0);
-            assertEq(d.d.spendInfos(k.keyHash).length, 2);
+            assertEq(d.d.spendInfos(k.keyHash).length, 1);
             assertEq(d.d.spendInfos(k.keyHash)[0].spent, 0);
 
-            assertEq(d.d.spendInfos(k.keyHash)[1].token, u.paymentToken);
-            assertEq(d.d.spendInfos(k.keyHash)[1].spent, 0);
+            // Check payment spend info separately
+            assertEq(d.d.paySpendInfos(k.keyHash).length, 1);
+            assertEq(d.d.paySpendInfos(k.keyHash)[0].token, u.paymentToken);
+            assertEq(d.d.paySpendInfos(k.keyHash)[0].spent, 0);
         }
 
         // Prep Intent, and submit it. This Intent should pass.
@@ -864,8 +872,9 @@ contract GuardedExecutorTest is BaseTest {
             assertEq(_balanceOf(tokenToSpend, address(0xb0b)), 0.6 ether);
             assertEq(d.d.spendInfos(k.keyHash)[0].spent, 0.6 ether);
 
-            assertEq(d.d.spendInfos(k.keyHash)[1].token, u.paymentToken);
-            assertEq(d.d.spendInfos(k.keyHash)[1].spent, 1 ether);
+            // Check payment spend info separately
+            assertEq(d.d.paySpendInfos(k.keyHash)[0].token, u.paymentToken);
+            assertEq(d.d.paySpendInfos(k.keyHash)[0].spent, 1 ether);
         }
 
         // Prep Intent to try to exceed daily spend limit. This Intent should fail.

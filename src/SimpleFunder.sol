@@ -133,11 +133,10 @@ contract SimpleFunder is EIP712, Ownable, IFunder {
 
     /// @dev Allows the orchestrator to fund an account.
     /// The `digest` includes the intent nonce and the transfers.
-    function fund(
-        bytes32 digest,
-        ICommon.Transfer[] memory transfers,
-        bytes memory funderSignature
-    ) public override {
+    function fund(bytes32 digest, ICommon.Transfer[] memory transfers, bytes memory funderSignature)
+        public
+        override
+    {
         if (!orchestrators[msg.sender]) {
             revert OnlyOrchestrator();
         }
