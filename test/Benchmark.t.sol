@@ -17,6 +17,7 @@ import "./utils/interfaces/IAlchemyModularAccount.sol";
 import "./utils/interfaces/IPimlicoPaymaster.sol";
 import "./utils/interfaces/ISafe.sol";
 import "./utils/mocks/MockPayerWithSignatureOptimized.sol";
+import {MockPaymentToken} from "./utils/mocks/MockPaymentToken.sol";
 
 interface IUniswapV2Router {
     function addLiquidity(
@@ -247,7 +248,7 @@ contract BenchmarkTest is BaseTest {
     /**
      * Tests for the ERC4337 minimal account
      */
-    function _createERC4337MinimalAccount(uint256 numAccounts)
+    function _createErc4337MinimalAccount(uint256 numAccounts)
         internal
         returns (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys)
     {
@@ -269,13 +270,13 @@ contract BenchmarkTest is BaseTest {
         calls[0].target = address(paymentToken);
         calls[0].data =
             abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether);
-        bytes memory payload =
-            abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
 
         (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
-            _createERC4337MinimalAccount(1);
+            _createErc4337MinimalAccount(1);
 
-        PackedUserOperation[] memory u = _getPayload_ERC4337MinimalAccount(
+        PackedUserOperation[] memory u = _getPayloadErc4337MinimalAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -291,13 +292,13 @@ contract BenchmarkTest is BaseTest {
         calls[0].target = address(paymentToken);
         calls[0].data =
             abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether);
-        bytes memory payload =
-            abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
 
         (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
-            _createERC4337MinimalAccount(1);
+            _createErc4337MinimalAccount(1);
 
-        PackedUserOperation[] memory u = _getPayload_ERC4337MinimalAccount(
+        PackedUserOperation[] memory u = _getPayloadErc4337MinimalAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
 
@@ -313,13 +314,13 @@ contract BenchmarkTest is BaseTest {
         calls[0].target = address(paymentToken);
         calls[0].data =
             abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether);
-        bytes memory payload =
-            abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
 
         (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
-            _createERC4337MinimalAccount(1);
+            _createErc4337MinimalAccount(1);
 
-        PackedUserOperation[] memory u = _getPayload_ERC4337MinimalAccount(
+        PackedUserOperation[] memory u = _getPayloadErc4337MinimalAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
@@ -334,13 +335,13 @@ contract BenchmarkTest is BaseTest {
         ERC4337.Call[] memory calls = new ERC4337.Call[](1);
         calls[0].target = _UNISWAP_V2_ROUTER_ADDRESS;
         calls[0].data = _uniswapV2SwapPayload();
-        bytes memory payload =
-            abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
 
         (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
-            _createERC4337MinimalAccount(1);
+            _createErc4337MinimalAccount(1);
 
-        PackedUserOperation[] memory u = _getPayload_ERC4337MinimalAccount(
+        PackedUserOperation[] memory u = _getPayloadErc4337MinimalAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -349,8 +350,8 @@ contract BenchmarkTest is BaseTest {
         vm.snapshotGasLastCall("testUniswapV2Swap_ERC4337MinimalAccount");
     }
 
-    function _getPayload_ERC4337MinimalAccount(
-        bytes memory payload,
+    function _getPayloadErc4337MinimalAccount(
+        bytes[] memory payload,
         bytes memory junk,
         ERC4337[] memory accounts,
         address[] memory,
@@ -364,7 +365,7 @@ contract BenchmarkTest is BaseTest {
             u[i].accountGasLimits = bytes32(uint256(1000000 | (1000000 << 128)));
             u[i].preVerificationGas = 1000000;
             u[i].gasFees = bytes32(uint256(1000000 | (1000000 << 128)));
-            u[i].callData = abi.encodePacked(payload, junk);
+            u[i].callData = abi.encodePacked(payload[i], junk);
 
             // Set paymaster based on payment type
             if (_paymentType == PaymentType.SELF_ERC20) {
@@ -444,7 +445,8 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_MaximumCost_CoinbaseSmartWallet() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
             0,
@@ -454,7 +456,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(1);
 
-        UserOperation[] memory u = _getPayload_CoinbaseSmartWallet(
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -466,7 +468,8 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_MaximumCost_CoinbaseSmartWallet_ERC20SelfPay() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
             0,
@@ -476,7 +479,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(1);
 
-        UserOperation[] memory u = _getPayload_CoinbaseSmartWallet(
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
 
@@ -488,18 +491,24 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_CoinbaseSmartWallet_ERC20SelfPay() public {
-        bytes memory payload = abi.encodeWithSignature(
-            "execute(address,uint256,bytes)",
-            paymentToken,
-            0,
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
-        );
-
         // First execution
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(10);
 
-        UserOperation[] memory u = _getPayload_CoinbaseSmartWallet(
+        address[] memory tokens = new address[](10);
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            tokens[i] = LibClone.clone(address(paymentToken));
+            _mint(tokens[i], accounts[i], type(uint128).max);
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                tokens[i],
+                0,
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+            );
+        }
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
 
@@ -509,7 +518,7 @@ contract BenchmarkTest is BaseTest {
 
         // Second execution (for benchmarking)
 
-        UserOperation[] memory u2 = _getPayload_CoinbaseSmartWallet(
+        UserOperation[] memory u2 = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
 
@@ -517,11 +526,14 @@ contract BenchmarkTest is BaseTest {
         erc4337EntryPointV6.handleOps(u2, payable(relayer));
         vm.snapshotGasLastCall("testERC20Transfer_AverageCost_CoinbaseSmartWallet_ERC20SelfPay");
 
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(MockPaymentToken(tokens[i]).balanceOf(address(0xbabe)), 2 ether);
+        }
     }
 
     function testERC20Transfer_MaximumCost_CoinbaseSmartWallet_AppSponsor() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
             0,
@@ -531,7 +543,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(1);
 
-        UserOperation[] memory u = _getPayload_CoinbaseSmartWallet(
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
@@ -543,18 +555,21 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_CoinbaseSmartWallet_AppSponsor() public {
-        bytes memory payload = abi.encodeWithSignature(
-            "execute(address,uint256,bytes)",
-            paymentToken,
-            0,
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
-        );
-
         // First execution
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(10);
 
-        UserOperation[] memory u = _getPayload_CoinbaseSmartWallet(
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                paymentToken,
+                0,
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+            );
+        }
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
@@ -564,7 +579,7 @@ contract BenchmarkTest is BaseTest {
 
         // Second execution (for benchmarking)
 
-        UserOperation[] memory u2 = _getPayload_CoinbaseSmartWallet(
+        UserOperation[] memory u2 = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
@@ -576,18 +591,21 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_CoinbaseSmartWallet() public {
-        bytes memory payload = abi.encodeWithSignature(
-            "execute(address,uint256,bytes)",
-            paymentToken,
-            0,
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
-        );
-
         // First execution
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(10);
 
-        UserOperation[] memory u = _getPayload_CoinbaseSmartWallet(
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                paymentToken,
+                0,
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+            );
+        }
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -597,7 +615,7 @@ contract BenchmarkTest is BaseTest {
 
         // Second execution (for benchmarking)
 
-        UserOperation[] memory u2 = _getPayload_CoinbaseSmartWallet(
+        UserOperation[] memory u2 = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -609,12 +627,13 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testNativeTransfer_CoinbaseSmartWallet() public {
-        bytes memory payload =
+        bytes[] memory payload = new bytes[](1);
+        payload[0] =
             abi.encodeWithSignature("execute(address,uint256,bytes)", address(0xbabe), 1 ether, "");
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(1);
 
-        UserOperation[] memory u = _getPayload_CoinbaseSmartWallet(
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -626,13 +645,14 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testUniswapV2Swap_CoinbaseSmartWallet() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(address,uint256,bytes)", _UNISWAP_V2_ROUTER_ADDRESS, 0, _uniswapV2SwapPayload()
         );
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createCoinbaseSmartWallet(1);
 
-        UserOperation[] memory u = _getPayload_CoinbaseSmartWallet(
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -641,8 +661,8 @@ contract BenchmarkTest is BaseTest {
         vm.snapshotGasLastCall("testUniswapV2Swap_CoinbaseSmartWallet");
     }
 
-    function _getPayload_CoinbaseSmartWallet(
-        bytes memory payload,
+    function _getPayloadCoinbaseSmartWallet(
+        bytes[] memory payload,
         bytes memory junk,
         address[] memory accounts,
         address[] memory,
@@ -655,7 +675,7 @@ contract BenchmarkTest is BaseTest {
         for (uint256 i = 0; i < accounts.length; i++) {
             u[i].sender = address(accounts[i]);
             u[i].nonce = erc4337EntryPointV6.getNonce(address(accounts[i]), 0);
-            u[i].callData = abi.encodePacked(payload, junk);
+            u[i].callData = abi.encodePacked(payload[i], junk);
             u[i].callGasLimit = 1000000;
             u[i].verificationGasLimit = 1000000;
             u[i].preVerificationGas = 1000000;
@@ -736,7 +756,8 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_MaximumCost_AlchemyModularAccount() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
             0,
@@ -746,7 +767,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(1);
 
-        PackedUserOperation[] memory userOps = _getPayload_AlchemyModularAccount(
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -758,7 +779,8 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_MaximumCost_AlchemyModularAccount_ERC20SelfPay() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
             0,
@@ -768,30 +790,36 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(1);
 
-        PackedUserOperation[] memory userOpsEth = _getPayload_AlchemyModularAccount(
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
 
         vm.startPrank(relayer);
-        erc4337EntryPoint.handleOps(userOpsEth, payable(relayer));
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
         vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_AlchemyModularAccount_ERC20SelfPay");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
     function testERC20Transfer_AverageCost_AlchemyModularAccount_ERC20SelfPay() public {
-        bytes memory payload = abi.encodeWithSignature(
-            "execute(address,uint256,bytes)",
-            paymentToken,
-            0,
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
-        );
-
         // First execution
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(10);
 
-        PackedUserOperation[] memory userOps = _getPayload_AlchemyModularAccount(
+        address[] memory tokens = new address[](10);
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            tokens[i] = LibClone.clone(address(paymentToken));
+            _mint(tokens[i], accounts[i], type(uint128).max);
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                tokens[i],
+                0,
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
 
@@ -801,7 +829,7 @@ contract BenchmarkTest is BaseTest {
 
         // Second execution (for benchmarking)
 
-        PackedUserOperation[] memory userOps2 = _getPayload_AlchemyModularAccount(
+        PackedUserOperation[] memory userOps2 = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
 
@@ -809,11 +837,14 @@ contract BenchmarkTest is BaseTest {
         erc4337EntryPoint.handleOps(userOps2, payable(relayer));
         vm.snapshotGasLastCall("testERC20Transfer_AverageCost_AlchemyModularAccount_ERC20SelfPay");
 
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(MockPaymentToken(tokens[i]).balanceOf(address(0xbabe)), 2 ether);
+        }
     }
 
     function testERC20Transfer_MaximumCost_AlchemyModularAccount_AppSponsor() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(address,uint256,bytes)",
             paymentToken,
             0,
@@ -823,7 +854,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(1);
 
-        PackedUserOperation[] memory userOpsErc20 = _getPayload_AlchemyModularAccount(
+        PackedUserOperation[] memory userOpsErc20 = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
@@ -835,18 +866,21 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_AlchemyModularAccount_AppSponsor() public {
-        bytes memory payload = abi.encodeWithSignature(
-            "execute(address,uint256,bytes)",
-            paymentToken,
-            0,
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
-        );
-
         // First execution
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(10);
 
-        PackedUserOperation[] memory userOpsErc20 = _getPayload_AlchemyModularAccount(
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                paymentToken,
+                0,
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+            );
+        }
+
+        PackedUserOperation[] memory userOpsErc20 = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
@@ -856,7 +890,7 @@ contract BenchmarkTest is BaseTest {
 
         // Second execution (for benchmarking)
 
-        PackedUserOperation[] memory userOpsErc202 = _getPayload_AlchemyModularAccount(
+        PackedUserOperation[] memory userOpsErc202 = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
@@ -868,18 +902,21 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_AlchemyModularAccount() public {
-        bytes memory payload = abi.encodeWithSignature(
-            "execute(address,uint256,bytes)",
-            paymentToken,
-            0,
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
-        );
-
         // First execution
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(10);
 
-        PackedUserOperation[] memory userOps = _getPayload_AlchemyModularAccount(
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                paymentToken,
+                0,
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -889,7 +926,7 @@ contract BenchmarkTest is BaseTest {
 
         // Second execution (for benchmarking)
 
-        PackedUserOperation[] memory userOps2 = _getPayload_AlchemyModularAccount(
+        PackedUserOperation[] memory userOps2 = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -901,12 +938,13 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testNativeTransfer_AlchemyModularAccount() external {
-        bytes memory payload =
+        bytes[] memory payload = new bytes[](1);
+        payload[0] =
             abi.encodeWithSignature("execute(address,uint256,bytes)", address(0xbabe), 1 ether, "");
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(1);
 
-        PackedUserOperation[] memory userOps = _getPayload_AlchemyModularAccount(
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -918,13 +956,14 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testUniswapV2Swap_AlchemyModularAccount() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(address,uint256,bytes)", _UNISWAP_V2_ROUTER_ADDRESS, 0, _uniswapV2SwapPayload()
         );
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createAlchemyModularAccount(1);
 
-        PackedUserOperation[] memory userOps = _getPayload_AlchemyModularAccount(
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -933,8 +972,8 @@ contract BenchmarkTest is BaseTest {
         vm.snapshotGasLastCall("testUniswapV2Swap_AlchemyModularAccount");
     }
 
-    function _getPayload_AlchemyModularAccount(
-        bytes memory payload,
+    function _getPayloadAlchemyModularAccount(
+        bytes[] memory payload,
         bytes memory junk,
         address[] memory accounts,
         address[] memory,
@@ -948,7 +987,7 @@ contract BenchmarkTest is BaseTest {
             u[i].accountGasLimits = bytes32(uint256(1000000 | (1000000 << 128)));
             u[i].preVerificationGas = 1000000;
             u[i].gasFees = bytes32(uint256(1000000 | (1000000 << 128)));
-            u[i].callData = abi.encodePacked(payload, junk);
+            u[i].callData = abi.encodePacked(payload[i], junk);
 
             // Set paymaster based on payment type
             if (_paymentType == PaymentType.SELF_ERC20) {
@@ -1011,8 +1050,8 @@ contract BenchmarkTest is BaseTest {
         return u;
     }
 
-    function _getPayload_Safe4337(
-        bytes memory payload,
+    function _getPayloadSafe4337(
+        bytes[] memory payload,
         bytes memory junk,
         address[] memory accounts,
         address[] memory,
@@ -1024,7 +1063,7 @@ contract BenchmarkTest is BaseTest {
         for (uint256 i = 0; i < accounts.length; i++) {
             u[i].sender = accounts[i];
             u[i].nonce = erc4337EntryPointV6.getNonce(accounts[i], 0);
-            u[i].callData = abi.encodePacked(payload, junk);
+            u[i].callData = abi.encodePacked(payload[i], junk);
             u[i].callGasLimit = 1000000;
             u[i].verificationGasLimit = 1000000;
             u[i].preVerificationGas = 1000000;
@@ -1134,7 +1173,8 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_MaximumCost_Safe4337() public {
-        bytes memory payload = abi.encodeWithSelector(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
             paymentToken, // to
             0, // value
@@ -1144,7 +1184,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createSafe4337Account(1);
         UserOperation[] memory userOps =
-            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
         vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_Safe4337");
@@ -1152,7 +1192,8 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_MaximumCost_Safe4337_ERC20SelfPay() public {
-        bytes memory payload = abi.encodeWithSelector(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
             paymentToken, // to
             0, // value
@@ -1162,7 +1203,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createSafe4337Account(1);
         UserOperation[] memory userOps =
-            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
         vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_Safe4337_ERC20SelfPay");
@@ -1170,35 +1211,44 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_Safe4337_ERC20SelfPay() public {
-        bytes memory payload = abi.encodeWithSelector(
-            ISafe4337Module.executeUserOp.selector,
-            paymentToken, // to
-            0, // value
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether), // data
-            0 // operation (CALL)
-        );
-
         // First execution
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createSafe4337Account(10);
+
+        address[] memory tokens = new address[](10);
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            tokens[i] = LibClone.clone(address(paymentToken));
+            _mint(tokens[i], accounts[i], type(uint128).max);
+            payload[i] = abi.encodeWithSelector(
+                ISafe4337Module.executeUserOp.selector,
+                tokens[i], // to
+                0, // value
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether), // data
+                0 // operation (CALL)
+            );
+        }
         UserOperation[] memory userOps =
-            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
         vm.stopPrank();
 
         // Second execution (for benchmarking)
         UserOperation[] memory userOps2 =
-            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
         vm.snapshotGasLastCall("testERC20Transfer_AverageCost_Safe4337_ERC20SelfPay");
 
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(MockPaymentToken(tokens[i]).balanceOf(address(0xbabe)), 2 ether);
+        }
     }
 
     function testERC20Transfer_MaximumCost_Safe4337_AppSponsor() public {
-        bytes memory payload = abi.encodeWithSelector(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
             paymentToken, // to
             0, // value
@@ -1208,7 +1258,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createSafe4337Account(1);
         UserOperation[] memory userOps =
-            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
         vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_Safe4337_AppSponsor");
@@ -1216,26 +1266,29 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_Safe4337_AppSponsor() public {
-        bytes memory payload = abi.encodeWithSelector(
-            ISafe4337Module.executeUserOp.selector,
-            paymentToken, // to
-            0, // value
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether), // data
-            0 // operation (CALL)
-        );
-
         // First execution
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createSafe4337Account(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSelector(
+                ISafe4337Module.executeUserOp.selector,
+                paymentToken, // to
+                0, // value
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether), // data
+                0 // operation (CALL)
+            );
+        }
         UserOperation[] memory userOps =
-            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
         vm.stopPrank();
 
         // Second execution (for benchmarking)
         UserOperation[] memory userOps2 =
-            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
         vm.snapshotGasLastCall("testERC20Transfer_AverageCost_Safe4337_AppSponsor");
@@ -1243,26 +1296,29 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_Safe4337() public {
-        bytes memory payload = abi.encodeWithSelector(
-            ISafe4337Module.executeUserOp.selector,
-            paymentToken, // to
-            0, // value
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether), // data
-            0 // operation (CALL)
-        );
-
         // First execution
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createSafe4337Account(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSelector(
+                ISafe4337Module.executeUserOp.selector,
+                paymentToken, // to
+                0, // value
+                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether), // data
+                0 // operation (CALL)
+            );
+        }
         UserOperation[] memory userOps =
-            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
         vm.stopPrank();
 
         // Second execution (for benchmarking)
         UserOperation[] memory userOps2 =
-            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
         vm.snapshotGasLastCall("testERC20Transfer_AverageCost_Safe4337");
@@ -1270,7 +1326,8 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testNativeTransfer_Safe4337() public {
-        bytes memory payload = abi.encodeWithSelector(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
             address(0xbabe), // to
             1 ether, // value
@@ -1280,7 +1337,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createSafe4337Account(1);
         UserOperation[] memory userOps =
-            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
         vm.snapshotGasLastCall("testNativeTransfer_Safe4337");
@@ -1288,7 +1345,8 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testUniswapV2Swap_Safe4337() public {
-        bytes memory payload = abi.encodeWithSelector(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
             _UNISWAP_V2_ROUTER_ADDRESS, // to
             0, // value
@@ -1298,7 +1356,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createSafe4337Account(1);
         UserOperation[] memory userOps =
-            _getPayload_Safe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
         vm.snapshotGasLastCall("testUniswapV2Swap_Safe4337");
@@ -1335,7 +1393,8 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_MaximumCost_ZerodevKernel() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
             abi.encodePacked(
@@ -1348,7 +1407,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(1);
 
-        PackedUserOperation[] memory userOps = _getPayload_ZerodevKernel(
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -1360,7 +1419,8 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_MaximumCost_ZerodevKernel_ERC20SelfPay() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
             abi.encodePacked(
@@ -1373,7 +1433,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(1);
 
-        PackedUserOperation[] memory userOpsEth = _getPayload_ZerodevKernel(
+        PackedUserOperation[] memory userOpsEth = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
 
@@ -1385,21 +1445,27 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_ZerodevKernel_ERC20SelfPay() public {
-        bytes memory payload = abi.encodeWithSignature(
-            "execute(bytes32,bytes)",
-            bytes32(uint256(0x01) << 240),
-            abi.encodePacked(
-                paymentToken,
-                uint256(0),
-                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
-            )
-        );
-
         // First execution
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(10);
 
-        PackedUserOperation[] memory userOps = _getPayload_ZerodevKernel(
+        address[] memory tokens = new address[](10);
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            tokens[i] = LibClone.clone(address(paymentToken));
+            _mint(tokens[i], accounts[i], type(uint128).max);
+            payload[i] = abi.encodeWithSignature(
+                "execute(bytes32,bytes)",
+                bytes32(uint256(0x01) << 240),
+                abi.encodePacked(
+                    tokens[i],
+                    uint256(0),
+                    abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+                )
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
 
@@ -1409,7 +1475,7 @@ contract BenchmarkTest is BaseTest {
 
         // Second execution (for benchmarking)
 
-        PackedUserOperation[] memory userOps2 = _getPayload_ZerodevKernel(
+        PackedUserOperation[] memory userOps2 = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
 
@@ -1417,11 +1483,14 @@ contract BenchmarkTest is BaseTest {
         erc4337EntryPoint.handleOps(userOps2, payable(relayer));
         vm.snapshotGasLastCall("testERC20Transfer_AverageCost_ZerodevKernel_ERC20SelfPay");
 
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(MockPaymentToken(tokens[i]).balanceOf(address(0xbabe)), 2 ether);
+        }
     }
 
     function testERC20Transfer_MaximumCost_ZerodevKernel_AppSponsor() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
             abi.encodePacked(
@@ -1434,7 +1503,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(1);
 
-        PackedUserOperation[] memory userOpsErc20 = _getPayload_ZerodevKernel(
+        PackedUserOperation[] memory userOpsErc20 = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
@@ -1446,21 +1515,24 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_ZerodevKernel_AppSponsor() public {
-        bytes memory payload = abi.encodeWithSignature(
-            "execute(bytes32,bytes)",
-            bytes32(uint256(0x01) << 240),
-            abi.encodePacked(
-                paymentToken,
-                uint256(0),
-                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
-            )
-        );
-
         // First execution
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(10);
 
-        PackedUserOperation[] memory userOpsErc20 = _getPayload_ZerodevKernel(
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(bytes32,bytes)",
+                bytes32(uint256(0x01) << 240),
+                abi.encodePacked(
+                    paymentToken,
+                    uint256(0),
+                    abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+                )
+            );
+        }
+
+        PackedUserOperation[] memory userOpsErc20 = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
@@ -1470,7 +1542,7 @@ contract BenchmarkTest is BaseTest {
 
         // Second execution (for benchmarking)
 
-        PackedUserOperation[] memory userOpsErc202 = _getPayload_ZerodevKernel(
+        PackedUserOperation[] memory userOpsErc202 = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
 
@@ -1482,21 +1554,24 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_ZerodevKernel() public {
-        bytes memory payload = abi.encodeWithSignature(
-            "execute(bytes32,bytes)",
-            bytes32(uint256(0x01) << 240),
-            abi.encodePacked(
-                paymentToken,
-                uint256(0),
-                abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
-            )
-        );
-
         // First execution
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(10);
 
-        PackedUserOperation[] memory userOps = _getPayload_ZerodevKernel(
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(bytes32,bytes)",
+                bytes32(uint256(0x01) << 240),
+                abi.encodePacked(
+                    paymentToken,
+                    uint256(0),
+                    abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether)
+                )
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -1506,7 +1581,7 @@ contract BenchmarkTest is BaseTest {
 
         // Second execution (for benchmarking)
 
-        PackedUserOperation[] memory userOps2 = _getPayload_ZerodevKernel(
+        PackedUserOperation[] memory userOps2 = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -1518,7 +1593,8 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testNativeTransfer_ZerodevKernel() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
             abi.encodePacked(address(0xbabe), uint256(1 ether), "")
@@ -1526,7 +1602,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(1);
 
-        PackedUserOperation[] memory userOps = _getPayload_ZerodevKernel(
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -1538,7 +1614,8 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testUniswapV2Swap_ZerodevKernel() public {
-        bytes memory payload = abi.encodeWithSignature(
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
             bytes32(uint256(0x01) << 240),
             abi.encodePacked(_UNISWAP_V2_ROUTER_ADDRESS, uint256(0), _uniswapV2SwapPayload())
@@ -1546,7 +1623,7 @@ contract BenchmarkTest is BaseTest {
         (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
             _createZerodevKernel(1);
 
-        PackedUserOperation[] memory userOps = _getPayload_ZerodevKernel(
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
 
@@ -1555,8 +1632,8 @@ contract BenchmarkTest is BaseTest {
         vm.snapshotGasLastCall("testUniswapV2Swap_ZerodevKernel");
     }
 
-    function _getPayload_ZerodevKernel(
-        bytes memory payload,
+    function _getPayloadZerodevKernel(
+        bytes[] memory payload,
         bytes memory junk,
         address[] memory accounts,
         address[] memory,
@@ -1572,7 +1649,7 @@ contract BenchmarkTest is BaseTest {
             u[i].accountGasLimits = bytes32(uint256(1000000 | (1000000 << 128)));
             u[i].preVerificationGas = 1000000;
             u[i].gasFees = bytes32(uint256(1000000 | (1000000 << 128)));
-            u[i].callData = abi.encodePacked(payload, junk);
+            u[i].callData = abi.encodePacked(payload[i], junk);
 
             // Set paymaster based on payment type
             if (_paymentType == PaymentType.SELF_ERC20) {
@@ -1632,25 +1709,25 @@ contract BenchmarkTest is BaseTest {
      */
     function _createIthacaAccount(uint256 numAccounts)
         internal
-        returns (DelegatedEOA[] memory delegatedEOAs)
+        returns (DelegatedEOA[] memory delegatedEoas)
     {
-        delegatedEOAs = new DelegatedEOA[](numAccounts);
+        delegatedEoas = new DelegatedEOA[](numAccounts);
 
         for (uint256 i = 0; i < numAccounts; i++) {
-            (delegatedEOAs[i].eoa, delegatedEOAs[i].privateKey) =
+            (delegatedEoas[i].eoa, delegatedEoas[i].privateKey) =
                 makeAddrAndKey(string(abi.encodePacked("ithaca", i)));
-            _setEIP7702Delegation(delegatedEOAs[i].eoa);
-            delegatedEOAs[i].d = MockAccount(payable(delegatedEOAs[i].eoa));
-            _giveAccountSomeTokens(delegatedEOAs[i].eoa);
+            _setEIP7702Delegation(delegatedEoas[i].eoa);
+            delegatedEoas[i].d = MockAccount(payable(delegatedEoas[i].eoa));
+            _giveAccountSomeTokens(delegatedEoas[i].eoa);
         }
     }
 
-    function testERC20Transfer_MaximumCost_IthacaAccount1() public {
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
-        bytes memory payload =
-            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+    function testERC20Transfer_MaximumCost_IthacaAccount() public {
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_IthacaAccount");
@@ -1659,19 +1736,21 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_IthacaAccount() public {
-        bytes memory payload =
-            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
-
         // First execution
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(10);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        }
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents);
 
         // Second execution (for benchmarking) - reuse same accounts
         bytes[] memory encodedIntents2 =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents2);
         vm.snapshotGasLastCall("testERC20Transfer_AverageCost_IthacaAccount");
@@ -1680,11 +1759,11 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_MaximumCost_IthacaAccount_ERC20SelfPay() public {
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
-        bytes memory payload =
-            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ERC20);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_IthacaAccount_ERC20SelfPay");
@@ -1693,32 +1772,40 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_IthacaAccount_ERC20SelfPay() public {
-        bytes memory payload =
-            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
-
         // First execution
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(10);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(10);
+
+        address[] memory tokens = new address[](10);
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            tokens[i] = LibClone.clone(address(paymentToken));
+            _mint(tokens[i], delegatedEoas[i].eoa, type(uint128).max);
+            payload[i] = _transferExecutionData(address(tokens[i]), address(0xbabe), 1 ether);
+        }
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ERC20);
 
         oc.execute(encodedIntents);
 
         // Second execution (for benchmarking) - reuse same accounts
         bytes[] memory encodedIntents2 =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ERC20);
 
         oc.execute(encodedIntents2);
         vm.snapshotGasLastCall("testERC20Transfer_AverageCost_IthacaAccount_ERC20SelfPay");
 
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(MockPaymentToken(tokens[i]).balanceOf(address(0xbabe)), 2 ether);
+        }
     }
 
     function testNativeTransfer_IthacaAccount() public {
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
-        bytes memory payload = _transferExecutionData(address(0), address(0xbabe), 1 ether);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = _transferExecutionData(address(0), address(0xbabe), 1 ether);
 
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testNativeTransfer_IthacaAccount");
@@ -1727,11 +1814,12 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testNativeTransfer_IthacaAccount_ERC20SelfPay() public {
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
-        bytes memory payload = _transferExecutionData(address(0), address(0xbabe), 1 ether);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = _transferExecutionData(address(0), address(0xbabe), 1 ether);
 
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ERC20);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testNativeTransfer_IthacaAccount_ERC20SelfPay");
@@ -1743,11 +1831,12 @@ contract BenchmarkTest is BaseTest {
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
         calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
         calls[0].data = _uniswapV2SwapPayload();
-        bytes memory payload = abi.encode(calls);
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encode(calls);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
 
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ETH);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testUniswapV2Swap_IthacaAccount");
@@ -1757,11 +1846,12 @@ contract BenchmarkTest is BaseTest {
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
         calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
         calls[0].data = _uniswapV2SwapPayload();
-        bytes memory payload = abi.encode(calls);
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encode(calls);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
 
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.SELF_ERC20);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ERC20);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testUniswapV2Swap_IthacaAccount_ERC20SelfPay");
@@ -1769,11 +1859,11 @@ contract BenchmarkTest is BaseTest {
 
     // App Sponsor tests - app pays for user transactions
     function testERC20Transfer_MaximumCost_IthacaAccount_AppSponsor() public {
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
-        bytes memory payload =
-            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_IthacaAccount_AppSponsor");
@@ -1782,19 +1872,21 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_IthacaAccount_AppSponsor() public {
-        bytes memory payload =
-            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
-
         // First execution
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(10);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        }
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR);
 
         oc.execute(encodedIntents);
 
         // Second execution (for benchmarking) - reuse same accounts
         bytes[] memory encodedIntents2 =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR);
 
         oc.execute(encodedIntents2);
         vm.snapshotGasLastCall("testERC20Transfer_AverageCost_IthacaAccount_AppSponsor");
@@ -1803,11 +1895,12 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testNativeTransfer_IthacaAccount_AppSponsor() public {
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
-        bytes memory payload = _transferExecutionData(address(0), address(0xbabe), 1 ether);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = _transferExecutionData(address(0), address(0xbabe), 1 ether);
 
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testNativeTransfer_IthacaAccount_AppSponsor");
@@ -1816,12 +1909,12 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_MaximumCost_IthacaAccount_AppSponsor_ERC20() public {
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
-        bytes memory payload =
-            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
 
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR_ERC20);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR_ERC20);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_IthacaAccount_AppSponsor_ERC20");
@@ -1830,19 +1923,21 @@ contract BenchmarkTest is BaseTest {
     }
 
     function testERC20Transfer_AverageCost_IthacaAccount_AppSponsor_ERC20() public {
-        bytes memory payload =
-            _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
-
         // First execution
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(10);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        }
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR_ERC20);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR_ERC20);
 
         oc.execute(encodedIntents);
 
         // Second execution (for benchmarking) - reuse same accounts
         bytes[] memory encodedIntents2 =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR_ERC20);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR_ERC20);
 
         oc.execute(encodedIntents2);
         vm.snapshotGasLastCall("testERC20Transfer_AverageCost_IthacaAccount_AppSponsor_ERC20");
@@ -1854,31 +1949,32 @@ contract BenchmarkTest is BaseTest {
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
         calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
         calls[0].data = _uniswapV2SwapPayload();
-        bytes memory payload = abi.encode(calls);
-        DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encode(calls);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
 
         bytes[] memory encodedIntents =
-            _getPayload_IthacaAccount(payload, "", delegatedEOAs, PaymentType.APP_SPONSOR);
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR);
 
         oc.execute(encodedIntents[0]);
         vm.snapshotGasLastCall("testUniswapV2Swap_IthacaAccount_AppSponsor");
     }
 
-    function _getPayload_IthacaAccount(
-        bytes memory executionData,
+    function _getPayloadIthacaAccount(
+        bytes[] memory executionData,
         bytes memory junk,
-        DelegatedEOA[] memory delegatedEOAs,
+        DelegatedEOA[] memory delegatedEoas,
         PaymentType _paymentType
     ) internal view returns (bytes[] memory) {
-        bytes[] memory encodedIntents = new bytes[](delegatedEOAs.length);
-        uint256 nonce = IthacaAccount(payable(delegatedEOAs[0].eoa)).getNonce(0);
-        for (uint256 i = 0; i < delegatedEOAs.length; i++) {
+        bytes[] memory encodedIntents = new bytes[](delegatedEoas.length);
+        uint256 nonce = IthacaAccount(payable(delegatedEoas[0].eoa)).getNonce(0);
+        for (uint256 i = 0; i < delegatedEoas.length; i++) {
             Intent memory u;
-            u.eoa = delegatedEOAs[i].eoa;
+            u.eoa = delegatedEoas[i].eoa;
             u.nonce = nonce;
             u.combinedGas = 1000000;
             u.paymentRecipient = address(0x69);
-            u.executionData = executionData;
+            u.executionData = executionData[i];
 
             // Set payment parameters based on payment type
             if (_paymentType == PaymentType.SELF_ERC20) {
@@ -1914,7 +2010,7 @@ contract BenchmarkTest is BaseTest {
                 u.paymentSignature = _eoaSig(paymasterPrivateKey, signatureDigest);
             }
 
-            u.signature = _sig(delegatedEOAs[i], u);
+            u.signature = _sig(delegatedEoas[i], u);
 
             encodedIntents[i] = abi.encodePacked(encodeIntent(u), junk);
         }
