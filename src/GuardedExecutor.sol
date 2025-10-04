@@ -698,10 +698,10 @@ abstract contract GuardedExecutor is ERC7821 {
     // Configurables
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev To be overriden to return if `keyHash` corresponds to a super admin key.
+    /// @dev To be overridden to return if `keyHash` corresponds to a super admin key.
     function _isSuperAdmin(bytes32 keyHash) internal view virtual returns (bool);
 
-    /// @dev To be overriden to return the storage slot seed for a `keyHash`.
+    /// @dev To be overridden to return the storage slot seed for a `keyHash`.
     function _getGuardedExecutorKeyStorageSeed(bytes32 keyHash)
         internal
         view
