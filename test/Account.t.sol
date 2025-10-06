@@ -20,6 +20,12 @@ contract AccountTest is BaseTest {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         vm.deal(d.eoa, 100 ether);
 
+        // Authorize a passkey for signing (can't use EOA signature with opData anymore)
+        PassKey memory pk = _randomSecp256k1PassKey();
+        pk.k.isSuperAdmin = true;
+        vm.prank(d.eoa);
+        d.d.authorize(pk.k);
+
         _TestExecuteWithSignatureTemps memory t;
         t.n = _bound(_randomUniform(), 1, 5);
         t.targetFunctionPayloads = new TargetFunctionPayload[](t.n);
@@ -32,15 +38,18 @@ contract AccountTest is BaseTest {
             t.targetFunctionPayloads[i].data = data;
         }
         t.nonce = d.d.getNonce(0);
-        bytes memory signature = _sig(d, d.d.computeDigest(t.calls, t.nonce));
+        bytes memory signature = _sig(pk, d.d.computeDigest(t.calls, t.nonce));
         t.opData = abi.encodePacked(t.nonce, signature);
         t.executionData = abi.encode(t.calls, t.opData);
 
         if (_randomChance(32)) {
-            signature = _sig(_randomEIP7702DelegatedEOA(), d.d.computeDigest(t.calls, t.nonce));
+            // Use wrong passkey - should fail with Unauthorized or KeyDoesNotExist
+            PassKey memory wrongPk = _randomSecp256k1PassKey();
+            signature = _sig(wrongPk, d.d.computeDigest(t.calls, t.nonce));
             t.opData = abi.encodePacked(t.nonce, signature);
             t.executionData = abi.encode(t.calls, t.opData);
-            vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+            // Will revert with KeyDoesNotExist since the wrong key was never authorized
+            vm.expectRevert(bytes4(keccak256("KeyDoesNotExist()")));
             d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
             return;
         }
@@ -54,7 +63,7 @@ contract AccountTest is BaseTest {
 
         if (_randomChance(32)) {
             t.nonce = d.d.getNonce(0);
-            signature = _sig(d, d.d.computeDigest(t.calls, t.nonce));
+            signature = _sig(pk, d.d.computeDigest(t.calls, t.nonce));
             t.opData = abi.encodePacked(t.nonce, signature);
             t.executionData = abi.encode(t.calls, t.opData);
             d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
@@ -155,7 +164,7 @@ contract AccountTest is BaseTest {
         t.calls[0].data = abi.encodeWithSignature("upgradeProxyAccount(address)", t.implementation);
 
         t.nonce = d.d.getNonce(0);
-        bytes memory signature = _sig(d, d.d.computeDigest(t.calls, t.nonce));
+        bytes memory signature = _sig(k, d.d.computeDigest(t.calls, t.nonce));
         t.opData = abi.encodePacked(t.nonce, signature);
         t.executionData = abi.encode(t.calls, t.opData);
 
@@ -179,7 +188,7 @@ contract AccountTest is BaseTest {
         t.calls[0].data = abi.encodeWithSignature("upgradeProxyAccount(address)", address(0));
 
         t.nonce = d.d.getNonce(0);
-        bytes memory signature = _sig(d, d.d.computeDigest(t.calls, t.nonce));
+        bytes memory signature = _sig(k, d.d.computeDigest(t.calls, t.nonce));
         t.opData = abi.encodePacked(t.nonce, signature);
         t.executionData = abi.encode(t.calls, t.opData);
 
@@ -384,21 +393,8 @@ contract AccountTest is BaseTest {
         t.key = t.timelockKey.k;
 
         // Authorize the timelock key
-        t.authCalls = new ERC7821.Call[](1);
-        t.authCalls[0] = ERC7821.Call({
-            to: address(d.d),
-            value: 0,
-            data: abi.encodeWithSelector(IthacaAccount.authorize.selector, t.key)
-        });
-
-        t.nonce = d.d.getNonce(0);
-        d.d.execute(
-            _ERC7821_BATCH_EXECUTION_MODE,
-            abi.encode(
-                t.authCalls,
-                abi.encodePacked(t.nonce, _sig(d, d.d.computeDigest(t.authCalls, t.nonce)))
-            )
-        );
+        vm.prank(d.eoa);
+        d.d.authorize(t.key);
 
         // Verify key was added
         assertEq(d.d.keyCount(), 1, "Key should be added");
@@ -406,28 +402,19 @@ contract AccountTest is BaseTest {
         IthacaAccount.Key memory retrievedKey = d.d.getKey(t.keyHash);
         assertEq(retrievedKey.timelock, 3600, "Timelock should be set");
 
-        // Now try to execute with the timelock key - should create timelock
+        // Now prepare timelock with the timelock key
         t.timelockCalls = new ERC7821.Call[](1);
         t.timelockCalls[0] = _thisTargetFunctionCall(0.1 ether, "timelock test");
 
         t.timelockNonce = d.d.getNonce(0);
         t.preTimelockCount = d.d.timelockCount();
-        d.d.execute(
-            _ERC7821_BATCH_EXECUTION_MODE,
-            abi.encode(
-                t.timelockCalls,
-                abi.encodePacked(
-                    t.timelockNonce,
-                    _sig(t.timelockKey, d.d.computeDigest(t.timelockCalls, t.timelockNonce))
-                )
-            )
-        );
+        bytes32 timelockDigest = d.d.computeDigest(t.timelockCalls, t.timelockNonce);
+        d.d.prepTimelock(timelockDigest, _sig(t.timelockKey, timelockDigest));
 
         // Verify timelock was created
         assertEq(d.d.timelockCount(), t.preTimelockCount + 1, "Timelock should be created");
 
         // Get the created timelock
-        bytes32 timelockDigest = d.d.computeDigest(t.timelockCalls, t.timelockNonce);
         t.timelocker = d.d.getTimelock(timelockDigest);
         // The keyHash should be computed based on keyType and publicKey only (not timelock field)
         assertEq(t.timelocker.keyHash, t.keyHash, "Timelock should reference correct key");
@@ -450,46 +437,41 @@ contract AccountTest is BaseTest {
         IthacaAccount.Key memory key = timelockKey.k;
 
         // Authorize the key
-        ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
-        authCalls[0] = ERC7821.Call({
-            to: address(d.d),
-            value: 0,
-            data: abi.encodeWithSelector(IthacaAccount.authorize.selector, key)
-        });
+        vm.prank(d.eoa);
+        d.d.authorize(key);
 
-        uint256 nonce = d.d.getNonce(0);
-        bytes memory signature = _sig(d, d.d.computeDigest(authCalls, nonce));
-        bytes memory opData = abi.encodePacked(nonce, signature);
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, abi.encode(authCalls, opData));
-
-        // Create a timelock
+        // Prepare a timelock
         ERC7821.Call[] memory timelockCalls = new ERC7821.Call[](1);
         timelockCalls[0] = _thisTargetFunctionCall(0.1 ether, "timelock execution test");
 
         uint256 timelockNonce = d.d.getNonce(0);
-        bytes memory timelockSignature =
-            _sig(timelockKey, d.d.computeDigest(timelockCalls, timelockNonce));
-        bytes memory timelockOpData = abi.encodePacked(timelockNonce, timelockSignature);
+        bytes32 timelockDigest = d.d.computeDigest(timelockCalls, timelockNonce);
+        bytes memory timelockSignature = _sig(timelockKey, timelockDigest);
 
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, abi.encode(timelockCalls, timelockOpData));
+        d.d.prepTimelock(timelockDigest, timelockSignature);
 
         // Verify timelock was created
         assertEq(d.d.timelockCount(), 1, "Timelock should be created");
 
-        // Get timelock digest
-        bytes32 timelockDigest = d.d.computeDigest(timelockCalls, timelockNonce);
+        // Get timelock
         IthacaAccount.Timelocker memory timelocker = d.d.getTimelock(timelockDigest);
 
         // Try to execute before timelock is ready - should fail
         vm.expectRevert(IthacaAccount.TimelockNotReady.selector);
-        d.d.executeTimelock(timelockCalls, timelockNonce);
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, ""))
+        );
 
         // Fast forward time to make timelock ready
         vm.warp(block.timestamp + 11);
 
         // Now execution should work
         uint256 preBalance = address(this).balance;
-        d.d.executeTimelock(timelockCalls, timelockNonce);
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, ""))
+        );
 
         // Verify execution occurred
         assertEq(address(this).balance - preBalance, 0.1 ether, "Execution should transfer value");
@@ -506,11 +488,15 @@ contract AccountTest is BaseTest {
         vm.expectRevert(IthacaAccount.TimelockDoesNotExist.selector);
         d.d.getTimelock(nonExistentDigest);
 
-        // Test: Execute non-existent timelock with dummy calls
+        // Test: Execute non-existent timelock with invalid nonce
+        // Note: Nonce is checked before timelock existence, so this will fail with InvalidNonce
         ERC7821.Call[] memory dummyCalls = new ERC7821.Call[](1);
         dummyCalls[0] = _thisTargetFunctionCall(0.1 ether, "dummy");
-        vm.expectRevert(IthacaAccount.TimelockDoesNotExist.selector);
-        d.d.executeTimelock(dummyCalls, 12345);
+        vm.expectRevert(bytes4(keccak256("InvalidNonce()")));
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(dummyCalls, abi.encodePacked(uint256(12345), ""))
+        );
     }
 
     function testTimelockDoubleExecution() public {
@@ -523,41 +509,32 @@ contract AccountTest is BaseTest {
         timelockKey.k.timelock = 1; // 1 second for quick test
         IthacaAccount.Key memory key = timelockKey.k;
 
-        ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
-        authCalls[0] = ERC7821.Call({
-            to: address(d.d),
-            value: 0,
-            data: abi.encodeWithSelector(IthacaAccount.authorize.selector, key)
-        });
+        vm.prank(d.eoa);
+        d.d.authorize(key);
 
-        uint256 nonce = d.d.getNonce(0);
-        d.d.execute(
-            _ERC7821_BATCH_EXECUTION_MODE,
-            abi.encode(
-                authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))
-            )
-        );
-
-        // Create timelock
+        // Prepare timelock
         ERC7821.Call[] memory timelockCalls = new ERC7821.Call[](1);
         timelockCalls[0] = _thisTargetFunctionCall(0.1 ether, "double execution test");
 
         uint256 timelockNonce = d.d.getNonce(0);
-        bytes memory timelockSig =
-            _sig(timelockKey, d.d.computeDigest(timelockCalls, timelockNonce));
+        bytes32 timelockDigest = d.d.computeDigest(timelockCalls, timelockNonce);
+        bytes memory timelockSig = _sig(timelockKey, timelockDigest);
 
-        d.d.execute(
-            _ERC7821_BATCH_EXECUTION_MODE,
-            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, timelockSig))
-        );
+        d.d.prepTimelock(timelockDigest, timelockSig);
 
         // Wait for timelock to be ready and execute once
         vm.warp(block.timestamp + 2);
-        d.d.executeTimelock(timelockCalls, timelockNonce);
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, ""))
+        );
 
-        // Try to execute again - should fail (timelock cleared after execution)
-        vm.expectRevert(IthacaAccount.TimelockDoesNotExist.selector);
-        d.d.executeTimelock(timelockCalls, timelockNonce);
+        // Try to execute again - should fail (nonce already consumed)
+        vm.expectRevert(bytes4(keccak256("InvalidNonce()")));
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, ""))
+        );
     }
 
     function testTimelockEnumeration() public {
@@ -575,33 +552,20 @@ contract AccountTest is BaseTest {
         });
 
         // Authorize key
-        ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
-        authCalls[0] = ERC7821.Call({
-            to: address(d.d),
-            value: 0,
-            data: abi.encodeWithSelector(IthacaAccount.authorize.selector, key)
-        });
+        vm.prank(d.eoa);
+        d.d.authorize(key);
 
-        uint256 nonce = d.d.getNonce(0);
-        d.d.execute(
-            _ERC7821_BATCH_EXECUTION_MODE,
-            abi.encode(
-                authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))
-            )
-        );
-
-        // Create multiple timelocks
+        // Prepare multiple timelocks
         uint256 numTimelocks = 3;
         for (uint256 i = 0; i < numTimelocks; i++) {
             ERC7821.Call[] memory calls = new ERC7821.Call[](1);
             calls[0] = _thisTargetFunctionCall(0.01 ether, abi.encodePacked("timelock", i));
 
             uint256 tlNonce = d.d.getNonce(0);
-            bytes memory tlSig = _sig(timelockKey, d.d.computeDigest(calls, tlNonce));
+            bytes32 tlDigest = d.d.computeDigest(calls, tlNonce);
+            bytes memory tlSig = _sig(timelockKey, tlDigest);
 
-            d.d.execute(
-                _ERC7821_BATCH_EXECUTION_MODE, abi.encode(calls, abi.encodePacked(tlNonce, tlSig))
-            );
+            d.d.prepTimelock(tlDigest, tlSig);
         }
 
         // Verify timelock count
@@ -628,20 +592,8 @@ contract AccountTest is BaseTest {
         IthacaAccount.Key memory zeroTimelockKey = key.k;
 
         // Authorize key
-        ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
-        authCalls[0] = ERC7821.Call({
-            to: address(d.d),
-            value: 0,
-            data: abi.encodeWithSelector(IthacaAccount.authorize.selector, zeroTimelockKey)
-        });
-
-        uint256 nonce = d.d.getNonce(0);
-        d.d.execute(
-            _ERC7821_BATCH_EXECUTION_MODE,
-            abi.encode(
-                authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))
-            )
-        );
+        vm.prank(d.eoa);
+        d.d.authorize(zeroTimelockKey);
 
         // Execute with zero timelock key - should execute immediately
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
@@ -674,43 +626,29 @@ contract AccountTest is BaseTest {
         IthacaAccount.Key memory key = timelockKey.k;
 
         // Authorize the key
-        ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
-        authCalls[0] = ERC7821.Call({
-            to: address(d.d),
-            value: 0,
-            data: abi.encodeWithSelector(IthacaAccount.authorize.selector, key)
-        });
+        vm.prank(d.eoa);
+        d.d.authorize(key);
 
-        uint256 nonce = d.d.getNonce(0);
-        d.d.execute(
-            _ERC7821_BATCH_EXECUTION_MODE,
-            abi.encode(
-                authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))
-            )
-        );
-
-        // Create timelock before key expires
+        // Prepare timelock before key expires
         ERC7821.Call[] memory timelockCalls = new ERC7821.Call[](1);
         timelockCalls[0] = _thisTargetFunctionCall(0.1 ether, "expired key timelock");
 
         uint256 timelockNonce = d.d.getNonce(0);
-        bytes memory timelockSig =
-            _sig(timelockKey, d.d.computeDigest(timelockCalls, timelockNonce));
+        bytes32 digest = d.d.computeDigest(timelockCalls, timelockNonce);
+        bytes memory timelockSig = _sig(timelockKey, digest);
 
-        d.d.execute(
-            _ERC7821_BATCH_EXECUTION_MODE,
-            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, timelockSig))
-        );
+        d.d.prepTimelock(digest, timelockSig);
 
         assertEq(d.d.timelockCount(), 1, "Timelock should be created");
-
-        bytes32 digest = d.d.computeDigest(timelockCalls, timelockNonce);
 
         // Wait for key to expire but timelock to be ready
         vm.warp(block.timestamp + 12);
 
         // Timelock should still be executable even though key expired after creation
-        d.d.executeTimelock(timelockCalls, timelockNonce);
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, ""))
+        );
 
         // Verify timelock was cleared after execution
         assertEq(d.d.timelockCount(), 0, "Timelock should be cleared after execution");
@@ -727,20 +665,8 @@ contract AccountTest is BaseTest {
         IthacaAccount.Key memory key = timelockKey.k;
 
         // Authorize key
-        ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
-        authCalls[0] = ERC7821.Call({
-            to: address(d.d),
-            value: 0,
-            data: abi.encodeWithSelector(IthacaAccount.authorize.selector, key)
-        });
-
-        uint256 nonce = d.d.getNonce(0);
-        d.d.execute(
-            _ERC7821_BATCH_EXECUTION_MODE,
-            abi.encode(
-                authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))
-            )
-        );
+        vm.prank(d.eoa);
+        d.d.authorize(key);
 
         bytes32 expectedKeyHash = d.d.hash(key);
 
@@ -753,18 +679,17 @@ contract AccountTest is BaseTest {
         });
 
         uint256 contextNonce = d.d.getNonce(0);
-        bytes memory contextSig = _sig(timelockKey, d.d.computeDigest(contextCalls, contextNonce));
-
-        d.d.execute(
-            _ERC7821_BATCH_EXECUTION_MODE,
-            abi.encode(contextCalls, abi.encodePacked(contextNonce, contextSig))
-        );
-
         bytes32 digest = d.d.computeDigest(contextCalls, contextNonce);
+        bytes memory contextSig = _sig(timelockKey, digest);
+
+        d.d.prepTimelock(digest, contextSig);
 
         // Wait for timelock and execute
         vm.warp(block.timestamp + 2);
-        d.d.executeTimelock(contextCalls, contextNonce);
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(contextCalls, abi.encodePacked(contextNonce, ""))
+        );
 
         // Verify timelock was cleared after execution
         assertEq(d.d.timelockCount(), 0, "Timelock should be cleared after execution");
@@ -783,20 +708,8 @@ contract AccountTest is BaseTest {
         IthacaAccount.Key memory key = timelockKey.k;
 
         // Authorize key
-        ERC7821.Call[] memory authCalls = new ERC7821.Call[](1);
-        authCalls[0] = ERC7821.Call({
-            to: address(d.d),
-            value: 0,
-            data: abi.encodeWithSelector(IthacaAccount.authorize.selector, key)
-        });
-
-        uint256 nonce = d.d.getNonce(0);
-        d.d.execute(
-            _ERC7821_BATCH_EXECUTION_MODE,
-            abi.encode(
-                authCalls, abi.encodePacked(nonce, _sig(d, d.d.computeDigest(authCalls, nonce)))
-            )
-        );
+        vm.prank(d.eoa);
+        d.d.authorize(key);
 
         // Create timelock
         ERC7821.Call[] memory timelockCalls = new ERC7821.Call[](1);
@@ -807,13 +720,10 @@ contract AccountTest is BaseTest {
             _sig(timelockKey, d.d.computeDigest(timelockCalls, timelockNonce));
 
         uint256 creationTime = block.timestamp;
-        d.d.execute(
-            _ERC7821_BATCH_EXECUTION_MODE,
-            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, timelockSig))
-        );
+        bytes32 digest = d.d.computeDigest(timelockCalls, timelockNonce);
+        d.d.prepTimelock(digest, timelockSig);
 
         // Verify timelock created with correct ready timestamp
-        bytes32 digest = d.d.computeDigest(timelockCalls, timelockNonce);
         IthacaAccount.Timelocker memory timelocker = d.d.getTimelock(digest);
 
         // Verify timelock properties before execution
@@ -825,13 +735,19 @@ contract AccountTest is BaseTest {
 
         // Try to execute before ready - should fail
         vm.expectRevert(IthacaAccount.TimelockNotReady.selector);
-        d.d.executeTimelock(timelockCalls, timelockNonce);
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, ""))
+        );
 
         // Fast forward to exactly ready time
         vm.warp(creationTime + timelockSeconds);
 
         // Should succeed at exact ready time
-        d.d.executeTimelock(timelockCalls, timelockNonce);
+        d.d.execute(
+            _ERC7821_BATCH_EXECUTION_MODE,
+            abi.encode(timelockCalls, abi.encodePacked(timelockNonce, ""))
+        );
 
         // Verify timelock was cleared after execution
         assertEq(d.d.timelockCount(), 0, "Timelock should be cleared after execution");

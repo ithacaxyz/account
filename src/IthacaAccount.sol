@@ -643,7 +643,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         emit TimelockCreated(digest, timelocker);
     }
 
-    function executeTimelock(Call[] calldata calls, uint256 nonce) public virtual {
+    function _executeTimelock(Call[] calldata calls, uint256 nonce) internal virtual {
         // Recalculate digest from calls and nonce
         bytes32 digest = computeDigest(calls, nonce);
 
@@ -661,6 +661,15 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         _removeTimelock(digest);
 
         emit TimelockExecuted(digest);
+    }
+
+
+    function prepTimelock(bytes32 digest, bytes calldata signature) public virtual {
+        (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
+            digest, signature
+        );
+        if (!isValid) revert Unauthorized();
+        _addTimelock(Timelocker({keyHash: keyHash, readyTimestamp: uint40(block.timestamp + getKey(keyHash).timelock)}), digest);
     }
 
     /// @dev Returns the timelock corresponding to the `digest`. Reverts if the timelock does not exist.
@@ -805,19 +814,15 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
-        if (!isValid) revert Unauthorized();
-        if (keyHash != bytes32(0) && getKey(keyHash).timelock > 0) {
-            Timelocker memory timelocker = Timelocker({
-                keyHash: keyHash,
-                readyTimestamp: uint40(block.timestamp + getKey(keyHash).timelock)
-            });
-            _addTimelock(timelocker, computeDigest(calls, nonce));
-        } else {
-            // TODO: Figure out where else to add these operations, after removing delegate call.
-            LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
-            _execute(calls, keyHash);
-            LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
+        if (keyHash == bytes32(0)) {
+            _executeTimelock(calls, nonce);
+            return;
         }
+        if (!isValid) revert Unauthorized();
+        // TODO: Figure out where else to add these operations, after removing delegate call.
+        LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
+        _execute(calls, keyHash);
+        LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
     }
 
     ////////////////////////////////////////////////////////////////////////
