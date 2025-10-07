@@ -68,8 +68,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     struct Timelocker {
         /// @dev Hash of the associated key that created this timelock.
         bytes32 keyHash;
-        /// @dev Unix timestamp when the timelock becomes ready for execution.
-        uint40 readyTimestamp;
+        /// @dev Unix timestamp when the timelock was created.
+        uint40 startTimestamp;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -139,9 +139,11 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev The timelock does not exist.
     error TimelockDoesNotExist();
 
+    /// @dev The timelock already exists.
+    error TimelockAlreadyExist();
+
     /// @dev The timelock is not ready.
     error TimelockNotReady();
-
 
     /// @dev The `opData` is too short.
     error OpDataError();
@@ -244,6 +246,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev General capacity for enumerable sets,
     /// to prevent off-chain full enumeration from running out-of-gas.
     uint256 internal constant _CAP = 512;
+
+    /// @dev Magic value used as signature to trigger permissionless timelock execution.
+    bytes32 public constant TIMELOCK_MARKER = keccak256("ITHACA_TIMELOCK_EXECUTION");
 
     ////////////////////////////////////////////////////////////////////////
     // Constructor
@@ -471,6 +476,19 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         }
     }
 
+    /// @dev Returns the timelock corresponding to the `digest`. Reverts if the timelock does not exist.
+    function getTimelock(bytes32 digest)
+        public
+        view
+        virtual
+        returns (Timelocker memory timelocker)
+    {
+        bytes memory data = _getAccountStorage().timelockStorage[digest].get();
+        if (data.length == uint256(0)) revert TimelockDoesNotExist();
+        (timelocker.keyHash, timelocker.startTimestamp) =
+            abi.decode(data, (bytes32, uint40));
+    }
+
     /// @dev Return the key hash that signed the latest execution context.
     /// @dev Returns bytes32(0) if the EOA key was used.
     function getContextKeyHash() public view virtual returns (bytes32) {
@@ -538,7 +556,14 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         returns (bool isValid, bytes32 keyHash)
     {
         // Early return if unable to unwrap the signature.
-        if (signature.length < 0x21) return (false, 0);
+        if (signature.length < 0x21) {
+            if (signature.length == 0x20) {
+                if (LibBytes.loadCalldata(signature, 0x00) == TIMELOCK_MARKER) {
+                    return validateTimelockIsExecutable(digest);
+                }
+            }
+            return (false, 0);
+        }
 
         // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
@@ -637,52 +662,10 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     {
         AccountStorage storage $ = _getAccountStorage();
         $.timelockStorage[digest].set(
-            abi.encode(timelocker.keyHash, timelocker.readyTimestamp)
+            abi.encode(timelocker.keyHash, timelocker.startTimestamp)
         );
-        $.timelockDigests.add(digest);
+        if(!$.timelockDigests.add(digest)) revert TimelockAlreadyExist();
         emit TimelockCreated(digest, timelocker);
-    }
-
-    function _executeTimelock(Call[] calldata calls, uint256 nonce) internal virtual {
-        // Recalculate digest from calls and nonce
-        bytes32 digest = computeDigest(calls, nonce);
-
-        // Get timelock using the digest
-        Timelocker memory timelocker = getTimelock(digest);
-
-        // Check if timelock is ready
-        if (timelocker.readyTimestamp > block.timestamp) revert TimelockNotReady();
-
-        // Set the key context and execute
-        LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(timelocker.keyHash);
-        _execute(calls, timelocker.keyHash);
-        LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
-
-        _removeTimelock(digest);
-
-        emit TimelockExecuted(digest);
-    }
-
-
-    function prepTimelock(bytes32 digest, bytes calldata signature) public virtual {
-        (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
-            digest, signature
-        );
-        if (!isValid) revert Unauthorized();
-        _addTimelock(Timelocker({keyHash: keyHash, readyTimestamp: uint40(block.timestamp + getKey(keyHash).timelock)}), digest);
-    }
-
-    /// @dev Returns the timelock corresponding to the `digest`. Reverts if the timelock does not exist.
-    function getTimelock(bytes32 digest)
-        public
-        view
-        virtual
-        returns (Timelocker memory timelocker)
-    {
-        bytes memory data = _getAccountStorage().timelockStorage[digest].get();
-        if (data.length == uint256(0)) revert TimelockDoesNotExist();
-        (timelocker.keyHash, timelocker.readyTimestamp) =
-            abi.decode(data, (bytes32, uint40));
     }
 
     /// @dev Removes the timelock corresponding to the `digest`. Reverts if the timelock does not exist.
@@ -776,6 +759,38 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     }
 
     ////////////////////////////////////////////////////////////////////////
+    // Timelock Functions
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev 
+    function prepTimelock(bytes32 digest, bytes calldata signature) public virtual {
+        (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
+            digest, signature
+        );
+        if (!isValid) revert Unauthorized();
+        _addTimelock(Timelocker({keyHash: keyHash, startTimestamp: uint40(block.timestamp)}), digest);
+    }
+
+    /// @dev Returns if the digest is ready to be executed, along with its `keyHash`.
+    /// @dev Reverts with specific errors for better debugging.
+    function validateTimelockIsExecutable(bytes32 digest) public view virtual returns (bool isValid, bytes32 keyHash) {
+        Timelocker memory timelocker = getTimelock(digest); // Reverts with TimelockDoesNotExist if not found
+        Key memory key = getKey(timelocker.keyHash); // Reverts with KeyDoesNotExist if key revoked
+
+        // Check if key has expired
+        if (LibBit.and(key.expiry != 0, block.timestamp > key.expiry)) {
+            revert KeyDoesNotExist();
+        }
+
+        // Check if timelock is ready
+        if (timelocker.startTimestamp + key.timelock > block.timestamp) {
+            revert TimelockNotReady();
+        }
+
+        return (true, timelocker.keyHash);
+    }
+
+    ////////////////////////////////////////////////////////////////////////
     // ERC7821
     ////////////////////////////////////////////////////////////////////////
 
@@ -810,14 +825,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         uint256 nonce = uint256(LibBytes.loadCalldata(opData, 0x00));
         LibNonce.checkAndIncrement(_getAccountStorage().nonceSeqs, nonce);
         emit NonceInvalidated(nonce);
-
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
-        if (keyHash == bytes32(0)) {
-            _executeTimelock(calls, nonce);
-            return;
-        }
         if (!isValid) revert Unauthorized();
         // TODO: Figure out where else to add these operations, after removing delegate call.
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
