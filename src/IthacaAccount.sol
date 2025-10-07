@@ -58,8 +58,18 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         /// Super admin keys are allowed to call into super admin functions such as
         /// `authorize` and `revoke` via `execute`.
         bool isSuperAdmin;
+        /// @dev Time delay in seconds before key operations take effect (0 = immediate).
+        uint40 timelock;
         /// @dev Public key in encoded form.
         bytes publicKey;
+    }
+
+    /// @dev A timelock that holds minimal data until a specific timestamp.
+    struct Timelocker {
+        /// @dev Hash of the associated key that created this timelock.
+        bytes32 keyHash;
+        /// @dev Unix timestamp when the timelock was created.
+        uint40 startTimestamp;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -90,6 +100,10 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         mapping(bytes32 => LibBytes.BytesStorage) keyStorage;
         /// @dev Mapping of key hash to the key's extra storage.
         mapping(bytes32 => LibStorage.Bump) keyExtraStorage;
+        /// @dev Set of timelock hashes for onchain enumeration of timelocks.
+        EnumerableSetLib.Bytes32Set timelockDigests;
+        /// @dev Mapping of timelock hash to the timelock in encoded form.
+        mapping(bytes32 => LibBytes.BytesStorage) timelockStorage;
         /// @dev Nonce management when porto account acts as paymaster.
         mapping(bytes32 => bool) paymasterNonces;
     }
@@ -121,6 +135,15 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
     /// @dev The key does not exist.
     error KeyDoesNotExist();
+
+    /// @dev The timelock does not exist.
+    error TimelockDoesNotExist();
+
+    /// @dev The timelock already exists.
+    error TimelockAlreadyExist();
+
+    /// @dev The timelock is not ready.
+    error TimelockNotReady();
 
     /// @dev The `opData` is too short.
     error OpDataError();
@@ -172,6 +195,12 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// on the Account with a `keyHash`, bypassing the Orchestrator.
     event NonceInvalidated(uint256 nonce);
 
+    /// @dev The timelock with a corresponding `digest` has been created.
+    event TimelockCreated(bytes32 indexed digest, Timelocker timelocker);
+
+    /// @dev The timelock with a corresponding `digest` has been executed.
+    event TimelockExecuted(bytes32 indexed digest);
+
     ////////////////////////////////////////////////////////////////////////
     // Immutables
     ////////////////////////////////////////////////////////////////////////
@@ -217,6 +246,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev General capacity for enumerable sets,
     /// to prevent off-chain full enumeration from running out-of-gas.
     uint256 internal constant _CAP = 512;
+
+    /// @dev Magic value used as signature to trigger permissionless timelock execution.
+    bytes32 public constant TIMELOCK_MARKER = keccak256("ITHACA_TIMELOCK_EXECUTION");
 
     ////////////////////////////////////////////////////////////////////////
     // Constructor
@@ -274,8 +306,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
-            isValid = _isSuperAdmin(keyHash)
-                || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
+            isValid =
+                _isSuperAdmin(keyHash) || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
         }
         // `bytes4(keccak256("isValidSignature(bytes32,bytes)")) = 0x1626ba7e`.
         // We use `0xffffffff` for invalid, in convention with the reference implementation.
@@ -384,22 +416,38 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         return getKey(_getAccountStorage().keyHashes.at(i));
     }
 
+    /// @dev Returns the number of timelocks.
+    function timelockCount() public view virtual returns (uint256) {
+        return _getAccountStorage().timelockDigests.length();
+    }
+
+    /// @dev Returns the timelock at index `i`.
+    function timelockAt(uint256 i) public view virtual returns (Timelocker memory) {
+        return getTimelock(_getAccountStorage().timelockDigests.at(i));
+    }
+
     /// @dev Returns the key corresponding to the `keyHash`. Reverts if the key does not exist.
     function getKey(bytes32 keyHash) public view virtual returns (Key memory key) {
         bytes memory data = _getAccountStorage().keyStorage[keyHash].get();
         if (data.length == uint256(0)) revert KeyDoesNotExist();
         unchecked {
-            uint256 n = data.length - 7; // 5 + 1 + 1 bytes of fixed length fields.
-            uint256 packed = uint56(bytes7(LibBytes.load(data, n)));
-            key.expiry = uint40(packed >> 16); // 5 bytes.
-            key.keyType = KeyType(uint8(packed >> 8)); // 1 byte.
-            key.isSuperAdmin = uint8(packed) != 0; // 1 byte.
+            uint256 n = data.length - 12; // 5 + 1 + 1 + 5 bytes of fixed length fields.
+            uint256 packed = uint96(bytes12(LibBytes.load(data, n)));
+            key.expiry = uint40(packed >> 56); // 5 bytes.
+            key.keyType = KeyType(uint8(packed >> 48)); // 1 byte.
+            key.isSuperAdmin = uint8(packed >> 40) != 0; // 1 byte.
+            key.timelock = uint40(packed); // 5 bytes.
             key.publicKey = LibBytes.truncate(data, n);
         }
     }
 
     /// @dev Returns arrays of all (non-expired) authorized keys and their hashes.
-    function getKeys() public view virtual returns (Key[] memory keys, bytes32[] memory keyHashes) {
+    function getKeys()
+        public
+        view
+        virtual
+        returns (Key[] memory keys, bytes32[] memory keyHashes)
+    {
         uint256 totalCount = keyCount();
 
         keys = new Key[](totalCount);
@@ -426,6 +474,19 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             mstore(keys, validCount)
             mstore(keyHashes, validCount)
         }
+    }
+
+    /// @dev Returns the timelock corresponding to the `digest`. Reverts if the timelock does not exist.
+    function getTimelock(bytes32 digest)
+        public
+        view
+        virtual
+        returns (Timelocker memory timelocker)
+    {
+        bytes memory data = _getAccountStorage().timelockStorage[digest].get();
+        if (data.length == uint256(0)) revert TimelockDoesNotExist();
+        (timelocker.keyHash, timelocker.startTimestamp) =
+            abi.decode(data, (bytes32, uint40));
     }
 
     /// @dev Return the key hash that signed the latest execution context.
@@ -495,7 +556,14 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         returns (bool isValid, bytes32 keyHash)
     {
         // Early return if unable to unwrap the signature.
-        if (signature.length < 0x21) return (false, 0);
+        if (signature.length < 0x21) {
+            if (signature.length == 0x20) {
+                if (LibBytes.loadCalldata(signature, 0x00) == TIMELOCK_MARKER) {
+                    return validateTimelockIsExecutable(digest);
+                }
+            }
+            return (false, 0);
+        }
 
         // If the signature's length is 64 or 65, treat it like an secp256k1 signature.
         if (LibBit.or(signature.length == 64, signature.length == 65)) {
@@ -573,8 +641,9 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         keyHash = hash(key);
         AccountStorage storage $ = _getAccountStorage();
-        $.keyStorage[keyHash]
-        .set(abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin));
+        $.keyStorage[keyHash].set(
+            abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin, key.timelock)
+        );
         $.keyHashes.add(keyHash);
     }
 
@@ -584,6 +653,26 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         $.keyStorage[keyHash].clear();
         $.keyExtraStorage[keyHash].invalidate();
         if (!$.keyHashes.remove(keyHash)) revert KeyDoesNotExist();
+    }
+
+    /// @dev Adds the timelock. Returns the timelock hash.
+    function _addTimelock(Timelocker memory timelocker, bytes32 digest)
+        internal
+        virtual
+    {
+        AccountStorage storage $ = _getAccountStorage();
+        $.timelockStorage[digest].set(
+            abi.encode(timelocker.keyHash, timelocker.startTimestamp)
+        );
+        if(!$.timelockDigests.add(digest)) revert TimelockAlreadyExist();
+        emit TimelockCreated(digest, timelocker);
+    }
+
+    /// @dev Removes the timelock corresponding to the `digest`. Reverts if the timelock does not exist.
+    function _removeTimelock(bytes32 digest) internal virtual {
+        AccountStorage storage $ = _getAccountStorage();
+        $.timelockStorage[digest].clear();
+        if (!$.timelockDigests.remove(digest)) revert TimelockDoesNotExist();
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -622,10 +711,12 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
         }
 
-        if (!LibBit.and(
+        if (
+            !LibBit.and(
                 msg.sender == ORCHESTRATOR,
                 LibBit.or(intent.eoa == address(this), intent.payer == address(this))
-            )) {
+            )
+        ) {
             revert Unauthorized();
         }
 
@@ -658,11 +749,45 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         // Increase spend.
         if (!(keyHash == bytes32(0) || _isSuperAdmin(keyHash))) {
             SpendStorage storage spends = _getGuardedExecutorKeyStorage(keyHash).spends;
-            _incrementSpent(spends.spends[intent.paymentToken], intent.paymentToken, paymentAmount);
+            _incrementSpent(
+                spends.paySpends[intent.paymentToken], intent.paymentToken, paymentAmount
+            );
         }
 
         // Done to avoid compiler warnings.
         intentDigest = intentDigest;
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // Timelock Functions
+    ////////////////////////////////////////////////////////////////////////
+
+    /// @dev 
+    function prepTimelock(bytes32 digest, bytes calldata signature) public virtual {
+        (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
+            digest, signature
+        );
+        if (!isValid) revert Unauthorized();
+        _addTimelock(Timelocker({keyHash: keyHash, startTimestamp: uint40(block.timestamp)}), digest);
+    }
+
+    /// @dev Returns if the digest is ready to be executed, along with its `keyHash`.
+    /// @dev Reverts with specific errors for better debugging.
+    function validateTimelockIsExecutable(bytes32 digest) public view virtual returns (bool isValid, bytes32 keyHash) {
+        Timelocker memory timelocker = getTimelock(digest); // Reverts with TimelockDoesNotExist if not found
+        Key memory key = getKey(timelocker.keyHash); // Reverts with KeyDoesNotExist if key revoked
+
+        // Check if key has expired
+        if (LibBit.and(key.expiry != 0, block.timestamp > key.expiry)) {
+            revert KeyDoesNotExist();
+        }
+
+        // Check if timelock is ready
+        if (timelocker.startTimestamp + key.timelock > block.timestamp) {
+            revert TimelockNotReady();
+        }
+
+        return (true, timelocker.keyHash);
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -700,12 +825,10 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         uint256 nonce = uint256(LibBytes.loadCalldata(opData, 0x00));
         LibNonce.checkAndIncrement(_getAccountStorage().nonceSeqs, nonce);
         emit NonceInvalidated(nonce);
-
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
         if (!isValid) revert Unauthorized();
-
         // TODO: Figure out where else to add these operations, after removing delegate call.
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
         _execute(calls, keyHash);
@@ -721,7 +844,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         LibBytes.BytesStorage storage s = _getAccountStorage().keyStorage[keyHash];
         uint256 encodedLength = s.length();
         if (encodedLength == uint256(0)) revert KeyDoesNotExist();
-        return s.uint8At(Math.rawSub(encodedLength, 1)) != 0;
+        // return s.uint8At(Math.rawSub(encodedLength, 1)) != 0;
+        return getKey(keyHash).isSuperAdmin; // TODO: fix this after testing
     }
 
     /// @dev Returns the storage seed for a `keyHash`.

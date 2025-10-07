@@ -38,6 +38,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
         t.multiSigKey.threshold = t.threshold;
@@ -118,6 +119,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: false,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -149,6 +151,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: false,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -176,6 +179,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: false,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -208,6 +212,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -246,6 +251,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -281,6 +287,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -317,6 +324,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -348,6 +356,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -379,6 +388,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -421,6 +431,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -460,6 +471,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -504,6 +516,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -547,6 +560,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(0))
         });
 
@@ -593,6 +607,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: false,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(uint96(_random())))
         });
 
@@ -628,6 +643,7 @@ contract MultiSigSignerTest is BaseTest {
             expiry: 0,
             keyType: IthacaAccount.KeyType.External,
             isSuperAdmin: true,
+            timelock: 0,
             publicKey: abi.encodePacked(address(multiSigSigner), bytes12(uint96(_random())))
         });
 
