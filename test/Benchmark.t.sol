@@ -245,187 +245,10 @@ contract BenchmarkTest is BaseTest {
         vm.stopPrank();
     }
 
-    /**
-     * Tests for the ERC4337 minimal account
-     */
-    function _createErc4337MinimalAccount(uint256 numAccounts)
-        internal
-        returns (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys)
-    {
-        accounts = new ERC4337[](numAccounts);
-        eoas = new address[](numAccounts);
-        privateKeys = new uint256[](numAccounts);
+    ////////////////////////////////////////////////////////////////////////
+    // Coinbase Smart Wallet Benchmarks
+    ////////////////////////////////////////////////////////////////////////
 
-        erc4337EntryPoint = IERC4337EntryPoint(_ERC4337_ENTRYPOINT_ADDR);
-        for (uint256 i = 0; i < numAccounts; i++) {
-            accounts[i] = ERC4337(payable(LibClone.clone(address(new MockERC4337Account()))));
-            (eoas[i], privateKeys[i]) = makeAddrAndKey(string(abi.encodePacked("minimalacct", i)));
-            accounts[i].initialize(eoas[i]);
-            _giveAccountSomeTokens(address(accounts[i]));
-        }
-    }
-
-    function testERC20Transfer_MaximumCost_ERC4337MinimalAccount() public {
-        ERC4337.Call[] memory calls = new ERC4337.Call[](1);
-        calls[0].target = address(paymentToken);
-        calls[0].data =
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether);
-        bytes[] memory payload = new bytes[](1);
-        payload[0] = abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
-
-        (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
-            _createErc4337MinimalAccount(1);
-
-        PackedUserOperation[] memory u = _getPayloadErc4337MinimalAccount(
-            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
-        );
-
-        vm.startPrank(relayer);
-        erc4337EntryPoint.handleOps(u, relayer);
-        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_ERC4337MinimalAccount");
-
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
-    }
-
-    function testERC20Transfer_MaximumCost_ERC4337MinimalAccount_ERC20SelfPay() public {
-        ERC4337.Call[] memory calls = new ERC4337.Call[](1);
-        calls[0].target = address(paymentToken);
-        calls[0].data =
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether);
-        bytes[] memory payload = new bytes[](1);
-        payload[0] = abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
-
-        (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
-            _createErc4337MinimalAccount(1);
-
-        PackedUserOperation[] memory u = _getPayloadErc4337MinimalAccount(
-            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
-        );
-
-        vm.startPrank(relayer);
-        erc4337EntryPoint.handleOps(u, relayer);
-        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_ERC4337MinimalAccount_ERC20SelfPay");
-
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
-    }
-
-    function testERC20Transfer_MaximumCost_ERC4337MinimalAccount_AppSponsor() public {
-        ERC4337.Call[] memory calls = new ERC4337.Call[](1);
-        calls[0].target = address(paymentToken);
-        calls[0].data =
-            abi.encodeWithSignature("transfer(address,uint256)", address(0xbabe), 1 ether);
-        bytes[] memory payload = new bytes[](1);
-        payload[0] = abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
-
-        (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
-            _createErc4337MinimalAccount(1);
-
-        PackedUserOperation[] memory u = _getPayloadErc4337MinimalAccount(
-            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
-        );
-
-        vm.startPrank(relayer);
-        erc4337EntryPoint.handleOps(u, relayer);
-        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_ERC4337MinimalAccount_AppSponsor");
-
-        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
-    }
-
-    function testUniswapV2Swap_ERC4337MinimalAccount() public {
-        ERC4337.Call[] memory calls = new ERC4337.Call[](1);
-        calls[0].target = _UNISWAP_V2_ROUTER_ADDRESS;
-        calls[0].data = _uniswapV2SwapPayload();
-        bytes[] memory payload = new bytes[](1);
-        payload[0] = abi.encodeWithSignature("executeBatch((address,uint256,bytes)[])", calls);
-
-        (ERC4337[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
-            _createErc4337MinimalAccount(1);
-
-        PackedUserOperation[] memory u = _getPayloadErc4337MinimalAccount(
-            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
-        );
-
-        vm.startPrank(relayer);
-        erc4337EntryPoint.handleOps(u, relayer);
-        vm.snapshotGasLastCall("testUniswapV2Swap_ERC4337MinimalAccount");
-    }
-
-    function _getPayloadErc4337MinimalAccount(
-        bytes[] memory payload,
-        bytes memory junk,
-        ERC4337[] memory accounts,
-        address[] memory,
-        uint256[] memory privateKeys,
-        PaymentType _paymentType
-    ) internal view returns (PackedUserOperation[] memory) {
-        PackedUserOperation[] memory u = new PackedUserOperation[](accounts.length);
-        for (uint256 i = 0; i < accounts.length; i++) {
-            u[i].sender = address(accounts[i]);
-            u[i].nonce = erc4337EntryPoint.getNonce(address(accounts[i]), 0);
-            u[i].accountGasLimits = bytes32(uint256(1000000 | (1000000 << 128)));
-            u[i].preVerificationGas = 1000000;
-            u[i].gasFees = bytes32(uint256(1000000 | (1000000 << 128)));
-            u[i].callData = abi.encodePacked(payload[i], junk);
-
-            // Set paymaster based on payment type
-            if (_paymentType == PaymentType.SELF_ERC20) {
-                u[i].paymasterAndData = abi.encodePacked(
-                    _PIMLICO_PAYMASTER_V07,
-                    uint128(1000000), // verification gas limit
-                    uint128(1000000), // postOp gas limit
-                    uint8(1) | uint8(1 << 1), // allow all bundlers + erc20 mode
-                    uint8(0), // no prefund, no constant fee, no recipient
-                    type(uint48).max, // max validUntil
-                    uint48(0), // no validAfter
-                    paymentToken, // payment token
-                    uint128(100000), // post op gas
-                    uint256(1e18), // exchange rate
-                    uint128(100000), // paymaster vgl
-                    relayer // treasury
-                );
-
-                u[i].paymasterAndData = abi.encodePacked(
-                    u[i].paymasterAndData,
-                    _eoaSig(
-                        paymasterPrivateKey,
-                        SignatureCheckerLib.toEthSignedMessageHash(
-                            PimlicoHelpers.getHashV7(1, u[i])
-                        )
-                    )
-                );
-            } else if (_paymentType == PaymentType.APP_SPONSOR) {
-                u[i].paymasterAndData = abi.encodePacked(
-                    _PIMLICO_PAYMASTER_V07,
-                    uint128(1000000), // verification gas limit
-                    uint128(1000000), // postOp gas limit
-                    uint8(1), // allow all bundlers + native token mode
-                    type(uint48).max, // max validUntil
-                    uint48(0) // no validAfter
-                );
-
-                u[i].paymasterAndData = abi.encodePacked(
-                    u[i].paymasterAndData,
-                    _eoaSig(
-                        paymasterPrivateKey,
-                        SignatureCheckerLib.toEthSignedMessageHash(
-                            PimlicoHelpers.getHashV7(0, u[i])
-                        )
-                    )
-                );
-            }
-
-            u[i].signature = _eoaSig(
-                privateKeys[i],
-                SignatureCheckerLib.toEthSignedMessageHash(erc4337EntryPoint.getUserOpHash(u[i]))
-            );
-        }
-
-        return u;
-    }
-
-    /**
-     * Tests for the Coinbase Smart Account
-     */
     function _createCoinbaseSmartWallet(uint256 numAccounts)
         internal
         returns (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys)
@@ -736,9 +559,10 @@ contract BenchmarkTest is BaseTest {
         return u;
     }
 
-    /**
-     * Tests for the Alchemy Modular Account
-     */
+    ////////////////////////////////////////////////////////////////////////
+    // Alchemy Modular Account Benchmarks
+    ////////////////////////////////////////////////////////////////////////
+
     function _createAlchemyModularAccount(uint256 numAccounts)
         internal
         returns (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys)
@@ -1050,79 +874,10 @@ contract BenchmarkTest is BaseTest {
         return u;
     }
 
-    function _getPayloadSafe4337(
-        bytes[] memory payload,
-        bytes memory junk,
-        address[] memory accounts,
-        address[] memory,
-        uint256[] memory privateKeys,
-        PaymentType _paymentType
-    ) internal view returns (UserOperation[] memory) {
-        // This uses V0.6 EP like Coinbase Smart Wallet
-        UserOperation[] memory u = new UserOperation[](accounts.length);
-        for (uint256 i = 0; i < accounts.length; i++) {
-            u[i].sender = accounts[i];
-            u[i].nonce = erc4337EntryPointV6.getNonce(accounts[i], 0);
-            u[i].callData = abi.encodePacked(payload[i], junk);
-            u[i].callGasLimit = 1000000;
-            u[i].verificationGasLimit = 1000000;
-            u[i].preVerificationGas = 1000000;
-            u[i].maxFeePerGas = 1000000;
-            u[i].maxPriorityFeePerGas = 1000000;
+    ////////////////////////////////////////////////////////////////////////
+    // Gnosis Safe Benchmarks
+    ////////////////////////////////////////////////////////////////////////
 
-            // Set paymaster based on payment type (V0.6 format)
-            if (_paymentType == PaymentType.SELF_ERC20) {
-                u[i].paymasterAndData = abi.encodePacked(
-                    _PIMLICO_PAYMASTER_V06,
-                    uint8(1) | uint8(1 << 1), // allow all bundlers + erc20 mode
-                    uint8(0), // no prefund, no constant fee, no recipient
-                    type(uint48).max, // max validUntil
-                    uint48(0), // no validAfter
-                    paymentToken, // payment token
-                    uint128(100000), // post op gas
-                    uint256(1e18), // exchange rate
-                    uint128(100000), // paymaster vgl
-                    relayer // treasury
-                );
-                u[i].paymasterAndData = abi.encodePacked(
-                    u[i].paymasterAndData,
-                    _eoaSig(
-                        paymasterPrivateKey,
-                        SignatureCheckerLib.toEthSignedMessageHash(
-                            PimlicoHelpers.getHashV6(1, u[i])
-                        )
-                    )
-                );
-            } else if (_paymentType == PaymentType.APP_SPONSOR) {
-                u[i].paymasterAndData = abi.encodePacked(
-                    _PIMLICO_PAYMASTER_V06,
-                    uint8(1), // allow all bundlers + native token mode
-                    type(uint48).max, // max validUntil
-                    uint48(0) // no validAfter
-                );
-                u[i].paymasterAndData = abi.encodePacked(
-                    u[i].paymasterAndData,
-                    _eoaSig(
-                        paymasterPrivateKey,
-                        SignatureCheckerLib.toEthSignedMessageHash(
-                            PimlicoHelpers.getHashV6(0, u[i])
-                        )
-                    )
-                );
-            }
-
-            // Generate Safe-specific signature
-            u[i].signature = abi.encodePacked(uint48(0), type(uint48).max);
-            bytes32 opHash = ISafe4337Module(_SAFE_4337_MODULE).getOperationHash(u[i]);
-            u[i].signature = abi.encodePacked(u[i].signature, _eoaSig(privateKeys[i], opHash));
-        }
-
-        return u;
-    }
-
-    /**
-     * Tests for the Safe 4337 Account
-     */
     function _createSafe4337Account(uint256 numAccounts)
         internal
         returns (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys)
@@ -1362,9 +1117,80 @@ contract BenchmarkTest is BaseTest {
         vm.snapshotGasLastCall("testUniswapV2Swap_Safe4337");
     }
 
-    /**
-     * Tests for the Zerodev Kernel
-     */
+    function _getPayloadSafe4337(
+        bytes[] memory payload,
+        bytes memory junk,
+        address[] memory accounts,
+        address[] memory,
+        uint256[] memory privateKeys,
+        PaymentType _paymentType
+    ) internal view returns (UserOperation[] memory) {
+        // This uses V0.6 EP like Coinbase Smart Wallet
+        UserOperation[] memory u = new UserOperation[](accounts.length);
+        for (uint256 i = 0; i < accounts.length; i++) {
+            u[i].sender = accounts[i];
+            u[i].nonce = erc4337EntryPointV6.getNonce(accounts[i], 0);
+            u[i].callData = abi.encodePacked(payload[i], junk);
+            u[i].callGasLimit = 1000000;
+            u[i].verificationGasLimit = 1000000;
+            u[i].preVerificationGas = 1000000;
+            u[i].maxFeePerGas = 1000000;
+            u[i].maxPriorityFeePerGas = 1000000;
+
+            // Set paymaster based on payment type (V0.6 format)
+            if (_paymentType == PaymentType.SELF_ERC20) {
+                u[i].paymasterAndData = abi.encodePacked(
+                    _PIMLICO_PAYMASTER_V06,
+                    uint8(1) | uint8(1 << 1), // allow all bundlers + erc20 mode
+                    uint8(0), // no prefund, no constant fee, no recipient
+                    type(uint48).max, // max validUntil
+                    uint48(0), // no validAfter
+                    paymentToken, // payment token
+                    uint128(100000), // post op gas
+                    uint256(1e18), // exchange rate
+                    uint128(100000), // paymaster vgl
+                    relayer // treasury
+                );
+                u[i].paymasterAndData = abi.encodePacked(
+                    u[i].paymasterAndData,
+                    _eoaSig(
+                        paymasterPrivateKey,
+                        SignatureCheckerLib.toEthSignedMessageHash(
+                            PimlicoHelpers.getHashV6(1, u[i])
+                        )
+                    )
+                );
+            } else if (_paymentType == PaymentType.APP_SPONSOR) {
+                u[i].paymasterAndData = abi.encodePacked(
+                    _PIMLICO_PAYMASTER_V06,
+                    uint8(1), // allow all bundlers + native token mode
+                    type(uint48).max, // max validUntil
+                    uint48(0) // no validAfter
+                );
+                u[i].paymasterAndData = abi.encodePacked(
+                    u[i].paymasterAndData,
+                    _eoaSig(
+                        paymasterPrivateKey,
+                        SignatureCheckerLib.toEthSignedMessageHash(
+                            PimlicoHelpers.getHashV6(0, u[i])
+                        )
+                    )
+                );
+            }
+
+            // Generate Safe-specific signature
+            u[i].signature = abi.encodePacked(uint48(0), type(uint48).max);
+            bytes32 opHash = ISafe4337Module(_SAFE_4337_MODULE).getOperationHash(u[i]);
+            u[i].signature = abi.encodePacked(u[i].signature, _eoaSig(privateKeys[i], opHash));
+        }
+
+        return u;
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    // Zerodev Kernel Benchmarks
+    ////////////////////////////////////////////////////////////////////////
+
     function _createZerodevKernel(uint256 numAccounts)
         internal
         returns (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys)
@@ -1704,9 +1530,10 @@ contract BenchmarkTest is BaseTest {
         return u;
     }
 
-    /**
-     * Tests for the Ithaca account.
-     */
+    ////////////////////////////////////////////////////////////////////////
+    // Ithaca Account Benchmarks
+    ////////////////////////////////////////////////////////////////////////
+
     function _createIthacaAccount(uint256 numAccounts)
         internal
         returns (DelegatedEOA[] memory delegatedEoas)
@@ -2018,6 +1845,10 @@ contract BenchmarkTest is BaseTest {
         return encodedIntents;
     }
 
+    ////////////////////////////////////////////////////////////////////////
+    // Other Benchmarks
+    ////////////////////////////////////////////////////////////////////////
+
     function testERC20Transfer_MaximumCost_IthacaAccountWithSpendLimits() public {
         PassKey memory k = _randomSecp256k1PassKey();
 
@@ -2050,7 +1881,7 @@ contract BenchmarkTest is BaseTest {
         encodedIntents[0] = encodeIntent(u);
 
         oc.execute(encodedIntents);
-        vm.snapshotGasLastCall("testERC20Transfer_MaximumCost_IthacaAccountWithSpendLimits");
+        vm.snapshotGasLastCall("testSpendLimits_ERC20Transfer_MaximumCost_IthacaAccount");
 
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
