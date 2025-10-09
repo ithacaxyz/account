@@ -3673,9 +3673,9 @@ contract BenchmarkTest is BaseTest {
         DelegatedEOA[] memory delegatedEoas,
         PaymentType _paymentType
     ) internal view returns (bytes[] memory) {
-        bytes[] memory encodedIntents = new bytes[](delegatedEOAs.length);
-        uint256 nonce = oc.getNonce(delegatedEOAs[0].eoa, 0);
-        for (uint256 i = 0; i < delegatedEOAs.length; i++) {
+        bytes[] memory encodedIntents = new bytes[](delegatedEoas.length);
+        uint256 nonce = oc.getNonce(delegatedEoas[0].eoa, 0);
+        for (uint256 i = 0; i < delegatedEoas.length; i++) {
             Intent memory u;
             u.eoa = delegatedEoas[i].eoa;
             u.nonce = nonce;
