@@ -122,7 +122,9 @@ contract GuardedExecutorTest is BaseTest {
 
         vm.startPrank(d.eoa);
         d.d
-        .setSpendLimit(k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether);
+            .setSpendLimit(
+                k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether
+            );
         vm.stopPrank();
 
         u.nonce = oc.getNonce(address(d.d), 0);
@@ -268,7 +270,9 @@ contract GuardedExecutorTest is BaseTest {
 
         vm.startPrank(d.eoa);
         d.d
-        .setSpendLimit(k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether);
+            .setSpendLimit(
+                k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether
+            );
         vm.stopPrank();
 
         u.nonce = oc.getNonce(address(d.d), 0);

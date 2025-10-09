@@ -3759,11 +3759,16 @@ contract BenchmarkTest is BaseTest {
         vm.startPrank(d.eoa);
         d.d.authorize(k.k);
         d.d
-        .setCanExecute(
-            k.keyHash, address(paymentToken), bytes4(keccak256("transfer(address,uint256)")), true
-        );
+            .setCanExecute(
+                k.keyHash,
+                address(paymentToken),
+                bytes4(keccak256("transfer(address,uint256)")),
+                true
+            );
         d.d
-        .setSpendLimit(k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether);
+            .setSpendLimit(
+                k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
+            );
         d.d.setSpendLimit(k.keyHash, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether);
         vm.stopPrank();
 
