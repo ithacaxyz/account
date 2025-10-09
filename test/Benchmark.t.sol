@@ -139,6 +139,7 @@ contract BenchmarkTest is BaseTest {
         appSponsor = new MockPayerWithSignatureOptimized(address(oc));
         appSponsor.setSigner(paymasterSigner);
         _giveAccountSomeTokens(address(appSponsor));
+        vm.deal(address(0xbabe), 1); // dust
     }
 
     function _etchContracts() internal {
@@ -340,7 +341,6 @@ contract BenchmarkTest is BaseTest {
         vm.stopPrank();
 
         // Second execution (for benchmarking)
-
         UserOperation[] memory u2 = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
@@ -401,7 +401,6 @@ contract BenchmarkTest is BaseTest {
         vm.stopPrank();
 
         // Second execution (for benchmarking)
-
         UserOperation[] memory u2 = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
         );
@@ -437,7 +436,6 @@ contract BenchmarkTest is BaseTest {
         vm.stopPrank();
 
         // Second execution (for benchmarking)
-
         UserOperation[] memory u2 = _getPayloadCoinbaseSmartWallet(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
@@ -449,7 +447,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testNativeTransfer_CoinbaseSmartWallet() public {
+    function testNativeTransfer_MaximumCost_CoinbaseSmartWallet() public {
         bytes[] memory payload = new bytes[](1);
         payload[0] =
             abi.encodeWithSignature("execute(address,uint256,bytes)", address(0xbabe), 1 ether, "");
@@ -462,12 +460,165 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(u, payable(relayer));
-        vm.snapshotGasLastCall("testNativeTransfer_CoinbaseSmartWallet");
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_CoinbaseSmartWallet");
 
-        assertEq(address(0xbabe).balance, 1 ether);
+        assertEq(address(0xbabe).balance, 1 ether + 1);
     }
 
-    function testUniswapV2Swap_CoinbaseSmartWallet() public {
+    function testNativeTransfer_MaximumCost_CoinbaseSmartWallet_ERC20SelfPay() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] =
+            abi.encodeWithSignature("execute(address,uint256,bytes)", address(0xbabe), 1 ether, "");
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createCoinbaseSmartWallet(1);
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_CoinbaseSmartWallet_ERC20SelfPay");
+
+        assertEq(address(0xbabe).balance, 1 ether + 1);
+    }
+
+    function testNativeTransfer_AverageCost_CoinbaseSmartWallet_ERC20SelfPay() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createCoinbaseSmartWallet(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)", recipient, 1 ether, ""
+            );
+        }
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        UserOperation[] memory u2 = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u2, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_CoinbaseSmartWallet_ERC20SelfPay");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testNativeTransfer_MaximumCost_CoinbaseSmartWallet_AppSponsor() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] =
+            abi.encodeWithSignature("execute(address,uint256,bytes)", address(0xbabe), 1 ether, "");
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createCoinbaseSmartWallet(1);
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_CoinbaseSmartWallet_AppSponsor");
+
+        assertEq(address(0xbabe).balance, 1 ether + 1);
+    }
+
+    function testNativeTransfer_AverageCost_CoinbaseSmartWallet_AppSponsor() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createCoinbaseSmartWallet(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)", recipient, 1 ether, ""
+            );
+        }
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        UserOperation[] memory u2 = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u2, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_CoinbaseSmartWallet_AppSponsor");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testNativeTransfer_AverageCost_CoinbaseSmartWallet() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createCoinbaseSmartWallet(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                recipient,
+                1 ether,
+                ""
+            );
+        }
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        UserOperation[] memory u2 = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u2, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_CoinbaseSmartWallet");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testUniswapV2Swap_MaximumCost_CoinbaseSmartWallet() public {
         bytes[] memory payload = new bytes[](1);
         payload[0] = abi.encodeWithSignature(
             "execute(address,uint256,bytes)", _UNISWAP_V2_ROUTER_ADDRESS, 0, _uniswapV2SwapPayload()
@@ -481,7 +632,140 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(u, payable(relayer));
-        vm.snapshotGasLastCall("testUniswapV2Swap_CoinbaseSmartWallet");
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_CoinbaseSmartWallet");
+    }
+
+    function testUniswapV2Swap_MaximumCost_CoinbaseSmartWallet_ERC20SelfPay() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
+            "execute(address,uint256,bytes)", _UNISWAP_V2_ROUTER_ADDRESS, 0, _uniswapV2SwapPayload()
+        );
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createCoinbaseSmartWallet(1);
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_CoinbaseSmartWallet_ERC20SelfPay");
+    }
+
+    function testUniswapV2Swap_AverageCost_CoinbaseSmartWallet_ERC20SelfPay() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createCoinbaseSmartWallet(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                _UNISWAP_V2_ROUTER_ADDRESS,
+                0,
+                _uniswapV2SwapPayload()
+            );
+        }
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        UserOperation[] memory u2 = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u2, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_CoinbaseSmartWallet_ERC20SelfPay");
+    }
+
+    function testUniswapV2Swap_MaximumCost_CoinbaseSmartWallet_AppSponsor() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
+            "execute(address,uint256,bytes)", _UNISWAP_V2_ROUTER_ADDRESS, 0, _uniswapV2SwapPayload()
+        );
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createCoinbaseSmartWallet(1);
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_CoinbaseSmartWallet_AppSponsor");
+    }
+
+    function testUniswapV2Swap_AverageCost_CoinbaseSmartWallet_AppSponsor() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createCoinbaseSmartWallet(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                _UNISWAP_V2_ROUTER_ADDRESS,
+                0,
+                _uniswapV2SwapPayload()
+            );
+        }
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        UserOperation[] memory u2 = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u2, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_CoinbaseSmartWallet_AppSponsor");
+    }
+
+    function testUniswapV2Swap_AverageCost_CoinbaseSmartWallet() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createCoinbaseSmartWallet(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                _UNISWAP_V2_ROUTER_ADDRESS,
+                0,
+                _uniswapV2SwapPayload()
+            );
+        }
+
+        UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        UserOperation[] memory u2 = _getPayloadCoinbaseSmartWallet(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(u2, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_CoinbaseSmartWallet");
     }
 
     function _getPayloadCoinbaseSmartWallet(
@@ -652,7 +936,6 @@ contract BenchmarkTest is BaseTest {
         vm.stopPrank();
 
         // Second execution (for benchmarking)
-
         PackedUserOperation[] memory userOps2 = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
@@ -749,7 +1032,6 @@ contract BenchmarkTest is BaseTest {
         vm.stopPrank();
 
         // Second execution (for benchmarking)
-
         PackedUserOperation[] memory userOps2 = _getPayloadAlchemyModularAccount(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
@@ -761,7 +1043,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testNativeTransfer_AlchemyModularAccount() external {
+    function testNativeTransfer_MaximumCost_AlchemyModularAccount() external {
         bytes[] memory payload = new bytes[](1);
         payload[0] =
             abi.encodeWithSignature("execute(address,uint256,bytes)", address(0xbabe), 1 ether, "");
@@ -774,12 +1056,162 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOps, payable(relayer));
-        vm.snapshotGasLastCall("testNativeTransfer_AlchemyModularAccount");
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_AlchemyModularAccount");
 
-        assertEq(address(0xbabe).balance, 1 ether);
+        assertEq(address(0xbabe).balance, 1 ether + 1);
     }
 
-    function testUniswapV2Swap_AlchemyModularAccount() public {
+    function testNativeTransfer_MaximumCost_AlchemyModularAccount_ERC20SelfPay() external {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] =
+            abi.encodeWithSignature("execute(address,uint256,bytes)", address(0xbabe), 1 ether, "");
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createAlchemyModularAccount(1);
+
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_AlchemyModularAccount_ERC20SelfPay");
+
+        assertEq(address(0xbabe).balance, 1 ether + 1);
+    }
+
+    function testNativeTransfer_AverageCost_AlchemyModularAccount_ERC20SelfPay() external {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createAlchemyModularAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)", recipient, 1 ether, ""
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        PackedUserOperation[] memory userOps2 = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_AlchemyModularAccount_ERC20SelfPay");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testNativeTransfer_MaximumCost_AlchemyModularAccount_AppSponsor() external {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] =
+            abi.encodeWithSignature("execute(address,uint256,bytes)", address(0xbabe), 1 ether, "");
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createAlchemyModularAccount(1);
+
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_AlchemyModularAccount_AppSponsor");
+
+        assertEq(address(0xbabe).balance, 1 ether + 1);
+    }
+
+    function testNativeTransfer_AverageCost_AlchemyModularAccount_AppSponsor() external {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createAlchemyModularAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)", recipient, 1 ether, ""
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        PackedUserOperation[] memory userOps2 = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_AlchemyModularAccount_AppSponsor");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testNativeTransfer_AverageCost_AlchemyModularAccount() external {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createAlchemyModularAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)", recipient, 1 ether, ""
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        PackedUserOperation[] memory userOps2 = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_AlchemyModularAccount");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testUniswapV2Swap_MaximumCost_AlchemyModularAccount() public {
         bytes[] memory payload = new bytes[](1);
         payload[0] = abi.encodeWithSignature(
             "execute(address,uint256,bytes)", _UNISWAP_V2_ROUTER_ADDRESS, 0, _uniswapV2SwapPayload()
@@ -793,7 +1225,140 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOps, payable(relayer));
-        vm.snapshotGasLastCall("testUniswapV2Swap_AlchemyModularAccount");
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_AlchemyModularAccount");
+    }
+
+    function testUniswapV2Swap_MaximumCost_AlchemyModularAccount_ERC20SelfPay() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
+            "execute(address,uint256,bytes)", _UNISWAP_V2_ROUTER_ADDRESS, 0, _uniswapV2SwapPayload()
+        );
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createAlchemyModularAccount(1);
+
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_AlchemyModularAccount_ERC20SelfPay");
+    }
+
+    function testUniswapV2Swap_AverageCost_AlchemyModularAccount_ERC20SelfPay() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createAlchemyModularAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                _UNISWAP_V2_ROUTER_ADDRESS,
+                0,
+                _uniswapV2SwapPayload()
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        PackedUserOperation[] memory userOps2 = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_AlchemyModularAccount_ERC20SelfPay");
+    }
+
+    function testUniswapV2Swap_MaximumCost_AlchemyModularAccount_AppSponsor() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
+            "execute(address,uint256,bytes)", _UNISWAP_V2_ROUTER_ADDRESS, 0, _uniswapV2SwapPayload()
+        );
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createAlchemyModularAccount(1);
+
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_AlchemyModularAccount_AppSponsor");
+    }
+
+    function testUniswapV2Swap_AverageCost_AlchemyModularAccount_AppSponsor() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createAlchemyModularAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                _UNISWAP_V2_ROUTER_ADDRESS,
+                0,
+                _uniswapV2SwapPayload()
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        PackedUserOperation[] memory userOps2 = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_AlchemyModularAccount_AppSponsor");
+    }
+
+    function testUniswapV2Swap_AverageCost_AlchemyModularAccount() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createAlchemyModularAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(address,uint256,bytes)",
+                _UNISWAP_V2_ROUTER_ADDRESS,
+                0,
+                _uniswapV2SwapPayload()
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        PackedUserOperation[] memory userOps2 = _getPayloadAlchemyModularAccount(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_AlchemyModularAccount");
     }
 
     function _getPayloadAlchemyModularAccount(
@@ -1080,7 +1645,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testNativeTransfer_Safe4337() public {
+    function testNativeTransfer_MaximumCost_Safe4337() public {
         bytes[] memory payload = new bytes[](1);
         payload[0] = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
@@ -1095,11 +1660,169 @@ contract BenchmarkTest is BaseTest {
             _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
-        vm.snapshotGasLastCall("testNativeTransfer_Safe4337");
-        assertEq(address(0xbabe).balance, 1 ether);
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_Safe4337");
+        assertEq(address(0xbabe).balance, 1 ether + 1);
     }
 
-    function testUniswapV2Swap_Safe4337() public {
+    function testNativeTransfer_MaximumCost_Safe4337_ERC20SelfPay() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSelector(
+            ISafe4337Module.executeUserOp.selector,
+            address(0xbabe), // to
+            1 ether, // value
+            "", // data
+            0 // operation (CALL)
+        );
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createSafe4337Account(1);
+        UserOperation[] memory userOps =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_Safe4337_ERC20SelfPay");
+        assertEq(address(0xbabe).balance, 1 ether + 1);
+    }
+
+    function testNativeTransfer_AverageCost_Safe4337_ERC20SelfPay() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createSafe4337Account(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = abi.encodeWithSelector(
+                ISafe4337Module.executeUserOp.selector,
+                recipient, // to
+                1 ether, // value
+                "", // data
+                0 // operation (CALL)
+            );
+        }
+
+        UserOperation[] memory userOps =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        UserOperation[] memory userOps2 =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_Safe4337_ERC20SelfPay");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testNativeTransfer_MaximumCost_Safe4337_AppSponsor() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSelector(
+            ISafe4337Module.executeUserOp.selector,
+            address(0xbabe), // to
+            1 ether, // value
+            "", // data
+            0 // operation (CALL)
+        );
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createSafe4337Account(1);
+        UserOperation[] memory userOps =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_Safe4337_AppSponsor");
+        assertEq(address(0xbabe).balance, 1 ether + 1);
+    }
+
+    function testNativeTransfer_AverageCost_Safe4337_AppSponsor() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createSafe4337Account(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = abi.encodeWithSelector(
+                ISafe4337Module.executeUserOp.selector,
+                recipient, // to
+                1 ether, // value
+                "", // data
+                0 // operation (CALL)
+            );
+        }
+
+        UserOperation[] memory userOps =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        UserOperation[] memory userOps2 =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_Safe4337_AppSponsor");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testNativeTransfer_AverageCost_Safe4337() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createSafe4337Account(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = abi.encodeWithSelector(
+                ISafe4337Module.executeUserOp.selector,
+                recipient, // to
+                1 ether, // value
+                "", // data
+                0 // operation (CALL)
+            );
+        }
+
+        UserOperation[] memory userOps =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        UserOperation[] memory userOps2 =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_Safe4337");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testUniswapV2Swap_MaximumCost_Safe4337() public {
         bytes[] memory payload = new bytes[](1);
         payload[0] = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
@@ -1114,7 +1837,139 @@ contract BenchmarkTest is BaseTest {
             _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
         vm.startPrank(relayer);
         erc4337EntryPointV6.handleOps(userOps, payable(relayer));
-        vm.snapshotGasLastCall("testUniswapV2Swap_Safe4337");
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_Safe4337");
+    }
+
+    function testUniswapV2Swap_MaximumCost_Safe4337_ERC20SelfPay() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSelector(
+            ISafe4337Module.executeUserOp.selector,
+            _UNISWAP_V2_ROUTER_ADDRESS, // to
+            0, // value
+            _uniswapV2SwapPayload(), // data
+            0 // operation (CALL)
+        );
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createSafe4337Account(1);
+        UserOperation[] memory userOps =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_Safe4337_ERC20SelfPay");
+    }
+
+    function testUniswapV2Swap_AverageCost_Safe4337_ERC20SelfPay() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createSafe4337Account(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSelector(
+                ISafe4337Module.executeUserOp.selector,
+                _UNISWAP_V2_ROUTER_ADDRESS, // to
+                0, // value
+                _uniswapV2SwapPayload(), // data
+                0 // operation (CALL)
+            );
+        }
+
+        UserOperation[] memory userOps =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        UserOperation[] memory userOps2 =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_Safe4337_ERC20SelfPay");
+    }
+
+    function testUniswapV2Swap_MaximumCost_Safe4337_AppSponsor() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSelector(
+            ISafe4337Module.executeUserOp.selector,
+            _UNISWAP_V2_ROUTER_ADDRESS, // to
+            0, // value
+            _uniswapV2SwapPayload(), // data
+            0 // operation (CALL)
+        );
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createSafe4337Account(1);
+        UserOperation[] memory userOps =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_Safe4337_AppSponsor");
+    }
+
+    function testUniswapV2Swap_AverageCost_Safe4337_AppSponsor() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createSafe4337Account(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSelector(
+                ISafe4337Module.executeUserOp.selector,
+                _UNISWAP_V2_ROUTER_ADDRESS, // to
+                0, // value
+                _uniswapV2SwapPayload(), // data
+                0 // operation (CALL)
+            );
+        }
+
+        UserOperation[] memory userOps =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        UserOperation[] memory userOps2 =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_Safe4337_AppSponsor");
+    }
+
+    function testUniswapV2Swap_AverageCost_Safe4337() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createSafe4337Account(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSelector(
+                ISafe4337Module.executeUserOp.selector,
+                _UNISWAP_V2_ROUTER_ADDRESS, // to
+                0, // value
+                _uniswapV2SwapPayload(), // data
+                0 // operation (CALL)
+            );
+        }
+
+        UserOperation[] memory userOps =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        UserOperation[] memory userOps2 =
+            _getPayloadSafe4337(payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH);
+
+        vm.startPrank(relayer);
+        erc4337EntryPointV6.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_Safe4337");
     }
 
     function _getPayloadSafe4337(
@@ -1300,7 +2155,6 @@ contract BenchmarkTest is BaseTest {
         vm.stopPrank();
 
         // Second execution (for benchmarking)
-
         PackedUserOperation[] memory userOps2 = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
         );
@@ -1406,7 +2260,6 @@ contract BenchmarkTest is BaseTest {
         vm.stopPrank();
 
         // Second execution (for benchmarking)
-
         PackedUserOperation[] memory userOps2 = _getPayloadZerodevKernel(
             payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
         );
@@ -1418,7 +2271,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testNativeTransfer_ZerodevKernel() public {
+    function testNativeTransfer_MaximumCost_ZerodevKernel() public {
         bytes[] memory payload = new bytes[](1);
         payload[0] = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
@@ -1434,12 +2287,174 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOps, payable(relayer));
-        vm.snapshotGasLastCall("testNativeTransfer_ZerodevKernel");
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_ZerodevKernel");
 
-        assertEq(address(0xbabe).balance, 1 ether);
+        assertEq(address(0xbabe).balance, 1 ether + 1);
     }
 
-    function testUniswapV2Swap_ZerodevKernel() public {
+    function testNativeTransfer_MaximumCost_ZerodevKernel_ERC20SelfPay() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
+            "execute(bytes32,bytes)",
+            bytes32(uint256(0x01) << 240),
+            abi.encodePacked(address(0xbabe), uint256(1 ether), "")
+        );
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createZerodevKernel(1);
+
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_ZerodevKernel_ERC20SelfPay");
+
+        assertEq(address(0xbabe).balance, 1 ether + 1);
+    }
+
+    function testNativeTransfer_AverageCost_ZerodevKernel_ERC20SelfPay() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createZerodevKernel(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = abi.encodeWithSignature(
+                "execute(bytes32,bytes)",
+                bytes32(uint256(0x01) << 240),
+                abi.encodePacked(recipient, uint256(1 ether), "")
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        PackedUserOperation[] memory userOps2 = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_ZerodevKernel_ERC20SelfPay");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testNativeTransfer_MaximumCost_ZerodevKernel_AppSponsor() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
+            "execute(bytes32,bytes)",
+            bytes32(uint256(0x01) << 240),
+            abi.encodePacked(address(0xbabe), uint256(1 ether), "")
+        );
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createZerodevKernel(1);
+
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_ZerodevKernel_AppSponsor");
+
+        assertEq(address(0xbabe).balance, 1 ether + 1);
+    }
+
+    function testNativeTransfer_AverageCost_ZerodevKernel_AppSponsor() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createZerodevKernel(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = abi.encodeWithSignature(
+                "execute(bytes32,bytes)",
+                bytes32(uint256(0x01) << 240),
+                abi.encodePacked(recipient, uint256(1 ether), "")
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        PackedUserOperation[] memory userOps2 = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_ZerodevKernel_AppSponsor");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testNativeTransfer_AverageCost_ZerodevKernel() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createZerodevKernel(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = abi.encodeWithSignature(
+                "execute(bytes32,bytes)",
+                bytes32(uint256(0x01) << 240),
+                abi.encodePacked(recipient, uint256(1 ether), "")
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        PackedUserOperation[] memory userOps2 = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_ZerodevKernel");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testUniswapV2Swap_MaximumCost_ZerodevKernel() public {
         bytes[] memory payload = new bytes[](1);
         payload[0] = abi.encodeWithSignature(
             "execute(bytes32,bytes)",
@@ -1455,7 +2470,141 @@ contract BenchmarkTest is BaseTest {
 
         vm.startPrank(relayer);
         erc4337EntryPoint.handleOps(userOps, payable(relayer));
-        vm.snapshotGasLastCall("testUniswapV2Swap_ZerodevKernel");
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_ZerodevKernel");
+    }
+
+    function testUniswapV2Swap_MaximumCost_ZerodevKernel_ERC20SelfPay() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
+            "execute(bytes32,bytes)",
+            bytes32(uint256(0x01) << 240),
+            abi.encodePacked(_UNISWAP_V2_ROUTER_ADDRESS, uint256(0), _uniswapV2SwapPayload())
+        );
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createZerodevKernel(1);
+
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_ZerodevKernel_ERC20SelfPay");
+    }
+
+    function testUniswapV2Swap_AverageCost_ZerodevKernel_ERC20SelfPay() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createZerodevKernel(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(bytes32,bytes)",
+                bytes32(uint256(0x01) << 240),
+                abi.encodePacked(_UNISWAP_V2_ROUTER_ADDRESS, uint256(0), _uniswapV2SwapPayload())
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        PackedUserOperation[] memory userOps2 = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ERC20
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_ZerodevKernel_ERC20SelfPay");
+    }
+
+    function testUniswapV2Swap_MaximumCost_ZerodevKernel_AppSponsor() public {
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encodeWithSignature(
+            "execute(bytes32,bytes)",
+            bytes32(uint256(0x01) << 240),
+            abi.encodePacked(_UNISWAP_V2_ROUTER_ADDRESS, uint256(0), _uniswapV2SwapPayload())
+        );
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createZerodevKernel(1);
+
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_ZerodevKernel_AppSponsor");
+    }
+
+    function testUniswapV2Swap_AverageCost_ZerodevKernel_AppSponsor() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createZerodevKernel(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(bytes32,bytes)",
+                bytes32(uint256(0x01) << 240),
+                abi.encodePacked(_UNISWAP_V2_ROUTER_ADDRESS, uint256(0), _uniswapV2SwapPayload())
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        PackedUserOperation[] memory userOps2 = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.APP_SPONSOR
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_ZerodevKernel_AppSponsor");
+    }
+
+    function testUniswapV2Swap_AverageCost_ZerodevKernel() public {
+        // First execution
+        (address[] memory accounts, address[] memory eoas, uint256[] memory privateKeys) =
+            _createZerodevKernel(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            payload[i] = abi.encodeWithSignature(
+                "execute(bytes32,bytes)",
+                bytes32(uint256(0x01) << 240),
+                abi.encodePacked(_UNISWAP_V2_ROUTER_ADDRESS, uint256(0), _uniswapV2SwapPayload())
+            );
+        }
+
+        PackedUserOperation[] memory userOps = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps, payable(relayer));
+        vm.stopPrank();
+
+        // Second execution (for benchmarking)
+        PackedUserOperation[] memory userOps2 = _getPayloadZerodevKernel(
+            payload, "", accounts, eoas, privateKeys, PaymentType.SELF_ETH
+        );
+
+        vm.startPrank(relayer);
+        erc4337EntryPoint.handleOps(userOps2, payable(relayer));
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_ZerodevKernel");
     }
 
     function _getPayloadZerodevKernel(
@@ -1626,7 +2775,7 @@ contract BenchmarkTest is BaseTest {
         }
     }
 
-    function testNativeTransfer_IthacaAccount() public {
+    function testNativeTransfer_MaximumCost_IthacaAccount() public {
         DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
         bytes[] memory payload = new bytes[](1);
         payload[0] = _transferExecutionData(address(0), address(0xbabe), 1 ether);
@@ -1635,12 +2784,42 @@ contract BenchmarkTest is BaseTest {
             _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents[0]);
-        vm.snapshotGasLastCall("testNativeTransfer_IthacaAccount");
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_IthacaAccount");
 
-        assertEq(address(0xbabe).balance, 1 ether);
+        assertEq(address(0xbabe).balance, 1 ether + 1);
     }
 
-    function testNativeTransfer_IthacaAccount_ERC20SelfPay() public {
+    function testNativeTransfer_AverageCost_IthacaAccount() public {
+        // First execution
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = _transferExecutionData(address(0), recipient, 1 ether);
+        }
+
+        bytes[] memory encodedIntents =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ETH);
+
+        oc.execute(encodedIntents);
+
+        // Second execution (for benchmarking) - reuse same accounts
+        bytes[] memory encodedIntents2 =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ETH);
+
+        oc.execute(encodedIntents2);
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_IthacaAccount");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testNativeTransfer_MaximumCost_IthacaAccount_ERC20SelfPay() public {
         DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
         bytes[] memory payload = new bytes[](1);
         payload[0] = _transferExecutionData(address(0), address(0xbabe), 1 ether);
@@ -1649,12 +2828,42 @@ contract BenchmarkTest is BaseTest {
             _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ERC20);
 
         oc.execute(encodedIntents[0]);
-        vm.snapshotGasLastCall("testNativeTransfer_IthacaAccount_ERC20SelfPay");
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_IthacaAccount_ERC20SelfPay");
 
-        assertEq(address(0xbabe).balance, 1 ether);
+        assertEq(address(0xbabe).balance, 1 ether + 1);
     }
 
-    function testUniswapV2Swap_IthacaAccount() public {
+    function testNativeTransfer_AverageCost_IthacaAccount_ERC20SelfPay() public {
+        // First execution
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = _transferExecutionData(address(0), recipient, 1 ether);
+        }
+
+        bytes[] memory encodedIntents =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents);
+
+        // Second execution (for benchmarking) - reuse same accounts
+        bytes[] memory encodedIntents2 =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents2);
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_IthacaAccount_ERC20SelfPay");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testUniswapV2Swap_MaximumCost_IthacaAccount() public {
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
         calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
         calls[0].data = _uniswapV2SwapPayload();
@@ -1666,10 +2875,35 @@ contract BenchmarkTest is BaseTest {
             _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ETH);
 
         oc.execute(encodedIntents[0]);
-        vm.snapshotGasLastCall("testUniswapV2Swap_IthacaAccount");
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_IthacaAccount");
     }
 
-    function testUniswapV2Swap_IthacaAccount_ERC20SelfPay() public {
+    function testUniswapV2Swap_AverageCost_IthacaAccount() public {
+        // First execution
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
+            calls[0].data = _uniswapV2SwapPayload();
+            payload[i] = abi.encode(calls);
+        }
+
+        bytes[] memory encodedIntents =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ETH);
+
+        oc.execute(encodedIntents);
+
+        // Second execution (for benchmarking) - reuse same accounts
+        bytes[] memory encodedIntents2 =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ETH);
+
+        oc.execute(encodedIntents2);
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_IthacaAccount");
+    }
+
+    function testUniswapV2Swap_MaximumCost_IthacaAccount_ERC20SelfPay() public {
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
         calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
         calls[0].data = _uniswapV2SwapPayload();
@@ -1681,7 +2915,32 @@ contract BenchmarkTest is BaseTest {
             _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ERC20);
 
         oc.execute(encodedIntents[0]);
-        vm.snapshotGasLastCall("testUniswapV2Swap_IthacaAccount_ERC20SelfPay");
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_IthacaAccount_ERC20SelfPay");
+    }
+
+    function testUniswapV2Swap_AverageCost_IthacaAccount_ERC20SelfPay() public {
+        // First execution
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
+            calls[0].data = _uniswapV2SwapPayload();
+            payload[i] = abi.encode(calls);
+        }
+
+        bytes[] memory encodedIntents =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents);
+
+        // Second execution (for benchmarking) - reuse same accounts
+        bytes[] memory encodedIntents2 =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.SELF_ERC20);
+
+        oc.execute(encodedIntents2);
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_IthacaAccount_ERC20SelfPay");
     }
 
     // App Sponsor tests - app pays for user transactions
@@ -1721,7 +2980,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testNativeTransfer_IthacaAccount_AppSponsor() public {
+    function testNativeTransfer_MaximumCost_IthacaAccount_AppSponsor() public {
         DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
         bytes[] memory payload = new bytes[](1);
         payload[0] = _transferExecutionData(address(0), address(0xbabe), 1 ether);
@@ -1730,9 +2989,83 @@ contract BenchmarkTest is BaseTest {
             _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR);
 
         oc.execute(encodedIntents[0]);
-        vm.snapshotGasLastCall("testNativeTransfer_IthacaAccount_AppSponsor");
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_IthacaAccount_AppSponsor");
 
-        assertEq(address(0xbabe).balance, 1 ether);
+        assertEq(address(0xbabe).balance, 1 ether + 1);
+    }
+
+    function testNativeTransfer_AverageCost_IthacaAccount_AppSponsor() public {
+        // First execution
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = _transferExecutionData(address(0), recipient, 1 ether);
+        }
+
+        bytes[] memory encodedIntents =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents);
+
+        // Second execution (for benchmarking) - reuse same accounts
+        bytes[] memory encodedIntents2 =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents2);
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_IthacaAccount_AppSponsor");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
+    }
+
+    function testNativeTransfer_MaximumCost_IthacaAccount_AppSponsor_ERC20() public {
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = _transferExecutionData(address(0), address(0xbabe), 1 ether);
+
+        bytes[] memory encodedIntents =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR_ERC20);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testNativeTransfer_MaximumCost_IthacaAccount_AppSponsor_ERC20");
+
+        assertEq(address(0xbabe).balance, 1 ether + 1);
+    }
+
+    function testNativeTransfer_AverageCost_IthacaAccount_AppSponsor_ERC20() public {
+        // First execution
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            vm.deal(recipient, 1);
+            payload[i] = _transferExecutionData(address(0), recipient, 1 ether);
+        }
+
+        bytes[] memory encodedIntents =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR_ERC20);
+
+        oc.execute(encodedIntents);
+
+        // Second execution (for benchmarking) - reuse same accounts
+        bytes[] memory encodedIntents2 =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR_ERC20);
+
+        oc.execute(encodedIntents2);
+        vm.snapshotGasLastCall("testNativeTransfer_AverageCost_IthacaAccount_AppSponsor_ERC20");
+
+        // Check each recipient received 2 ether (1 ether × 2 executions) + 1 wei dust
+        for (uint256 i = 0; i < 10; i++) {
+            address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
+            assertEq(recipient.balance, 2 ether + 1);
+        }
     }
 
     function testERC20Transfer_MaximumCost_IthacaAccount_AppSponsor_ERC20() public {
@@ -1772,7 +3105,7 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 20 ether);
     }
 
-    function testUniswapV2Swap_IthacaAccount_AppSponsor() public {
+    function testUniswapV2Swap_MaximumCost_IthacaAccount_AppSponsor() public {
         ERC7821.Call[] memory calls = new ERC7821.Call[](1);
         calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
         calls[0].data = _uniswapV2SwapPayload();
@@ -1784,7 +3117,72 @@ contract BenchmarkTest is BaseTest {
             _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR);
 
         oc.execute(encodedIntents[0]);
-        vm.snapshotGasLastCall("testUniswapV2Swap_IthacaAccount_AppSponsor");
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_IthacaAccount_AppSponsor");
+    }
+
+    function testUniswapV2Swap_AverageCost_IthacaAccount_AppSponsor() public {
+        // First execution
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
+            calls[0].data = _uniswapV2SwapPayload();
+            payload[i] = abi.encode(calls);
+        }
+
+        bytes[] memory encodedIntents =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents);
+
+        // Second execution (for benchmarking) - reuse same accounts
+        bytes[] memory encodedIntents2 =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR);
+
+        oc.execute(encodedIntents2);
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_IthacaAccount_AppSponsor");
+    }
+
+    function testUniswapV2Swap_MaximumCost_IthacaAccount_AppSponsor_ERC20() public {
+        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+        calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
+        calls[0].data = _uniswapV2SwapPayload();
+        bytes[] memory payload = new bytes[](1);
+        payload[0] = abi.encode(calls);
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(1);
+
+        bytes[] memory encodedIntents =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR_ERC20);
+
+        oc.execute(encodedIntents[0]);
+        vm.snapshotGasLastCall("testUniswapV2Swap_MaximumCost_IthacaAccount_AppSponsor_ERC20");
+    }
+
+    function testUniswapV2Swap_AverageCost_IthacaAccount_AppSponsor_ERC20() public {
+        // First execution
+        DelegatedEOA[] memory delegatedEoas = _createIthacaAccount(10);
+
+        bytes[] memory payload = new bytes[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            ERC7821.Call[] memory calls = new ERC7821.Call[](1);
+            calls[0].to = _UNISWAP_V2_ROUTER_ADDRESS;
+            calls[0].data = _uniswapV2SwapPayload();
+            payload[i] = abi.encode(calls);
+        }
+
+        bytes[] memory encodedIntents =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR_ERC20);
+
+        oc.execute(encodedIntents);
+
+        // Second execution (for benchmarking) - reuse same accounts
+        bytes[] memory encodedIntents2 =
+            _getPayloadIthacaAccount(payload, "", delegatedEoas, PaymentType.APP_SPONSOR_ERC20);
+
+        oc.execute(encodedIntents2);
+        vm.snapshotGasLastCall("testUniswapV2Swap_AverageCost_IthacaAccount_AppSponsor_ERC20");
     }
 
     function _getPayloadIthacaAccount(
