@@ -3674,7 +3674,7 @@ contract BenchmarkTest is BaseTest {
         PaymentType _paymentType
     ) internal view returns (bytes[] memory) {
         bytes[] memory encodedIntents = new bytes[](delegatedEoas.length);
-        uint256 nonce = IthacaAccount(payable(delegatedEoas[0].eoa)).getNonce(0);
+        uint256 nonce = oc.getNonce(delegatedEoas[0].eoa, 0);
         for (uint256 i = 0; i < delegatedEoas.length; i++) {
             Intent memory u;
             u.eoa = delegatedEoas[i].eoa;
@@ -3759,11 +3759,16 @@ contract BenchmarkTest is BaseTest {
         vm.startPrank(d.eoa);
         d.d.authorize(k.k);
         d.d
-        .setCanExecute(
-            k.keyHash, address(paymentToken), bytes4(keccak256("transfer(address,uint256)")), true
-        );
+            .setCanExecute(
+                k.keyHash,
+                address(paymentToken),
+                bytes4(keccak256("transfer(address,uint256)")),
+                true
+            );
         d.d
-        .setSpendLimit(k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether);
+            .setSpendLimit(
+                k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, 1 ether
+            );
         d.d.setSpendLimit(k.keyHash, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether);
         vm.stopPrank();
 
