@@ -38,6 +38,8 @@ For each of the above operations, we benchmark them in two ways:
 1. Maximum cost - We use a fresh account, and benchmark an unbatched user operation or intent transaction.
 2. Average cost - We use an account that's sent a user operation or intent previously, and the uo/intent is relayed in a batch of 10. The benchmarks calculate total cost, to get unit cost you'd need to divide by 10.
 
+We benchmark 2 architectures for Porto accounts. In production today, by default we use: EIP7702 to a 7702Proxy that points to the implementation. We also benchmark the direct EIP7702 to the implementation case, as Ithaca7702Account.
+
 Across all benchmarks, the Porto smart account is the cheapest account.
 
 ## Security
