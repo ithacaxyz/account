@@ -492,9 +492,8 @@ contract BenchmarkTest is BaseTest {
         for (uint256 i = 0; i < 10; i++) {
             address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
             vm.deal(recipient, 1);
-            payload[i] = abi.encodeWithSignature(
-                "execute(address,uint256,bytes)", recipient, 1 ether, ""
-            );
+            payload[i] =
+                abi.encodeWithSignature("execute(address,uint256,bytes)", recipient, 1 ether, "");
         }
 
         UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
@@ -548,9 +547,8 @@ contract BenchmarkTest is BaseTest {
         for (uint256 i = 0; i < 10; i++) {
             address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
             vm.deal(recipient, 1);
-            payload[i] = abi.encodeWithSignature(
-                "execute(address,uint256,bytes)", recipient, 1 ether, ""
-            );
+            payload[i] =
+                abi.encodeWithSignature("execute(address,uint256,bytes)", recipient, 1 ether, "");
         }
 
         UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
@@ -586,12 +584,8 @@ contract BenchmarkTest is BaseTest {
         for (uint256 i = 0; i < 10; i++) {
             address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
             vm.deal(recipient, 1);
-            payload[i] = abi.encodeWithSignature(
-                "execute(address,uint256,bytes)",
-                recipient,
-                1 ether,
-                ""
-            );
+            payload[i] =
+                abi.encodeWithSignature("execute(address,uint256,bytes)", recipient, 1 ether, "");
         }
 
         UserOperation[] memory u = _getPayloadCoinbaseSmartWallet(
@@ -1088,9 +1082,8 @@ contract BenchmarkTest is BaseTest {
         for (uint256 i = 0; i < 10; i++) {
             address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
             vm.deal(recipient, 1);
-            payload[i] = abi.encodeWithSignature(
-                "execute(address,uint256,bytes)", recipient, 1 ether, ""
-            );
+            payload[i] =
+                abi.encodeWithSignature("execute(address,uint256,bytes)", recipient, 1 ether, "");
         }
 
         PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
@@ -1144,9 +1137,8 @@ contract BenchmarkTest is BaseTest {
         for (uint256 i = 0; i < 10; i++) {
             address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
             vm.deal(recipient, 1);
-            payload[i] = abi.encodeWithSignature(
-                "execute(address,uint256,bytes)", recipient, 1 ether, ""
-            );
+            payload[i] =
+                abi.encodeWithSignature("execute(address,uint256,bytes)", recipient, 1 ether, "");
         }
 
         PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
@@ -1182,9 +1174,8 @@ contract BenchmarkTest is BaseTest {
         for (uint256 i = 0; i < 10; i++) {
             address recipient = address(uint160(uint256(uint160(address(0xbabe))) + i));
             vm.deal(recipient, 1);
-            payload[i] = abi.encodeWithSignature(
-                "execute(address,uint256,bytes)", recipient, 1 ether, ""
-            );
+            payload[i] =
+                abi.encodeWithSignature("execute(address,uint256,bytes)", recipient, 1 ether, "");
         }
 
         PackedUserOperation[] memory userOps = _getPayloadAlchemyModularAccount(
