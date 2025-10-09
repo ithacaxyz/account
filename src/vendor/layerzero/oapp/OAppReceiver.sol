@@ -52,7 +52,12 @@ abstract contract OAppReceiver is IOAppReceiver, OAppCore {
         Origin calldata, /*_origin*/
         bytes calldata, /*_message*/
         address _sender
-    ) public view virtual returns (bool) {
+    )
+        public
+        view
+        virtual
+        returns (bool)
+    {
         return _sender == address(this);
     }
 
@@ -84,7 +89,12 @@ abstract contract OAppReceiver is IOAppReceiver, OAppCore {
         uint32,
         /*_srcEid*/
         bytes32 /*_sender*/
-    ) public view virtual returns (uint64 nonce) {
+    )
+        public
+        view
+        virtual
+        returns (uint64 nonce)
+    {
         return 0;
     }
 
