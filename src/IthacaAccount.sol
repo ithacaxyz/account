@@ -145,13 +145,13 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev Unauthorized payer in pay function.
     error UnauthorizedPayer();
 
-    /// @dev Unauthorized paymaster signature validation failed.
-    error UnauthorizedPaymasterSig();
+    /// @dev Invalid paymaster signature. in pay()
+    error InvalidPaymasterSig();
 
     /// @dev Unauthorized sender in _execute function.
     error UnauthorizedSender();
 
-    /// @dev Unauthorized due to invalid signature.
+    /// @dev Invalid signature in _execute.
     error InvalidSig();
 
     ////////////////////////////////////////////////////////////////////////
@@ -665,7 +665,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             }
 
             if (!isValid) {
-                revert UnauthorizedPaymasterSig();
+                revert InvalidPaymasterSig();
             }
         }
 
