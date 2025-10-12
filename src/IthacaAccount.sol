@@ -139,6 +139,21 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev The paymaster nonce has already been used.
     error PaymasterNonceError();
 
+    /// @dev Unauthorized orchestrator in checkAndIncrementNonce.
+    error UnauthorizedOrchestrator();
+
+    /// @dev Unauthorized payer in pay function.
+    error UnauthorizedPayer();
+
+    /// @dev Unauthorized paymaster signature validation failed.
+    error UnauthorizedPaymasterSig();
+
+    /// @dev Unauthorized sender in _execute function.
+    error UnauthorizedSender();
+
+    /// @dev Unauthorized due to invalid signature validation.
+    error UnauthorizedInvalidSig();
+
     ////////////////////////////////////////////////////////////////////////
     // Events
     ////////////////////////////////////////////////////////////////////////
@@ -593,7 +608,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev Checks current nonce and increments the sequence for the `seqKey`.
     function checkAndIncrementNonce(uint256 nonce) public payable virtual {
         if (msg.sender != ORCHESTRATOR) {
-            revert Unauthorized();
+            revert UnauthorizedOrchestrator();
         }
         LibNonce.checkAndIncrement(_getAccountStorage().nonceSeqs, nonce);
     }
@@ -626,7 +641,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
                 msg.sender == ORCHESTRATOR,
                 LibBit.or(intent.eoa == address(this), intent.payer == address(this))
             )) {
-            revert Unauthorized();
+            revert UnauthorizedPayer();
         }
 
         // If this account is the paymaster, validate the paymaster signature.
@@ -650,7 +665,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             }
 
             if (!isValid) {
-                revert Unauthorized();
+                revert UnauthorizedPaymasterSig();
             }
         }
 
@@ -691,7 +706,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
         // Simple workflow without `opData`.
         if (opData.length == uint256(0)) {
-            if (msg.sender != address(this)) revert Unauthorized();
+            if (msg.sender != address(this)) revert UnauthorizedSender();
             return _execute(calls, bytes32(0));
         }
 
@@ -704,7 +719,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
-        if (!isValid) revert Unauthorized();
+        if (!isValid) revert UnauthorizedInvalidSig();
 
         // TODO: Figure out where else to add these operations, after removing delegate call.
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
