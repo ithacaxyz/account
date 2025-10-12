@@ -151,8 +151,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     /// @dev Unauthorized sender in _execute function.
     error UnauthorizedSender();
 
-    /// @dev Unauthorized due to invalid signature validation.
-    error UnauthorizedInvalidSig();
+    /// @dev Unauthorized due to invalid signature.
+    error InvalidSig();
 
     ////////////////////////////////////////////////////////////////////////
     // Events
@@ -719,7 +719,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(
             computeDigest(calls, nonce), LibBytes.sliceCalldata(opData, 0x20)
         );
-        if (!isValid) revert UnauthorizedInvalidSig();
+        if (!isValid) revert InvalidSig();
 
         // TODO: Figure out where else to add these operations, after removing delegate call.
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);

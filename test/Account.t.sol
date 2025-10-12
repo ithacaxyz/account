@@ -40,7 +40,7 @@ contract AccountTest is BaseTest {
             signature = _sig(_randomEIP7702DelegatedEOA(), d.d.computeDigest(t.calls, t.nonce));
             t.opData = abi.encodePacked(t.nonce, signature);
             t.executionData = abi.encode(t.calls, t.opData);
-            vm.expectRevert(bytes4(keccak256("UnauthorizedInvalidSig()")));
+            vm.expectRevert(bytes4(keccak256("InvalidSig()")));
             d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
             return;
         }
