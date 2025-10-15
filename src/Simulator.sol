@@ -165,8 +165,9 @@ contract Simulator {
         IMulticall3.Result[] memory results = IMulticall3(multicall3).aggregate3(calls);
 
         // Get the last result (orchestrator call result)
+        // Check all preCalls for failures (all results except the last one, which is the orchestrator call)
         if (results.length > 1) {
-            for (uint256 i = 0; i < results.length - 2; i++) {
+            for (uint256 i = 0; i < results.length - 1; i++) {
                 // If any pre-call failed, we return gasUsed = 0 and the error data from that call
                 if (!results[i].success) {
                     return (0, results[i].returnData);
@@ -409,10 +410,12 @@ contract Simulator {
                 // Layout: [length (32 bytes)][selector (4 bytes)][additional data...]
                 bytes4 errorSelector;
                 assembly ("memory-safe") {
-                    // Load 32 bytes starting from errorData+32, then shift right to get first 4 bytes
+                    // Load 32 bytes starting from errorData+32
+                    // bytes4 values are already right-aligned, no shift needed
                     errorSelector := mload(add(errorData, 32))
                 }
                 if (errorSelector == 0xabab8fc9) { // PaymentError()
+
 
                     // Revert with just the selector (0x20 bytes = 4 bytes selector + 28 bytes padding)
                     assembly ("memory-safe") {

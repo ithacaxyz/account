@@ -720,6 +720,75 @@ contract SimulateExecuteTest is BaseTest {
         assertEq(oc.execute{gas: t.gExecute}(abi.encode(i)), 0);
         assertEq(gasBurner.randomness(), t.randomness);
     }
+
+    function testSimulateVsActualGas() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        paymentToken.mint(d.eoa, type(uint128).max);
+
+        _SimulateExecuteTemps memory t;
+
+        gasBurner.setRandomness(1);
+
+        t.gasToBurn = _gasToBurn();
+        do {
+            t.randomness = _randomUniform();
+        } while (t.randomness == 0);
+
+        t.executionData = _executionData(
+            address(gasBurner),
+            abi.encodeWithSignature("burnGas(uint256,uint256)", t.gasToBurn, t.randomness)
+        );
+
+        Orchestrator.Intent memory i;
+        i.eoa = d.eoa;
+        i.nonce = 0;
+        i.executionData = t.executionData;
+        i.payer = address(0x00);
+        i.paymentToken = address(paymentToken);
+        i.paymentRecipient = address(0x00);
+        i.paymentAmount = 0.1 ether;
+        i.paymentMaxAmount = 0.5 ether;
+        i.combinedGas = 20_000;
+
+        {
+            (uint8 v, bytes32 r, bytes32 s) =
+                vm.sign(uint128(_randomUniform()), bytes32(_randomUniform()));
+            i.signature = abi.encodePacked(r, s, v);
+        }
+
+        vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
+
+        // Get simulated gas using multicall3 with empty preCalls (simulation automatically reverts, no state changes persist)
+        t.preCalls = new IMulticall3.Call3[](0);
+        (uint256 simulatedGas, uint256 combinedGas) = simulator.simulateMulticall3CombinedGas(
+            address(multicall3), t.preCalls, address(oc), 2, 1e11, 11_000, abi.encode(i)
+        );
+
+        // Now execute through multicall3 with the calculated combinedGas and measure actual gas
+        i.combinedGas = combinedGas;
+        i.signature = _sig(d, i);
+        t.gExecute = Math.mulDiv(combinedGas + 110_000, 64, 63);
+
+        // Build multicall3 calls array: empty preCalls + orchestrator execute call
+        IMulticall3.Call3[] memory executeCalls = new IMulticall3.Call3[](1);
+        executeCalls[0] = IMulticall3.Call3({
+            target: address(oc),
+            allowFailure: false,
+            callData: abi.encodeWithSignature("execute(bytes)", abi.encode(i))
+        });
+
+        IMulticall3.Result[] memory results = multicall3.aggregate3{gas: t.gExecute}(executeCalls);
+
+        // Check that the orchestrator call succeeded and returned 0 (no error)
+        if (results.length > 0 && results[0].success) {
+            bytes4 err = abi.decode(results[0].returnData, (bytes4));
+            assertEq(err, 0, "Execution should succeed");
+        } else {
+            revert("Multicall3 execution failed");
+        }
+
+        assertEq(gasBurner.randomness(), t.randomness);
+    }
 }
 
 // Mock Multicall3 implementation for testing
