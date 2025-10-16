@@ -425,8 +425,8 @@ contract Simulator {
                     // bytes4 values are already right-aligned, no shift needed
                     errorSelector := mload(add(errorData, 32))
                 }
-                if (errorSelector == 0xabab8fc9) { // PaymentError()
-
+                if (errorSelector == 0xabab8fc9) {
+                    // PaymentError()
 
                     // Revert with just the selector (0x20 bytes = 4 bytes selector + 28 bytes padding)
                     assembly ("memory-safe") {
