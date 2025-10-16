@@ -22,6 +22,7 @@ contract SimulateExecuteTest is BaseTest {
         uint256 gExecute;
         uint256 gCombined;
         uint256 gUsed;
+        uint256 gMulticall3;
         bytes executionData;
         bool success;
         bytes result;
@@ -377,14 +378,14 @@ contract SimulateExecuteTest is BaseTest {
 
         // If the caller does not have max balance, then the simulation should revert.
         vm.expectRevert(bytes4(keccak256("StateOverrideError()")));
-        (t.gUsed, t.gCombined) = simulator.simulateMulticall3V1Logs(
+        (t.gUsed, t.gMulticall3, t.gCombined) = simulator.simulateMulticall3V1Logs(
             address(multicall3), t.preCalls, address(oc), 0, 1, 11_000, 10_000, abi.encode(i)
         );
 
         uint256 snapshot = vm.snapshotState();
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
-        (t.gUsed, t.gCombined) = simulator.simulateMulticall3V1Logs(
+        (t.gUsed, t.gMulticall3, t.gCombined) = simulator.simulateMulticall3V1Logs(
             address(multicall3), t.preCalls, address(oc), 2, 1e11, 11_000, 0, abi.encode(i)
         );
 
@@ -504,7 +505,7 @@ contract SimulateExecuteTest is BaseTest {
         uint256 snapshot = vm.snapshotState();
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
-        (t.gUsed, t.gCombined) = simulator.simulateMulticall3V1Logs(
+        (t.gUsed, t.gMulticall3, t.gCombined) = simulator.simulateMulticall3V1Logs(
             address(multicall3), t.preCalls, address(oc), 2, 1e11, 10_800, 0, abi.encode(i)
         );
 
@@ -575,7 +576,7 @@ contract SimulateExecuteTest is BaseTest {
         uint256 snapshot = vm.snapshotState();
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
-        (t.gUsed, t.gCombined) = simulator.simulateMulticall3V1Logs(
+        (t.gUsed, t.gMulticall3, t.gCombined) = simulator.simulateMulticall3V1Logs(
             address(multicall3), t.preCalls, address(oc), 2, 1e11, 12_000, 10_000, abi.encode(i)
         );
 
@@ -633,7 +634,7 @@ contract SimulateExecuteTest is BaseTest {
         uint256 snapshot = vm.snapshotState();
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
-        (t.gUsed, t.gCombined) = simulator.simulateMulticall3V1Logs(
+        (t.gUsed, t.gMulticall3, t.gCombined) = simulator.simulateMulticall3V1Logs(
             address(multicall3), t.preCalls, address(oc), 2, 1e11, 11_000, 0, abi.encode(i)
         );
 
@@ -706,7 +707,7 @@ contract SimulateExecuteTest is BaseTest {
         uint256 snapshot = vm.snapshotState();
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
 
-        (t.gUsed, t.gCombined) = simulator.simulateMulticall3V1Logs(
+        (t.gUsed, t.gMulticall3, t.gCombined) = simulator.simulateMulticall3V1Logs(
             address(multicall3), t.preCalls, address(oc), 2, 1e11, 11_000, 0, abi.encode(i)
         );
 
@@ -760,7 +761,7 @@ contract SimulateExecuteTest is BaseTest {
 
         // Get simulated gas using multicall3 with empty preCalls (simulation automatically reverts, no state changes persist)
         t.preCalls = new IMulticall3.Call3[](0);
-        (uint256 simulatedGas, uint256 combinedGas) = simulator.simulateMulticall3CombinedGas(
+        (uint256 simulatedGas, uint256 multicall3Gas, uint256 combinedGas) = simulator.simulateMulticall3CombinedGas(
             address(multicall3), t.preCalls, address(oc), 2, 1e11, 11_000, abi.encode(i)
         );
 

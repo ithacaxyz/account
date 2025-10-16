@@ -126,24 +126,31 @@ contract Simulator {
         return _callOrchestrator(oc, isStateOverride, data);
     }
 
-    /// @dev Performs a call to Multicall3 with pre-calls followed by an orchestrator call.
+    /// @dev Performs a call to Multicall3 with calls followed by an orchestrator call.
     /// Returns the gas used parsed from the last Result in the multicall3 response.
     /// If parsing fails (gasUsed == 0), this function stores the orchestrator's error in memory
     /// so the caller can bubble it up using bubbleUpMulticall3Error.
     /// @param multicall3 The multicall3 contract address
-    /// @param preCalls Array of Call3 structs representing calls to execute before the orchestrator call
+    /// @param calls Array of Call3 structs to execute before the orchestrator call
     /// @param oc The orchestrator address
     /// @param isStateOverride Whether to use state override mode for the orchestrator call
     /// @param combinedGasOverride The combined gas override value
     /// @param u The Intent struct to pass to the orchestrator
+    /// @return gasUsed The gas used by the orchestrator call (parsed from SimulationPassed or state override result)
+    /// @return multicall3Gas The gas spent on the aggregate3 call itself
+    /// @return lastReturnData The return data from the orchestrator call
     function _callMulticall3(
         address multicall3,
-        IMulticall3.Call3[] memory preCalls,
+        IMulticall3.Call3[] memory calls,
         address oc,
         bool isStateOverride,
         uint256 combinedGasOverride,
         ICommon.Intent memory u
-    ) internal freeTempMemory returns (uint256 gasUsed, bytes memory lastReturnData) {
+    )
+        internal
+        freeTempMemory
+        returns (uint256 gasUsed, uint256 multicall3Gas, bytes memory lastReturnData)
+    {
         // Build the orchestrator call data
         bytes memory orchestratorData = abi.encodeWithSignature(
             "simulateExecute(bool,uint256,bytes)",
@@ -152,25 +159,27 @@ contract Simulator {
             abi.encode(u)
         );
 
-        // Construct the full Call3[] array: preCalls + orchestrator call
-        IMulticall3.Call3[] memory calls = new IMulticall3.Call3[](preCalls.length + 1);
-        for (uint256 i = 0; i < preCalls.length; i++) {
-            calls[i] = preCalls[i];
+        // Construct the full Call3[] array: calls + orchestrator call
+        IMulticall3.Call3[] memory allCalls = new IMulticall3.Call3[](calls.length + 1);
+        for (uint256 i = 0; i < calls.length; i++) {
+            allCalls[i] = calls[i];
         }
         // Last call is to the orchestrator
-        calls[preCalls.length] =
+        allCalls[calls.length] =
             IMulticall3.Call3({target: oc, allowFailure: true, callData: orchestratorData});
 
-        // Call multicall3.aggregate3
-        IMulticall3.Result[] memory results = IMulticall3(multicall3).aggregate3(calls);
+        // Measure gas before and after aggregate3 call
+        uint256 gasBefore = gasleft();
+        IMulticall3.Result[] memory results = IMulticall3(multicall3).aggregate3(allCalls);
+        multicall3Gas = gasBefore - gasleft();
 
         // Get the last result (orchestrator call result)
-        // Check all preCalls for failures (all results except the last one, which is the orchestrator call)
+        // Check all calls for failures (all results except the last one, which is the orchestrator call)
         if (results.length > 1) {
             for (uint256 i = 0; i < results.length - 1; i++) {
-                // If any pre-call failed, we return gasUsed = 0 and the error data from that call
+                // If any call failed, we return gasUsed = 0, multicall3Gas, and the error data from that call
                 if (!results[i].success) {
-                    return (0, results[i].returnData);
+                    return (0, 0, results[i].returnData);
                 }
             }
         }
@@ -348,12 +357,12 @@ contract Simulator {
         }
     }
 
-    /// @dev Simulates the execution of an intent through Multicall3, with pre-calls executed before the orchestrator call.
+    /// @dev Simulates the execution of an intent through Multicall3, with calls executed before the orchestrator call.
     /// Finds the combined gas by iteratively increasing it until the simulation passes.
     /// The start value for combinedGas is gasUsed + original combinedGas.
     /// Set u.combinedGas to add some starting offset to the gasUsed value.
     /// @param multicall3 The multicall3 contract address
-    /// @param preCalls Array of Call3 structs representing calls to execute before the orchestrator call
+    /// @param calls Array of Call3 structs to execute before the orchestrator call
     /// @param oc The orchestrator address
     /// @param paymentPerGasPrecision The precision of the payment per gas value.
     /// paymentAmount = gas * paymentPerGas / (10 ** paymentPerGasPrecision)
@@ -366,19 +375,20 @@ contract Simulator {
     /// If the increment is too small, the function might run out of gas while finding the combined gas value.
     /// @param encodedIntent The encoded user operation
     /// @return gasUsed The gas used in the successful simulation
+    /// @return multicall3Gas The gas spent on the aggregate3 call
     /// @return combinedGas The first combined gas value that gives a successful simulation.
     /// This function reverts if the primary simulation run with max combinedGas fails.
     /// If the primary run is successful, it iteratively increases u.combinedGas by `combinedGasIncrement` until the simulation passes.
     /// All failing simulations during this run are ignored.
     function simulateMulticall3CombinedGas(
         address multicall3,
-        IMulticall3.Call3[] memory preCalls,
+        IMulticall3.Call3[] memory calls,
         address oc,
         uint8 paymentPerGasPrecision,
         uint256 paymentPerGas,
         uint256 combinedGasIncrement,
         bytes calldata encodedIntent
-    ) public payable virtual returns (uint256 gasUsed, uint256 combinedGas) {
+    ) public payable virtual returns (uint256 gasUsed, uint256 multicall3Gas, uint256 combinedGas) {
         // Decode the intent first
         ICommon.Intent memory u = abi.decode(encodedIntent, (ICommon.Intent));
 
@@ -386,8 +396,8 @@ contract Simulator {
 
         // 1. Primary Simulation Run to get initial gasUsed value with combinedGasOverride
 
-        (gasUsed, errorData) =
-            _callMulticall3(multicall3, preCalls, oc, false, type(uint256).max, u);
+        (gasUsed, multicall3Gas, errorData) =
+            _callMulticall3(multicall3, calls, oc, false, type(uint256).max, u);
 
         // If the simulation failed, bubble up the orchestrator's error.
         if (gasUsed == 0) {
@@ -399,7 +409,8 @@ contract Simulator {
         _updatePaymentAmounts(u, u.combinedGas, paymentPerGasPrecision, paymentPerGas);
 
         while (true) {
-            (gasUsed, errorData) = _callMulticall3(multicall3, preCalls, oc, false, 0, u);
+            (gasUsed, multicall3Gas, errorData) =
+                _callMulticall3(multicall3, calls, oc, false, 0, u);
 
             // If the simulation failed, check if it's a PaymentError and bubble it up.
             // PaymentError is given special treatment here, as it comes from
@@ -426,7 +437,7 @@ contract Simulator {
             }
 
             if (gasUsed != 0) {
-                return (gasUsed, u.combinedGas);
+                return (gasUsed, multicall3Gas, u.combinedGas);
             }
 
             uint256 gasIncrement = Math.mulDiv(u.combinedGas, combinedGasIncrement, 10_000);
@@ -442,7 +453,7 @@ contract Simulator {
     /// that generates a successful non reverting state override simulation.
     /// Which can be used in eth_simulateV1 to get the trace.
     /// @param multicall3 The multicall3 contract address
-    /// @param preCalls Array of Call3 structs representing calls to execute before the orchestrator call
+    /// @param calls Array of Call3 structs to execute before the orchestrator call
     /// @param oc The orchestrator address
     /// @param paymentPerGasPrecision The precision of the payment per gas value.
     /// paymentAmount = gas * paymentPerGas / (10 ** paymentPerGasPrecision)
@@ -452,20 +463,21 @@ contract Simulator {
     /// This can be used to account for variations in sig verification gas, for keytypes like P256.
     /// @param encodedIntent The encoded user operation
     /// @return gasUsed The gas used in the successful simulation
+    /// @return multicall3Gas The gas spent on the aggregate3 call
     /// @return combinedGas The combined gas value including the verification offset
     function simulateMulticall3V1Logs(
         address multicall3,
-        IMulticall3.Call3[] memory preCalls,
+        IMulticall3.Call3[] memory calls,
         address oc,
         uint8 paymentPerGasPrecision,
         uint256 paymentPerGas,
         uint256 combinedGasIncrement,
         uint256 combinedGasVerificationOffset,
         bytes calldata encodedIntent
-    ) public payable virtual returns (uint256 gasUsed, uint256 combinedGas) {
-        (gasUsed, combinedGas) = simulateMulticall3CombinedGas(
+    ) public payable virtual returns (uint256 gasUsed, uint256 multicall3Gas, uint256 combinedGas) {
+        (gasUsed, multicall3Gas, combinedGas) = simulateMulticall3CombinedGas(
             multicall3,
-            preCalls,
+            calls,
             oc,
             paymentPerGasPrecision,
             paymentPerGas,
@@ -484,7 +496,7 @@ contract Simulator {
         bytes memory errorData;
 
         // Verification Run to generate the logs with the correct combinedGas and payment amounts.
-        (gasUsed, errorData) = _callMulticall3(multicall3, preCalls, oc, true, 0, u);
+        (gasUsed, multicall3Gas, errorData) = _callMulticall3(multicall3, calls, oc, true, 0, u);
 
         // If the simulation failed, bubble up the orchestrator's error
         if (gasUsed == 0) {
