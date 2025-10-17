@@ -102,7 +102,15 @@ contract LayerZeroSettler is OApp, ISettler, EIP712 {
         }
     }
 
-    function _getPeerOrRevert(uint32 /* _eid */) internal view virtual override returns (bytes32) {
+    function _getPeerOrRevert(
+        uint32 /* _eid */
+    )
+        internal
+        view
+        virtual
+        override
+        returns (bytes32)
+    {
         // The peer address for all chains is automatically set to `address(this)`
         return bytes32(uint256(uint160(address(this))));
     }
