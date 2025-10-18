@@ -87,7 +87,7 @@ abstract contract GuardedExecutor is ERC7821 {
     error CannotSelfExecute();
 
     /// @dev Unauthorized to perform the action.
-    error Unauthorized();
+    error UnauthorizedOnlySelf();
 
     /// @dev Not authorized to perform the call.
     error UnauthorizedCall(bytes32 keyHash, address target, bytes data);
@@ -680,7 +680,7 @@ abstract contract GuardedExecutor is ERC7821 {
 
     /// @dev Guards a function such that it can only be called by `address(this)`.
     modifier onlyThis() virtual {
-        if (msg.sender != address(this)) revert Unauthorized();
+        if (msg.sender != address(this)) revert UnauthorizedOnlySelf();
         _;
     }
 
