@@ -11,7 +11,7 @@ import {IOrchestrator} from "../../../src/interfaces/IOrchestrator.sol";
 
 contract MockPayerWithSignature is Ownable {
     /// @dev Unauthorized orchestrator in pay function.
-    error UnauthorizedOrchestrator();
+    error UnapprovedOrchestrator();
 
     error InvalidSignature();
     /// @dev The paymaster nonce has already been used.
@@ -67,7 +67,7 @@ contract MockPayerWithSignature is Ownable {
         bytes32 digest,
         bytes calldata encodedIntent
     ) public virtual {
-        if (!isApprovedOrchestrator[msg.sender]) revert UnauthorizedOrchestrator();
+        if (!isApprovedOrchestrator[msg.sender]) revert UnapprovedOrchestrator();
 
         // Check and set nonce to prevent replay attacks
         if (paymasterNonces[digest]) {

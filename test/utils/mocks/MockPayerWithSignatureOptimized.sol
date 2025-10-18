@@ -11,7 +11,7 @@ import {IOrchestrator} from "../../../src/interfaces/IOrchestrator.sol";
 
 contract MockPayerWithSignatureOptimized is Ownable {
     /// @dev Unauthorized orchestrator in pay function.
-    error UnauthorizedOrchestrator();
+    error UnapprovedOrchestrator();
 
     error InvalidSignature();
 
@@ -59,7 +59,7 @@ contract MockPayerWithSignatureOptimized is Ownable {
         bytes32 digest,
         bytes calldata encodedIntent
     ) public virtual {
-        if (msg.sender != APPROVED_ORCHESTRATOR) revert UnauthorizedOrchestrator();
+        if (msg.sender != APPROVED_ORCHESTRATOR) revert UnapprovedOrchestrator();
 
         ICommon.Intent calldata u;
         assembly {

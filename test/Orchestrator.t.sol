@@ -1069,7 +1069,7 @@ contract OrchestratorTest is BaseTest {
             t.withSignature.setApprovedOrchestrator(address(oc), false);
         }
         if ((t.unapprovedOrchestrator && u.paymentAmount != 0)) {
-            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("UnauthorizedOrchestrator()")));
+            assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("UnapprovedOrchestrator()")));
 
             if (u.paymentAmount != 0) {
                 assertEq(t.d.d.getNonce(0), u.nonce);
