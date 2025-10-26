@@ -68,6 +68,123 @@ contract AccountTest is BaseTest {
         }
     }
 
+    struct _TestExecuteWithCalldataOptimalTemps {
+        TargetFunctionPayload[] targetFunctionPayloads;
+        bytes[] datas;
+        address to;
+        uint256 n;
+        uint256 nonce;
+        bytes opData;
+        bytes executionData;
+    }
+
+    function testExecuteWithCalldataOptimal(bytes32) public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+
+        _TestExecuteWithCalldataOptimalTemps memory t;
+        t.n = _bound(_randomUniform(), 1, 5);
+        t.targetFunctionPayloads = new TargetFunctionPayload[](t.n);
+        t.datas = new bytes[](t.n);
+        t.to = address(this);
+
+        for (uint256 i; i < t.n; ++i) {
+            bytes memory data = _truncateBytes(_randomBytes(), 0xff);
+            t.datas[i] = abi.encodeWithSignature("targetFunction(bytes)", data);
+            t.targetFunctionPayloads[i].value = 0; // value is always 0 in hyperoptimized mode
+            t.targetFunctionPayloads[i].data = data;
+        }
+
+        t.nonce = d.d.getNonce(0);
+        bytes memory signature = _sig(d, d.d.computeDigest(t.datas, t.to, t.nonce));
+        t.opData = abi.encodePacked(t.nonce, signature);
+        t.executionData = abi.encode(t.to, t.datas, t.opData);
+
+        // Negative test: wrong signature (32/256 chance)
+        if (_randomChance(32)) {
+            bytes memory wrongSignature =
+                _sig(_randomEIP7702DelegatedEOA(), d.d.computeDigest(t.datas, t.to, t.nonce));
+            t.opData = abi.encodePacked(t.nonce, wrongSignature);
+            t.executionData = abi.encode(t.to, t.datas, t.opData);
+            vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+            d.d.execute(_ERC7821_BATCH_CALLDATA_OPTIMAL_EXECUTION_MODE, t.executionData);
+            return;
+        }
+
+        d.d.execute(_ERC7821_BATCH_CALLDATA_OPTIMAL_EXECUTION_MODE, t.executionData);
+
+        assertEq(targetFunctionPayloads.length, t.n);
+        for (uint256 i; i < t.n; ++i) {
+            assertEq(targetFunctionPayloads[i].by, d.eoa);
+            assertEq(targetFunctionPayloads[i].value, t.targetFunctionPayloads[i].value);
+            assertEq(targetFunctionPayloads[i].data, t.targetFunctionPayloads[i].data);
+        }
+    }
+
+    function testExecuteWithCalldataOptimalWrongNonce() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+
+        _TestExecuteWithCalldataOptimalTemps memory t;
+        t.n = 1;
+        t.targetFunctionPayloads = new TargetFunctionPayload[](t.n);
+        t.datas = new bytes[](t.n);
+        t.to = address(this);
+
+        t.datas[0] = abi.encodeWithSignature("targetFunction(bytes)", "test");
+
+        t.nonce = d.d.getNonce(0);
+        uint256 wrongNonce = t.nonce + 1;
+        bytes memory signature = _sig(d, d.d.computeDigest(t.datas, t.to, wrongNonce));
+        t.opData = abi.encodePacked(wrongNonce, signature);
+        t.executionData = abi.encode(t.to, t.datas, t.opData);
+
+        vm.expectRevert(); // Should revert due to invalid nonce
+        d.d.execute(_ERC7821_BATCH_CALLDATA_OPTIMAL_EXECUTION_MODE, t.executionData);
+    }
+
+    function testExecuteWithCalldataOptimalWrongDigest() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+
+        _TestExecuteWithCalldataOptimalTemps memory t;
+        t.n = 1;
+        t.targetFunctionPayloads = new TargetFunctionPayload[](t.n);
+        t.datas = new bytes[](t.n);
+        t.to = address(this);
+
+        t.datas[0] = abi.encodeWithSignature("targetFunction(bytes)", "test");
+
+        t.nonce = d.d.getNonce(0);
+        // Sign with wrong to address
+        address wrongTo = address(0x123);
+        bytes memory signature = _sig(d, d.d.computeDigest(t.datas, wrongTo, t.nonce));
+        t.opData = abi.encodePacked(t.nonce, signature);
+        t.executionData = abi.encode(t.to, t.datas, t.opData);
+
+        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        d.d.execute(_ERC7821_BATCH_CALLDATA_OPTIMAL_EXECUTION_MODE, t.executionData);
+    }
+
+    function testExecuteWithCalldataOptimalInvalidOpData() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+
+        _TestExecuteWithCalldataOptimalTemps memory t;
+        t.n = 1;
+        t.datas = new bytes[](t.n);
+        t.to = address(this);
+
+        t.datas[0] = abi.encodeWithSignature("targetFunction(bytes)", "test");
+
+        // Test with opData too short (less than 32 bytes for nonce)
+        t.opData = hex"1234"; // Only 2 bytes
+        t.executionData = abi.encode(t.to, t.datas, t.opData);
+
+        vm.expectRevert(bytes4(keccak256("OpDataError()")));
+        d.d.execute(_ERC7821_BATCH_CALLDATA_OPTIMAL_EXECUTION_MODE, t.executionData);
+    }
+
     function testSignatureCheckerApproval(bytes32) public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256k1PassKey();
@@ -353,5 +470,38 @@ contract AccountTest is BaseTest {
         // Verify keys were added on chain 137
         uint256 keysCount137 = IthacaAccount(eoaAddress).keyCount();
         assertEq(keysCount137, 2, "Keys should be added on chain 137");
+    }
+
+    function testCalldataOptimalZeroAddressReplacement() public {
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, 100 ether);
+
+        // Test that address(0) gets replaced with address(this) by comparing digest computation
+        // First, create datas with explicit address(this)
+        bytes[] memory datas = new bytes[](1);
+        datas[0] = "";
+
+        uint256 nonce = d.d.getNonce(0);
+
+        // Compute digest with explicit address(this)
+        bytes32 digestExplicit = d.d.computeDigest(datas, address(d.d), nonce);
+
+        // Compute digest with address(0) - should be the same due to replacement
+        bytes32 digestZero = d.d.computeDigest(datas, address(0), nonce);
+
+        // If address(0) replacement is working, these digests should be identical
+        assertEq(
+            digestExplicit,
+            digestZero,
+            "Digest with address(0) should equal digest with address(this)"
+        );
+
+        // Additionally, test that the execution works
+        bytes memory signature = _sig(d, digestZero);
+        bytes memory opData = abi.encodePacked(nonce, signature);
+        bytes memory executionData = abi.encode(address(0), datas, opData);
+
+        // This should succeed without reverting (proving the replacement works in execution too)
+        d.d.execute(_ERC7821_BATCH_CALLDATA_OPTIMAL_EXECUTION_MODE, executionData);
     }
 }
