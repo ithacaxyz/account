@@ -706,7 +706,10 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         );
         if (!isValid) revert Unauthorized();
 
-        // TODO: Figure out where else to add these operations, after removing delegate call.
+        // Note: KeyHash stack operations are only needed in paths 1 and 3.
+        // Path 2 (lines 692-696) uses EOA key (bytes32(0)) for self-calls,
+        // and empty stack correctly returns bytes32(0) via getContextKeyHash().
+        // This avoids redundant push/pop for EOA key context.
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).push(keyHash);
         _execute(calls, keyHash);
         LibTStack.TStack(_KEYHASH_STACK_TRANSIENT_SLOT).pop();
