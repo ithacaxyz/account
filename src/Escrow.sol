@@ -41,6 +41,7 @@ contract Escrow is IEscrow {
 
     /// @notice Thrown when the settler contract rejects the settlement
     error SettlementInvalid();
+
     ////////////////////////////////////////////////////////////////////////
     // EIP-5267 Support
     ////////////////////////////////////////////////////////////////////////
@@ -234,9 +235,8 @@ contract Escrow is IEscrow {
         statuses[escrowId] = EscrowStatus.FINALIZED;
 
         // Check with the settler if the message has been sent from the correct sender and chainId.
-        bool isSettled = ISettler(_escrow.settler).read(
-            _escrow.settlementId, _escrow.sender, _escrow.senderChainId
-        );
+        bool isSettled = ISettler(_escrow.settler)
+            .read(_escrow.settlementId, _escrow.sender, _escrow.senderChainId);
 
         if (!isSettled) {
             revert SettlementInvalid();

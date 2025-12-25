@@ -375,8 +375,15 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
                 // If the self call is successful, we know that the payment has been made,
                 // and the sequence for `nonce` has been incremented.
                 // For more information, see `selfCallPayVerifyCall537021665()`.
-                selfCallSuccess :=
-                    call(g, address(), 0, add(m, 0x1c), add(encodedIntent.length, 0x24), 0x00, 0x20)
+                selfCallSuccess := call(
+                    g,
+                    address(),
+                    0,
+                    add(m, 0x1c),
+                    add(encodedIntent.length, 0x24),
+                    0x00,
+                    0x20
+                )
                 err := mload(0x00) // The self call will do another self call to execute.
 
                 if iszero(selfCallSuccess) {

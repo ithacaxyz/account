@@ -275,8 +275,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
 
         (bool isValid, bytes32 keyHash) = unwrapAndValidateSignature(digest, signature);
         if (LibBit.and(keyHash != 0, isValid)) {
-            isValid =
-                _isSuperAdmin(keyHash) || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
+            isValid = _isSuperAdmin(keyHash)
+                || _getKeyExtraStorage(keyHash).checkers.contains(msg.sender);
         }
         // `bytes4(keccak256("isValidSignature(bytes32,bytes)")) = 0x1626ba7e`.
         // We use `0xffffffff` for invalid, in convention with the reference implementation.
@@ -400,12 +400,7 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
     }
 
     /// @dev Returns arrays of all (non-expired) authorized keys and their hashes.
-    function getKeys()
-        public
-        view
-        virtual
-        returns (Key[] memory keys, bytes32[] memory keyHashes)
-    {
+    function getKeys() public view virtual returns (Key[] memory keys, bytes32[] memory keyHashes) {
         uint256 totalCount = keyCount();
 
         keys = new Key[](totalCount);
@@ -619,9 +614,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         // `keccak256(abi.encode(key.keyType, keccak256(key.publicKey)))`.
         keyHash = hash(key);
         AccountStorage storage $ = _getAccountStorage();
-        $.keyStorage[keyHash].set(
-            abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin)
-        );
+        $.keyStorage[keyHash]
+        .set(abi.encodePacked(key.publicKey, key.expiry, key.keyType, key.isSuperAdmin));
         $.keyHashes.add(keyHash);
     }
 
@@ -669,12 +663,10 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
             if or(shr(64, t), lt(encodedIntent.length, 0x20)) { revert(0x00, 0x00) }
         }
 
-        if (
-            !LibBit.and(
+        if (!LibBit.and(
                 msg.sender == ORCHESTRATOR,
                 LibBit.or(intent.eoa == address(this), intent.payer == address(this))
-            )
-        ) {
+            )) {
             revert Unauthorized();
         }
 

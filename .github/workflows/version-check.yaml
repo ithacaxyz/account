@@ -57,31 +57,22 @@ jobs:
       - name: Bump version if needed
         if: steps.check.outputs.needs_version_bump == 'true'
         run: |
-          # Configure git
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          
           # Get the contracts that need bumping
           CONTRACTS_TO_BUMP="${{ steps.check.outputs.contracts_to_bump }}"
-          
+
           echo "Bumping versions for contracts: $CONTRACTS_TO_BUMP"
-          
+
           # Update Solidity files using the upgrade script with specific contracts
           CONTRACTS_TO_BUMP="$CONTRACTS_TO_BUMP" node prep/update-version.js
-          
-          # Commit changes (only Solidity files, not package.json)
-          git add src/*.sol
-          git commit -m "chore: bump contract versions due to bytecode changes - Contracts updated: $CONTRACTS_TO_BUMP" --no-verify
-          
-          # Pull latest changes and rebase
-          # Pull latest changes and rebase
-          if ! git pull origin ${{ github.event.pull_request.head.ref }} --rebase; then
-            echo "Failed to rebase version bump changes. Manual intervention required."
-            exit 1
-          fi
-          
-          # Push to the PR branch
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
+      - name: Commit version bump changes
+        if: steps.check.outputs.needs_version_bump == 'true'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: bump contract versions due to bytecode changes - Contracts updated: ${{ steps.check.outputs.contracts_to_bump }}"
+          file_pattern: "src/*.sol"
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
       
       - name: Create PR comment
         if: steps.check.outputs.needs_version_bump == 'true'

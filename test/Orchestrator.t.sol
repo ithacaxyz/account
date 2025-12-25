@@ -1482,7 +1482,9 @@ contract OrchestratorTest is BaseTest {
             calls[0] = ERC7821.Call({
                 to: address(t.usdcBase),
                 value: 0,
-                data: abi.encodeWithSignature("approve(address,uint256)", address(t.escrowBase), 600)
+                data: abi.encodeWithSignature(
+                    "approve(address,uint256)", address(t.escrowBase), 600
+                )
             });
             // Then call escrow function
             calls[1] = ERC7821.Call({

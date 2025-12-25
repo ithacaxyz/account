@@ -1,14 +1,9 @@
 {
   "name": "ithaca-account",
-  "version": "0.5.5",
+  "version": "0.5.7",
   "description": "EIP-7702 account for Ithaca Porto",
   "license": "MIT",
   "scripts": {
-    "snapshot:main": "git fetch origin main && git worktree prune &&rm -rf .snapshot_worktree && git worktree add .snapshot_worktree origin/main && (cd .snapshot_worktree && forge snapshot --match-contract Benchmark --snap .temp-snapshot) && cp .snapshot_worktree/.temp-snapshot gas-snapshots/.gas-snapshot-main && git worktree remove --force .snapshot_worktree && git worktree prune",
-    "diff:main": "forge snapshot --match-contract Benchmark --diff gas-snapshots/.gas-snapshot-main",
-    "prepare": "husky"
-  },
-  "devDependencies": {
-    "husky": "^9.1.7"
+    "tests": "forge test --no-match-contract UpgradeTests"
   }
 }

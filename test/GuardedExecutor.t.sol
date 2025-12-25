@@ -118,9 +118,10 @@ contract GuardedExecutorTest is BaseTest {
         // and moved via `transferFrom`.
 
         vm.startPrank(d.eoa);
-        d.d.setSpendLimit(
-            k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether
-        );
+        d.d
+            .setSpendLimit(
+                k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether
+            );
         vm.stopPrank();
 
         u.nonce = d.d.getNonce(0);
@@ -265,9 +266,10 @@ contract GuardedExecutorTest is BaseTest {
         assertEq(oc.execute(abi.encode(u)), bytes4(keccak256("NoSpendPermissions()")));
 
         vm.startPrank(d.eoa);
-        d.d.setSpendLimit(
-            k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether
-        );
+        d.d
+            .setSpendLimit(
+                k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Day, 1 ether
+            );
         vm.stopPrank();
 
         u.nonce = d.d.getNonce(0);
@@ -548,12 +550,10 @@ contract GuardedExecutorTest is BaseTest {
 
             // If first 4bytes are 0xdfc924d5, then it's "anotherTransfer" call, and the spend limit will not catch it.
             if (
-                (
-                    calls[0].data[0] == bytes1(uint8(0xdf))
+                (calls[0].data[0] == bytes1(uint8(0xdf))
                         && calls[0].data[1] == bytes1(uint8(0xc9))
                         && calls[0].data[2] == bytes1(uint8(0x24))
-                        && calls[0].data[3] == bytes1(uint8(0xd5))
-                ) || amount == 0
+                        && calls[0].data[3] == bytes1(uint8(0xd5))) || amount == 0
             ) {
                 assertEq(oc.execute(abi.encode(u)), 0);
             } else {
@@ -805,9 +805,7 @@ contract GuardedExecutorTest is BaseTest {
         _testSpendWithPassKeyViaOrchestrator(_randomSecp256k1PassKey(), address(0));
     }
 
-    function _testSpendWithPassKeyViaOrchestrator(PassKey memory k, address tokenToSpend)
-        internal
-    {
+    function _testSpendWithPassKeyViaOrchestrator(PassKey memory k, address tokenToSpend) internal {
         Orchestrator.Intent memory u;
         GuardedExecutor.SpendInfo memory info;
 

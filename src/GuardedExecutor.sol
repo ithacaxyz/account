@@ -354,7 +354,9 @@ abstract contract GuardedExecutor is ERC7821 {
         virtual
         override
     {
-        if (!canExecute(keyHash, target, data)) revert UnauthorizedCall(keyHash, target, data);
+        if (!canExecute(keyHash, target, data)) {
+            revert UnauthorizedCall(keyHash, target, data);
+        }
         ERC7821._execute(target, value, data, keyHash);
     }
 
@@ -382,9 +384,8 @@ abstract contract GuardedExecutor is ERC7821 {
         if (_isSelfExecute(target, fnSel)) revert CannotSelfExecute();
 
         // Impose a max capacity of 2048 for set enumeration, which should be more than enough.
-        _getGuardedExecutorKeyStorage(keyHash).canExecute.update(
-            _packCanExecute(target, fnSel), can, 2048
-        );
+        _getGuardedExecutorKeyStorage(keyHash).canExecute
+            .update(_packCanExecute(target, fnSel), can, 2048);
         emit CanExecuteSet(keyHash, target, fnSel, can);
     }
 
@@ -407,7 +408,7 @@ abstract contract GuardedExecutor is ERC7821 {
         // check it in `canExecute` before any custom call checker.
 
         EnumerableMapLib.AddressToAddressMap storage checkers =
-            _getGuardedExecutorKeyStorage(keyHash).callCheckers;
+        _getGuardedExecutorKeyStorage(keyHash).callCheckers;
 
         // Impose a max capacity of 2048 for map enumeration, which should be more than enough.
         checkers.update(target, checker, checker != address(0), 2048);
@@ -516,12 +517,7 @@ abstract contract GuardedExecutor is ERC7821 {
     /// @dev Returns an array of packed (`target`, `fnSel`) that `keyHash` is authorized to execute on.
     /// - `target` is in the upper 20 bytes.
     /// - `fnSel` is in the lower 4 bytes.
-    function canExecutePackedInfos(bytes32 keyHash)
-        public
-        view
-        virtual
-        returns (bytes32[] memory)
-    {
+    function canExecutePackedInfos(bytes32 keyHash) public view virtual returns (bytes32[] memory) {
         return _getGuardedExecutorKeyStorage(keyHash).canExecute.values();
     }
 
@@ -565,7 +561,7 @@ abstract contract GuardedExecutor is ERC7821 {
         returns (CallCheckerInfo[] memory results)
     {
         EnumerableMapLib.AddressToAddressMap storage checkers =
-            _getGuardedExecutorKeyStorage(keyHash).callCheckers;
+        _getGuardedExecutorKeyStorage(keyHash).callCheckers;
         results = new CallCheckerInfo[](checkers.length());
         for (uint256 i; i < results.length; ++i) {
             (results[i].target, results[i].checker) = checkers.at(i);
@@ -595,9 +591,13 @@ abstract contract GuardedExecutor is ERC7821 {
         pure
         returns (uint256)
     {
-        if (period == SpendPeriod.Minute) return Math.rawMul(Math.rawDiv(unixTimestamp, 60), 60);
+        if (period == SpendPeriod.Minute) {
+            return Math.rawMul(Math.rawDiv(unixTimestamp, 60), 60);
+        }
         if (period == SpendPeriod.Hour) return Math.rawMul(Math.rawDiv(unixTimestamp, 3600), 3600);
-        if (period == SpendPeriod.Day) return Math.rawMul(Math.rawDiv(unixTimestamp, 86400), 86400);
+        if (period == SpendPeriod.Day) {
+            return Math.rawMul(Math.rawDiv(unixTimestamp, 86400), 86400);
+        }
         if (period == SpendPeriod.Week) return DateTimeLib.mondayTimestamp(unixTimestamp);
         (uint256 year, uint256 month,) = DateTimeLib.timestampToDate(unixTimestamp);
         // Note: DateTimeLib's months and month-days start from 1.

@@ -14,10 +14,12 @@ import {
     ILayerZeroEndpointV2
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {
-    ISendLib, Packet
+    ISendLib,
+    Packet
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ISendLib.sol";
-import {ILayerZeroReceiver} from
-    "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
+import {
+    ILayerZeroReceiver
+} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {Errors} from "@layerzerolabs/lz-evm-protocol-v2/contracts/libs/Errors.sol";
 import {GUID} from "@layerzerolabs/lz-evm-protocol-v2/contracts/libs/GUID.sol";
 import {Transfer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/libs/Transfer.sol";
@@ -106,7 +108,9 @@ contract EndpointV2Mock is
         sendContext(_params.dstEid, msg.sender)
         returns (MessagingReceipt memory)
     {
-        if (_params.payInLzToken && lzToken == address(0x0)) revert Errors.LZ_LzTokenUnavailable();
+        if (_params.payInLzToken && lzToken == address(0x0)) {
+            revert Errors.LZ_LzTokenUnavailable();
+        }
 
         // send message
         (MessagingReceipt memory receipt, address _sendLibrary) = _send(msg.sender, _params);
@@ -173,7 +177,9 @@ contract EndpointV2Mock is
         }
 
         uint64 lazyNonce = lazyInboundNonce[_receiver][_origin.srcEid][_origin.sender];
-        if (!_initializable(_origin, _receiver, lazyNonce)) revert Errors.LZ_PathNotInitializable();
+        if (!_initializable(_origin, _receiver, lazyNonce)) {
+            revert Errors.LZ_PathNotInitializable();
+        }
         if (!_verifiable(_origin, _receiver, lazyNonce)) revert Errors.LZ_PathNotVerifiable();
 
         // insert the message into the message channel
@@ -205,9 +211,8 @@ contract EndpointV2Mock is
             _origin.nonce,
             abi.encodePacked(_guid, _message)
         );
-        ILayerZeroReceiver(_receiver).lzReceive{value: msg.value}(
-            _origin, _guid, _message, msg.sender, _extraData
-        );
+        ILayerZeroReceiver(_receiver)
+        .lzReceive{value: msg.value}(_origin, _guid, _message, msg.sender, _extraData);
         emit PacketDelivered(_origin, _receiver);
     }
 
@@ -387,7 +392,9 @@ contract EndpointV2Mock is
         view
         override(MessagingChannel, MessageLibManager)
     {
-        if (msg.sender != _oapp && msg.sender != delegates[_oapp]) revert Errors.LZ_Unauthorized();
+        if (msg.sender != _oapp && msg.sender != delegates[_oapp]) {
+            revert Errors.LZ_Unauthorized();
+        }
     }
 
     // ========================= VIEW FUNCTIONS FOR OFFCHAIN ONLY =========================
