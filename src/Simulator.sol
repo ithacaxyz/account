@@ -320,7 +320,7 @@ contract Simulator {
     /// @dev Same as simulateCombinedGas, but with an additional verification run
     /// that generates a successful non reverting state override simulation.
     /// Which can be used in eth_simulateV1 to get the trace.\
-    /// @param combinedGasVerificationOffset is a static value that is added after a succesful combinedGas is found.
+    /// @param combinedGasVerificationOffset is a static value that is added after a successful combinedGas is found.
     /// This can be used to account for variations in sig verification gas, for keytypes like P256.
     /// @param paymentPerGasPrecision The precision of the payment per gas value.
     /// paymentAmount = gas * paymentPerGas / (10 ** paymentPerGasPrecision)
