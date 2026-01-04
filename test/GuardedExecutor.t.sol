@@ -153,7 +153,7 @@ contract GuardedExecutorTest is BaseTest {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         PassKey memory k = _randomSecp256r1PassKey();
 
-        vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+        vm.expectRevert(bytes4(keccak256("UnauthorizedOnlySelf()")));
         d.d.setCanExecute(k.keyHash, target, fnSel, true);
 
         vm.startPrank(d.eoa);
@@ -314,7 +314,7 @@ contract GuardedExecutorTest is BaseTest {
                 ERC7821.execute.selector, _ERC7821_BATCH_EXECUTION_MODE, abi.encode(innerCalls)
             );
 
-            vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+            vm.expectRevert(bytes4(keccak256("UnauthorizedSender()")));
             d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, abi.encode(calls));
 
             vm.prank(d.eoa);

@@ -16,6 +16,9 @@ contract MockPayerWithState is Ownable {
     /// @dev Nonce management when acting as paymaster.
     mapping(bytes32 => bool) public paymasterNonces;
 
+    /// @dev Unauthorized orchestrator in pay function.
+    error UnapprovedOrchestrator();
+
     /// @dev The paymaster nonce has already been used.
     error PaymasterNonceError();
 
@@ -67,7 +70,7 @@ contract MockPayerWithState is Ownable {
         bytes32 digest,
         bytes calldata encodedIntent
     ) public virtual {
-        if (!isApprovedOrchestrator[msg.sender]) revert Unauthorized();
+        if (!isApprovedOrchestrator[msg.sender]) revert UnapprovedOrchestrator();
 
         // Check and set nonce to prevent replay attacks
         if (paymasterNonces[digest]) {
