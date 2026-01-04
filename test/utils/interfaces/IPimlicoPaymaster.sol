@@ -2,6 +2,7 @@
 pragma solidity ^0.8.4;
 
 import "./IERC4337EntryPoint.sol";
+import {PackedUserOperation as PackedUserOperationV8} from "test/utils/interfaces/IERC4337EntryPointV8.sol";
 
 interface IPimlicoPaymaster {
     function tokenOracle() external view returns (address);
@@ -67,7 +68,68 @@ library PimlicoHelpers {
         }
     }
 
+    function getHashV8(uint8 _mode, PackedUserOperationV8 calldata _userOp)
+        public
+        view
+        returns (bytes32)
+    {
+        if (_mode == VERIFYING_MODE) {
+            return _getHashV8(
+                _userOp, MODE_AND_ALLOW_ALL_BUNDLERS_LENGTH + VERIFYING_PAYMASTER_DATA_LENGTH
+            );
+        } else {
+            uint8 paymasterDataLength =
+                MODE_AND_ALLOW_ALL_BUNDLERS_LENGTH + ERC20_PAYMASTER_DATA_LENGTH;
+
+            uint8 combinedByte = uint8(
+                _userOp.paymasterAndData[PAYMASTER_DATA_OFFSET + MODE_AND_ALLOW_ALL_BUNDLERS_LENGTH]
+            );
+            // constantFeePresent is in the *lowest* bit
+            bool constantFeePresent = (combinedByte & 0x01) != 0;
+            // recipientPresent is in the second lowest bit
+            bool recipientPresent = (combinedByte & 0x02) != 0;
+            // preFundPresent is in the third lowest bit
+            bool preFundPresent = (combinedByte & 0x04) != 0;
+
+            if (preFundPresent) {
+                paymasterDataLength += 16;
+            }
+
+            if (constantFeePresent) {
+                paymasterDataLength += 16;
+            }
+
+            if (recipientPresent) {
+                paymasterDataLength += 20;
+            }
+
+            return _getHashV8(_userOp, paymasterDataLength);
+        }
+    }
+
     function _getHashV7(PackedUserOperation calldata _userOp, uint256 paymasterDataLength)
+        internal
+        view
+        returns (bytes32)
+    {
+        bytes32 userOpHash = keccak256(
+            abi.encode(
+                _userOp.sender,
+                _userOp.nonce,
+                _userOp.accountGasLimits,
+                _userOp.preVerificationGas,
+                _userOp.gasFees,
+                keccak256(_userOp.initCode),
+                keccak256(_userOp.callData),
+                // hashing over all paymaster fields besides signature
+                keccak256(_userOp.paymasterAndData[:PAYMASTER_DATA_OFFSET + paymasterDataLength])
+            )
+        );
+
+        return keccak256(abi.encode(userOpHash, block.chainid));
+    }
+
+    function _getHashV8(PackedUserOperationV8 calldata _userOp, uint256 paymasterDataLength)
         internal
         view
         returns (bytes32)
