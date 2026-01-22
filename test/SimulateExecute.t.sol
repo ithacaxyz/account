@@ -305,7 +305,8 @@ contract SimulateExecuteTest is BaseTest {
         // it needs to add the variance for non-precompile P256 verification.
         // We need the `keyHash` in the signature so that the simulation is able
         // to hit all the gas for the GuardedExecutor stuff for the `keyHash`.
-        i.signature = abi.encodePacked(keccak256("a"), keccak256("b"), k.keyHash, uint8(0));
+        i.signature =
+            abi.encodePacked(keccak256("a"), keccak256("b"), k.keyHash, uint8(0), uint8(0));
 
         uint256 snapshot = vm.snapshotState();
         vm.deal(_ORIGIN_ADDRESS, type(uint192).max);
