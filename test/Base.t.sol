@@ -34,6 +34,7 @@ contract BaseTest is SoladyTest {
     EIP7702Proxy eip7702Proxy;
     TargetFunctionPayload[] targetFunctionPayloads;
     Simulator simulator;
+    bytes32 contextKeyHash;
 
     struct TargetFunctionPayload {
         address by;
@@ -92,6 +93,10 @@ contract BaseTest is SoladyTest {
 
     function targetFunction(bytes memory data) public payable {
         targetFunctionPayloads.push(TargetFunctionPayload(msg.sender, msg.value, data));
+    }
+
+    function targetFunctionContextKeyHash() public payable {
+        contextKeyHash = IthacaAccount(payable(msg.sender)).getContextKeyHash();
     }
 
     function _setEIP7702Delegation(address eoa) internal {
