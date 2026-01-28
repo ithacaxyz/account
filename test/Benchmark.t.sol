@@ -120,8 +120,9 @@ contract BenchmarkTest is BaseTest {
             token0, token1, 1 ether, 1 ether, 1, 1, address(this), block.timestamp + 999
         );
 
-        IStakeManager(_ERC4337_ENTRYPOINT_V06_ADDR)
-        .depositTo{value: 1 ether}(_PIMLICO_PAYMASTER_V06);
+        IStakeManager(_ERC4337_ENTRYPOINT_V06_ADDR).depositTo{value: 1 ether}(
+            _PIMLICO_PAYMASTER_V06
+        );
         IStakeManager(_ERC4337_ENTRYPOINT_ADDR).depositTo{value: 1 ether}(_PIMLICO_PAYMASTER_V07);
 
         (paymasterSigner, paymasterPrivateKey) = makeAddrAndKey("");

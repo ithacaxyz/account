@@ -211,8 +211,9 @@ contract EndpointV2Mock is
             _origin.nonce,
             abi.encodePacked(_guid, _message)
         );
-        ILayerZeroReceiver(_receiver)
-        .lzReceive{value: msg.value}(_origin, _guid, _message, msg.sender, _extraData);
+        ILayerZeroReceiver(_receiver).lzReceive{value: msg.value}(
+            _origin, _guid, _message, msg.sender, _extraData
+        );
         emit PacketDelivered(_origin, _receiver);
     }
 
