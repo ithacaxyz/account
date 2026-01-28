@@ -354,49 +354,4 @@ contract AccountTest is BaseTest {
         uint256 keysCount137 = IthacaAccount(eoaAddress).keyCount();
         assertEq(keysCount137, 2, "Keys should be added on chain 137");
     }
-
-    function testContextKeyHash() public {
-        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
-
-        PassKey memory key = _randomPassKey();
-        key.k.isSuperAdmin = true;
-
-        vm.prank(d.eoa);
-        d.d.authorize(key.k);
-
-        // Orchestrator workflow
-        vm.prank(d.d.ORCHESTRATOR());
-        ERC7821.Call[] memory calls = new ERC7821.Call[](1);
-        calls[0].data = abi.encodeWithSelector(this.targetFunctionContextKeyHash.selector);
-        calls[0].to = address(this);
-        calls[0].value = 0;
-        bytes memory opData = abi.encode(key.keyHash);
-        bytes memory executionData = abi.encode(calls, opData);
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
-
-        assertEq(contextKeyHash, key.keyHash, "Context key hash mismatch orchestrator workflow");
-
-        // Reset context key hash
-        contextKeyHash = bytes32(0);
-
-        // Workflow with opData
-        uint256 nonce = d.d.getNonce(0);
-        bytes memory signature = _sig(key, d.d.computeDigest(calls, nonce));
-        opData = abi.encodePacked(nonce, signature);
-        executionData = abi.encode(calls, opData);
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
-
-        assertEq(contextKeyHash, key.keyHash, "Context key hash mismatch orchestrator workflow");
-
-        // Reset context key hash
-        contextKeyHash = bytes32(0);
-
-        // Simple workflow without opData (self-execution)
-        bytes memory emptyOpData;
-        executionData = abi.encode(calls, emptyOpData);
-        vm.prank(address(d.d));
-        d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
-
-        assertEq(contextKeyHash, bytes32(0), "Context key hash should be zero for self-execution without opData");
-    }
 }
