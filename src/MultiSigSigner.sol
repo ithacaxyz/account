@@ -3,6 +3,7 @@ pragma solidity ^0.8.23;
 
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
 import {ISigner} from "./interfaces/ISigner.sol";
+import {IthacaAccount} from "./IthacaAccount.sol";
 
 /// @title MultiSigSigner
 /// @notice A Signer contract, that extends multi-sig functionality to the Porto Account.
@@ -75,6 +76,12 @@ contract MultiSigSigner is ISigner {
     function initConfig(bytes32 keyHash, uint256 threshold, bytes32[] memory ownerKeyHashes)
         public
     {
+        bytes32 contextKeyHash = IIthacaAccount(msg.sender).getContextKeyHash();
+        if (contextKeyHash != bytes32(0)) {
+            IthacaAccount.Key memory key = IthacaAccount(payable(msg.sender)).getKey(contextKeyHash);
+            if (!key.isSuperAdmin) revert InvalidKeyHash();
+        }
+
         // Threshold can't be zero or greater than the number of owners
         if (threshold == 0 || threshold > ownerKeyHashes.length) revert InvalidThreshold();
 

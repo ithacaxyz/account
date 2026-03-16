@@ -15,6 +15,7 @@ import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {TokenTransferLib} from "./libraries/TokenTransferLib.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {IIthacaAccount} from "./interfaces/IIthacaAccount.sol";
+import {Ownable} from "solady/auth/Ownable.sol";
 import {IOrchestrator} from "./interfaces/IOrchestrator.sol";
 import {ICommon} from "./interfaces/ICommon.sol";
 import {IFunder} from "./interfaces/IFunder.sol";
@@ -41,7 +42,7 @@ import {MerkleProofLib} from "solady/utils/MerkleProofLib.sol";
 ///   This means once an Intent is signed, it is infeasible to
 ///   alter or rearrange it to force it to fail.
 
-contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGuardTransient {
+contract Orchestrator is IOrchestrator, Ownable, EIP712, CallContextChecker, ReentrancyGuardTransient {
     using LibERC7579 for bytes32[];
     using EfficientHashLib for bytes32[];
     using LibBitmap for LibBitmap.Bitmap;
@@ -149,9 +150,13 @@ contract Orchestrator is IOrchestrator, EIP712, CallContextChecker, ReentrancyGu
     // Main
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev Allows anyone to sweep tokens from the orchestrator.
+    constructor() {
+        _initializeOwner(msg.sender);
+    }
+
+    /// @dev Allows the owner to sweep tokens from the orchestrator.
     /// If `token` is `address(0)`, withdraws the native gas token.
-    function withdrawTokens(address token, address recipient, uint256 amount) public virtual {
+    function withdrawTokens(address token, address recipient, uint256 amount) public virtual onlyOwner {
         TokenTransferLib.safeTransfer(token, recipient, amount);
     }
 
