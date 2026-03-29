@@ -40,7 +40,7 @@ contract AccountTest is BaseTest {
             signature = _sig(_randomEIP7702DelegatedEOA(), d.d.computeDigest(t.calls, t.nonce));
             t.opData = abi.encodePacked(t.nonce, signature);
             t.executionData = abi.encode(t.calls, t.opData);
-            vm.expectRevert(bytes4(keccak256("Unauthorized()")));
+            vm.expectRevert(bytes4(keccak256("UnauthorizedSignature()")));
             d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, t.executionData);
             return;
         }
@@ -397,6 +397,10 @@ contract AccountTest is BaseTest {
         vm.prank(address(d.d));
         d.d.execute(_ERC7821_BATCH_EXECUTION_MODE, executionData);
 
-        assertEq(contextKeyHash, bytes32(0), "Context key hash should be zero for self-execution without opData");
+        assertEq(
+            contextKeyHash,
+            bytes32(0),
+            "Context key hash should be zero for self-execution without opData"
+        );
     }
 }
