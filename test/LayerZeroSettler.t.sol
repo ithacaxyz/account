@@ -716,9 +716,9 @@ contract LayerZeroSettlerTest is Test {
 
         // Should revert with InvalidL0SettlerSignature
         vm.expectRevert(abi.encodeWithSelector(LayerZeroSettler.InvalidL0SettlerSignature.selector));
-        settlerA.executeSend{
-            value: fee
-        }(orchestrator, settlementId, settlerContext, invalidSignature);
+        settlerA.executeSend{value: fee}(
+            orchestrator, settlementId, settlerContext, invalidSignature
+        );
     }
 
     function test_executeSend_preventReplay() public {

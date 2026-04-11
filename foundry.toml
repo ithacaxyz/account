@@ -4,15 +4,17 @@
 
 # The Default Profile
 [profile.default]
-evm_version = "prague"
+# Extend the deployment configuration from deploy/config.toml
+# This inherits all [forks.*] configurations for multi-chain deployments
+extends = "deploy/config.toml"
+evm_version = "prague" # Cancun will be tested in the CI.
 auto_detect_solc = false
-solc_version = "0.8.28"
-bytecode_hash = "none"
-cbor_metadata = false
 optimizer = true
 optimizer_runs = 200
+gas_limit = 100_000_000 # ETH is 30M, but we use a higher value.
 fs_permissions = [
-    { access = "read-write", path = "deploy/config.toml" }
+    { access = "read-write", path = "deploy/registry" },
+    { access = "read", path = "deploy/config.toml" }
 ]
 
 [fmt]
@@ -32,3 +34,5 @@ runs = 10
 # mainnet = { key = "${VERIFICATION_KEY_1}" }
 # arbitrum = { key = "${VERIFICATION_KEY_42161}" }
 # base = { key = "${VERIFICATION_KEY_8453}" }
+
+

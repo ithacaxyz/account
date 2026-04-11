@@ -15,8 +15,13 @@ contract MockOrchestrator is Orchestrator, Brutalizer {
         return _computeDigest(preCall);
     }
 
-    function computeDigest(Intent calldata intent) public view returns (bytes32) {
-        return _computeDigest(intent);
+    // Expose internal functions for testing
+    function hashTypedData(bytes32 structHash) public view returns (bytes32) {
+        return _hashTypedData(structHash);
+    }
+
+    function hashTypedDataSansChainId(bytes32 structHash) public view returns (bytes32) {
+        return _hashTypedDataSansChainId(structHash);
     }
 
     function simulateFailed(bytes calldata encodedIntent) public payable virtual {
