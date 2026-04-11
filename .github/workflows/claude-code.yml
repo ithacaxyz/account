@@ -17,6 +17,8 @@ jobs:
   check-permissions:
     name: Check permissions
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       has-permission: ${{ steps.check.outputs.has-permission }}
     steps:
