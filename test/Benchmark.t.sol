@@ -120,8 +120,9 @@ contract BenchmarkTest is BaseTest {
             token0, token1, 1 ether, 1 ether, 1, 1, address(this), block.timestamp + 999
         );
 
-        IStakeManager(_ERC4337_ENTRYPOINT_V06_ADDR)
-        .depositTo{value: 1 ether}(_PIMLICO_PAYMASTER_V06);
+        IStakeManager(_ERC4337_ENTRYPOINT_V06_ADDR).depositTo{value: 1 ether}(
+            _PIMLICO_PAYMASTER_V06
+        );
         IStakeManager(_ERC4337_ENTRYPOINT_ADDR).depositTo{value: 1 ether}(_PIMLICO_PAYMASTER_V07);
 
         (paymasterSigner, paymasterPrivateKey) = makeAddrAndKey("");
@@ -1518,7 +1519,7 @@ contract BenchmarkTest is BaseTest {
         }
     }
 
-    function testERC20Transfer_IthacaAccount() public {
+    function testERC20Transfer_IthacaAccount1() public {
         DelegatedEOA[] memory delegatedEOAs = _createIthacaAccount(1);
         bytes memory payload =
             _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
@@ -1714,7 +1715,7 @@ contract BenchmarkTest is BaseTest {
     ) internal view returns (bytes[] memory) {
         bytes[] memory encodedIntents = new bytes[](delegatedEOAs.length);
         for (uint256 i = 0; i < delegatedEOAs.length; i++) {
-            Orchestrator.Intent memory u;
+            Intent memory u;
             u.eoa = delegatedEOAs[i].eoa;
             u.nonce = 0;
             u.combinedGas = 1000000;
@@ -1750,14 +1751,14 @@ contract BenchmarkTest is BaseTest {
                 _paymentType == PaymentType.APP_SPONSOR
                     || _paymentType == PaymentType.APP_SPONSOR_ERC20
             ) {
-                bytes32 digest = oc.computeDigest(u);
+                bytes32 digest = computeDigest(u);
                 bytes32 signatureDigest = appSponsor.computeSignatureDigest(digest);
                 u.paymentSignature = _eoaSig(paymasterPrivateKey, signatureDigest);
             }
 
             u.signature = _sig(delegatedEOAs[i], u);
 
-            encodedIntents[i] = abi.encodePacked(abi.encode(u), junk);
+            encodedIntents[i] = abi.encodePacked(encodeIntent(u), junk);
         }
 
         return encodedIntents;
@@ -1785,7 +1786,7 @@ contract BenchmarkTest is BaseTest {
         d.d.setSpendLimit(k.keyHash, address(0), GuardedExecutor.SpendPeriod.Hour, 1 ether);
         vm.stopPrank();
 
-        Orchestrator.Intent memory u;
+        Intent memory u;
         u.eoa = d.eoa;
         u.nonce = 0;
         u.combinedGas = 1000000;
@@ -1797,7 +1798,7 @@ contract BenchmarkTest is BaseTest {
         u.signature = _sig(k, u);
 
         bytes[] memory encodedIntents = new bytes[](1);
-        encodedIntents[0] = abi.encode(u);
+        encodedIntents[0] = encodeIntent(u);
 
         oc.execute(encodedIntents);
         vm.snapshotGasLastCall("testERC20Transfer_IthacaAccountWithSpendLimits");

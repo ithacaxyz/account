@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import {ERC7821} from "solady/accounts/ERC7821.sol";
 import {LibSort} from "solady/utils/LibSort.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {LibZip} from "solady/utils/LibZip.sol";
@@ -13,6 +12,7 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {FixedPointMathLib as Math} from "solady/utils/FixedPointMathLib.sol";
 import {DateTimeLib} from "solady/utils/DateTimeLib.sol";
 import {ICallChecker} from "./interfaces/ICallChecker.sol";
+import {ERC7821Ithaca as ERC7821} from "./libraries/ERC7821Ithaca.sol";
 
 /// @title GuardedExecutor
 /// @notice Mixin for spend limits and calldata execution guards.
@@ -401,7 +401,7 @@ abstract contract GuardedExecutor is ERC7821 {
         checkKeyHashIsNonZero(keyHash)
     {
         if (keyHash != ANY_KEYHASH) {
-            if (_isSuperAdmin(keyHash)) revert SuperAdminCanSpendAnything();
+            if (_isSuperAdmin(keyHash)) revert SuperAdminCanExecuteEverything();
         }
 
         // It is ok even if we don't check for `_isSelfExecute` here, as we will still
@@ -698,10 +698,10 @@ abstract contract GuardedExecutor is ERC7821 {
     // Configurables
     ////////////////////////////////////////////////////////////////////////
 
-    /// @dev To be overriden to return if `keyHash` corresponds to a super admin key.
+    /// @dev To be overridden to return if `keyHash` corresponds to a super admin key.
     function _isSuperAdmin(bytes32 keyHash) internal view virtual returns (bool);
 
-    /// @dev To be overriden to return the storage slot seed for a `keyHash`.
+    /// @dev To be overridden to return the storage slot seed for a `keyHash`.
     function _getGuardedExecutorKeyStorageSeed(bytes32 keyHash)
         internal
         view

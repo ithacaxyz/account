@@ -5,7 +5,7 @@
   "lib/forge-std": {
     "branch": {
       "name": "master",
-      "rev": "c2cf7017d27c1d20e74ace4dacb6c5ce4bbbe899"
+      "rev": "27ab851c7cde58b22cc4de426d59e23a31c5cb9c"
     }
   },
   "lib/murky": {
@@ -17,7 +17,7 @@
   "lib/solady": {
     "branch": {
       "name": "main",
-      "rev": "acd959aa4bd04720d640bf4e6a5c71037510cc4b"
+      "rev": "73f13dd1483707ef6b4d16cb0543570b7e1715a8"
     }
   }
 }

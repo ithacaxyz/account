@@ -2,6 +2,10 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ithacaxyz/account)
 
+> 🚧 **Work In Progress**  
+> This repository is under active development. Contracts are **unaudited**, and the codebase may have **breaking changes** without notice.  
+> A bug bounty is live on Base Mainnet — [details here](docs/bug-bounty.md).
+
 **All-in-one EIP-7702 powered account contract, coupled with [Porto](https://github.com/ithacaxyz/porto)**
 
 Every app needs an account, traditionally requiring separate services for auth, payments, and recovery. Doing this in a way that empowers users with control over their funds and their data is the core challenge of the crypto space. While crypto wallets have made great strides, users still face a fragmented experience - juggling private keys, managing account balances across networks,
@@ -19,24 +23,17 @@ We believe that unstoppable crypto-powered accounts should be excellent througho
 
 # Features out of the box
 
-- Secure Login: Using WebAuthN-compatible credentials like PassKeys.
-- Call Batching: Send multiple calls in 1.
-- Gas Sponsorship: Allow anyone to pay for your fees in any ERC20 or ETH.
-- Access Control: Whitelist receivers, function selectors and arguments.
-- Session Keys: Allow transactions without confirmations if they pass low-security access control policies.
-- Multi-sig Support: If a call is outside of a certain access control policy, require multiple signatures.
-- Interop: Transaction on any chain invisibly. 
-
-## Benchmarks
-
-![Benchmarks](docs/benchmarks.jpeg)
-
-Gas benchmark implementations are in the [test repository](test/Benchmark.t.sol). We currently benchmark against leading ERC-4337 accounts. To generate the benchmarks, use `forge snapshot --isolate`. 
-
-## Security
-Contracts were audited in a 2 week engagement by @MiloTruck @rholterhus @kadenzipfel
-
-We also maintain an active bug bounty program, you can find more details about it [here](https://porto.sh/contracts/security-and-bug-bounty)
+- [x] Secure Login: Using WebAuthN-compatible credentials like PassKeys.
+- [x] Call Batching: Send multiple calls in 1.
+- [x] Gas Sponsorship: Allow anyone to pay for your fees in any ERC20 or ETH.
+- [x] Access Control: Whitelist receivers, function selectors and arguments.
+- [x] Session Keys: Allow transactions without confirmations if they pass low-security access control policies.
+- [x] Multi-sig Support: If a call is outside of a certain access control policy, require multiple signatures.
+- [x] Interop: Transaction on any chain invisibly. 
+- [ ] Timelocks: Add a time delay between transaction verification and execution, for additional safety.
+- [ ] Optimized for L2: Using BLS signatures.
+- [ ] Privacy: Using stealth addresses, confidential ERC20 tokens, and privacy pool integrations.
+- [ ] Account Recovery & Identity: Using ZK {Email, OAUth, Passport} and more.
 
 ## Getting Help
 
