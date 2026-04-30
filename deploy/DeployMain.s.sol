@@ -3,8 +3,7 @@ pragma solidity ^0.8.23;
 
 import {Script, console} from "forge-std/Script.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {Config} from "forge-std/Config.sol";
-import {Variable, TypeKind} from "forge-std/LibVariable.sol";
+import {stdToml} from "forge-std/StdToml.sol";
 import {SafeSingletonDeployer} from "./SafeSingletonDeployer.sol";
 
 // Import contracts to deploy
@@ -16,7 +15,6 @@ import {SimpleFunder} from "../src/SimpleFunder.sol";
 import {Escrow} from "../src/Escrow.sol";
 import {SimpleSettler} from "../src/SimpleSettler.sol";
 import {LayerZeroSettler} from "../src/LayerZeroSettler.sol";
-import {ExperimentERC20} from "./mock/ExperimentalERC20.sol";
 
 /**
  * @title DeployMain
@@ -51,26 +49,23 @@ import {ExperimentERC20} from "./mock/ExperimentalERC20.sol";
  *   --private-key $PRIVATE_KEY \
  *   "[1]" "/deploy/custom-config.toml"
  */
-contract DeployMain is Script, Config, SafeSingletonDeployer {
+contract DeployMain is Script, SafeSingletonDeployer {
+    using stdToml for string;
 
     // Chain configuration struct
     struct ChainConfig {
         uint256 chainId;
         string name;
         bool isTestnet;
+        address pauseAuthority;
         address funderOwner;
         address funderSigner;
         address settlerOwner;
         address l0SettlerOwner;
-        address l0SettlerSigner;
         address layerZeroEndpoint;
-        address[] oldOrchestrators;
         uint32 layerZeroEid;
         bytes32 salt;
         string[] contracts; // Array of contract names to deploy
-        // EXP Token configuration (testnet only)
-        address expMinterAddress;
-        uint256 expMintAmount;
     }
 
     struct DeployedContracts {
@@ -82,8 +77,6 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         address layerZeroSettler;
         address simpleFunder;
         address simulator;
-        address expToken; // EXP token (testnet only)
-        address exp2Token; // EXP2 token (testnet only)
     }
 
     // State
@@ -91,7 +84,9 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
     mapping(uint256 => DeployedContracts) internal deployedContracts;
     uint256[] internal targetChainIds;
 
-    // Config path
+    // Paths and config
+    string internal registryPath;
+    string internal configContent; // For unified config
     string internal configPath = "/deploy/config.toml";
 
     // Events for tracking
@@ -109,17 +104,9 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
      * @notice Deploy to all chains in config
      */
     function run() external {
-        // Load configuration and setup forks (enable write-back to save deployed addresses)
-        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
-        _loadConfigAndForks(fullConfigPath, true);
-        
-        // Get all available chain IDs from configuration
-        targetChainIds = config.getChainIds();
-        require(targetChainIds.length > 0, "No chains found in configuration");
-        
-        // Load configuration for each chain
-        loadConfigurations();
-        loadDeployedContracts();
+        // Get all available chain IDs from fork configuration
+        uint256[] memory chainIds = vm.readForkChainIds();
+        initializeDeployment(chainIds);
         executeDeployment();
     }
 
@@ -128,20 +115,11 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
      * @param chainIds Array of chain IDs to deploy to (empty array = all chains)
      */
     function run(uint256[] memory chainIds) external {
-        // Load configuration and setup forks (enable write-back to save deployed addresses)
-        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
-        _loadConfigAndForks(fullConfigPath, true);
-        
         // If empty array, get all available chains
         if (chainIds.length == 0) {
-            chainIds = config.getChainIds();
+            chainIds = vm.readForkChainIds();
         }
-        targetChainIds = chainIds;
-        require(targetChainIds.length > 0, "No chains found in configuration");
-        
-        // Load configuration for each chain
-        loadConfigurations();
-        loadDeployedContracts();
+        initializeDeployment(chainIds);
         executeDeployment();
     }
 
@@ -151,25 +129,47 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
      * @param _configPath Path to custom TOML config file
      */
     function run(uint256[] memory chainIds, string memory _configPath) external {
-        configPath = _configPath;
-        
-        // Load configuration and setup forks (enable write-back to save deployed addresses)
-        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
-        _loadConfigAndForks(fullConfigPath, true);
-        
         // If empty array, get all available chains
         if (chainIds.length == 0) {
-            chainIds = config.getChainIds();
+            chainIds = vm.readForkChainIds();
         }
-        targetChainIds = chainIds;
-        require(targetChainIds.length > 0, "No chains found in configuration");
-        
-        // Load configuration for each chain
-        loadConfigurations();
-        loadDeployedContracts();
+        initializeDeployment(chainIds, _configPath);
         executeDeployment();
     }
 
+    /**
+     * @notice Initialize deployment with target chains using TOML config
+     * @param chainIds Array of chain IDs to deploy to
+     */
+    function initializeDeployment(uint256[] memory chainIds) internal {
+        require(chainIds.length > 0, "No chains found in configuration");
+
+        // Load unified configuration
+        string memory fullConfigPath = string.concat(vm.projectRoot(), configPath);
+        configContent = vm.readFile(fullConfigPath);
+
+        // Load registry path from config.toml
+        registryPath = configContent.readString(".profile.deployment.registry_path");
+
+        // Store target chain IDs
+        targetChainIds = chainIds;
+
+        // Load configuration for each chain
+        loadConfigurations();
+
+        // Load existing deployed contracts from registry
+        loadDeployedContracts();
+    }
+
+    /**
+     * @notice Initialize deployment with custom config path
+     * @param chainIds Array of chain IDs to deploy to
+     * @param _configPath Path to the config file
+     */
+    function initializeDeployment(uint256[] memory chainIds, string memory _configPath) internal {
+        configPath = _configPath;
+        initializeDeployment(chainIds);
+    }
 
     /**
      * @notice Load configurations for all target chains
@@ -178,15 +178,20 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
 
-            // Switch to the fork for this chain (already created by _loadConfigAndForks)
-            vm.selectFork(forkOf[chainId]);
+            // Use the RPC_{chainId} environment variable directly
+            // This matches the naming convention in config.toml
+            string memory rpcUrl = vm.envString(string.concat("RPC_", vm.toString(chainId)));
+
+            // Create fork using the RPC URL
+            uint256 forkId = vm.createFork(rpcUrl);
+            vm.selectFork(forkId);
 
             // Verify we're on the correct chain
             require(block.chainid == chainId, "Chain ID mismatch");
 
-            // Load configuration using new StdConfig pattern
-            ChainConfig memory chainConfig = loadChainConfigFromStdConfig(chainId);
-            chainConfigs[chainId] = chainConfig;
+            // Load configuration from fork variables
+            ChainConfig memory config = loadChainConfigFromFork(chainId);
+            chainConfigs[chainId] = config;
         }
 
         // Log the loaded configuration for verification
@@ -194,66 +199,48 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
     }
 
     /**
-     * @notice Load chain configuration using StdConfig
+     * @notice Load chain configuration from the currently active fork
      * @param chainId The chain ID we're loading config for
      */
-    function loadChainConfigFromStdConfig(uint256 chainId) internal view returns (ChainConfig memory) {
-        ChainConfig memory chainConfig;
+    function loadChainConfigFromFork(uint256 chainId) internal view returns (ChainConfig memory) {
+        ChainConfig memory config;
 
-        chainConfig.chainId = chainId;
+        config.chainId = chainId;
 
-        // Use StdConfig to read variables
-        chainConfig.name = config.get(chainId, "name").toString();
-        chainConfig.isTestnet = config.get(chainId, "is_testnet").toBool();
+        // Use vm.readFork* functions to read variables from the active fork
+        config.name = vm.readForkString("name");
+        config.isTestnet = vm.readForkBool("is_testnet");
 
         // Load addresses
-        chainConfig.funderOwner = config.get(chainId, "funder_owner").toAddress();
-        chainConfig.funderSigner = config.get(chainId, "funder_signer").toAddress();
-        chainConfig.settlerOwner = config.get(chainId, "settler_owner").toAddress();
-        chainConfig.l0SettlerOwner = config.get(chainId, "l0_settler_owner").toAddress();
-        chainConfig.l0SettlerSigner = config.get(chainId, "l0_settler_signer").toAddress();
-        chainConfig.layerZeroEndpoint = config.get(chainId, "layerzero_endpoint").toAddress();
+        config.pauseAuthority = vm.readForkAddress("pause_authority");
+        config.funderOwner = vm.readForkAddress("funder_owner");
+        config.funderSigner = vm.readForkAddress("funder_signer");
+        config.settlerOwner = vm.readForkAddress("settler_owner");
+        config.l0SettlerOwner = vm.readForkAddress("l0_settler_owner");
+        config.layerZeroEndpoint = vm.readForkAddress("layerzero_endpoint");
 
         // Load other configuration
-        chainConfig.layerZeroEid = uint32(config.get(chainId, "layerzero_eid").toUint256());
-        chainConfig.salt = config.get(chainId, "salt").toBytes32();
-
-        // Load EXP token configuration (testnet only)
-        if (chainConfig.isTestnet) {
-            chainConfig.expMinterAddress = config.get(chainId, "exp_minter_address").toAddress();
-            chainConfig.expMintAmount = config.get(chainId, "exp_mint_amount").toUint256();
-        }
+        config.layerZeroEid = uint32(vm.readForkUint("layerzero_eid"));
+        config.salt = vm.readForkBytes32("salt");
 
         // Load contracts list - required field, will revert if not present
-        string[] memory contractsList = config.get(chainId, "contracts").toStringArray();
+        string[] memory contractsList = vm.readForkStringArray("contracts");
 
         // Check if user specified "ALL" to deploy all contracts
         if (
             contractsList.length == 1
                 && keccak256(bytes(contractsList[0])) == keccak256(bytes("ALL"))
         ) {
-            string[] memory baseContracts = getAllContracts();
-            // For testnets with ALL specified, append ExpToken
-            if (chainConfig.isTestnet) {
-                string[] memory testnetContracts = new string[](baseContracts.length + 1);
-                for (uint256 i = 0; i < baseContracts.length; i++) {
-                    testnetContracts[i] = baseContracts[i];
-                }
-                testnetContracts[baseContracts.length] = "ExpToken";
-                chainConfig.contracts = testnetContracts;
-            } else {
-                // For non-testnets, use base contracts (no ExpToken)
-                chainConfig.contracts = baseContracts;
-            }
+            config.contracts = getAllContracts();
         } else {
-            chainConfig.contracts = contractsList;
+            config.contracts = contractsList;
         }
 
-        return chainConfig;
+        return config;
     }
 
     /**
-     * @notice Get all available contracts (excluding ExpToken)
+     * @notice Get all available contracts
      */
     function getAllContracts() internal pure returns (string[] memory) {
         string[] memory contracts = new string[](8);
@@ -286,40 +273,31 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
     }
 
     /**
-     * @notice Load deployed contracts from config
+     * @notice Load deployed contracts from registry
      */
     function loadDeployedContracts() internal {
         for (uint256 i = 0; i < targetChainIds.length; i++) {
             uint256 chainId = targetChainIds[i];
+            bytes32 salt = chainConfigs[chainId].salt;
+            string memory registryFile = getRegistryFilename(chainId, salt);
 
-            DeployedContracts memory deployed;
-            
-            // Read deployed contract addresses from config, defaulting to address(0) if not set
-            deployed.orchestrator = tryGetAddress(chainId, "orchestrator_deployed");
-            deployed.ithacaAccount = tryGetAddress(chainId, "ithaca_account_deployed");
-            deployed.accountProxy = tryGetAddress(chainId, "account_proxy_deployed");
-            deployed.escrow = tryGetAddress(chainId, "escrow_deployed");
-            deployed.simpleSettler = tryGetAddress(chainId, "simple_settler_deployed");
-            deployed.layerZeroSettler = tryGetAddress(chainId, "layerzero_settler_deployed");
-            deployed.simpleFunder = tryGetAddress(chainId, "simple_funder_deployed");
-            deployed.simulator = tryGetAddress(chainId, "simulator_deployed");
-            deployed.expToken = tryGetAddress(chainId, "exp_token_deployed");
-            deployed.exp2Token = tryGetAddress(chainId, "exp2_token_deployed");
+            try vm.readFile(registryFile) returns (string memory registryJson) {
+                // Use individual parsing for flexibility with missing fields
+                DeployedContracts memory deployed;
+                deployed.ithacaAccount = tryReadAddress(registryJson, ".IthacaAccount");
+                deployed.accountProxy = tryReadAddress(registryJson, ".AccountProxy");
+                deployed.escrow = tryReadAddress(registryJson, ".Escrow");
+                deployed.orchestrator = tryReadAddress(registryJson, ".Orchestrator");
+                deployed.simpleSettler = tryReadAddress(registryJson, ".SimpleSettler");
+                deployed.layerZeroSettler = tryReadAddress(registryJson, ".LayerZeroSettler");
+                deployed.simpleFunder = tryReadAddress(registryJson, ".SimpleFunder");
+                deployed.simulator = tryReadAddress(registryJson, ".Simulator");
 
-            deployedContracts[chainId] = deployed;
+                deployedContracts[chainId] = deployed;
+            } catch {
+                // No registry file exists yet
+            }
         }
-    }
-    
-    /**
-     * @notice Try to get an address from config, return address(0) if not found
-     */
-    function tryGetAddress(uint256 chainId, string memory key) internal view returns (address) {
-        Variable memory variable = config.get(chainId, key);
-        // Check if variable exists (TypeKind.None means missing key)
-        if (variable.ty.kind == TypeKind.None) {
-            return address(0);
-        }
-        return variable.toAddress();
     }
 
     /**
@@ -337,8 +315,8 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
             console.log("Funder Owner:", config.funderOwner);
             console.log("Funder Signer:", config.funderSigner);
             console.log("L0 Settler Owner:", config.l0SettlerOwner);
-            console.log("L0 Settler Signer:", config.l0SettlerSigner);
             console.log("Settler Owner:", config.settlerOwner);
+            console.log("Pause Authority:", config.pauseAuthority);
             console.log("LayerZero Endpoint:", config.layerZeroEndpoint);
             console.log("LayerZero EID:", config.layerZeroEid);
             console.log("Salt:");
@@ -445,7 +423,7 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
     }
 
     /**
-     * @notice Save deployed contract address to config
+     * @notice Save deployed contract address to registry
      */
     function saveDeployedContract(
         uint256 chainId,
@@ -469,38 +447,124 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
             deployedContracts[chainId].simpleSettler = contractAddress;
         } else if (keccak256(bytes(contractName)) == keccak256("LayerZeroSettler")) {
             deployedContracts[chainId].layerZeroSettler = contractAddress;
-        } else if (keccak256(bytes(contractName)) == keccak256("ExpToken")) {
-            deployedContracts[chainId].expToken = contractAddress;
-        } else if (keccak256(bytes(contractName)) == keccak256("Exp2Token")) {
-            deployedContracts[chainId].exp2Token = contractAddress;
         }
 
-        // Only write to config file during actual broadcasts, not simulations
-        if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast) || vm.isContext(VmSafe.ForgeContext.ScriptResume)) {
-            if (keccak256(bytes(contractName)) == keccak256("Orchestrator")) {
-                config.set(chainId, "orchestrator_deployed", contractAddress);
-            } else if (keccak256(bytes(contractName)) == keccak256("IthacaAccount")) {
-                config.set(chainId, "ithaca_account_deployed", contractAddress);
-            } else if (keccak256(bytes(contractName)) == keccak256("AccountProxy")) {
-                config.set(chainId, "account_proxy_deployed", contractAddress);
-            } else if (keccak256(bytes(contractName)) == keccak256("Simulator")) {
-                config.set(chainId, "simulator_deployed", contractAddress);
-            } else if (keccak256(bytes(contractName)) == keccak256("SimpleFunder")) {
-                config.set(chainId, "simple_funder_deployed", contractAddress);
-            } else if (keccak256(bytes(contractName)) == keccak256("Escrow")) {
-                config.set(chainId, "escrow_deployed", contractAddress);
-            } else if (keccak256(bytes(contractName)) == keccak256("SimpleSettler")) {
-                config.set(chainId, "simple_settler_deployed", contractAddress);
-            } else if (keccak256(bytes(contractName)) == keccak256("LayerZeroSettler")) {
-                config.set(chainId, "layerzero_settler_deployed", contractAddress);
-            } else if (keccak256(bytes(contractName)) == keccak256("ExpToken")) {
-                config.set(chainId, "exp_token_deployed", contractAddress);
-            } else if (keccak256(bytes(contractName)) == keccak256("Exp2Token")) {
-                config.set(chainId, "exp2_token_deployed", contractAddress);
-            }
-        }
+        // Write to registry file
+        writeToRegistry(chainId, contractName, contractAddress);
     }
 
+    /**
+     * @notice Write to registry file
+     */
+    function writeToRegistry(uint256 chainId, string memory contractName, address contractAddress)
+        internal
+    {
+        // Only save registry during actual broadcasts, not dry runs
+        if (
+            !vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
+                && !vm.isContext(VmSafe.ForgeContext.ScriptResume)
+        ) {
+            return;
+        }
+
+        DeployedContracts memory deployed = deployedContracts[chainId];
+
+        string memory json = "{";
+        bool first = true;
+
+        if (deployed.orchestrator != address(0)) {
+            json = string.concat(json, '"Orchestrator": "', vm.toString(deployed.orchestrator), '"');
+            first = false;
+        }
+
+        if (deployed.ithacaAccount != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json =
+                string.concat(json, '"IthacaAccount": "', vm.toString(deployed.ithacaAccount), '"');
+            first = false;
+        }
+
+        if (deployed.accountProxy != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(json, '"AccountProxy": "', vm.toString(deployed.accountProxy), '"');
+            first = false;
+        }
+
+        if (deployed.simulator != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(json, '"Simulator": "', vm.toString(deployed.simulator), '"');
+            first = false;
+        }
+
+        if (deployed.simpleFunder != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(json, '"SimpleFunder": "', vm.toString(deployed.simpleFunder), '"');
+            first = false;
+        }
+
+        if (deployed.escrow != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(json, '"Escrow": "', vm.toString(deployed.escrow), '"');
+            first = false;
+        }
+
+        if (deployed.simpleSettler != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json =
+                string.concat(json, '"SimpleSettler": "', vm.toString(deployed.simpleSettler), '"');
+            first = false;
+        }
+
+        if (deployed.layerZeroSettler != address(0)) {
+            if (!first) json = string.concat(json, ",");
+            json = string.concat(
+                json, '"LayerZeroSettler": "', vm.toString(deployed.layerZeroSettler), '"'
+            );
+        }
+
+        json = string.concat(json, "}");
+
+        bytes32 salt = chainConfigs[chainId].salt;
+        string memory registryFile = getRegistryFilename(chainId, salt);
+        vm.writeFile(registryFile, json);
+    }
+
+    /**
+     * @notice Get registry filename based on chainId and salt
+     */
+    function getRegistryFilename(uint256 chainId, bytes32 salt)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory filename = string.concat(
+            vm.projectRoot(),
+            "/",
+            registryPath,
+            "deployment_",
+            vm.toString(chainId),
+            "_",
+            vm.toString(salt),
+            ".json"
+        );
+        return filename;
+    }
+
+    /**
+     * @notice Try to read an address from JSON
+     */
+    function tryReadAddress(string memory json, string memory key)
+        internal
+        pure
+        returns (address)
+    {
+        try vm.parseJson(json, key) returns (bytes memory data) {
+            if (data.length > 0) {
+                return abi.decode(data, (address));
+            }
+        } catch {}
+        return address(0);
+    }
 
     /**
      * @notice Verify Safe Singleton Factory is deployed
@@ -599,8 +663,6 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
             deploySimpleSettler(chainId, config, deployed);
         } else if (nameHash == keccak256("LayerZeroSettler")) {
             deployLayerZeroSettler(chainId, config, deployed);
-        } else if (nameHash == keccak256("ExpToken")) {
-            deployExpToken(chainId, config, deployed);
         } else {
             console.log("Warning: Unknown contract name:", contractName);
         }
@@ -611,12 +673,17 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        bytes memory creationCode = type(Orchestrator).creationCode;
-        address orchestrator =
-            deployContractWithCreate2(chainId, creationCode, "", "Orchestrator");
+        if (deployed.orchestrator == address(0)) {
+            bytes memory creationCode = type(Orchestrator).creationCode;
+            bytes memory args = abi.encode(config.pauseAuthority);
+            address orchestrator =
+                deployContractWithCreate2(chainId, creationCode, args, "Orchestrator");
 
-        saveDeployedContract(chainId, "Orchestrator", orchestrator);
-        deployed.orchestrator = orchestrator;
+            saveDeployedContract(chainId, "Orchestrator", orchestrator);
+            deployed.orchestrator = orchestrator;
+        } else {
+            console.log("Orchestrator already deployed:", deployed.orchestrator);
+        }
     }
 
     function deployIthacaAccount(
@@ -625,15 +692,22 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         DeployedContracts memory deployed
     ) internal {
         // Ensure Orchestrator is deployed first (dependency)
-        require(deployed.orchestrator != address(0), "Orchestrator must be deployed before IthacaAccount");
+        if (deployed.orchestrator == address(0)) {
+            console.log("Deploying Orchestrator first (dependency for IthacaAccount)...");
+            deployOrchestrator(chainId, config, deployed);
+        }
 
-        bytes memory creationCode = type(IthacaAccount).creationCode;
-        bytes memory args = abi.encode(deployed.orchestrator);
-        address ithacaAccount =
-            deployContractWithCreate2(chainId, creationCode, args, "IthacaAccount");
+        if (deployed.ithacaAccount == address(0)) {
+            bytes memory creationCode = type(IthacaAccount).creationCode;
+            bytes memory args = abi.encode(deployed.orchestrator);
+            address ithacaAccount =
+                deployContractWithCreate2(chainId, creationCode, args, "IthacaAccount");
 
-        saveDeployedContract(chainId, "IthacaAccount", ithacaAccount);
-        deployed.ithacaAccount = ithacaAccount;
+            saveDeployedContract(chainId, "IthacaAccount", ithacaAccount);
+            deployed.ithacaAccount = ithacaAccount;
+        } else {
+            console.log("IthacaAccount already deployed:", deployed.ithacaAccount);
+        }
     }
 
     function deployAccountProxy(
@@ -642,14 +716,21 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         DeployedContracts memory deployed
     ) internal {
         // Ensure IthacaAccount is deployed first (dependency)
-        require(deployed.ithacaAccount != address(0), "IthacaAccount must be deployed before AccountProxy");
+        if (deployed.ithacaAccount == address(0)) {
+            console.log("Deploying IthacaAccount first (dependency for AccountProxy)...");
+            deployIthacaAccount(chainId, config, deployed);
+        }
 
-        bytes memory proxyCode = LibEIP7702.proxyInitCode(deployed.ithacaAccount, address(0));
-        address accountProxy = deployContractWithCreate2(chainId, proxyCode, "", "AccountProxy");
+        if (deployed.accountProxy == address(0)) {
+            bytes memory proxyCode = LibEIP7702.proxyInitCode(deployed.ithacaAccount, address(0));
+            address accountProxy = deployContractWithCreate2(chainId, proxyCode, "", "AccountProxy");
 
-        require(accountProxy != address(0), "Account proxy deployment failed");
-        saveDeployedContract(chainId, "AccountProxy", accountProxy);
-        deployed.accountProxy = accountProxy;
+            require(accountProxy != address(0), "Account proxy deployment failed");
+            saveDeployedContract(chainId, "AccountProxy", accountProxy);
+            deployed.accountProxy = accountProxy;
+        } else {
+            console.log("AccountProxy already deployed:", deployed.accountProxy);
+        }
     }
 
     function deploySimulator(
@@ -657,11 +738,15 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        bytes memory creationCode = type(Simulator).creationCode;
-        address simulator = deployContractWithCreate2(chainId, creationCode, "", "Simulator");
+        if (deployed.simulator == address(0)) {
+            bytes memory creationCode = type(Simulator).creationCode;
+            address simulator = deployContractWithCreate2(chainId, creationCode, "", "Simulator");
 
-        saveDeployedContract(chainId, "Simulator", simulator);
-        deployed.simulator = simulator;
+            saveDeployedContract(chainId, "Simulator", simulator);
+            deployed.simulator = simulator;
+        } else {
+            console.log("Simulator already deployed:", deployed.simulator);
+        }
     }
 
     function deploySimpleFunder(
@@ -669,13 +754,23 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        bytes memory creationCode = type(SimpleFunder).creationCode;
+        // Ensure Orchestrator is deployed first (dependency)
+        if (deployed.orchestrator == address(0)) {
+            console.log("Deploying Orchestrator first (dependency for SimpleFunder)...");
+            deployOrchestrator(chainId, config, deployed);
+        }
 
-        bytes memory args = abi.encode(config.funderSigner, config.funderOwner);
-        address funder = deployContractWithCreate2(chainId, creationCode, args, "SimpleFunder");
+        if (deployed.simpleFunder == address(0)) {
+            bytes memory creationCode = type(SimpleFunder).creationCode;
+            bytes memory args =
+                abi.encode(config.funderSigner, deployed.orchestrator, config.funderOwner);
+            address funder = deployContractWithCreate2(chainId, creationCode, args, "SimpleFunder");
 
-        saveDeployedContract(chainId, "SimpleFunder", funder);
-        deployed.simpleFunder = funder;
+            saveDeployedContract(chainId, "SimpleFunder", funder);
+            deployed.simpleFunder = funder;
+        } else {
+            console.log("SimpleFunder already deployed:", deployed.simpleFunder);
+        }
     }
 
     function deployEscrow(
@@ -683,11 +778,15 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        bytes memory creationCode = type(Escrow).creationCode;
-        address escrow = deployContractWithCreate2(chainId, creationCode, "", "Escrow");
+        if (deployed.escrow == address(0)) {
+            bytes memory creationCode = type(Escrow).creationCode;
+            address escrow = deployContractWithCreate2(chainId, creationCode, "", "Escrow");
 
-        saveDeployedContract(chainId, "Escrow", escrow);
-        deployed.escrow = escrow;
+            saveDeployedContract(chainId, "Escrow", escrow);
+            deployed.escrow = escrow;
+        } else {
+            console.log("Escrow already deployed:", deployed.escrow);
+        }
     }
 
     function deploySimpleSettler(
@@ -695,14 +794,18 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        bytes memory creationCode = type(SimpleSettler).creationCode;
-        bytes memory args = abi.encode(config.settlerOwner);
-        address settler =
-            deployContractWithCreate2(chainId, creationCode, args, "SimpleSettler");
+        if (deployed.simpleSettler == address(0)) {
+            bytes memory creationCode = type(SimpleSettler).creationCode;
+            bytes memory args = abi.encode(config.settlerOwner);
+            address settler =
+                deployContractWithCreate2(chainId, creationCode, args, "SimpleSettler");
 
-        console.log("  Owner:", config.settlerOwner);
-        saveDeployedContract(chainId, "SimpleSettler", settler);
-        deployed.simpleSettler = settler;
+            console.log("  Owner:", config.settlerOwner);
+            saveDeployedContract(chainId, "SimpleSettler", settler);
+            deployed.simpleSettler = settler;
+        } else {
+            console.log("SimpleSettler already deployed:", deployed.simpleSettler);
+        }
     }
 
     function deployLayerZeroSettler(
@@ -710,62 +813,19 @@ contract DeployMain is Script, Config, SafeSingletonDeployer {
         ChainConfig memory config,
         DeployedContracts memory deployed
     ) internal {
-        bytes memory creationCode = type(LayerZeroSettler).creationCode;
-        bytes memory args = abi.encode(config.l0SettlerOwner, config.l0SettlerSigner);
-        address settler =
-            deployContractWithCreate2(chainId, creationCode, args, "LayerZeroSettler");
+        if (deployed.layerZeroSettler == address(0)) {
+            bytes memory creationCode = type(LayerZeroSettler).creationCode;
+            bytes memory args = abi.encode(config.layerZeroEndpoint, config.l0SettlerOwner);
+            address settler =
+                deployContractWithCreate2(chainId, creationCode, args, "LayerZeroSettler");
 
-        console.log("  Owner:", config.l0SettlerOwner);
-        console.log("  L0SettlerSigner:", config.l0SettlerSigner);
-        console.log("  Endpoint to be configured:", config.layerZeroEndpoint);
-        console.log("  EID:", config.layerZeroEid);
-        console.log(
-            "  Note: Endpoint must be set by owner via ConfigureLayerZeroSettler script"
-        );
-
-        saveDeployedContract(chainId, "LayerZeroSettler", settler);
-        deployed.layerZeroSettler = settler;
-    }
-
-    function deployExpToken(
-        uint256 chainId,
-        ChainConfig memory config,
-        DeployedContracts memory deployed
-    ) internal {
-        // Only deploy on testnets
-        if (!config.isTestnet) {
-            console.log("Skipping ExpToken deployment - not a testnet");
-            return;
+            console.log("  Endpoint:", config.layerZeroEndpoint);
+            console.log("  Owner:", config.l0SettlerOwner);
+            console.log("  EID:", config.layerZeroEid);
+            saveDeployedContract(chainId, "LayerZeroSettler", settler);
+            deployed.layerZeroSettler = settler;
+        } else {
+            console.log("LayerZeroSettler already deployed:", deployed.layerZeroSettler);
         }
-
-        bytes memory creationCode = type(ExperimentERC20).creationCode;
-
-        // Deploy EXP token
-        // Hardcode name and symbol to "EXP"
-        bytes memory args = abi.encode("EXP", "EXP", 1 ether);
-        address expToken = deployContractWithCreate2(chainId, creationCode, args, "ExpToken");
-
-        // Mint initial tokens to the configured minter address
-        ExperimentERC20(payable(expToken)).mint(config.expMinterAddress, config.expMintAmount);
-
-        console.log("  EXP Name/Symbol: EXP");
-        console.log("  EXP Address:", expToken);
-        saveDeployedContract(chainId, "ExpToken", expToken);
-        deployed.expToken = expToken;
-
-        // Deploy EXP2 token
-        // Hardcode name and symbol to "EXP2"
-        bytes memory args2 = abi.encode("EXP2", "EXP2", 1 ether);
-        address exp2Token = deployContractWithCreate2(chainId, creationCode, args2, "Exp2Token");
-
-        // Mint initial tokens to the configured minter address (same as EXP)
-        ExperimentERC20(payable(exp2Token)).mint(config.expMinterAddress, config.expMintAmount);
-
-        console.log("  EXP2 Name/Symbol: EXP2");
-        console.log("  EXP2 Address:", exp2Token);
-        console.log("  Minter:", config.expMinterAddress);
-        console.log("  Mint Amount (each):", config.expMintAmount);
-        saveDeployedContract(chainId, "Exp2Token", exp2Token);
-        deployed.exp2Token = exp2Token;
     }
 }

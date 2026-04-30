@@ -1,24 +1,5 @@
 # porto-account
 
-> Note: After v0.5.5, all changelogs will be published along with the release notes.   
-> From here on, this file is deprecated.
-
-## 0.5.5
-
-### Patch Changes
-- Update foundry config, to not include metadata in the bytecode. This ensures that the contract bytecode doesn't change because of some other change in the repository.
-
-
-## 0.5.4
-
-### Patch Changes
-
-- SimpleFunder supports multiple orchestrators instead of single immutable orchestrator
-  - Replaced immutable `ORCHESTRATOR` with `orchestrators` mapping and `setOrchestrators()` function
-  - Maintained backward compatibility with old `fund()` signature
-  - Added `supported_orchestrators` config field for deployment
-  - Version bumped to "0.1.5"
-
 ## 0.5.0
 
 ### Minor Changes
