@@ -1,24 +1,5 @@
 # porto-account
 
-> Note: After v0.5.5, all changelogs will be published along with the release notes.   
-> From here on, this file is deprecated.
-
-## 0.5.5
-
-### Patch Changes
-- Update foundry config, to not include metadata in the bytecode. This ensures that the contract bytecode doesn't change because of some other change in the repository.
-
-
-## 0.5.4
-
-### Patch Changes
-
-- SimpleFunder supports multiple orchestrators instead of single immutable orchestrator
-  - Replaced immutable `ORCHESTRATOR` with `orchestrators` mapping and `setOrchestrators()` function
-  - Maintained backward compatibility with old `fund()` signature
-  - Added `supported_orchestrators` config field for deployment
-  - Version bumped to "0.1.5"
-
 ## 0.5.0
 
 ### Minor Changes
@@ -113,7 +94,7 @@
 - All fill related functions removed from EP.
 - EP is now completely stateless, also does not have a constructor.
 - PreCall with `nonce = type(uint256).max` is not replayable anymore.
-- `OpDataTooShort` error, udpated to `OpDataError`, to enforce tighter validation of opdata.
+- `OpDataTooShort` error, updated to `OpDataError`, to enforce tighter validation of opdata.
 - `checkAndIncrementNonce` function added to account. Can only be called by EP.
 - 6b3294a: Optimize `_isSuperAdmin`
 
@@ -150,7 +131,7 @@
 
   - Add back the INSUFFICIENT_GAS check, which prevents the relay from setting up the `execute` call on the
     account, in such a way causing it to intentionally fail.
-    For the relay, gExecute now has to be set atleast as `gExecute > (gCombined + 100_000) * 64/63)`
+    For the relay, gExecute now has to be set at least as `gExecute > (gCombined + 100_000) * 64/63)`
 
 ### Patch Changes
 
