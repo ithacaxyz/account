@@ -4,7 +4,6 @@ pragma solidity ^0.8.4;
 import "./utils/SoladyTest.sol";
 import {EIP7702Proxy} from "solady/accounts/EIP7702Proxy.sol";
 import {LibEIP7702} from "solady/accounts/LibEIP7702.sol";
-import {ERC7821} from "solady/accounts/ERC7821.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {EfficientHashLib} from "solady/utils/EfficientHashLib.sol";
@@ -24,6 +23,8 @@ import {IOrchestrator} from "../src/interfaces/IOrchestrator.sol";
 import {Simulator} from "../src/Simulator.sol";
 import {ICommon} from "../src/interfaces/ICommon.sol";
 
+import {ERC7821Ithaca as ERC7821} from "../src/libraries/ERC7821Ithaca.sol";
+
 contract BaseTest is SoladyTest {
     using LibRLP for LibRLP.List;
 
@@ -34,7 +35,6 @@ contract BaseTest is SoladyTest {
     EIP7702Proxy eip7702Proxy;
     TargetFunctionPayload[] targetFunctionPayloads;
     Simulator simulator;
-    bytes32 contextKeyHash;
 
     struct TargetFunctionPayload {
         address by;
@@ -55,6 +55,9 @@ contract BaseTest is SoladyTest {
 
     bytes32 internal constant _ERC7821_BATCH_EXECUTION_MODE =
         0x0100000000007821000100000000000000000000000000000000000000000000;
+
+    bytes32 internal constant _ERC7821_BATCH_SANS_TO_EXECUTION_MODE =
+        0x0100000000007821000300000000000000000000000000000000000000000000;
 
     bytes32 internal constant _ERC7579_DELEGATE_CALL_MODE =
         0xff00000000000000000000000000000000000000000000000000000000000000;
@@ -93,10 +96,6 @@ contract BaseTest is SoladyTest {
 
     function targetFunction(bytes memory data) public payable {
         targetFunctionPayloads.push(TargetFunctionPayload(msg.sender, msg.value, data));
-    }
-
-    function targetFunctionContextKeyHash() public payable {
-        contextKeyHash = IthacaAccount(payable(msg.sender)).getContextKeyHash();
     }
 
     function _setEIP7702Delegation(address eoa) internal {
@@ -220,7 +219,7 @@ contract BaseTest is SoladyTest {
     {
         (bytes32 r, bytes32 s) = vm.signP256(privateKey, digest);
         s = P256.normalized(s);
-        return abi.encodePacked(abi.encode(r, s), keyHash, uint8(prehash ? 1 : 0));
+        return abi.encodePacked(abi.encode(r, s), keyHash, uint8(prehash ? 1 : 0), uint8(0));
     }
 
     function _secp256k1Sig(uint256 privateKey, bytes32 keyHash, bytes32 digest)
@@ -237,7 +236,8 @@ contract BaseTest is SoladyTest {
         returns (bytes memory)
     {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        return abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(prehash ? 1 : 0));
+        return
+            abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(prehash ? 1 : 0), uint8(0));
     }
 
     function _multiSig(MultiSigKey memory k, bytes32 keyHash, bool preHash, bytes32 digest)
@@ -250,7 +250,7 @@ contract BaseTest is SoladyTest {
             signatures[i] = _sig(k.owners[i], digest);
         }
 
-        return abi.encodePacked(abi.encode(signatures), keyHash, uint8(preHash ? 1 : 0));
+        return abi.encodePacked(abi.encode(signatures), keyHash, uint8(preHash ? 1 : 0), uint8(0));
     }
 
     function _estimateGasForEOAKey(Orchestrator.Intent memory i)
@@ -282,7 +282,7 @@ contract BaseTest is SoladyTest {
     {
         (uint8 v, bytes32 r, bytes32 s) =
             vm.sign(uint128(_randomUniform()), bytes32(_randomUniform()));
-        i.signature = abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(0));
+        i.signature = abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(0), uint8(0));
         return _estimateGas(i);
     }
 
@@ -290,7 +290,7 @@ contract BaseTest is SoladyTest {
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
-        i.signature = abi.encodePacked(keccak256("a"), keccak256("b"), keyHash, uint8(0));
+        i.signature = abi.encodePacked(keccak256("a"), keccak256("b"), keyHash, uint8(0), uint8(0));
 
         return _estimateGas(i);
     }
