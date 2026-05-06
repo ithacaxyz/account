@@ -924,8 +924,9 @@ contract OrchestratorTest is BaseTest {
         if (_randomChance(16)) {
             u.combinedGas += 10_000;
             // Fill with some junk signature, but with the session `keyHash`.
-            u.signature =
-                abi.encodePacked(keccak256("a"), keccak256("b"), kSession.keyHash, uint8(0));
+            u.signature = abi.encodePacked(
+                keccak256("a"), keccak256("b"), kSession.keyHash, uint8(0), uint8(0)
+            );
 
             (t.gExecute, t.gCombined, t.gUsed) = _estimateGas(u);
 
