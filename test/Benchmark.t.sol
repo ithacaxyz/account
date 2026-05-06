@@ -1805,6 +1805,52 @@ contract BenchmarkTest is BaseTest {
         assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
     }
 
+    function testERC20TransferViaPortoOrchestratorWithPasskey() public {
+        vm.pauseGasMetering();
+
+        PassKey memory k = _randomSecp256k1PassKey();
+
+        DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
+        vm.deal(d.eoa, type(uint128).max);
+        _mint(address(paymentToken), d.eoa, type(uint128).max);
+
+        vm.startPrank(d.eoa);
+        d.d.authorize(k.k);
+        d.d.setCanExecute(
+            k.keyHash, address(paymentToken), bytes4(keccak256("transfer(address,uint256)")), true
+        );
+        d.d.setSpendLimit(
+            k.keyHash, address(paymentToken), GuardedExecutor.SpendPeriod.Hour, type(uint256).max
+        );
+        d.d.setSpendLimit(k.keyHash, address(0), GuardedExecutor.SpendPeriod.Hour, type(uint256).max);
+        vm.stopPrank();
+
+        Orchestrator.Intent memory u;
+        u.eoa = d.eoa;
+        u.nonce = 0;
+        u.combinedGas = 1000000;
+        u.prePaymentAmount = 0 ether;
+        u.prePaymentMaxAmount = 0 ether;
+        u.totalPaymentAmount = 0.01 ether;
+        u.totalPaymentMaxAmount = 0.1 ether;
+        u.paymentToken = address(0);
+        // To maintain parity with the old benchmarks.
+        u.paymentRecipient = address(oc);
+        u.executionData = _transferExecutionData(address(paymentToken), address(0xbabe), 1 ether);
+        u.signature = _sig(k, u);
+
+        bytes[] memory encodedIntents = new bytes[](1);
+        encodedIntents[0] = abi.encode(u);
+
+        vm.resumeGasMetering();
+
+        oc.execute(encodedIntents);
+
+        vm.pauseGasMetering();
+        assertEq(paymentToken.balanceOf(address(0xbabe)), 1 ether);
+        vm.resumeGasMetering();
+    }
+
     function testERC20TransferDirect() public {
         DelegatedEOA memory d = _randomEIP7702DelegatedEOA();
         _giveAccountSomeTokens(d.eoa);
