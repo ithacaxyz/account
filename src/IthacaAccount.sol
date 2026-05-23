@@ -73,7 +73,8 @@ contract IthacaAccount is IIthacaAccount, EIP712, GuardedExecutor {
         EnumerableSetLib.AddressSet checkers;
     }
 
-    /// @dev Holds the storage.
+    /// @dev Holds the account storage.
+    /// @custom:storage-location ithacaxyz:ITHACA_ACCOUNT_STORAGE
     struct AccountStorage {
         /// @dev The label.
         LibBytes.BytesStorage label;
