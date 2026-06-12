@@ -94,6 +94,19 @@ contract SimpleFunderTest is Test {
         assertGt(token.allowance(address(simpleFunder), orchestrator), allowanceBefore + 100 ether);
     }
 
+    function test_fund_setsMaxUint256Allowance() public {
+        ICommon.Transfer[] memory transfers = new ICommon.Transfer[](1);
+        transfers[0] = ICommon.Transfer({token: address(token), amount: 100 ether});
+
+        bytes32 digest = keccak256("test digest");
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(funderPrivateKey, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        simpleFunder.fund(digest, transfers, signature);
+
+        assertEq(token.allowance(address(simpleFunder), orchestrator), type(uint256).max);
+    }
+
     function test_fund_withInvalidSignature_reverts() public {
         ICommon.Transfer[] memory transfers = new ICommon.Transfer[](1);
         transfers[0] = ICommon.Transfer({token: address(token), amount: 100 ether});
