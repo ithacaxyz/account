@@ -1,0 +1,8 @@
+queue_rules:
+  - name: account
+merge_queue:
+  skip_intermediate_results: true
+  mode: parallel
+scopes:
+  source:
+    files: {}
