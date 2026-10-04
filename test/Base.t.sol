@@ -220,7 +220,7 @@ contract BaseTest is SoladyTest {
     {
         (bytes32 r, bytes32 s) = vm.signP256(privateKey, digest);
         s = P256.normalized(s);
-        return abi.encodePacked(abi.encode(r, s), keyHash, uint8(prehash ? 1 : 0));
+        return abi.encodePacked(abi.encode(r, s), keyHash, uint8(prehash ? 1 : 0), uint8(0));
     }
 
     function _secp256k1Sig(uint256 privateKey, bytes32 keyHash, bytes32 digest)
@@ -237,7 +237,8 @@ contract BaseTest is SoladyTest {
         returns (bytes memory)
     {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
-        return abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(prehash ? 1 : 0));
+        return
+            abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(prehash ? 1 : 0), uint8(0));
     }
 
     function _multiSig(MultiSigKey memory k, bytes32 keyHash, bool preHash, bytes32 digest)
@@ -250,7 +251,7 @@ contract BaseTest is SoladyTest {
             signatures[i] = _sig(k.owners[i], digest);
         }
 
-        return abi.encodePacked(abi.encode(signatures), keyHash, uint8(preHash ? 1 : 0));
+        return abi.encodePacked(abi.encode(signatures), keyHash, uint8(preHash ? 1 : 0), uint8(0));
     }
 
     function _estimateGasForEOAKey(Orchestrator.Intent memory i)
@@ -282,7 +283,7 @@ contract BaseTest is SoladyTest {
     {
         (uint8 v, bytes32 r, bytes32 s) =
             vm.sign(uint128(_randomUniform()), bytes32(_randomUniform()));
-        i.signature = abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(0));
+        i.signature = abi.encodePacked(abi.encodePacked(r, s, v), keyHash, uint8(0), uint8(0));
         return _estimateGas(i);
     }
 
@@ -290,7 +291,7 @@ contract BaseTest is SoladyTest {
         internal
         returns (uint256 gExecute, uint256 gCombined, uint256 gUsed)
     {
-        i.signature = abi.encodePacked(keccak256("a"), keccak256("b"), keyHash, uint8(0));
+        i.signature = abi.encodePacked(keccak256("a"), keccak256("b"), keyHash, uint8(0), uint8(0));
 
         return _estimateGas(i);
     }
