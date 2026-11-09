@@ -68,6 +68,11 @@ contract BenchmarkTest is BaseTest {
 
     address constant _PIMLICO_PAYMASTER_V06 = 0x6666666666667849c56f2850848cE1C4da65c68b;
     address constant _PIMLICO_PAYMASTER_V07 = 0x777777777777AeC03fd955926DbF81597e66834C;
+
+    /// @dev EIP-7702 `PER_EMPTY_ACCOUNT_COST`. Charged per authorization. An authority that
+    /// already exists is refunded down to `PER_AUTH_BASE_COST` (12_500).
+    uint256 constant _EIP7702_PER_EMPTY_ACCOUNT_COST = 25_000;
+
     address paymasterSigner;
     uint256 paymasterPrivateKey;
 
@@ -264,6 +269,25 @@ contract BenchmarkTest is BaseTest {
         }
     }
 
+    /// @dev Deploys and initializes one minimal 4337 account. External so clone + `initialize`
+    /// are a single call for `snapshotGasLastCall`, matching the other creation benches.
+    function deployERC4337MinimalAccount(address implementation, address owner)
+        external
+        returns (address account)
+    {
+        account = LibClone.clone(implementation);
+        ERC4337(payable(account)).initialize(owner);
+    }
+
+    function testCreate_ERC4337MinimalAccount() public {
+        address implementation = address(new MockERC4337Account());
+        (address eoa,) = makeAddrAndKey(string(abi.encodePacked("minimalacct", uint256(0))));
+        address created = this.deployERC4337MinimalAccount(implementation, eoa);
+        vm.snapshotGasLastCall("testCreate_ERC4337MinimalAccount");
+
+        assertEq(MockERC4337Account(payable(created)).owner(), eoa);
+    }
+
     function testERC20Transfer_ERC4337MinimalAccount() public {
         ERC4337.Call[] memory calls = new ERC4337.Call[](1);
         calls[0].target = address(paymentToken);
@@ -441,6 +465,17 @@ contract BenchmarkTest is BaseTest {
                 .createAccount(owners, i);
             _giveAccountSomeTokens(accounts[i]);
         }
+    }
+
+    function testCreate_CoinbaseSmartWallet() public {
+        (address eoa,) = makeAddrAndKey(string(abi.encodePacked("csw", uint256(0))));
+        bytes[] memory owners = new bytes[](1);
+        owners[0] = abi.encode(eoa);
+        address created = ICoinbaseSmartWalletFactory(_COINBASE_SMART_WALLET_FACTORY_ADDR)
+            .createAccount(owners, 0);
+        vm.snapshotGasLastCall("testCreate_CoinbaseSmartWallet");
+
+        assertEq(ICoinbaseSmartWallet(created).ownerAtIndex(0), abi.encode(eoa));
     }
 
     function testERC20Transfer_CoinbaseSmartWallet() public {
@@ -700,6 +735,15 @@ contract BenchmarkTest is BaseTest {
                 .createSemiModularAccount(eoas[i], 0);
             _giveAccountSomeTokens(accounts[i]);
         }
+    }
+
+    function testCreate_AlchemyModularAccount() public {
+        (address eoa,) = makeAddrAndKey(string(abi.encodePacked("alchemy-ma", uint256(0))));
+        address created = IAlchemyModularAccountFactory(_ALCHEMY_MODULAR_ACCOUNT_FACTORY_ADDR)
+            .createSemiModularAccount(eoa, 0);
+        vm.snapshotGasLastCall("testCreate_AlchemyModularAccount");
+
+        assertGt(created.code.length, 0);
     }
 
     function testERC20Transfer_AlchemyModularAccount() public {
@@ -1067,6 +1111,36 @@ contract BenchmarkTest is BaseTest {
         }
     }
 
+    function testCreate_Safe4337() public {
+        (address eoa,) = makeAddrAndKey(string(abi.encodePacked("safe-4337", uint256(0))));
+
+        address[] memory owners = new address[](1);
+        owners[0] = eoa;
+
+        address[] memory modules = new address[](1);
+        modules[0] = _SAFE_4337_MODULE;
+
+        bytes memory setupData = abi.encodeCall(
+            ISafe.setup,
+            (
+                owners,
+                1,
+                _ADD_MODULES_LIB,
+                abi.encodeCall(IAddModulesLib.enableModules, (modules)),
+                _SAFE_4337_MODULE,
+                address(0),
+                0,
+                address(0)
+            )
+        );
+
+        address created = ISafeProxyFactory(_SAFE_PROXY_FACTORY)
+            .createProxyWithNonce(_GNOSIS_SAFE_v1_4_1, setupData, 0);
+        vm.snapshotGasLastCall("testCreate_Safe4337");
+
+        assertGt(created.code.length, 0);
+    }
+
     function testERC20Transfer_Safe4337() public {
         bytes memory payload = abi.encodeWithSelector(
             ISafe4337Module.executeUserOp.selector,
@@ -1238,6 +1312,27 @@ contract BenchmarkTest is BaseTest {
                 );
             _giveAccountSomeTokens(accounts[i]);
         }
+    }
+
+    function testCreate_ZerodevKernel() public {
+        (address eoa,) = makeAddrAndKey(string(abi.encodePacked("zerodev-kernel", uint256(0))));
+        address created = IKernelFactory(_ZERODEV_KERNEL_FACTORY_ADDR)
+            .createAccount(
+                abi.encodeWithSelector(
+                    IKernel.initialize.selector,
+                    validatorToIdentifier(_ZERODEV_KERNEL_ECDSA_VALIDATION),
+                    address(0), // no hooks
+                    abi.encodePacked(eoa), // owner
+                    hex"", // no hookData
+                    new bytes[](0) // no init datas
+                ),
+                bytes32(uint256(0))
+            );
+        vm.snapshotGasLastCall("testCreate_ZerodevKernel");
+
+        assertEq(
+            IECDSAValidator(_ZERODEV_KERNEL_ECDSA_VALIDATION).ecdsaValidatorStorage(created), eoa
+        );
     }
 
     function testERC20Transfer_ZerodevKernel() public {
@@ -1516,6 +1611,25 @@ contract BenchmarkTest is BaseTest {
             delegatedEOAs[i].d = MockAccount(payable(delegatedEOAs[i].eoa));
             _giveAccountSomeTokens(delegatedEOAs[i].eoa);
         }
+    }
+
+    /// @dev Porto accounts are created by delegating an empty EOA to the shared EIP-7702 proxy.
+    /// There is no factory deployment on this path. Foundry's `snapshotGasLastCall` does not
+    /// meter EIP-7702 intrinsic authorization gas, so the spec cost is recorded directly.
+    function testCreate_IthacaAccount() public {
+        (address eoa, uint256 privateKey) =
+            makeAddrAndKey(string(abi.encodePacked("ithaca", uint256(0))));
+        assertEq(eoa.code.length, 0);
+        assertEq(eoa.balance, 0);
+        assertEq(vm.getNonce(eoa), 0);
+
+        vm.signAndAttachDelegation(address(account), privateKey);
+        vm.prank(eoa);
+        (bool ok,) = eoa.call("");
+        assertTrue(ok);
+        assertEq(eoa.code, abi.encodePacked(hex"ef0100", address(account)));
+
+        vm.snapshotValue("testCreate_IthacaAccount", _EIP7702_PER_EMPTY_ACCOUNT_COST);
     }
 
     function testERC20Transfer_IthacaAccount() public {

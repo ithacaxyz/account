@@ -1,4 +1,10 @@
 {
+  "testCreate_AlchemyModularAccount": "97760",
+  "testCreate_CoinbaseSmartWallet": "190525",
+  "testCreate_ERC4337MinimalAccount": "90505",
+  "testCreate_IthacaAccount": "25000",
+  "testCreate_Safe4337": "289207",
+  "testCreate_ZerodevKernel": "174748",
   "testERC20Transfer_AlchemyModularAccount": "179494",
   "testERC20Transfer_AlchemyModularAccount_AppSponsor": "176436",
   "testERC20Transfer_AlchemyModularAccount_ERC20SelfPay": "207779",
